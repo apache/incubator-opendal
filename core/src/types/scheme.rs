@@ -109,6 +109,8 @@ pub enum Scheme {
     Gdrive,
     /// [dropbox][crate::services::Dropbox]: Dropbox services.
     Dropbox,
+    /// [ocios][crate::services::OciOs]: Oracle Cloud Object Storage Services
+    OciOs,
     /// [oss][crate::services::Oss]: Aliyun Object Storage Services
     Oss,
     /// [persy][crate::services::Persy]: persy backend support.
@@ -251,6 +253,8 @@ impl Scheme {
             Scheme::Postgresql,
             #[cfg(feature = "services-gdrive")]
             Scheme::Gdrive,
+            #[cfg(feature = "services-ocios")]
+            Scheme::OciOs,
             #[cfg(feature = "services-oss")]
             Scheme::Oss,
             #[cfg(feature = "services-persy")]
@@ -437,6 +441,7 @@ impl From<Scheme> for &'static str {
             Scheme::Swift => "swift",
             Scheme::VercelArtifacts => "vercel_artifacts",
             Scheme::VercelBlob => "vercel_blob",
+            Scheme::OciOs => "ocios",
             Scheme::Oss => "oss",
             Scheme::Webdav => "webdav",
             Scheme::Webhdfs => "webhdfs",

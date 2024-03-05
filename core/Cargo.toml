@@ -51,6 +51,7 @@ default = [
   "services-ipmfs",
   "services-memory",
   "services-obs",
+  "services-ocios",
   "services-oss",
   "services-s3",
   "services-webdav",
@@ -178,6 +179,11 @@ services-obs = [
   "reqsign?/services-huaweicloud",
   "reqsign?/reqwest_request",
 ]
+services-ocios = [
+  "dep:reqsign",
+  "reqsign?/services-oracle",
+  "reqsign?/reqwest_request",
+]
 services-onedrive = []
 services-oss = [
   "dep:reqsign",
@@ -281,7 +287,7 @@ sha1 = { version = "0.10.6", optional = true }
 sha2 = { version = "0.10", optional = true }
 
 # For http based services.
-reqsign = { version = "0.14.7", default-features = false, optional = true }
+reqsign = { git = "https://github.com/xuanwo/reqsign.git", default-features = false, optional = true }
 
 # for services-atomic-server
 atomic_lib = { version = "0.34.5", optional = true }

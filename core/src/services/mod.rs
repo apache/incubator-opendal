@@ -224,6 +224,11 @@ pub use onedrive::Onedrive;
 #[cfg(feature = "services-onedrive")]
 pub use onedrive::OnedriveConfig;
 
+#[cfg(feature = "services-ocios")]
+mod ocios;
+#[cfg(feature = "services-ocios")]
+pub use ocios::OciOs;
+
 #[cfg(feature = "services-gdrive")]
 mod gdrive;
 #[cfg(feature = "services-gdrive")]
