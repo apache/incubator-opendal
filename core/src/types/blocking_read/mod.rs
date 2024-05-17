@@ -23,3 +23,4 @@ mod std_bytes_iterator;
 pub use std_bytes_iterator::StdBytesIterator;
 mod std_reader;
 pub use std_reader::StdReader;
+mod buffer_iterator;

@@ -18,17 +18,20 @@
 use std::collections::Bound;
 use std::ops::Range;
 use std::ops::RangeBounds;
+use std::sync::Arc;
 
-use bytes::Buf;
 use bytes::BufMut;
 
 use crate::raw::*;
 use crate::*;
 
+use super::buffer_iterator::BufferIterator;
+
 /// BlockingReader is designed to read data from given path in an blocking
 /// manner.
 pub struct BlockingReader {
     pub(crate) inner: oio::BlockingReader,
+    options: OpReader,
 }
 
 impl BlockingReader {
@@ -39,10 +42,18 @@ impl BlockingReader {
     ///
     /// We don't want to expose those details to users so keep this function
     /// in crate only.
-    pub(crate) fn create(acc: Accessor, path: &str, op: OpRead) -> crate::Result<Self> {
+    pub(crate) fn create(
+        acc: Accessor,
+        path: &str,
+        op: OpRead,
+        options: OpReader,
+    ) -> crate::Result<Self> {
         let (_, r) = acc.blocking_read(path, op)?;
 
-        Ok(BlockingReader { inner: r })
+        Ok(BlockingReader {
+            inner: Arc::new(r),
+            options,
+        })
     }
 
     /// Read give range from reader into [`Buffer`].
@@ -73,24 +84,13 @@ impl BlockingReader {
             }
         }
 
-        let mut bufs = Vec::new();
-        let mut offset = start;
+        let iter = BufferIterator::new(self.inner.clone(), self.options.clone(), start, end);
 
-        loop {
-            // TODO: use service preferred io size instead.
-            let limit = end.map(|end| end - offset).unwrap_or(4 * 1024 * 1024) as usize;
-            let bs = self.inner.read_at(offset, limit)?;
-            let n = bs.remaining();
-            bufs.push(bs);
-            if n < limit {
-                return Ok(bufs.into_iter().flatten().collect());
-            }
-
-            offset += n as u64;
-            if Some(offset) == end {
-                return Ok(bufs.into_iter().flatten().collect());
-            }
-        }
+        Ok(iter
+            .collect::<Result<Vec<Buffer>>>()?
+            .into_iter()
+            .flatten()
+            .collect())
     }
 
     ///
@@ -120,25 +120,17 @@ impl BlockingReader {
             }
         }
 
-        let mut offset = start;
+        let iter = BufferIterator::new(self.inner.clone(), self.options.clone(), start, end);
+
+        let bufs: Result<Vec<Buffer>> = iter.collect();
+
         let mut read = 0;
-
-        loop {
-            // TODO: use service preferred io size instead.
-            let limit = end.map(|end| end - offset).unwrap_or(4 * 1024 * 1024) as usize;
-            let bs = self.inner.read_at(offset, limit)?;
-            let n = bs.remaining();
+        for bs in bufs? {
+            read += bs.len();
             buf.put(bs);
-            read += n as u64;
-            if n < limit {
-                return Ok(read as _);
-            }
-
-            offset += n as u64;
-            if Some(offset) == end {
-                return Ok(read as _);
-            }
         }
+
+        Ok(read)
     }
 
     /// Convert reader into [`StdReader`] which implements [`futures::AsyncRead`],
@@ -146,12 +138,105 @@ impl BlockingReader {
     #[inline]
     pub fn into_std_read(self, range: Range<u64>) -> StdReader {
         // TODO: the capacity should be decided by services.
-        StdReader::new(self.inner, range)
+        StdReader::new(self.inner.clone(), range)
     }
 
     /// Convert reader into [`StdBytesIterator`] which implements [`Iterator`].
     #[inline]
     pub fn into_bytes_iterator(self, range: Range<u64>) -> StdBytesIterator {
-        StdBytesIterator::new(self.inner, range)
+        StdBytesIterator::new(self.inner.clone(), range)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::rngs::ThreadRng;
+    use rand::Rng;
+    use rand::RngCore;
+
+    fn gen_random_bytes() -> Vec<u8> {
+        let mut rng = ThreadRng::default();
+        // Generate size between 1B..16MB.
+        let size = rng.gen_range(1..16 * 1024 * 1024);
+        let mut content = vec![0; size];
+        rng.fill_bytes(&mut content);
+        content
+    }
+
+    #[test]
+    fn test_blocking_reader_read() {
+        let op = Operator::new(services::Memory::default())
+            .unwrap()
+            .finish()
+            .blocking();
+        let path = "test_file";
+
+        let content = gen_random_bytes();
+        op.write(path, content.clone()).expect("write must succeed");
+
+        let reader = op.reader(path).unwrap();
+        let buf = reader.read(..).expect("read to end must succeed");
+
+        assert_eq!(buf.to_bytes(), content);
+    }
+
+    #[test]
+    fn test_reader_read_with_chunk() {
+        let op = Operator::new(services::Memory::default())
+            .unwrap()
+            .finish()
+            .blocking();
+        let path = "test_file";
+
+        let content = gen_random_bytes();
+        op.write(path, content.clone()).expect("write must succeed");
+
+        let reader = op.reader_with(path).chunk(16).call().unwrap();
+        let buf = reader.read(..).expect("read to end must succeed");
+
+        assert_eq!(buf.to_bytes(), content);
+    }
+
+    #[test]
+    fn test_reader_read_with_concurrent() {
+        let op = Operator::new(services::Memory::default())
+            .unwrap()
+            .finish()
+            .blocking();
+        let path = "test_file";
+
+        let content = gen_random_bytes();
+        op.write(path, content.clone()).expect("write must succeed");
+
+        let reader = op
+            .reader_with(path)
+            .chunk(128)
+            .concurrent(16)
+            .call()
+            .unwrap();
+        let buf = reader.read(..).expect("read to end must succeed");
+
+        assert_eq!(buf.to_bytes(), content);
+    }
+
+    #[test]
+    fn test_reader_read_into() {
+        let op = Operator::new(services::Memory::default())
+            .unwrap()
+            .finish()
+            .blocking();
+        let path = "test_file";
+
+        let content = gen_random_bytes();
+        op.write(path, content.clone()).expect("write must succeed");
+
+        let reader = op.reader(path).unwrap();
+        let mut buf = Vec::new();
+        reader
+            .read_into(&mut buf, ..)
+            .expect("read to end must succeed");
+
+        assert_eq!(buf, content);
     }
 }

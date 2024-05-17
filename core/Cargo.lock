@@ -4808,6 +4808,7 @@ dependencies = [
  "quick-xml",
  "r2d2",
  "rand 0.8.5",
+ "rayon",
  "redb",
  "redis",
  "reqsign",

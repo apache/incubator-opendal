@@ -385,8 +385,12 @@ impl BlockingOperator {
         FunctionRead(OperatorFunction::new(
             self.inner().clone(),
             path,
-            (OpRead::default(), BytesRange::default()),
-            |inner, path, (args, range)| {
+            (
+                OpRead::default(),
+                BytesRange::default(),
+                OpReader::default(),
+            ),
+            |inner, path, (args, range, options)| {
                 if !validate_path(&path, EntryMode::FILE) {
                     return Err(
                         Error::new(ErrorKind::IsADirectory, "read path is a directory")
@@ -396,7 +400,7 @@ impl BlockingOperator {
                     );
                 }
 
-                let r = BlockingReader::create(inner, &path, args)?;
+                let r = BlockingReader::create(inner, &path, args, options)?;
                 let buf = r.read(range.to_range())?;
                 Ok(buf)
             },
@@ -443,8 +447,12 @@ impl BlockingOperator {
         FunctionReader(OperatorFunction::new(
             self.inner().clone(),
             path,
-            OpRead::default(),
-            |inner, path, args| {
+            (
+                OpRead::default(),
+                BytesRange::default(),
+                OpReader::default(),
+            ),
+            |inner, path, (args, _, options)| {
                 if !validate_path(&path, EntryMode::FILE) {
                     return Err(
                         Error::new(ErrorKind::IsADirectory, "reader path is a directory")
@@ -454,7 +462,7 @@ impl BlockingOperator {
                     );
                 }
 
-                BlockingReader::create(inner.clone(), &path, args)
+                BlockingReader::create(inner.clone(), &path, args, options)
             },
         ))
     }
