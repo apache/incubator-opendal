@@ -21,12 +21,17 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+url = "2.5.0"
+log = "0.4.21"
 snafu = "0.8.3"
 libc = "0.2.139"
 vhost = "0.11.0"
+env_logger = "0.11.2"
 virtio-queue = "0.11.0"
 vmm-sys-util = "0.12.1"
 virtio-bindings = "0.2.1"
 vhost-user-backend = "0.14.0"
 anyhow = { version = "1.0.86", features = ["std"] }
+opendal = { version = "0.47.0", path = "../../core" }
+clap = { version = "4.5.1", features = ["derive", "env"] }
 vm-memory = { version = "0.14.0", features = ["backend-mmap", "backend-atomic"] }

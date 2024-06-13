@@ -19,6 +19,59 @@ mod error;
 mod virtiofs;
 mod virtiofs_utils;
 
+use std::collections::HashMap;
+use std::str::FromStr;
+
+use clap::Parser;
+use opendal::{Operator, Scheme};
+use url::Url;
+
+/// User configuration for ovfs.
+#[derive(Parser, Debug)]
+#[command(version, about)]
+struct Config {
+    /// socket path used to connect with VMs
+    #[arg(env = "OVFS_MOUT_PATH", index = 1)]
+    socket_path: String,
+
+    /// location of opendal service
+    /// format: <scheme>://?<key>=<value>&<key>=<value>
+    /// example: fs://?root=/tmp
+    #[arg(env = "OVFS_BACKEND", index = 2)]
+    backend: Url,
+}
+
 fn main() {
-    unimplemented!()
+    let cfg = Config::parse();
+
+    env_logger::init();
+
+    if cfg.backend.has_host() {
+        log::warn!("backend host will be ignored");
+    }
+
+    let scheme_str = cfg.backend.scheme();
+    let op_args = cfg
+        .backend
+        .query_pairs()
+        .into_owned()
+        .collect::<HashMap<String, String>>();
+
+    let scheme = match Scheme::from_str(scheme_str) {
+        Ok(Scheme::Custom(_)) | Err(_) => {
+            log::error!("invalid backend scheme: {}", scheme_str);
+            return;
+        }
+        Ok(s) => s,
+    };
+
+    let _ = match Operator::via_map(scheme, op_args) {
+        Ok(operator) => operator,
+        Err(_) => {
+            log::error!("invalid args to build backend");
+            return;
+        }
+    };
+
+    log::error!("unimplemented project is not yet ready to run");
 }
