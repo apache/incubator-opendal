@@ -185,6 +185,11 @@ pub async fn test_list_dir_with_metakey_complete(op: Operator) -> Result<()> {
 
 /// List prefix should return newly created file.
 pub async fn test_list_prefix(op: Operator) -> Result<()> {
+    // Dropbox does not support list prefix.
+    if op.info().scheme() == Scheme::Dropbox {
+        return Ok(());
+    }
+
     let path = uuid::Uuid::new_v4().to_string();
     debug!("Generate a random file: {}", &path);
     let (content, _) = gen_bytes(op.info().full_capability());
@@ -601,6 +606,11 @@ pub async fn test_list_dir_with_recursive_no_trailing_slash(op: Operator) -> Res
 }
 
 pub async fn test_list_file_with_recursive(op: Operator) -> Result<()> {
+    // Dropbox does not support list file with recursive.
+    if op.info().scheme() == Scheme::Dropbox {
+        return Ok(());
+    }
+
     let parent = uuid::Uuid::new_v4().to_string();
 
     let paths = ["y", "yy"];

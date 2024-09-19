@@ -280,6 +280,11 @@ pub fn test_blocking_list_dir_with_recursive_no_trailing_slash(op: BlockingOpera
 // Walk top down should output as expected
 // same as test_list_dir_with_recursive except listing 'x' instead of 'x/'
 pub fn test_blocking_list_file_with_recursive(op: BlockingOperator) -> Result<()> {
+    // Dropbox does not support list file with recursive.
+    if op.info().scheme() == Scheme::Dropbox {
+        return Ok(());
+    }
+
     let parent = uuid::Uuid::new_v4().to_string();
 
     let paths = ["y", "yy"];

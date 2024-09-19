@@ -74,6 +74,17 @@ impl oio::PageList for DropboxLister {
             return result;
         }
 
+        // List "dir" should only return "dir/".
+        if !self.path.ends_with('/') {
+            let mut path = self.path.clone();
+            path.push('/');
+            ctx.entries
+                .push_back(oio::Entry::with(path, Metadata::new(EntryMode::DIR)));
+
+            ctx.done = true;
+            return Ok(());
+        }
+
         let bytes = response.into_body();
         let decoded_response: DropboxListResponse =
             serde_json::from_reader(bytes.reader()).map_err(new_json_deserialize_error)?;
@@ -103,7 +114,9 @@ impl oio::PageList for DropboxLister {
                 }
             }
 
-            ctx.entries.push_back(oio::Entry::with(name, meta));
+            // Dropbox will return name without parent path, we need contact it.
+            let path = format!("{}{}", self.path, name);
+            ctx.entries.push_back(oio::Entry::with(path, meta));
         }
 
         if decoded_response.has_more {
