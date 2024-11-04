@@ -146,8 +146,12 @@ impl<A: Access> Layer<A> for BlockingLayer {
     type LayeredAccess = BlockingAccessor<A>;
 
     fn layer(&self, inner: A) -> Self::LayeredAccess {
+        let mut meta = inner.info().as_ref().clone();
+        meta.full_capability_mut().blocking = true;
+
         BlockingAccessor {
             inner,
+            meta: Arc::new(meta),
             handle: self.handle.clone(),
         }
     }
@@ -156,7 +160,7 @@ impl<A: Access> Layer<A> for BlockingLayer {
 #[derive(Clone, Debug)]
 pub struct BlockingAccessor<A: Access> {
     inner: A,
-
+    meta: Arc<AccessorInfo>,
     handle: Handle,
 }
 
@@ -174,9 +178,7 @@ impl<A: Access> LayeredAccess for BlockingAccessor<A> {
     }
 
     fn metadata(&self) -> Arc<AccessorInfo> {
-        let mut meta = self.inner.info().as_ref().clone();
-        meta.full_capability_mut().blocking = true;
-        meta.into()
+        self.meta.clone()
     }
 
     async fn create_dir(&self, path: &str, args: OpCreateDir) -> Result<RpCreateDir> {

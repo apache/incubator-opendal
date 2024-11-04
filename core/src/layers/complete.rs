@@ -109,8 +109,15 @@ impl<A: Access> Layer<A> for CompleteLayer {
     type LayeredAccess = CompleteAccessor<A>;
 
     fn layer(&self, inner: A) -> Self::LayeredAccess {
+        let mut meta = inner.info().as_ref().clone();
+        let cap = meta.full_capability_mut();
+
+        if cap.list && cap.write_can_empty {
+            cap.create_dir = true;
+        }
+
         CompleteAccessor {
-            meta: inner.info(),
+            meta: meta.into(),
             inner: Arc::new(inner),
         }
     }
@@ -376,14 +383,8 @@ impl<A: Access> LayeredAccess for CompleteAccessor<A> {
         &self.inner
     }
 
-    // Todo: May move the logic to the implement of Layer::layer of CompleteAccessor<A>
     fn metadata(&self) -> Arc<AccessorInfo> {
-        let mut meta = (*self.meta).clone();
-        let cap = meta.full_capability_mut();
-        if cap.list && cap.write_can_empty {
-            cap.create_dir = true;
-        }
-        meta.into()
+        self.meta.clone()
     }
 
     async fn create_dir(&self, path: &str, args: OpCreateDir) -> Result<RpCreateDir> {

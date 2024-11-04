@@ -74,8 +74,15 @@ impl<A: Access> Layer<A> for ImmutableIndexLayer {
     type LayeredAccess = ImmutableIndexAccessor<A>;
 
     fn layer(&self, inner: A) -> Self::LayeredAccess {
+        let mut meta = inner.info().as_ref().clone();
+
+        let cap = meta.full_capability_mut();
+        cap.list = true;
+        cap.list_with_recursive = true;
+
         ImmutableIndexAccessor {
             vec: self.vec.clone(),
+            meta: Arc::new(meta),
             inner,
         }
     }
@@ -84,6 +91,7 @@ impl<A: Access> Layer<A> for ImmutableIndexLayer {
 #[derive(Debug, Clone)]
 pub struct ImmutableIndexAccessor<A: Access> {
     inner: A,
+    meta: Arc<AccessorInfo>,
     vec: Vec<String>,
 }
 
@@ -150,13 +158,7 @@ impl<A: Access> LayeredAccess for ImmutableIndexAccessor<A> {
 
     /// Add list capabilities for underlying storage services.
     fn metadata(&self) -> Arc<AccessorInfo> {
-        let mut meta = (*self.inner.info()).clone();
-
-        let cap = meta.full_capability_mut();
-        cap.list = true;
-        cap.list_with_recursive = true;
-
-        meta.into()
+        self.meta.clone()
     }
 
     async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
