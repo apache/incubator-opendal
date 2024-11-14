@@ -16,9 +16,13 @@
 // under the License.
 
 use bb8::RunError;
+use futures::Stream;
+use futures::StreamExt;
 use http::Uri;
+use ouroboros::self_referencing;
 use redis::cluster::ClusterClient;
 use redis::cluster::ClusterClientBuilder;
+use redis::AsyncIter;
 use redis::Client;
 use redis::ConnectionAddr;
 use redis::ConnectionInfo;
@@ -27,6 +31,9 @@ use redis::RedisConnectionInfo;
 use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::path::PathBuf;
+use std::pin::Pin;
+use std::task::Context;
+use std::task::Poll;
 use std::time::Duration;
 use tokio::sync::OnceCell;
 
@@ -291,8 +298,23 @@ impl Debug for Adapter {
 
 impl Adapter {
     async fn conn(&self) -> Result<bb8::PooledConnection<'_, RedisConnectionManager>> {
-        let pool = self
-            .conn
+        let pool = self.pool().await?;
+        Adapter::conn_from_pool(pool).await
+    }
+
+    async fn conn_from_pool(
+        pool: &bb8::Pool<RedisConnectionManager>,
+    ) -> Result<bb8::PooledConnection<RedisConnectionManager>> {
+        pool.get().await.map_err(|err| match err {
+            RunError::TimedOut => {
+                Error::new(ErrorKind::Unexpected, "get connection from pool failed").set_temporary()
+            }
+            RunError::User(err) => err,
+        })
+    }
+
+    async fn pool(&self) -> Result<&bb8::Pool<RedisConnectionManager>> {
+        self.conn
             .get_or_try_init(|| async {
                 bb8::Pool::builder()
                     .build(self.get_redis_connection_manager())
@@ -302,13 +324,7 @@ impl Adapter {
                             .set_source(err)
                     })
             })
-            .await?;
-        pool.get().await.map_err(|err| match err {
-            RunError::TimedOut => {
-                Error::new(ErrorKind::Unexpected, "get connection from pool failed").set_temporary()
-            }
-            RunError::User(err) => err,
-        })
+            .await
     }
 
     fn get_redis_connection_manager(&self) -> RedisConnectionManager {
@@ -326,8 +342,43 @@ impl Adapter {
     }
 }
 
+#[self_referencing]
+struct RedisAsyncConnIter<'a> {
+    conn: bb8::PooledConnection<'a, RedisConnectionManager>,
+
+    #[borrows(mut conn)]
+    #[not_covariant]
+    iter: AsyncIter<'this, String>,
+}
+
+#[self_referencing]
+pub struct RedisScanner {
+    pool: bb8::Pool<RedisConnectionManager>,
+    path: String,
+
+    #[borrows(pool, path)]
+    #[not_covariant]
+    inner: RedisAsyncConnIter<'this>,
+}
+
+unsafe impl Sync for RedisScanner {}
+
+impl Stream for RedisScanner {
+    type Item = Result<String>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.with_inner_mut(|s| s.with_iter_mut(|v| v.poll_next_unpin(cx).map(|v| v.map(Ok))))
+    }
+}
+
+impl kv::Scan for RedisScanner {
+    async fn next(&mut self) -> Result<Option<String>> {
+        <Self as StreamExt>::next(self).await.transpose()
+    }
+}
+
 impl kv::Adapter for Adapter {
-    type Scanner = ();
+    type Scanner = RedisScanner;
 
     fn info(&self) -> kv::Info {
         kv::Info::new(
@@ -336,6 +387,12 @@ impl kv::Adapter for Adapter {
             Capability {
                 read: true,
                 write: true,
+                // due to limitation of Redis itself,
+                // on cluster mode we cannot get full list of keys via SCAN,
+                // so here we disable it on cluster mode to avoid confusions.
+                // TODO: we can perform multiple SCAN on each cluster node
+                // and merge the result to simulate the behavior of list here.
+                list: self.cluster_client.is_none(),
 
                 ..Default::default()
             },
@@ -365,5 +422,20 @@ impl kv::Adapter for Adapter {
         let mut conn = self.conn().await?;
         conn.append(key, value).await?;
         Ok(())
+    }
+
+    async fn scan(&self, path: &str) -> Result<Self::Scanner> {
+        let pool = self.pool().await?.clone();
+
+        RedisScanner::try_new_async_send(pool, path.to_string(), |pool, path| {
+            Box::pin(async {
+                let conn = Adapter::conn_from_pool(pool).await?;
+                RedisAsyncConnIter::try_new_async_send(conn, |conn| {
+                    Box::pin(async { conn.scan(path).await })
+                })
+                .await
+            })
+        })
+        .await
     }
 }

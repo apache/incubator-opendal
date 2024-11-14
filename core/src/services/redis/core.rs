@@ -26,6 +26,7 @@ use redis::cluster::ClusterClient;
 use redis::cluster_async::ClusterConnection;
 use redis::from_redis_value;
 use redis::AsyncCommands;
+use redis::AsyncIter;
 use redis::Client;
 use redis::RedisError;
 
@@ -104,6 +105,18 @@ impl RedisConnection {
             }
         }
         Ok(())
+    }
+
+    pub async fn scan(&mut self, prefix: &str) -> crate::Result<AsyncIter<'_, String>> {
+        let pattern = format!("{}*", prefix);
+        Ok(match self {
+            RedisConnection::Normal(ref mut conn) => {
+                conn.scan_match(pattern).await.map_err(format_redis_error)?
+            }
+            RedisConnection::Cluster(ref mut conn) => {
+                conn.scan_match(pattern).await.map_err(format_redis_error)?
+            }
+        })
     }
 }
 

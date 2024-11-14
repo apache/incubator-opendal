@@ -19,6 +19,6 @@ version: '3.8'
 
 services:
   redis:
-    image: apache/kvrocks:2.5.1
+    image: apache/kvrocks:2.10.1
     ports:
       - '6379:6666'
