@@ -29,6 +29,7 @@ version = "0.48.3"
 
 [features]
 send_wrapper = ["dep:send_wrapper"]
+services-s3 = ["opendal/services-s3"]
 
 [dependencies]
 async-trait = "0.1"

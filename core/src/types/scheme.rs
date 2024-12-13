@@ -167,7 +167,7 @@ pub enum Scheme {
     Lakefs,
     /// [NebulaGraph](crate::services::NebulaGraph): NebulaGraph Services
     NebulaGraph,
-    /// Custom that allow users to implement services outside of OpenDAL.
+    /// Custom that allow users to implement services outside OpenDAL.
     ///
     /// # NOTE
     ///
