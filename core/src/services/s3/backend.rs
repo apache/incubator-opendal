@@ -942,6 +942,12 @@ impl Access for S3Backend {
                 write: true,
                 write_can_empty: true,
                 write_can_multi: true,
+                // Only S3 Express One Zone storage class supports append.
+                write_can_append: self
+                    .core
+                    .default_storage_class
+                    .as_ref()
+                    .is_some_and(|v| v == "EXPRESS_ONEZONE"),
                 write_with_cache_control: true,
                 write_with_content_type: true,
                 write_with_content_encoding: true,
@@ -1029,11 +1035,17 @@ impl Access for S3Backend {
     }
 
     async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        let concurrent = args.concurrent();
-        let executor = args.executor().cloned();
-        let writer = S3Writer::new(self.core.clone(), path, args);
+        let writer = S3Writer::new(self.core.clone(), path, args.clone());
 
-        let w = oio::MultipartWriter::new(writer, executor, concurrent);
+        let w = if args.append() {
+            S3Writers::Two(oio::AppendWriter::new(writer))
+        } else {
+            S3Writers::One(oio::MultipartWriter::new(
+                writer,
+                args.executor().cloned(),
+                args.concurrent(),
+            ))
+        };
 
         Ok((RpWrite::default(), w))
     }

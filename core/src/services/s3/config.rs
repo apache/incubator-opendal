@@ -143,6 +143,7 @@ pub struct S3Config {
     /// - `GLACIER_IR`
     /// - `INTELLIGENT_TIERING`
     /// - `ONEZONE_IA`
+    /// - `EXPRESS_ONEZONE`
     /// - `OUTPOSTS`
     /// - `REDUCED_REDUNDANCY`
     /// - `STANDARD`
