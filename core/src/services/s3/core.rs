@@ -508,7 +508,7 @@ impl S3Core {
         Ok(req)
     }
 
-    pub async fn s3_append_object_request(
+    pub fn s3_append_object_request(
         &self,
         path: &str,
         position: u64,
