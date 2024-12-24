@@ -564,6 +564,12 @@ impl S3Builder {
         self
     }
 
+    /// Enable write with append so that opendal will send write request with append headers.
+    pub fn enable_write_with_append(mut self) -> Self {
+        self.config.enable_write_with_append = true;
+        self
+    }
+
     /// Detect region of S3 bucket.
     ///
     /// # Args
@@ -895,6 +901,7 @@ impl Builder for S3Builder {
                 checksum_algorithm,
                 delete_max_size,
                 disable_write_with_if_match: self.config.disable_write_with_if_match,
+                enable_write_with_append: self.config.enable_write_with_append,
             }),
         })
     }
@@ -942,12 +949,8 @@ impl Access for S3Backend {
                 write: true,
                 write_can_empty: true,
                 write_can_multi: true,
-                // Only S3 Express One Zone storage class supports append.
-                write_can_append: self
-                    .core
-                    .default_storage_class
-                    .as_ref()
-                    .is_some_and(|v| v == "EXPRESS_ONEZONE"),
+                write_can_append: self.core.enable_write_with_append,
+
                 write_with_cache_control: true,
                 write_with_content_type: true,
                 write_with_content_encoding: true,

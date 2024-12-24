@@ -189,6 +189,9 @@ pub struct S3Config {
     ///
     /// For example, Ceph RADOS S3 doesn't support write with if match.
     pub disable_write_with_if_match: bool,
+
+    /// Enable write with append so that opendal will send write request with append headers.
+    pub enable_write_with_append: bool,
 }
 
 impl Debug for S3Config {
