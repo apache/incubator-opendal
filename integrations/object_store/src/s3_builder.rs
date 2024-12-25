@@ -24,6 +24,12 @@ pub struct AmazonS3Builder {
     builder: S3,
 }
 
+impl Default for AmazonS3Builder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AmazonS3Builder {
     pub fn new() -> Self {
         AmazonS3Builder {

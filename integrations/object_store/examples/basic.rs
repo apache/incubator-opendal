@@ -3,8 +3,11 @@ use std::sync::Arc;
 use bytes::Bytes;
 use object_store::path::Path;
 use object_store::ObjectStore;
+
+#[cfg(feature = "services-s3")]
 use object_store_opendal::AmazonS3Builder;
 
+#[cfg(feature = "services-s3")]
 #[tokio::main]
 async fn main() {
     let s3_store = AmazonS3Builder::new()
@@ -32,4 +35,9 @@ async fn main() {
         .unwrap();
 
     assert_eq!(content, bytes);
+}
+
+#[cfg(not(feature = "services-s3"))]
+fn main() {
+    println!("The 'services-s3' feature is not enabled.");
 }
