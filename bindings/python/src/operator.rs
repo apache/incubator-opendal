@@ -185,6 +185,9 @@ impl Operator {
     pub fn delete(&self, path: &str) -> PyResult<()> {
         self.core.delete(path).map_err(format_pyerr)
     }
+    pub fn exists(&self, path: &str) -> PyResult<bool> {
+        self.core.exists(path).map_err(format_pyerr)
+    }
 
     /// List current dir path.
     pub fn list(&self, path: &str) -> PyResult<BlockingLister> {
