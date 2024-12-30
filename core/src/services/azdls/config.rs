@@ -34,6 +34,8 @@ pub struct AzdlsConfig {
     pub account_name: Option<String>,
     /// Account key of this backend.
     pub account_key: Option<String>,
+    /// SAS token of this backend.
+    pub sas_token: Option<String>,
 }
 
 impl Debug for AzdlsConfig {
@@ -49,6 +51,9 @@ impl Debug for AzdlsConfig {
         }
         if self.account_key.is_some() {
             ds.field("account_key", &"<redacted>");
+        }
+        if self.sas_token.is_some() {
+            ds.field("sas_token", &"<redacted>");
         }
 
         ds.finish()

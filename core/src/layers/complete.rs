@@ -256,11 +256,11 @@ impl<A: Access> CompleteAccessor<A> {
             (true, false) => {
                 // Forward path that ends with /
                 if path.ends_with('/') {
-                    let p = FlatLister::new(self.inner.clone(), path);
+                    let p = FlatLister::new(self.inner.clone(), path, args);
                     Ok((RpList::default(), CompleteLister::Two(p)))
                 } else {
                     let parent = get_parent(path);
-                    let p = FlatLister::new(self.inner.clone(), parent);
+                    let p = FlatLister::new(self.inner.clone(), parent, args);
                     let p = PrefixLister::new(p, path);
                     Ok((RpList::default(), CompleteLister::Four(p)))
                 }
@@ -301,11 +301,11 @@ impl<A: Access> CompleteAccessor<A> {
             (true, false) => {
                 // Forward path that ends with /
                 if path.ends_with('/') {
-                    let p = FlatLister::new(self.inner.clone(), path);
+                    let p = FlatLister::new(self.inner.clone(), path, args);
                     Ok((RpList::default(), CompleteLister::Two(p)))
                 } else {
                     let parent = get_parent(path);
-                    let p = FlatLister::new(self.inner.clone(), parent);
+                    let p = FlatLister::new(self.inner.clone(), parent, args);
                     let p = PrefixLister::new(p, path);
                     Ok((RpList::default(), CompleteLister::Four(p)))
                 }

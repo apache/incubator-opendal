@@ -34,6 +34,8 @@ use reqsign::AzureStorageSigner;
 use crate::raw::*;
 use crate::*;
 
+use super::lister::generate_continuation_from_start_after;
+
 const X_MS_RENAME_SOURCE: &str = "x-ms-rename-source";
 const X_MS_VERSION: &str = "x-ms-version";
 
@@ -266,6 +268,7 @@ impl AzdlsCore {
     pub async fn azdls_list(
         &self,
         path: &str,
+        start_after: Option<&str>,
         continuation: &str,
         limit: Option<usize>,
     ) -> Result<Response<Buffer>> {
@@ -284,9 +287,18 @@ impl AzdlsCore {
         if let Some(limit) = limit {
             write!(url, "&maxResults={limit}").expect("write into string must succeed");
         }
+
         if !continuation.is_empty() {
             write!(url, "&continuation={}", percent_encode_path(continuation))
                 .expect("write into string must succeed");
+        } else if let Some(start_after) = start_after {
+            println!("start_after: {}", start_after);
+            write!(
+                url,
+                "&continuation={}",
+                generate_continuation_from_start_after(start_after)
+            )
+            .expect("write into string must succeed");
         }
 
         let mut req = Request::get(&url)
