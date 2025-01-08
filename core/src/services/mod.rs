@@ -154,6 +154,9 @@ pub use obs::*;
 mod onedrive;
 pub use onedrive::*;
 
+mod opfs;
+pub use opfs::*;
+
 mod oss;
 pub use oss::*;
 

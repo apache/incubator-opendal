@@ -5021,6 +5021,7 @@ dependencies = [
  "hmac",
  "hrana-client-proto",
  "http 1.1.0",
+ "js-sys",
  "libtest-mimic",
  "log",
  "md-5",
@@ -5068,6 +5069,9 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "uuid",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
 ]
 
 [[package]]

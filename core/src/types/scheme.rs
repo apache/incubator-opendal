@@ -111,6 +111,8 @@ pub enum Scheme {
     Obs,
     /// [onedrive][crate::services::Onedrive]: Microsoft OneDrive services.
     Onedrive,
+    /// [opfs][crate::services::opfs]: Original private file system.
+    Opfs,
     /// [gdrive][crate::services::Gdrive]: GoogleDrive services.
     Gdrive,
     /// [dropbox][crate::services::Dropbox]: Dropbox services.
@@ -385,6 +387,7 @@ impl FromStr for Scheme {
             "monoiofs" => Ok(Scheme::Monoiofs),
             "obs" => Ok(Scheme::Obs),
             "onedrive" => Ok(Scheme::Onedrive),
+            "opfs" => Ok(Scheme::Opfs),
             "persy" => Ok(Scheme::Persy),
             "postgresql" => Ok(Scheme::Postgresql),
             "redb" => Ok(Scheme::Redb),
@@ -454,6 +457,7 @@ impl From<Scheme> for &'static str {
             Scheme::Monoiofs => "monoiofs",
             Scheme::Obs => "obs",
             Scheme::Onedrive => "onedrive",
+            Scheme::Opfs => "opfs",
             Scheme::Persy => "persy",
             Scheme::Postgresql => "postgresql",
             Scheme::Mysql => "mysql",
