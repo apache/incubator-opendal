@@ -26,6 +26,10 @@ build:
     goos: "darwin"
     goarch: "arm64"
     os: "macos-latest"
+  - target: "x86_64-pc-windows-msvc"
+    cc: "cl.exe"
+    goos: "windows"
+    goarch: "amd64"
+    os: "windows-latest"
 service:
   - "fs"
-
