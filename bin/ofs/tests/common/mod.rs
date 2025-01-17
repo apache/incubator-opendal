@@ -27,7 +27,7 @@ use tokio::runtime::{self};
 static INIT_LOGGER: OnceLock<()> = OnceLock::new();
 static RUNTIME: OnceLock<Runtime> = OnceLock::new();
 
-#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+#[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "macos"))]
 pub struct OfsTestContext {
     pub mount_point: TempDir,
     // This is a false positive, the field is used in the test.
@@ -36,7 +36,7 @@ pub struct OfsTestContext {
     mount_handle: fuse3::raw::MountHandle,
 }
 
-#[cfg(any(target_os = "linux", target_os = "freebsd"))]
+#[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "macos"))]
 impl TestContext for OfsTestContext {
     fn setup() -> Self {
         let backend = tests::init_test_service()
