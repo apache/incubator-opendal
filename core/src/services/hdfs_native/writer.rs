@@ -18,25 +18,28 @@
 use hdfs_native::file::FileWriter;
 
 use crate::raw::oio;
+use crate::services::hdfs_native::error::parse_hdfs_error;
 use crate::*;
 
 pub struct HdfsNativeWriter {
-    _f: FileWriter,
+    f: FileWriter,
 }
 
 impl HdfsNativeWriter {
     pub fn new(f: FileWriter) -> Self {
-        HdfsNativeWriter { _f: f }
+        HdfsNativeWriter { f }
     }
 }
 
 impl oio::Write for HdfsNativeWriter {
-    async fn write(&mut self, _bs: Buffer) -> Result<()> {
-        todo!()
+    async fn write(&mut self, bs: Buffer) -> Result<usize> {
+        let bytes = bs.to_bytes();
+        let n = self.f.write(bytes).await.map_err(parse_hdfs_error)?;
+        Ok(n)
     }
 
     async fn close(&mut self) -> Result<()> {
-        todo!()
+        self.f.close().await.map_err(parse_hdfs_error)
     }
 
     async fn abort(&mut self) -> Result<()> {

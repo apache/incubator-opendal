@@ -1,0 +1,46 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: hdfs_native
+description: 'Behavior test for hdfs_native'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup java env
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: "11"
+    - name: Setup
+      shell: bash
+      run: |
+        curl -LsSf https://dlcdn.apache.org/hadoop/common/hadoop-3.3.5/hadoop-3.3.5.tar.gz | tar zxf - -C /home/runner
+
+        export HADOOP_HOME="/home/runner/hadoop-3.3.5"
+        export CLASSPATH=$(${HADOOP_HOME}/bin/hadoop classpath --glob)
+
+        cp ./fixtures/hdfs/hdfs-site.xml ${HADOOP_HOME}/etc/hadoop/hdfs-site.xml
+
+        cat << EOF >> $GITHUB_ENV
+        HADOOP_HOME=${HADOOP_HOME}
+        CLASSPATH=${CLASSPATH}
+        LD_LIBRARY_PATH=${JAVA_HOME}/lib/server:${HADOOP_HOME}/lib/native
+        OPENDAL_HDFS_NATIVE_ROOT=/tmp/opendal/
+        OPENDAL_HDFS_NATIVE_URL=hdfs://127.0.0.1:9000
+        OPENDAL_HDFS_NATIVE_ENABLE_APPEND=false
+        EOF

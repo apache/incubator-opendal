@@ -152,24 +152,26 @@ impl Access for HdfsNativeBackend {
     type BlockingLister = ();
     type BlockingDeleter = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
+    fn info(&self) -> AccessorInfo {
         let mut am = AccessorInfo::default();
         am.set_scheme(Scheme::HdfsNative)
             .set_root(&self.root)
             .set_native_capability(Capability {
                 stat: true,
+                list: true,
+                read: true,
+                write: true,
                 stat_has_last_modified: true,
                 stat_has_content_length: true,
 
                 delete: true,
                 rename: true,
-
-                shared: true,
+                blocking: true,
 
                 ..Default::default()
             });
 
-        am.into()
+        am
     }
 
     async fn create_dir(&self, path: &str, _args: OpCreateDir) -> Result<RpCreateDir> {

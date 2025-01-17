@@ -6,12 +6,12 @@ Using [Native Rust HDFS client](https://github.com/Kimahriman/hdfs-native).
 This service can be used to:
 
 - [x] stat
-- [ ] read
-- [ ] write
+- [x] read
+- [x] write
 - [ ] create_dir
 - [x] delete
 - [x] rename
-- [ ] list
+- [x] list
 - [x] blocking
 - [ ] append
 
