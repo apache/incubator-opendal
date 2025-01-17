@@ -38,7 +38,14 @@ all-features = true
 
 [workspace]
 default-members = ["."]
-members = [".", "examples/*", "fuzz", "edge/*", "benches/vs_*"]
+members = [
+    ".",
+    "examples/*",
+    "fuzz",
+    "edge/*",
+    "benches/vs_*",
+    "benches/fs_vs_monoiofs_vs_compfs"
+]
 
 [workspace.package]
 edition = "2021"

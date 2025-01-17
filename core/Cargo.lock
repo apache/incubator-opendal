@@ -5160,6 +5160,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "opendal-benchmark-fs-vs-monoiofs-vs-compfs"
+version = "0.0.0"
+dependencies = [
+ "bytes",
+ "criterion",
+ "opendal",
+ "rand 0.8.5",
+ "size",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "opendal-benchmark-vs-fs"
 version = "0.0.0"
 dependencies = [
