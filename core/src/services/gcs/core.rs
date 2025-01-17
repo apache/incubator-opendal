@@ -51,6 +51,8 @@ pub mod constants {
     pub const X_GOOG_ACL: &str = "x-goog-acl";
     pub const X_GOOG_STORAGE_CLASS: &str = "x-goog-storage-class";
     pub const X_GOOG_META_PREFIX: &str = "x-goog-meta-";
+    pub const X_GOOG_IF_GENERATION_MATCH: &str = "x-goog-if-generation-match";
+    pub const GENERATION: &str = "generation";
 }
 
 pub struct GcsCore {
@@ -69,6 +71,7 @@ pub struct GcsCore {
     pub default_storage_class: Option<String>,
 
     pub allow_anonymous: bool,
+    pub enable_versioning: bool,
 }
 
 impl Debug for GcsCore {
@@ -184,12 +187,24 @@ impl GcsCore {
     ) -> Result<Request<Buffer>> {
         let p = build_abs_path(&self.root, path);
 
-        let url = format!(
+        let mut url = format!(
             "{}/storage/v1/b/{}/o/{}?alt=media",
             self.endpoint,
             self.bucket,
             percent_encode_path(&p)
         );
+
+        let mut query_args = Vec::new();
+        if let Some(version) = args.version() {
+            query_args.push(format!(
+                "{}={}",
+                constants::GENERATION,
+                percent_decode_path(version)
+            ))
+        }
+        if !query_args.is_empty() {
+            url.push_str(&format!("&{}", query_args.join("&")));
+        }
 
         let mut req = Request::get(&url);
 
@@ -215,6 +230,10 @@ impl GcsCore {
         let url = format!("{}/{}/{}", self.endpoint, self.bucket, p);
 
         let mut req = Request::get(&url);
+
+        if let Some(version) = args.version() {
+            req = req.header(constants::X_GOOG_IF_GENERATION_MATCH, version);
+        }
 
         if let Some(if_match) = args.if_match() {
             req = req.header(IF_MATCH, if_match);
@@ -363,12 +382,24 @@ impl GcsCore {
     pub fn gcs_head_object_request(&self, path: &str, args: &OpStat) -> Result<Request<Buffer>> {
         let p = build_abs_path(&self.root, path);
 
-        let url = format!(
+        let mut url = format!(
             "{}/storage/v1/b/{}/o/{}",
             self.endpoint,
             self.bucket,
             percent_encode_path(&p)
         );
+
+        let mut query_args = Vec::new();
+        if let Some(version) = args.version() {
+            query_args.push(format!(
+                "{}={}",
+                constants::GENERATION,
+                percent_decode_path(version)
+            ))
+        }
+        if !query_args.is_empty() {
+            url.push_str(&format!("?{}", query_args.join("&")));
+        }
 
         let mut req = Request::get(&url);
 
@@ -393,7 +424,19 @@ impl GcsCore {
     ) -> Result<Request<Buffer>> {
         let p = build_abs_path(&self.root, path);
 
-        let url = format!("{}/{}/{}", self.endpoint, self.bucket, p);
+        let mut url = format!("{}/{}/{}", self.endpoint, self.bucket, p);
+
+        let mut query_args = Vec::new();
+        if let Some(version) = args.version() {
+            query_args.push(format!(
+                "{}={}",
+                constants::GENERATION,
+                percent_decode_path(version)
+            ))
+        }
+        if !query_args.is_empty() {
+            url.push_str(&format!("?{}", query_args.join("&")));
+        }
 
         let mut req = Request::head(&url);
 
@@ -422,35 +465,50 @@ impl GcsCore {
         self.send(req).await
     }
 
-    pub async fn gcs_delete_object(&self, path: &str) -> Result<Response<Buffer>> {
-        let mut req = self.gcs_delete_object_request(path)?;
+    pub async fn gcs_delete_object(&self, path: &str, args: OpDelete) -> Result<Response<Buffer>> {
+        let mut req = self.gcs_delete_object_request(path, args)?;
 
         self.sign(&mut req).await?;
         self.send(req).await
     }
 
-    pub fn gcs_delete_object_request(&self, path: &str) -> Result<Request<Buffer>> {
+    pub fn gcs_delete_object_request(&self, path: &str, args: OpDelete) -> Result<Request<Buffer>> {
         let p = build_abs_path(&self.root, path);
 
-        let url = format!(
+        let mut url = format!(
             "{}/storage/v1/b/{}/o/{}",
             self.endpoint,
             self.bucket,
             percent_encode_path(&p)
         );
 
+        let mut query_args = Vec::new();
+        if let Some(version) = args.version() {
+            query_args.push(format!(
+                "{}={}",
+                constants::GENERATION,
+                percent_decode_path(version)
+            ))
+        }
+        if !query_args.is_empty() {
+            url.push_str(&format!("?{}", query_args.join("&")));
+        }
+
         Request::delete(&url)
             .body(Buffer::new())
             .map_err(new_request_build_error)
     }
 
-    pub async fn gcs_delete_objects(&self, paths: Vec<String>) -> Result<Response<Buffer>> {
+    pub async fn gcs_delete_objects(
+        &self,
+        batch: Vec<(String, OpDelete)>,
+    ) -> Result<Response<Buffer>> {
         let uri = format!("{}/batch/storage/v1", self.endpoint);
 
         let mut multipart = Multipart::new();
 
-        for (idx, path) in paths.iter().enumerate() {
-            let req = self.gcs_delete_object_request(path)?;
+        for (idx, (path, args)) in batch.iter().enumerate() {
+            let req = self.gcs_delete_object_request(path, args.clone())?;
 
             multipart = multipart.part(
                 MixedPart::from_request(req).part_header("content-id".parse().unwrap(), idx.into()),
@@ -493,6 +551,7 @@ impl GcsCore {
         delimiter: &str,
         limit: Option<usize>,
         start_after: Option<String>,
+        versions: bool,
     ) -> Result<Response<Buffer>> {
         let p = build_abs_path(&self.root, path);
 
@@ -502,6 +561,9 @@ impl GcsCore {
             self.bucket,
             percent_encode_path(&p)
         );
+        if versions {
+            write!(url, "&versions=true").expect("write into string must succeed");
+        }
         if !delimiter.is_empty() {
             write!(url, "&delimiter={delimiter}").expect("write into string must succeed");
         }
@@ -681,6 +743,7 @@ pub struct ListResponseItem {
     pub md5_hash: String,
     pub updated: String,
     pub content_type: String,
+    pub time_deleted: Option<String>,
 }
 
 /// Result of CreateMultipartUpload

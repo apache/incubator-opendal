@@ -24,6 +24,7 @@ use bytes::Buf;
 use http::Response;
 use http::StatusCode;
 use log::debug;
+use oio::PageLister;
 use reqsign::GoogleCredentialLoader;
 use reqsign::GoogleSigner;
 use reqsign::GoogleTokenLoad;
@@ -34,7 +35,7 @@ use serde_json;
 use super::core::*;
 use super::delete::GcsDeleter;
 use super::error::parse_error;
-use super::lister::GcsLister;
+use super::lister::{GcsLister, GcsListers, GcsObjectVersionsLister};
 use super::writer::GcsWriter;
 use super::writer::GcsWriters;
 use crate::raw::oio::BatchDeleter;
@@ -192,6 +193,13 @@ impl GcsBuilder {
         self
     }
 
+    /// Set bucket versioning status for this backend
+    pub fn enable_versioning(mut self, enabled: bool) -> Self {
+        self.config.enable_versioning = enabled;
+
+        self
+    }
+
     /// Set the predefined acl for GCS.
     ///
     /// Available values are:
@@ -326,6 +334,7 @@ impl Builder for GcsBuilder {
                 predefined_acl: self.config.predefined_acl.clone(),
                 default_storage_class: self.config.default_storage_class.clone(),
                 allow_anonymous: self.config.allow_anonymous,
+                enable_versioning: self.config.enable_versioning,
             }),
         };
 
@@ -342,7 +351,7 @@ pub struct GcsBackend {
 impl Access for GcsBackend {
     type Reader = HttpBody;
     type Writer = GcsWriters;
-    type Lister = oio::PageLister<GcsLister>;
+    type Lister = GcsListers;
     type Deleter = oio::BatchDeleter<GcsDeleter>;
     type BlockingReader = ();
     type BlockingWriter = ();
@@ -362,6 +371,7 @@ impl Access for GcsBackend {
                 stat_has_content_md5: true,
                 stat_has_content_length: true,
                 stat_has_content_type: true,
+                stat_with_version: self.core.enable_versioning,
                 stat_has_last_modified: true,
                 stat_has_user_metadata: true,
 
@@ -369,13 +379,14 @@ impl Access for GcsBackend {
 
                 read_with_if_match: true,
                 read_with_if_none_match: true,
+                read_with_version: self.core.enable_versioning,
 
                 write: true,
                 write_can_empty: true,
                 write_can_multi: true,
                 write_with_content_type: true,
                 write_with_user_metadata: true,
-                write_with_if_not_exists: true,
+                write_with_if_not_exists: !self.core.enable_versioning,
 
                 // The min multipart size of Gcs is 5 MiB.
                 //
@@ -392,6 +403,7 @@ impl Access for GcsBackend {
 
                 delete: true,
                 delete_max_size: Some(100),
+                delete_with_version: self.core.enable_versioning,
                 copy: true,
 
                 list: true,
@@ -403,6 +415,8 @@ impl Access for GcsBackend {
                 list_has_content_length: true,
                 list_has_content_type: true,
                 list_has_last_modified: true,
+                list_with_versions: self.core.enable_versioning,
+                list_with_deleted: self.core.enable_versioning,
 
                 presign: true,
                 presign_stat: true,
@@ -432,6 +446,7 @@ impl Access for GcsBackend {
 
         m.set_etag(&meta.etag);
         m.set_content_md5(&meta.md5_hash);
+        m.set_version(&meta.generation);
 
         let size = meta
             .size
@@ -485,15 +500,23 @@ impl Access for GcsBackend {
     }
 
     async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
-        let l = GcsLister::new(
-            self.core.clone(),
-            path,
-            args.recursive(),
-            args.limit(),
-            args.start_after(),
-        );
+        let l = if args.versions() || args.deleted() {
+            TwoWays::Two(PageLister::new(GcsObjectVersionsLister::new(
+                self.core.clone(),
+                path,
+                args,
+            )))
+        } else {
+            TwoWays::One(PageLister::new(GcsLister::new(
+                self.core.clone(),
+                path,
+                args.recursive(),
+                args.limit(),
+                args.start_after(),
+            )))
+        };
 
-        Ok((RpList::default(), oio::PageLister::new(l)))
+        Ok((RpList::default(), l))
     }
 
     async fn copy(&self, from: &str, to: &str, _: OpCopy) -> Result<RpCopy> {
@@ -554,6 +577,10 @@ struct GetObjectJsonResponse {
     ///
     /// For example: `"contentType": "image/png",`
     content_type: String,
+    /// Generation of this object.
+    ///
+    /// For example: `"generation": "1660563214863653"`
+    generation: String,
     /// Custom metadata of this object.
     ///
     /// For example: `"metadata" : { "my-key": "my-value" }`

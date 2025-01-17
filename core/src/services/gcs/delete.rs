@@ -34,8 +34,8 @@ impl GcsDeleter {
 }
 
 impl oio::BatchDelete for GcsDeleter {
-    async fn delete_once(&self, path: String, _: OpDelete) -> Result<()> {
-        let resp = self.core.gcs_delete_object(&path).await?;
+    async fn delete_once(&self, path: String, args: OpDelete) -> Result<()> {
+        let resp = self.core.gcs_delete_object(&path, args).await?;
 
         // deleting not existing objects is ok
         if resp.status().is_success() || resp.status() == StatusCode::NOT_FOUND {
@@ -46,8 +46,8 @@ impl oio::BatchDelete for GcsDeleter {
     }
 
     async fn delete_batch(&self, batch: Vec<(String, OpDelete)>) -> Result<BatchDeleteResult> {
-        let paths: Vec<String> = batch.into_iter().map(|(p, _)| p).collect();
-        let resp = self.core.gcs_delete_objects(paths.clone()).await?;
+        let paths: Vec<String> = batch.clone().into_iter().map(|(p, _)| p).collect();
+        let resp = self.core.gcs_delete_objects(batch).await?;
 
         let status = resp.status();
 

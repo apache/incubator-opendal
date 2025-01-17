@@ -53,6 +53,8 @@ pub struct GcsConfig {
     pub disable_vm_metadata: bool,
     /// Disable loading configuration from the environment.
     pub disable_config_load: bool,
+    /// Enable versioning for the bucket.
+    pub enable_versioning: bool,
     /// A Google Cloud OAuth2 token.
     ///
     /// Takes precedence over `credential` and `credential_path`.
