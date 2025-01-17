@@ -58,6 +58,25 @@ pub fn percent_decode_path(path: &str) -> String {
     }
 }
 
+/// query_pairs will parse a query string encoded as key-value pairs separated by `&` to a vector of key-value pairs.
+/// It also does percent decoding for both key and value.
+///
+/// Note that `?` is not allowed in the query string, and it will be treated as a part of the first key if included.
+pub fn query_pairs(query: &str) -> Vec<(String, String)> {
+    query
+        .split('&')
+        .filter_map(|pair| {
+            let mut iter = pair.splitn(2, '=');
+            // TODO: should we silently ignore invalid pairs and filter them out without the user noticing?
+            // or should we return an error in the whole `query_pairs` function so the caller knows it failed?
+            let key = iter.next()?;
+            let value = iter.next().unwrap_or("");
+            Some((key, value))
+        })
+        .map(|(key, value)| (percent_decode_path(key), percent_decode_path(value)))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

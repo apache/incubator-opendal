@@ -55,6 +55,7 @@ pub use header::parse_prefixed_headers;
 mod uri;
 pub use uri::percent_decode_path;
 pub use uri::percent_encode_path;
+pub use uri::query_pairs;
 
 mod error;
 pub use error::new_request_build_error;
