@@ -32,7 +32,10 @@ pub struct GdriveLister {
 
 impl GdriveLister {
     pub fn new(path: String, core: Arc<GdriveCore>) -> Self {
-        Self { path, core }
+        Self {
+            path: super::core::gdrive_normalize_dir_path(path),
+            core,
+        }
     }
 }
 

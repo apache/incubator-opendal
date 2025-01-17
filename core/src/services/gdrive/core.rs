@@ -354,7 +354,10 @@ impl PathQuery for GdrivePathQuery {
             // Make sure name has been replaced with escaped name.
             //
             // ref: <https://developers.google.com/drive/api/guides/ref-search-terms>
-            format!("name = '{}'", name.replace('\'', "\\'")),
+            format!(
+                "name = '{}'",
+                gdrive_normalize_dir_path(name.to_owned()).replace('\'', "\\'")
+            ),
             format!("'{}' in parents", parent_id),
             "trashed = false".to_string(),
         ];
@@ -397,7 +400,7 @@ impl PathQuery for GdrivePathQuery {
         let url = "https://www.googleapis.com/drive/v3/files";
 
         let content = serde_json::to_vec(&json!({
-            "name": name,
+            "name": gdrive_normalize_dir_path(name.to_owned()),
             "mimeType": "application/vnd.google-apps.folder",
             // If the parent is not provided, the folder will be created in the root folder.
             "parents": [parent_id],
@@ -453,4 +456,24 @@ pub struct GdriveFile {
 pub(crate) struct GdriveFileList {
     pub(crate) files: Vec<GdriveFile>,
     pub(crate) next_page_token: Option<String>,
+}
+
+/// On Google Drive, dir path name cannot end with slash (/) because if we add a slash, it would be different from the dir name
+pub(super) fn gdrive_normalize_dir_path(path: String) -> String {
+    if path == "/" {
+        path
+    } else if path.ends_with('/') {
+        path.split_at(path.len() - 1).0.to_owned()
+    } else {
+        path
+    }
+}
+
+#[test]
+fn test_normalize_dir_path() {
+    assert_eq!(gdrive_normalize_dir_path("/".to_owned()), "/");
+    assert_eq!(gdrive_normalize_dir_path("/a".to_owned()), "/a");
+    assert_eq!(gdrive_normalize_dir_path("/a/".to_owned()), "/a");
+    assert_eq!(gdrive_normalize_dir_path("/a/b".to_owned()), "/a/b");
+    assert_eq!(gdrive_normalize_dir_path("/a/b/".to_owned()), "/a/b");
 }
