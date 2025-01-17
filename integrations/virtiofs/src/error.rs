@@ -15,21 +15,20 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::ffi::CStr;
 use std::io;
 
 use anyhow::Error as AnyError;
+use opendal::ErrorKind;
 use snafu::prelude::Snafu;
 
 /// Error is a error struct returned by all ovfs functions.
 #[derive(Debug, Snafu)]
 #[non_exhaustive]
 pub enum Error {
-    #[snafu(display("Vhost user fs error: {}, source: {:?}", message, source))]
-    VhostUserFsError {
-        message: String,
+    #[snafu(display("IO error: {:?}", source))]
+    IOError {
         #[snafu(source(false))]
-        source: Option<AnyError>,
+        source: io::Error,
     },
     #[snafu(display("Unexpected error: {}, source: {:?}", message, source))]
     Unexpected {
@@ -41,16 +40,33 @@ pub enum Error {
 
 impl From<libc::c_int> for Error {
     fn from(errno: libc::c_int) -> Error {
-        let err_str = unsafe { libc::strerror(errno) };
-        let message = if err_str.is_null() {
-            format!("errno: {}", errno)
-        } else {
-            let c_str = unsafe { CStr::from_ptr(err_str) };
-            c_str.to_string_lossy().into_owned()
-        };
-        Error::VhostUserFsError {
-            message,
-            source: None,
+        Error::IOError {
+            source: io::Error::from_raw_os_error(errno),
+        }
+    }
+}
+
+impl From<opendal::Error> for Error {
+    fn from(error: opendal::Error) -> Error {
+        match error.kind() {
+            ErrorKind::Unsupported => libc::ENOTSUP.into(),
+            ErrorKind::IsADirectory => libc::EISDIR.into(),
+            ErrorKind::NotFound => libc::ENOENT.into(),
+            ErrorKind::PermissionDenied => libc::EPERM.into(),
+            ErrorKind::AlreadyExists => libc::EEXIST.into(),
+            ErrorKind::NotADirectory => libc::ENOTDIR.into(),
+            ErrorKind::RangeNotSatisfied => libc::ERANGE.into(),
+            ErrorKind::RateLimited => libc::EAGAIN.into(),
+            _ => libc::EIO.into(),
+        }
+    }
+}
+
+impl From<Error> for libc::c_int {
+    fn from(error: Error) -> libc::c_int {
+        match error {
+            Error::IOError { source } => source.raw_os_error().unwrap_or(libc::EIO),
+            Error::Unexpected { .. } => libc::EIO,
         }
     }
 }
@@ -58,16 +74,7 @@ impl From<libc::c_int> for Error {
 impl From<Error> for io::Error {
     fn from(error: Error) -> io::Error {
         match error {
-            Error::VhostUserFsError { message, source } => {
-                let message = format!("Vhost user fs error: {}", message);
-                match source {
-                    Some(source) => io::Error::new(
-                        io::ErrorKind::Other,
-                        format!("{}, source: {:?}", message, source),
-                    ),
-                    None => io::Error::new(io::ErrorKind::Other, message),
-                }
-            }
+            Error::IOError { source } => source,
             Error::Unexpected { message, source } => {
                 let message = format!("Unexpected error: {}", message);
                 match source {
@@ -84,13 +91,6 @@ impl From<Error> for io::Error {
 
 /// Result is a result wrapper in ovfs.
 pub type Result<T, E = Error> = std::result::Result<T, E>;
-
-pub fn new_vhost_user_fs_error(message: &str, source: Option<AnyError>) -> Error {
-    Error::VhostUserFsError {
-        message: message.to_string(),
-        source,
-    }
-}
 
 pub fn new_unexpected_error(message: &str, source: Option<AnyError>) -> Error {
     Error::Unexpected {

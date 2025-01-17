@@ -22,20 +22,18 @@ use std::ptr;
 use vm_memory::bitmap::BitmapSlice;
 use vm_memory::VolatileSlice;
 
-use crate::error::*;
-
 /// ReadWriteAtVolatile is a trait that allows reading and writing from a slice of VolatileSlice.
 pub trait ReadWriteAtVolatile<B: BitmapSlice> {
-    fn read_vectored_at_volatile(&self, bufs: &[&VolatileSlice<B>]) -> Result<usize>;
-    fn write_vectored_at_volatile(&self, bufs: &[&VolatileSlice<B>]) -> Result<usize>;
+    fn read_vectored_at_volatile(&self, bufs: &[&VolatileSlice<B>]) -> usize;
+    fn write_vectored_at_volatile(&self, bufs: &[&VolatileSlice<B>]) -> usize;
 }
 
 impl<B: BitmapSlice, T: ReadWriteAtVolatile<B> + ?Sized> ReadWriteAtVolatile<B> for &T {
-    fn read_vectored_at_volatile(&self, bufs: &[&VolatileSlice<B>]) -> Result<usize> {
+    fn read_vectored_at_volatile(&self, bufs: &[&VolatileSlice<B>]) -> usize {
         (**self).read_vectored_at_volatile(bufs)
     }
 
-    fn write_vectored_at_volatile(&self, bufs: &[&VolatileSlice<B>]) -> Result<usize> {
+    fn write_vectored_at_volatile(&self, bufs: &[&VolatileSlice<B>]) -> usize {
         (**self).write_vectored_at_volatile(bufs)
     }
 }
@@ -58,7 +56,7 @@ impl BufferWrapper {
 }
 
 impl<B: BitmapSlice> ReadWriteAtVolatile<B> for BufferWrapper {
-    fn read_vectored_at_volatile(&self, bufs: &[&VolatileSlice<B>]) -> Result<usize> {
+    fn read_vectored_at_volatile(&self, bufs: &[&VolatileSlice<B>]) -> usize {
         let slice_guards: Vec<_> = bufs.iter().map(|s| s.ptr_guard_mut()).collect();
         let iovecs: Vec<_> = slice_guards
             .iter()
@@ -68,7 +66,7 @@ impl<B: BitmapSlice> ReadWriteAtVolatile<B> for BufferWrapper {
             })
             .collect();
         if iovecs.is_empty() {
-            return Ok(0);
+            return 0;
         }
         let data = self.buffer.borrow().to_vec();
         let mut result = 0;
@@ -83,10 +81,10 @@ impl<B: BitmapSlice> ReadWriteAtVolatile<B> for BufferWrapper {
             bufs[index].bitmap().mark_dirty(0, num);
             result += num;
         }
-        Ok(result)
+        result
     }
 
-    fn write_vectored_at_volatile(&self, bufs: &[&VolatileSlice<B>]) -> Result<usize> {
+    fn write_vectored_at_volatile(&self, bufs: &[&VolatileSlice<B>]) -> usize {
         let slice_guards: Vec<_> = bufs.iter().map(|s| s.ptr_guard()).collect();
         let iovecs: Vec<_> = slice_guards
             .iter()
@@ -96,7 +94,7 @@ impl<B: BitmapSlice> ReadWriteAtVolatile<B> for BufferWrapper {
             })
             .collect();
         if iovecs.is_empty() {
-            return Ok(0);
+            return 0;
         }
         let len = iovecs.iter().map(|iov| iov.iov_len).sum();
         let mut data = vec![0; len];
@@ -112,6 +110,6 @@ impl<B: BitmapSlice> ReadWriteAtVolatile<B> for BufferWrapper {
             offset += iov.iov_len;
         }
         *self.buffer.borrow_mut() = opendal::Buffer::from(data);
-        Ok(len)
+        len
     }
 }

@@ -46,18 +46,9 @@ struct DescriptorChainConsumer<'a, B> {
 }
 
 impl<'a, B: BitmapSlice> DescriptorChainConsumer<'a, B> {
-    #[cfg(test)]
-    fn available_bytes(&self) -> usize {
-        self.buffers.iter().fold(0, |count, vs| count + vs.len())
-    }
-
-    fn bytes_consumed(&self) -> usize {
-        self.bytes_consumed
-    }
-
-    fn consume<F>(&mut self, count: usize, f: F) -> Result<usize>
+    fn consume<F>(&mut self, count: usize, f: F) -> usize
     where
-        F: FnOnce(&[&VolatileSlice<B>]) -> Result<usize>,
+        F: FnOnce(&[&VolatileSlice<B>]) -> usize,
     {
         let mut len = 0;
         let mut bufs = Vec::with_capacity(self.buffers.len());
@@ -74,16 +65,9 @@ impl<'a, B: BitmapSlice> DescriptorChainConsumer<'a, B> {
             }
         }
         if bufs.is_empty() {
-            return Ok(0);
+            return 0;
         }
-        let bytes_consumed = f(&bufs)?;
-        let total_bytes_consumed =
-            self.bytes_consumed
-                .checked_add(bytes_consumed)
-                .ok_or(new_vhost_user_fs_error(
-                    "the combined length of all the buffers in DescriptorChain would overflow",
-                    None,
-                ))?;
+        let bytes_consumed = f(&bufs);
         let mut remain = bytes_consumed;
         while let Some(vs) = self.buffers.pop_front() {
             if remain < vs.len() {
@@ -92,11 +76,11 @@ impl<'a, B: BitmapSlice> DescriptorChainConsumer<'a, B> {
             }
             remain -= vs.len();
         }
-        self.bytes_consumed = total_bytes_consumed;
-        Ok(bytes_consumed)
+        self.bytes_consumed += bytes_consumed;
+        bytes_consumed
     }
 
-    fn split_at(&mut self, offset: usize) -> Result<DescriptorChainConsumer<'a, B>> {
+    fn split_at(&mut self, offset: usize) -> DescriptorChainConsumer<'a, B> {
         let mut remain = offset;
         let pos = self.buffers.iter().position(|vs| {
             if remain < vs.len() {
@@ -109,33 +93,29 @@ impl<'a, B: BitmapSlice> DescriptorChainConsumer<'a, B> {
         if let Some(at) = pos {
             let mut other = self.buffers.split_off(at);
             if remain > 0 {
-                let front = other.pop_front().expect("empty VecDeque after split");
-                self.buffers.push_back(
-                    front
-                        .subslice(0, remain)
-                        .map_err(|_| new_vhost_user_fs_error("volatile memory error", None))?,
-                );
-                other.push_front(
-                    front
-                        .offset(remain)
-                        .map_err(|_| new_vhost_user_fs_error("volatile memory error", None))?,
-                );
+                let front = other.pop_front().unwrap();
+                self.buffers.push_back(front.subslice(0, remain).unwrap());
+                other.push_front(front.offset(remain).unwrap());
             }
-            Ok(DescriptorChainConsumer {
+            DescriptorChainConsumer {
                 buffers: other,
                 bytes_consumed: 0,
-            })
-        } else if remain == 0 {
-            Ok(DescriptorChainConsumer {
+            }
+        } else {
+            DescriptorChainConsumer {
                 buffers: VecDeque::new(),
                 bytes_consumed: 0,
-            })
-        } else {
-            Err(new_vhost_user_fs_error(
-                "DescriptorChain split is out of bounds",
-                None,
-            ))
+            }
         }
+    }
+
+    fn bytes_consumed(&self) -> usize {
+        self.bytes_consumed
+    }
+
+    #[cfg(test)]
+    fn available_bytes(&self) -> usize {
+        self.buffers.iter().fold(0, |count, vs| count + vs.len())
     }
 }
 
@@ -153,29 +133,18 @@ impl<'a, B: Bitmap + BitmapSlice + 'static> Reader<'a, B> {
         M: Deref,
         M::Target: GuestMemory + Sized,
     {
-        let mut len: usize = 0;
         let buffers = desc_chain
             .readable()
             .map(|desc| {
-                len = len
-                    .checked_add(desc.len() as usize)
-                    .ok_or(new_vhost_user_fs_error(
-                        "the combined length of all the buffers in DescriptorChain would overflow",
-                        None,
-                    ))?;
-                let region = mem.find_region(desc.addr()).ok_or(new_vhost_user_fs_error(
-                    "no memory region for this address range",
-                    None,
-                ))?;
-                let offset = desc
-                    .addr()
-                    .checked_sub(region.start_addr().raw_value())
-                    .unwrap();
+                let region = mem
+                    .find_region(desc.addr())
+                    .ok_or(new_unexpected_error("cannot get volatile memory", None))?;
+                let offset = desc.addr().raw_value() - region.start_addr().raw_value();
                 region
                     .deref()
-                    .get_slice(offset.raw_value() as usize, desc.len() as usize)
+                    .get_slice(offset as usize, desc.len() as usize)
                     .map_err(|err| {
-                        new_vhost_user_fs_error("volatile memory error", Some(err.into()))
+                        new_unexpected_error("cannot get volatile memory", Some(err.into()))
                     })
             })
             .collect::<Result<VecDeque<VolatileSlice<'a, B>>>>()?;
@@ -187,22 +156,18 @@ impl<'a, B: Bitmap + BitmapSlice + 'static> Reader<'a, B> {
         })
     }
 
-    pub fn read_obj<T: ByteValued>(&mut self) -> io::Result<T> {
+    pub fn read_obj<T: ByteValued>(&mut self) -> Result<T> {
         let mut obj = MaybeUninit::<T>::uninit();
         let buf =
             unsafe { std::slice::from_raw_parts_mut(obj.as_mut_ptr() as *mut u8, size_of::<T>()) };
-        self.read_exact(buf)?;
+        self.read_exact(buf)
+            .map_err(|e| new_unexpected_error("failed to read object", Some(e.into())))?;
         Ok(unsafe { obj.assume_init() })
     }
 
-    pub fn read_to_at<F: ReadWriteAtVolatile<B>>(
-        &mut self,
-        dst: F,
-        count: usize,
-    ) -> io::Result<usize> {
+    pub fn read_to_at<F: ReadWriteAtVolatile<B>>(&mut self, dst: F, count: usize) -> usize {
         self.buffer
             .consume(count, |bufs| dst.write_vectored_at_volatile(bufs))
-            .map_err(|err| err.into())
     }
 
     #[cfg(test)]
@@ -218,21 +183,20 @@ impl<'a, B: Bitmap + BitmapSlice + 'static> Reader<'a, B> {
 
 impl<B: BitmapSlice> io::Read for Reader<'_, B> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.buffer
-            .consume(buf.len(), |bufs| {
-                let mut rem = buf;
-                let mut total = 0;
-                for vs in bufs {
-                    let copy_len = min(rem.len(), vs.len());
-                    unsafe {
-                        copy_nonoverlapping(vs.ptr_guard().as_ptr(), rem.as_mut_ptr(), copy_len);
-                    }
-                    rem = &mut rem[copy_len..];
-                    total += copy_len;
+        let total = self.buffer.consume(buf.len(), |bufs| {
+            let mut rem = buf;
+            let mut total = 0;
+            for vs in bufs {
+                let copy_len = min(rem.len(), vs.len());
+                unsafe {
+                    copy_nonoverlapping(vs.ptr_guard().as_ptr(), rem.as_mut_ptr(), copy_len);
                 }
-                Ok(total)
-            })
-            .map_err(|err| err.into())
+                rem = &mut rem[copy_len..];
+                total += copy_len;
+            }
+            total
+        });
+        Ok(total)
     }
 }
 
@@ -250,29 +214,18 @@ impl<'a, B: Bitmap + BitmapSlice + 'static> Writer<'a, B> {
         M: Deref,
         M::Target: GuestMemory + Sized,
     {
-        let mut len: usize = 0;
         let buffers = desc_chain
             .writable()
             .map(|desc| {
-                len = len
-                    .checked_add(desc.len() as usize)
-                    .ok_or(new_vhost_user_fs_error(
-                        "the combined length of all the buffers in DescriptorChain would overflow",
-                        None,
-                    ))?;
-                let region = mem.find_region(desc.addr()).ok_or(new_vhost_user_fs_error(
-                    "no memory region for this address range",
-                    None,
-                ))?;
-                let offset = desc
-                    .addr()
-                    .checked_sub(region.start_addr().raw_value())
-                    .unwrap();
+                let region = mem
+                    .find_region(desc.addr())
+                    .ok_or(new_unexpected_error("cannot get volatile memory", None))?;
+                let offset = desc.addr().raw_value() - region.start_addr().raw_value();
                 region
                     .deref()
-                    .get_slice(offset.raw_value() as usize, desc.len() as usize)
+                    .get_slice(offset as usize, desc.len() as usize)
                     .map_err(|err| {
-                        new_vhost_user_fs_error("volatile memory error", Some(err.into()))
+                        new_unexpected_error("cannot get volatile memory", Some(err.into()))
                     })
             })
             .collect::<Result<VecDeque<VolatileSlice<'a, B>>>>()?;
@@ -284,48 +237,44 @@ impl<'a, B: Bitmap + BitmapSlice + 'static> Writer<'a, B> {
         })
     }
 
-    pub fn split_at(&mut self, offset: usize) -> Result<Writer<'a, B>> {
-        self.buffer.split_at(offset).map(|buffer| Writer { buffer })
+    pub fn split_at(&mut self, offset: usize) -> Writer<'a, B> {
+        Writer {
+            buffer: self.buffer.split_at(offset),
+        }
     }
 
-    pub fn write_from_at<F: ReadWriteAtVolatile<B>>(
-        &mut self,
-        src: F,
-        count: usize,
-    ) -> io::Result<usize> {
+    pub fn write_from_at<F: ReadWriteAtVolatile<B>>(&mut self, src: F, count: usize) -> usize {
         self.buffer
             .consume(count, |bufs| src.read_vectored_at_volatile(bufs))
-            .map_err(|err| err.into())
+    }
+
+    pub fn bytes_written(&self) -> usize {
+        self.buffer.bytes_consumed()
     }
 
     #[cfg(test)]
     pub fn available_bytes(&self) -> usize {
         self.buffer.available_bytes()
     }
-
-    pub fn bytes_written(&self) -> usize {
-        self.buffer.bytes_consumed()
-    }
 }
 
 impl<B: BitmapSlice> Write for Writer<'_, B> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.buffer
-            .consume(buf.len(), |bufs| {
-                let mut rem = buf;
-                let mut total = 0;
-                for vs in bufs {
-                    let copy_len = min(rem.len(), vs.len());
-                    unsafe {
-                        copy_nonoverlapping(rem.as_ptr(), vs.ptr_guard_mut().as_ptr(), copy_len);
-                    }
-                    vs.bitmap().mark_dirty(0, copy_len);
-                    rem = &rem[copy_len..];
-                    total += copy_len;
+        let total = self.buffer.consume(buf.len(), |bufs| {
+            let mut rem = buf;
+            let mut total = 0;
+            for vs in bufs {
+                let copy_len = min(rem.len(), vs.len());
+                unsafe {
+                    copy_nonoverlapping(rem.as_ptr(), vs.ptr_guard_mut().as_ptr(), copy_len);
                 }
-                Ok(total)
-            })
-            .map_err(|err| err.into())
+                vs.bitmap().mark_dirty(0, copy_len);
+                rem = &rem[copy_len..];
+                total += copy_len;
+            }
+            total
+        });
+        Ok(total)
     }
 
     fn flush(&mut self) -> io::Result<()> {

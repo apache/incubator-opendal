@@ -56,7 +56,7 @@ impl TryFrom<u32> for Opcode {
             26 => Ok(Opcode::Init),
             35 => Ok(Opcode::Create),
             38 => Ok(Opcode::Destroy),
-            _ => Err(new_vhost_user_fs_error("failed to decode opcode", None)),
+            _ => Err(new_unexpected_error("unsupported opcode", None)),
         }
     }
 }

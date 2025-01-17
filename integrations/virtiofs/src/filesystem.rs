@@ -24,8 +24,8 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use log::debug;
+use log::warn;
 use opendal::Buffer;
-use opendal::ErrorKind;
 use opendal::Operator;
 use sharded_slab::Slab;
 use tokio::runtime::Builder;
@@ -91,20 +91,6 @@ impl OpenedFile {
     }
 }
 
-fn opendal_error2error(error: opendal::Error) -> Error {
-    match error.kind() {
-        ErrorKind::Unsupported => Error::from(libc::EOPNOTSUPP),
-        ErrorKind::IsADirectory => Error::from(libc::EISDIR),
-        ErrorKind::NotFound => Error::from(libc::ENOENT),
-        ErrorKind::PermissionDenied => Error::from(libc::EACCES),
-        ErrorKind::AlreadyExists => Error::from(libc::EEXIST),
-        ErrorKind::NotADirectory => Error::from(libc::ENOTDIR),
-        ErrorKind::RangeNotSatisfied => Error::from(libc::EINVAL),
-        ErrorKind::RateLimited => Error::from(libc::EBUSY),
-        _ => Error::from(libc::ENOENT),
-    }
-}
-
 fn opendal_metadata2opened_file(
     path: &str,
     metadata: &opendal::Metadata,
@@ -153,15 +139,16 @@ impl Filesystem {
     }
 
     pub fn handle_message(&self, mut r: Reader, w: Writer) -> Result<usize> {
-        let in_header: InHeader = r.read_obj().map_err(|e| {
-            new_vhost_user_fs_error("failed to decode protocol messages", Some(e.into()))
-        })?;
+        let in_header: InHeader = r.read_obj()?;
         if in_header.len > (MAX_BUFFER_SIZE + BUFFER_HEADER_SIZE) {
-            // The message is too long here.
-            return Filesystem::reply_error(in_header.unique, w);
+            return Filesystem::reply_error(
+                in_header.unique,
+                w,
+                new_unexpected_error("message is too long", None),
+            );
         }
-        if let Ok(opcode) = Opcode::try_from(in_header.opcode) {
-            match opcode {
+        match Opcode::try_from(in_header.opcode) {
+            Ok(opcode) => match opcode {
                 Opcode::Init => self.init(in_header, r, w),
                 Opcode::Destroy => self.destroy(in_header, r, w),
                 Opcode::Lookup => self.lookup(in_header, r, w),
@@ -175,9 +162,8 @@ impl Filesystem {
                 Opcode::Open => self.open(in_header, r, w),
                 Opcode::Read => self.read(in_header, r, w),
                 Opcode::Write => self.write(in_header, r, w),
-            }
-        } else {
-            Filesystem::reply_error(in_header.unique, w)
+            },
+            Err(err) => Filesystem::reply_error(in_header.unique, w, err),
         }
     }
 }
@@ -198,47 +184,69 @@ impl Filesystem {
         }
         let header = OutHeader {
             unique,
-            error: 0, // Return no error.
+            error: 0,
             len: len as u32,
         };
         w.write_all(header.as_slice()).map_err(|e| {
-            new_vhost_user_fs_error("failed to encode protocol messages", Some(e.into()))
+            new_unexpected_error(
+                "unexpected error occured while replying to frontend",
+                Some(e.into()),
+            )
         })?;
         if let Some(out) = out {
             w.write_all(out.as_slice()).map_err(|e| {
-                new_vhost_user_fs_error("failed to encode protocol messages", Some(e.into()))
+                new_unexpected_error(
+                    "unexpected error occured while replying to frontend",
+                    Some(e.into()),
+                )
             })?;
         }
         if let Some(data) = data {
             w.write_all(data).map_err(|e| {
-                new_vhost_user_fs_error("failed to encode protocol messages", Some(e.into()))
+                new_unexpected_error(
+                    "unexpected error occured while replying to frontend",
+                    Some(e.into()),
+                )
             })?;
         }
         Ok(w.bytes_written())
     }
 
-    fn reply_error(unique: u64, mut w: Writer) -> Result<usize> {
+    fn reply_error(unique: u64, mut w: Writer, err: Error) -> Result<usize> {
+        // Errors that meet expectations are consumed here.
+        warn!(
+            "[virtiofs] reply error to frontend: unique={} error={}",
+            unique, err
+        );
         let header = OutHeader {
             unique,
-            error: libc::EIO, // Here we simply return I/O error.
+            error: err.into(),
             len: size_of::<OutHeader>() as u32,
         };
         w.write_all(header.as_slice()).map_err(|e| {
-            new_vhost_user_fs_error("failed to encode protocol messages", Some(e.into()))
+            new_unexpected_error(
+                "unexpected error occured while replying to frontend",
+                Some(e.into()),
+            )
         })?;
         Ok(w.bytes_written())
     }
 
     fn bytes_to_str(buf: &[u8]) -> Result<&str> {
-        Filesystem::bytes_to_cstr(buf)?.to_str().map_err(|e| {
-            new_vhost_user_fs_error("failed to decode protocol messages", Some(e.into()))
-        })
-    }
-
-    fn bytes_to_cstr(buf: &[u8]) -> Result<&CStr> {
-        CStr::from_bytes_with_nul(buf).map_err(|e| {
-            new_vhost_user_fs_error("failed to decode protocol messages", Some(e.into()))
-        })
+        CStr::from_bytes_with_nul(buf)
+            .map_err(|e| {
+                new_unexpected_error(
+                    "unexpected error occured while decoding protocol messages",
+                    Some(e.into()),
+                )
+            })?
+            .to_str()
+            .map_err(|e| {
+                new_unexpected_error(
+                    "unexpected error occured while decoding protocol messages",
+                    Some(e.into()),
+                )
+            })
     }
 
     fn check_flags(&self, flags: u32) -> Result<(bool, bool)> {
@@ -262,24 +270,22 @@ impl Filesystem {
 
 impl Filesystem {
     fn init(&self, in_header: InHeader, mut r: Reader, w: Writer) -> Result<usize> {
-        let InitIn { major, minor, .. } = r.read_obj().map_err(|e| {
-            new_vhost_user_fs_error("failed to decode protocol messages", Some(e.into()))
-        })?;
+        let InitIn { major, minor, .. } = r.read_obj()?;
 
         if major != KERNEL_VERSION || minor < MIN_KERNEL_MINOR_VERSION {
-            return Filesystem::reply_error(in_header.unique, w);
+            return Filesystem::reply_error(
+                in_header.unique,
+                w,
+                new_unexpected_error("unsupported virtiofs version", None),
+            );
         }
 
         let mut attr = OpenedFile::new(FileType::Dir, "/", self.uid, self.gid);
         attr.metadata.ino = 1;
         // We need to allocate the inode 1 for the root directory. The double insertion
         // here makes 1 the first inode and avoids extra alignment and processing elsewhere.
-        self.opened_files
-            .insert(attr.clone())
-            .expect("failed to allocate inode");
-        self.opened_files
-            .insert(attr.clone())
-            .expect("failed to allocate inode");
+        self.opened_files.insert(attr.clone());
+        self.opened_files.insert(attr.clone());
         let mut opened_files_map = self.opened_files_map.lock().unwrap();
         opened_files_map.insert("/".to_string(), 1);
 
@@ -311,11 +317,14 @@ impl Filesystem {
         let name_len = in_header.len as usize - size_of::<InHeader>();
         let mut buf = vec![0; name_len];
         r.read_exact(&mut buf).map_err(|e| {
-            new_unexpected_error("failed to decode protocol messages", Some(e.into()))
+            new_unexpected_error(
+                "unexpected error occured while decoding protocol messages",
+                Some(e.into()),
+            )
         })?;
         let name = match Filesystem::bytes_to_str(buf.as_ref()) {
             Ok(name) => name,
-            Err(_) => return Filesystem::reply_error(in_header.unique, w),
+            Err(err) => return Filesystem::reply_error(in_header.unique, w, err),
         };
 
         debug!("lookup: parent inode={} name={}", in_header.nodeid, name);
@@ -326,13 +335,13 @@ impl Filesystem {
             .map(|f| f.path.clone())
         {
             Some(path) => path,
-            None => return Filesystem::reply_error(in_header.unique, w),
+            None => return Filesystem::reply_error(in_header.unique, w, Error::from(libc::ENOENT)),
         };
 
         let path = format!("{}/{}", parent_path, name);
         let metadata = match self.rt.block_on(self.do_get_metadata(&path)) {
             Ok(metadata) => metadata,
-            Err(_) => return Filesystem::reply_error(in_header.unique, w),
+            Err(err) => return Filesystem::reply_error(in_header.unique, w, err),
         };
 
         let out = EntryOut {
@@ -356,12 +365,12 @@ impl Filesystem {
             .map(|f| f.path.clone())
         {
             Some(path) => path,
-            None => return Filesystem::reply_error(in_header.unique, w),
+            None => return Filesystem::reply_error(in_header.unique, w, Error::from(libc::ENOENT)),
         };
 
         let metadata = match self.rt.block_on(self.do_get_metadata(&path)) {
             Ok(metadata) => metadata,
-            Err(_) => return Filesystem::reply_error(in_header.unique, w),
+            Err(err) => return Filesystem::reply_error(in_header.unique, w, err),
         };
 
         let out = AttrOut {
@@ -381,18 +390,19 @@ impl Filesystem {
     }
 
     fn create(&self, in_header: InHeader, mut r: Reader, w: Writer) -> Result<usize> {
-        let CreateIn { flags, .. } = r.read_obj().map_err(|e| {
-            new_vhost_user_fs_error("failed to decode protocol messages", Some(e.into()))
-        })?;
+        let CreateIn { flags, .. } = r.read_obj()?;
 
         let name_len = in_header.len as usize - size_of::<InHeader>() - size_of::<CreateIn>();
         let mut buf = vec![0; name_len];
         r.read_exact(&mut buf).map_err(|e| {
-            new_unexpected_error("failed to decode protocol messages", Some(e.into()))
+            new_unexpected_error(
+                "unexpected error occured while decoding protocol messages",
+                Some(e.into()),
+            )
         })?;
         let name = match Filesystem::bytes_to_str(buf.as_ref()) {
             Ok(name) => name,
-            Err(_) => return Filesystem::reply_error(in_header.unique, w),
+            Err(err) => return Filesystem::reply_error(in_header.unique, w, err),
         };
 
         debug!("create: parent inode={} name={}", in_header.nodeid, name);
@@ -403,7 +413,7 @@ impl Filesystem {
             .map(|f| f.path.clone())
         {
             Some(path) => path,
-            None => return Filesystem::reply_error(in_header.unique, w),
+            None => return Filesystem::reply_error(in_header.unique, w, Error::from(libc::ENOENT)),
         };
 
         let path = format!("{}/{}", parent_path, name);
@@ -418,7 +428,7 @@ impl Filesystem {
 
         match self.rt.block_on(self.do_set_writer(&path, flags)) {
             Ok(writer) => writer,
-            Err(_) => return Filesystem::reply_error(in_header.unique, w),
+            Err(err) => return Filesystem::reply_error(in_header.unique, w, err),
         };
 
         let entry_out = EntryOut {
@@ -445,11 +455,14 @@ impl Filesystem {
         let name_len = in_header.len as usize - size_of::<InHeader>();
         let mut buf = vec![0; name_len];
         r.read_exact(&mut buf).map_err(|e| {
-            new_unexpected_error("failed to decode protocol messages", Some(e.into()))
+            new_unexpected_error(
+                "unexpected error occured while decoding protocol messages",
+                Some(e.into()),
+            )
         })?;
         let name = match Filesystem::bytes_to_str(buf.as_ref()) {
             Ok(name) => name,
-            Err(_) => return Filesystem::reply_error(in_header.unique, w),
+            Err(err) => return Filesystem::reply_error(in_header.unique, w, err),
         };
 
         debug!("unlink: parent inode={} name={}", in_header.nodeid, name);
@@ -460,12 +473,12 @@ impl Filesystem {
             .map(|f| f.path.clone())
         {
             Some(path) => path,
-            None => return Filesystem::reply_error(in_header.unique, w),
+            None => return Filesystem::reply_error(in_header.unique, w, Error::from(libc::ENOENT)),
         };
 
         let path = format!("{}/{}", parent_path, name);
-        if self.rt.block_on(self.do_delete(&path)).is_err() {
-            return Filesystem::reply_error(in_header.unique, w);
+        if let Err(err) = self.rt.block_on(self.do_delete(&path)) {
+            return Filesystem::reply_error(in_header.unique, w, err);
         }
 
         let mut opened_files_map = self.opened_files_map.lock().unwrap();
@@ -483,11 +496,11 @@ impl Filesystem {
             .map(|f| f.path.clone())
         {
             Some(path) => path,
-            None => return Filesystem::reply_error(in_header.unique, w),
+            None => return Filesystem::reply_error(in_header.unique, w, Error::from(libc::ENOENT)),
         };
 
-        if self.rt.block_on(self.do_release_writer(&path)).is_err() {
-            return Filesystem::reply_error(in_header.unique, w);
+        if let Err(err) = self.rt.block_on(self.do_release_writer(&path)) {
+            return Filesystem::reply_error(in_header.unique, w, err);
         }
 
         Filesystem::reply_ok(None::<u8>, None, in_header.unique, w)
@@ -496,9 +509,7 @@ impl Filesystem {
     fn open(&self, in_header: InHeader, mut r: Reader, w: Writer) -> Result<usize> {
         debug!("open: inode={}", in_header.nodeid);
 
-        let OpenIn { flags, .. } = r.read_obj().map_err(|e| {
-            new_vhost_user_fs_error("failed to decode protocol messages", Some(e.into()))
-        })?;
+        let OpenIn { flags, .. } = r.read_obj()?;
 
         let path = match self
             .opened_files
@@ -506,12 +517,12 @@ impl Filesystem {
             .map(|f| f.path.clone())
         {
             Some(path) => path,
-            None => return Filesystem::reply_error(in_header.unique, w),
+            None => return Filesystem::reply_error(in_header.unique, w, Error::from(libc::ENOENT)),
         };
 
         match self.rt.block_on(self.do_set_writer(&path, flags)) {
             Ok(writer) => writer,
-            Err(_) => return Filesystem::reply_error(in_header.unique, w),
+            Err(err) => return Filesystem::reply_error(in_header.unique, w, err),
         };
 
         let out = OpenOut {
@@ -527,12 +538,10 @@ impl Filesystem {
             .map(|f| f.path.clone())
         {
             Some(path) => path,
-            None => return Filesystem::reply_error(in_header.unique, w),
+            None => return Filesystem::reply_error(in_header.unique, w, Error::from(libc::ENOENT)),
         };
 
-        let ReadIn { offset, size, .. } = r.read_obj().map_err(|e| {
-            new_vhost_user_fs_error("failed to decode protocol messages", Some(e.into()))
-        })?;
+        let ReadIn { offset, size, .. } = r.read_obj()?;
 
         debug!(
             "read: inode={} offset={} size={}",
@@ -541,15 +550,13 @@ impl Filesystem {
 
         let data = match self.rt.block_on(self.do_read(&path, offset)) {
             Ok(data) => data,
-            Err(_) => return Filesystem::reply_error(in_header.unique, w),
+            Err(err) => return Filesystem::reply_error(in_header.unique, w, err),
         };
         let len = data.len();
         let buffer = BufferWrapper::new(data);
 
-        let mut data_writer = w.split_at(size_of::<OutHeader>()).unwrap();
-        data_writer.write_from_at(&buffer, len).map_err(|e| {
-            new_vhost_user_fs_error("failed to encode protocol messages", Some(e.into()))
-        })?;
+        let mut data_writer = w.split_at(size_of::<OutHeader>());
+        data_writer.write_from_at(&buffer, len);
 
         let out = OutHeader {
             len: (size_of::<OutHeader>() + len) as u32,
@@ -557,7 +564,10 @@ impl Filesystem {
             unique: in_header.unique,
         };
         w.write_all(out.as_slice()).map_err(|e| {
-            new_vhost_user_fs_error("failed to encode protocol messages", Some(e.into()))
+            new_unexpected_error(
+                "unexpected error occured while replying to frontend",
+                Some(e.into()),
+            )
         })?;
         Ok(out.len as usize)
     }
@@ -571,22 +581,18 @@ impl Filesystem {
             .map(|f| f.path.clone())
         {
             Some(path) => path,
-            None => return Filesystem::reply_error(in_header.unique, w),
+            None => return Filesystem::reply_error(in_header.unique, w, Error::from(libc::ENOENT)),
         };
 
-        let WriteIn { offset, size, .. } = r.read_obj().map_err(|e| {
-            new_vhost_user_fs_error("failed to decode protocol messages", Some(e.into()))
-        })?;
+        let WriteIn { offset, size, .. } = r.read_obj()?;
 
         let buffer = BufferWrapper::new(Buffer::new());
-        r.read_to_at(&buffer, size as usize).map_err(|e| {
-            new_vhost_user_fs_error("failed to decode protocol messages", Some(e.into()))
-        })?;
+        r.read_to_at(&buffer, size as usize);
         let buffer = buffer.get_buffer();
 
         match self.rt.block_on(self.do_write(&path, offset, buffer)) {
             Ok(writer) => writer,
-            Err(_) => return Filesystem::reply_error(in_header.unique, w),
+            Err(err) => return Filesystem::reply_error(in_header.unique, w, err),
         };
 
         let out = WriteOut {
@@ -599,7 +605,7 @@ impl Filesystem {
 
 impl Filesystem {
     async fn do_get_metadata(&self, path: &str) -> Result<OpenedFile> {
-        let metadata = self.core.stat(path).await.map_err(opendal_error2error)?;
+        let metadata = self.core.stat(path).await.map_err(|err| Error::from(err))?;
         let mut attr = opendal_metadata2opened_file(path, &metadata, self.uid, self.gid);
         attr.metadata.size = metadata.content_length();
         let mut opened_files_map = self.opened_files_map.lock().unwrap();
@@ -628,12 +634,12 @@ impl Filesystem {
             .writer_with(path)
             .append(is_append)
             .await
-            .map_err(opendal_error2error)?;
+            .map_err(|err| Error::from(err))?;
         let written = if is_append {
             self.core
                 .stat(path)
                 .await
-                .map_err(opendal_error2error)?
+                .map_err(|err| Error::from(err))?
                 .content_length()
         } else {
             0
@@ -655,14 +661,17 @@ impl Filesystem {
             .writer
             .close()
             .await
-            .map_err(opendal_error2error)?;
+            .map_err(|err| Error::from(err))?;
         opened_file_writer.remove(path);
 
         Ok(())
     }
 
     async fn do_delete(&self, path: &str) -> Result<()> {
-        self.core.delete(path).await.map_err(opendal_error2error)?;
+        self.core
+            .delete(path)
+            .await
+            .map_err(|err| Error::from(err))?;
 
         Ok(())
     }
@@ -673,7 +682,7 @@ impl Filesystem {
             .read_with(path)
             .range(offset..)
             .await
-            .map_err(opendal_error2error)?;
+            .map_err(|err| Error::from(err))?;
 
         Ok(data)
     }
@@ -691,7 +700,7 @@ impl Filesystem {
             .writer
             .write_from(data)
             .await
-            .map_err(opendal_error2error)?;
+            .map_err(|err| Error::from(err))?;
         inner_writer.written += len as u64;
 
         Ok(len)

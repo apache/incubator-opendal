@@ -19,7 +19,7 @@ use std::io;
 use std::sync::Arc;
 use std::sync::RwLock;
 
-use log::warn;
+use log::error;
 use opendal::Operator;
 use vhost::vhost_user::message::VhostUserProtocolFeatures;
 use vhost::vhost_user::message::VhostUserVirtioFeatures;
@@ -69,108 +69,86 @@ struct VhostUserFsThread {
 }
 
 impl VhostUserFsThread {
-    fn new(core: Filesystem) -> Result<VhostUserFsThread> {
-        let event_fd = EventFd::new(libc::EFD_NONBLOCK).map_err(|err| {
-            new_unexpected_error("failed to create kill eventfd", Some(err.into()))
-        })?;
-        Ok(VhostUserFsThread {
+    fn new(core: Filesystem) -> VhostUserFsThread {
+        let event_fd = EventFd::new(libc::EFD_NONBLOCK).unwrap();
+        VhostUserFsThread {
             core,
             mem: None,
             vu_req: None,
             event_idx: false,
             kill_event_fd: event_fd,
-        })
-    }
-
-    /// This is used when the backend has processed a request and needs to notify the frontend.
-    fn return_descriptor(
-        vring_state: &mut VringState,
-        head_index: u16,
-        event_idx: bool,
-        len: usize,
-    ) {
-        if vring_state.add_used(head_index, len as u32).is_err() {
-            warn!("Failed to add used to used queue.");
-        };
-        // Check if the used queue needs to be signaled.
-        if event_idx {
-            match vring_state.needs_notification() {
-                Ok(needs_notification) => {
-                    if needs_notification && vring_state.signal_used_queue().is_err() {
-                        warn!("Failed to signal used queue.");
-                    }
-                }
-                Err(_) => {
-                    if vring_state.signal_used_queue().is_err() {
-                        warn!("Failed to signal used queue.");
-                    };
-                }
-            }
-        } else if vring_state.signal_used_queue().is_err() {
-            warn!("Failed to signal used queue.");
         }
     }
 
     /// Process filesystem requests one at a time in a serialized manner.
-    fn handle_event_serial(&self, device_event: u16, vrings: &[VringMutex]) -> Result<()> {
-        let mut vring_state = match device_event {
-            HIPRIO_QUEUE_EVENT => vrings[0].get_mut(),
-            REQ_QUEUE_EVENT => vrings[1].get_mut(),
-            _ => return Err(new_unexpected_error("failed to handle unknown event", None)),
+    fn handle_event_serial(&self, device_event: u16, vrings: &[VringMutex]) {
+        let mut vring_state = if device_event == HIPRIO_QUEUE_EVENT {
+            vrings[0].get_mut()
+        } else {
+            vrings[1].get_mut()
         };
         if self.event_idx {
             // If EVENT_IDX is enabled, we could keep calling process_queue()
             // until it stops finding new request on the queue.
             loop {
-                if vring_state.disable_notification().is_err() {
-                    warn!("Failed to disable used queue notification.");
-                }
-                self.process_queue_serial(&mut vring_state)?;
-                if let Ok(has_more) = vring_state.enable_notification() {
-                    if !has_more {
-                        break;
-                    }
-                } else {
-                    warn!("Failed to enable used queue notification.");
+                let _ = vring_state.disable_notification();
+                self.handle_event_once(&mut vring_state);
+                if vring_state.enable_notification().unwrap_or(true) {
+                    break;
                 }
             }
         } else {
             // Without EVENT_IDX, a single call is enough.
-            self.process_queue_serial(&mut vring_state)?;
+            self.handle_event_once(&mut vring_state);
         }
-        Ok(())
     }
 
     /// Forwards filesystem messages to specific functions and
     /// returns the filesystem request execution result.
-    fn process_queue_serial(&self, vring_state: &mut VringState) -> Result<bool> {
-        let mut used_any = false;
-        let mem = match &self.mem {
-            Some(m) => m.memory(),
-            None => return Err(new_unexpected_error("no memory configured", None)),
-        };
+    fn handle_event_once(&self, vring_state: &mut VringState) {
+        let mem = self.mem.as_ref().unwrap().memory();
         let avail_chains: Vec<DescriptorChain<GuestMemoryLoadGuard<GuestMemoryMmap>>> = vring_state
             .get_queue_mut()
             .iter(mem.clone())
-            .map_err(|_| new_unexpected_error("iterating through the queue failed", None))?
+            .unwrap()
             .collect();
         for chain in avail_chains {
-            used_any = true;
             let head_index = chain.head_index();
-            let reader = Reader::new(&mem, chain.clone())
-                .map_err(|_| new_unexpected_error("creating a queue reader failed", None))
-                .unwrap();
-            let writer = Writer::new(&mem, chain.clone())
-                .map_err(|_| new_unexpected_error("creating a queue writer failed", None))
-                .unwrap();
-            let len = self
-                .core
-                .handle_message(reader, writer)
-                .map_err(|_| new_unexpected_error("processing a queue request failed", None))
-                .unwrap();
-            VhostUserFsThread::return_descriptor(vring_state, head_index, self.event_idx, len);
+            let reader = match Reader::new(&mem, chain.clone()) {
+                Ok(reader) => reader,
+                Err(err) => {
+                    error!(
+                        "[virtiofs] error occurred while handling message from frontend: {}",
+                        err
+                    );
+                    continue;
+                }
+            };
+            let writer = match Writer::new(&mem, chain.clone()) {
+                Ok(writer) => writer,
+                Err(err) => {
+                    error!(
+                        "[virtiofs] error occurred while handling message from frontend: {}",
+                        err
+                    );
+                    continue;
+                }
+            };
+            match self.core.handle_message(reader, writer) {
+                Ok(len) => {
+                    vring_state.add_used(head_index, len as u32).unwrap();
+                    if !self.event_idx || !vring_state.needs_notification().unwrap_or(false) {
+                        let _ = vring_state.signal_used_queue();
+                    }
+                }
+                Err(err) => {
+                    error!(
+                        "[virtiofs] error occurred while handling message from frontend: {}",
+                        err
+                    );
+                }
+            }
         }
-        Ok(used_any)
     }
 }
 
@@ -181,20 +159,13 @@ struct VhostUserFsBackend {
 }
 
 impl VhostUserFsBackend {
-    fn new(core: Filesystem) -> Result<VhostUserFsBackend> {
-        let thread = RwLock::new(VhostUserFsThread::new(core)?);
-        Ok(VhostUserFsBackend { thread })
+    fn new(core: Filesystem) -> VhostUserFsBackend {
+        let thread = RwLock::new(VhostUserFsThread::new(core));
+        VhostUserFsBackend { thread }
     }
 
-    fn kill(&self) -> Result<()> {
-        self.thread
-            .read()
-            .unwrap()
-            .kill_event_fd
-            .write(1)
-            .map_err(|err| {
-                new_unexpected_error("failed to write to kill eventfd", Some(err.into()))
-            })
+    fn kill(&self) {
+        self.thread.read().unwrap().kill_event_fd.write(1).unwrap()
     }
 }
 
@@ -267,17 +238,14 @@ impl VhostUserBackend for VhostUserFsBackend {
         vrings: &[Self::Vring],
         _thread_id: usize,
     ) -> io::Result<()> {
-        if evset != EventSet::IN {
-            return Err(new_unexpected_error(
-                "failed to handle event other than input event",
-                None,
-            )
-            .into());
+        if evset != EventSet::IN
+            || (device_event != HIPRIO_QUEUE_EVENT && device_event != REQ_QUEUE_EVENT)
+        {
+            return Err(new_unexpected_error("failed to handle unknown event", None).into());
         }
         let thread = self.thread.read().unwrap();
-        thread
-            .handle_event_serial(device_event, vrings)
-            .map_err(|err| err.into())
+        thread.handle_event_serial(device_event, vrings);
+        Ok(())
     }
 }
 
@@ -291,39 +259,30 @@ pub struct VirtioFs {
 }
 
 impl VirtioFs {
-    pub fn new(core: Operator, socket_path: &str) -> Result<VirtioFs> {
+    pub fn new(core: Operator, socket_path: &str) -> VirtioFs {
         let filesystem_core = Filesystem::new(core);
-        let filesystem_backend = Arc::new(VhostUserFsBackend::new(filesystem_core).unwrap());
-        Ok(VirtioFs {
+        let filesystem_backend = Arc::new(VhostUserFsBackend::new(filesystem_core));
+        VirtioFs {
             socket_path: socket_path.to_string(),
             filesystem_backend,
-        })
+        }
     }
 
     // Run the virtiofs service.
-    pub fn run(&self) -> Result<()> {
-        let listener = Listener::new(&self.socket_path, true)
-            .map_err(|_| new_unexpected_error("failed to create listener", None))?;
+    pub fn run(&self) {
+        let listener = Listener::new(&self.socket_path, true).unwrap();
         let mut daemon = VhostUserDaemon::new(
             String::from("virtiofs-backend"),
             self.filesystem_backend.clone(),
             GuestMemoryAtomic::new(GuestMemoryMmap::new()),
         )
         .unwrap();
-        if daemon.start(listener).is_err() {
-            return Err(new_unexpected_error("failed to start daemon", None));
-        }
-        if daemon.wait().is_err() {
-            return Err(new_unexpected_error("failed to wait daemon", None));
-        }
-        Ok(())
+        let _ = daemon.start(listener);
+        let _ = daemon.wait();
     }
 
     // Kill the virtiofs service.
-    pub fn kill(&self) -> Result<()> {
-        if self.filesystem_backend.kill().is_err() {
-            return Err(new_unexpected_error("failed to kill backend", None));
-        }
-        Ok(())
+    pub fn kill(&self) {
+        self.filesystem_backend.kill();
     }
 }
