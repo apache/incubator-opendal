@@ -40,4 +40,10 @@ pub struct MemcachedConfig {
     pub password: Option<String>,
     /// The default ttl for put operations.
     pub default_ttl: Option<Duration>,
+    /// Enable TLS for the connection.
+    ///
+    /// Required for AWS ElastiCache Memcached serverless instances.
+    pub enable_tls: Option<bool>,
+    /// Path to CA certificate file for TLS verification.
+    pub ca_cert: Option<String>,
 }

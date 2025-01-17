@@ -20,6 +20,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::io::BufReader;
 use tokio::io::{self};
 use tokio::net::TcpStream;
+use tokio_native_tls::TlsStream;
 
 use crate::raw::*;
 use crate::*;
@@ -61,7 +62,7 @@ pub struct PacketHeader {
 }
 
 impl PacketHeader {
-    pub async fn write(self, writer: &mut TcpStream) -> io::Result<()> {
+    pub async fn write(self, writer: &mut dyn AsyncWrite) -> io::Result<()> {
         writer.write_u8(self.magic).await?;
         writer.write_u8(self.opcode).await?;
         writer.write_u16(self.key_length).await?;
@@ -74,7 +75,7 @@ impl PacketHeader {
         Ok(())
     }
 
-    pub async fn read(reader: &mut TcpStream) -> Result<PacketHeader, io::Error> {
+    pub async fn read(reader: &mut dyn AsyncRead) -> Result<PacketHeader, io::Error> {
         let header = PacketHeader {
             magic: reader.read_u8().await?,
             opcode: reader.read_u8().await?,
@@ -98,18 +99,16 @@ pub struct Response {
 }
 
 pub struct Connection {
-    io: BufReader<TcpStream>,
+    stream: Box<dyn AsyncRead + AsyncWrite + Send + Unpin>,
 }
 
 impl Connection {
-    pub fn new(io: TcpStream) -> Self {
-        Self {
-            io: BufReader::new(io),
-        }
+    pub async fn new(stream: Box<dyn AsyncRead + AsyncWrite + Send + Unpin>) -> Result<Self, Error> {
+        Ok(Self { stream })
     }
 
     pub async fn auth(&mut self, username: &str, password: &str) -> Result<()> {
-        let writer = self.io.get_mut();
+        let writer = &mut *self.stream;
         let key = "PLAIN";
         let request_header = PacketHeader {
             magic: Magic::Request as u8,
@@ -136,7 +135,7 @@ impl Connection {
     }
 
     pub async fn version(&mut self) -> Result<String> {
-        let writer = self.io.get_mut();
+        let writer = &mut *self.stream;
         let request_header = PacketHeader {
             magic: Magic::Request as u8,
             opcode: Opcode::Version as u8,
@@ -158,7 +157,7 @@ impl Connection {
     }
 
     pub async fn get(&mut self, key: &str) -> Result<Option<Vec<u8>>> {
-        let writer = self.io.get_mut();
+        let writer = &mut *self.stream;
         let request_header = PacketHeader {
             magic: Magic::Request as u8,
             opcode: Opcode::Get as u8,
@@ -187,7 +186,7 @@ impl Connection {
     }
 
     pub async fn set(&mut self, key: &str, val: &[u8], expiration: u32) -> Result<()> {
-        let writer = self.io.get_mut();
+        let writer = &mut *self.stream;
         let request_header = PacketHeader {
             magic: Magic::Request as u8,
             opcode: Opcode::Set as u8,
@@ -224,7 +223,7 @@ impl Connection {
     }
 
     pub async fn delete(&mut self, key: &str) -> Result<()> {
-        let writer = self.io.get_mut();
+        let writer = &mut *self.stream;
         let request_header = PacketHeader {
             magic: Magic::Request as u8,
             opcode: Opcode::Delete as u8,
@@ -246,7 +245,7 @@ impl Connection {
     }
 }
 
-pub async fn parse_response(reader: &mut TcpStream) -> Result<Response> {
+pub async fn parse_response(reader: &mut dyn AsyncRead) -> Result<Response> {
     let header = PacketHeader::read(reader).await.map_err(new_std_io_error)?;
 
     if header.vbucket_id_or_status != constants::OK_STATUS
