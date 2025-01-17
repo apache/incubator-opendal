@@ -1,0 +1,170 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Config"><title>opendal::docs::rfcs::rfc_3197_config - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_3197_config</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_3197_config</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#198">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Config</p>
+<ul>
+<li>Proposal Name: <code>config</code></li>
+<li>Start Date: 2023-09-27</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/3197">apache/opendal#3197</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/3240">apache/opendal#3240</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Expose services config to the user. </p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>OpenDAL provides two ways to configure services: through a builder pattern and via a map.</p>
+<p>The <code>Builder</code> allows users to configure services using the builder pattern:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// Create fs backend builder.
+</span><span class="kw">let </span><span class="kw-2">mut </span>builder = Fs::default();
+<span class="comment">// Set the root for fs, all operations will happen under this root.
+</span>builder.root(<span class="string">"/tmp"</span>);
+
+<span class="comment">// Build an `Operator` to start operating the storage.
+</span><span class="kw">let </span>op: Operator = Operator::new(builder)<span class="question-mark">?</span>.finish();</code></pre></div>
+<p>The benefit of builder is that it is type safe and easy to use. However, it is not flexible enough to configure services. Users must create a new builder for each service they wish to configure, translating user input into the API calls for each respective builder.</p>
+<p>Consider the following real-world example from one of our users:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>builder = services::S3::default();
+
+<span class="comment">// Credential.
+</span>builder.access_key_id(<span class="kw-2">&amp;</span>cfg.access_key_id);
+builder.secret_access_key(<span class="kw-2">&amp;</span>cfg.secret_access_key);
+builder.session_token(<span class="kw-2">&amp;</span>cfg.session_token);
+builder.role_arn(<span class="kw-2">&amp;</span>cfg.role_arn);
+builder.external_id(<span class="kw-2">&amp;</span>cfg.external_id);
+
+<span class="comment">// Root.
+</span>builder.root(<span class="kw-2">&amp;</span>cfg.root);
+
+<span class="comment">// Disable credential loader
+</span><span class="kw">if </span>cfg.disable_credential_loader {
+    builder.disable_config_load();
+    builder.disable_ec2_metadata();
+}
+
+<span class="comment">// Enable virtual host style
+</span><span class="kw">if </span>cfg.enable_virtual_host_style {
+    builder.enable_virtual_host_style();
+}</code></pre></div>
+<p>The <code>Map</code> approach allows users to configure services using a string-based HashMap:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>map = HashMap::from([
+  <span class="comment">// Set the root for fs, all operations will happen under this root.
+  </span>(<span class="string">"root"</span>.to_string(), <span class="string">"/tmp"</span>.to_string()),
+]);
+
+<span class="comment">// Build an `Operator` to start operating the storage.
+</span><span class="kw">let </span>op: Operator = Operator::via_map(Scheme::Fs, map)<span class="question-mark">?</span>;</code></pre></div>
+<p>This approach is simpler since it allows users to configure all services within a single map. However, it is not type safe and not easy to use. Users will need to convert their input to string and make sure the key is correct. And breaking changes could happen silently.</p>
+<p>This is one of our limitations: We need a way to configure services that is type safe, easy to use and flexible. The other one is that there is no way for users to fetch the config of a service after it’s built. This limitation complicates the dynamic modification of a service’s root path for the user.</p>
+<p>Our users have to wrap all our configs into an enum and store it in their own struct:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub enum </span>StorageParams {
+    Azblob(StorageAzblobConfig),
+    Fs(StorageFsConfig),
+    Ftp(StorageFtpConfig),
+    Gcs(StorageGcsConfig),
+    Hdfs(StorageHdfsConfig),
+    Http(StorageHttpConfig),
+    Ipfs(StorageIpfsConfig),
+    Memory,
+    Moka(StorageMokaConfig),
+    Obs(StorageObsConfig),
+    Oss(StorageOssConfig),
+    S3(StorageS3Config),
+    Redis(StorageRedisConfig),
+    Webhdfs(StorageWebhdfsConfig),
+    Cos(StorageCosConfig),
+}</code></pre></div>
+<p>So I propose to expose services config to the users, allowing them to work on config structs directly and fetch the config at runtime.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>First of all, we will add config struct for each service. For example, <code>Fs</code> will have a <code>FsConfig</code> struct and <code>S3</code> will have a <code>S3Config</code>. The fields within the config struct are public and marked as non-exhaustive.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="attr">#[non_exhaustive]
+</span><span class="kw">pub struct </span>S3Config {
+  <span class="kw">pub </span>root: <span class="prelude-ty">Option</span>&lt;String&gt;,
+  <span class="kw">pub </span>bucket: String,
+  <span class="kw">pub </span>endpoint: <span class="prelude-ty">Option</span>&lt;String&gt;,
+  <span class="kw">pub </span>region: <span class="prelude-ty">Option</span>&lt;String&gt;,
+  ...
+}</code></pre></div>
+<p>Then, we will add a <code>Config</code> enum that contains all the config structs. The enum is public and non-exhaustive too.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="attr">#[non_exhaustive]
+</span><span class="kw">pub enum </span>Config {
+  Fs(FsConfig)
+  S3(S3Config),
+  Custom(<span class="kw-2">&amp;</span><span class="lifetime">'static </span>str, HashMap&lt;String, String&gt;),
+}</code></pre></div>
+<p>Notably, a <code>Custom</code> variant will be added to the enum. This variant aligns with <code>Scheme::Custom(name)</code> and allows users to configure custom services.</p>
+<p>At <code>Operator</code> level, we will add <code>from_config</code> and <code>via_config</code> methods.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Operator {
+  <span class="kw">pub fn </span>via_config(cfg: <span class="kw">impl </span>Into&lt;Config&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;Operator&gt; {}
+}</code></pre></div>
+<p>Additionally, <code>OperatorInfo</code> will introduce a new API method, <code>config()</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>OperatorInfo {
+  <span class="kw">pub fn </span>config(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Config {}
+}</code></pre></div>
+<p>Users can use <code>config()</code> to fetch the config of a service at runtime and construct a new operator based on needs.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>Every services will have a <code>XxxConfig</code> struct.</p>
+<p><code>XxxConfig</code> will implement the following things:</p>
+<ul>
+<li><code>Default</code> trait: All config fields will have a default value.</li>
+<li><code>Deserialize</code> trait: Allow users to deserialize a config from a string.</li>
+<li><code>Into&lt;Config&gt;</code> trait: All service config can be converted to <code>Config</code> enum.</li>
+</ul>
+<p>Internally, <code>XxxConfig</code> will have the following traits:</p>
+<ul>
+<li><code>FromMap</code> trait: Allow users to build a config via hashmap which will replace existing <code>from_map</code> API in <code>Builder</code>.</li>
+<li><code>Into&lt;XxxBuilder&gt;</code> trait: Config can convert into corresponding builder with zero cost. </li>
+</ul>
+<p>All config fields will be public and non-exhaustive, allowing users to build config this way:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>s3 = S3Config {
+  bucket: <span class="string">"test"</span>.to_string(),
+  endpoint: <span class="prelude-val">Some</span>(<span class="string">"http://localhost:9000"</span>.to_string()),
+  ..Default::default()
+}</code></pre></div>
+<p>The public API of existing builders will remain unchanged, although their internal implementations will be modified to utilize <code>XxxConfig</code>. Type that can’t be represents as <code>String</code> like <code>Box&lt;dyn AwsCredentialLoad&gt;</code> and <code>HttpClient</code> will be kept in <code>Builder</code> as before.</p>
+<p>For example:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="attr">#[non_exhaustive]
+</span><span class="kw">pub struct </span>S3Config {
+  <span class="kw">pub </span>root: <span class="prelude-ty">Option</span>&lt;String&gt;,
+  <span class="kw">pub </span>bucket: String,
+  <span class="kw">pub </span>endpoint: <span class="prelude-ty">Option</span>&lt;String&gt;,
+  <span class="kw">pub </span>region: <span class="prelude-ty">Option</span>&lt;String&gt;,
+  ...
+}
+
+<span class="kw">pub struct </span>S3Builder {
+    config: S3Config,
+    
+    customized_credential_load: <span class="prelude-ty">Option</span>&lt;Box&lt;<span class="kw">dyn </span>AwsCredentialLoad&gt;&gt;,
+    http_client: <span class="prelude-ty">Option</span>&lt;HttpClient&gt;,
+}</code></pre></div>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2><h3 id="api-surface"><a class="doc-anchor" href="#api-surface">§</a>API Surface</h3>
+<p>This modification will significantly expand OpenDAL’s public API surface, makes it harder to maintain and increases the risk of breaking changes. Also, this change will add much more work for bindings which need to implement <code>XxxConfig</code> for each service.</p>
+<h3 id="secrets-leakage"><a class="doc-anchor" href="#secrets-leakage">§</a>Secrets Leakage</h3>
+<p>After our config supports <code>Serialize</code>, it’s possible that users will serialize the config and log it. This will lead to secrets leakage. We should add a warning in the docs to prevent this. And we should also encourage uses of services like AWS IAM instead of static secrets.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="move-root-out-of-service-config-to-operator-level"><a class="doc-anchor" href="#move-root-out-of-service-config-to-operator-level">§</a>Move <code>root</code> out of service config to operator level</h3>
+<p>There is another way to solve the problem: <a href="https://github.com/apache/opendal/issues/3151">Move <code>root</code> out of service config to operator level</a>.</p>
+<p>We can move <code>root</code> out of the service config and put it in <code>Operator</code> level. This way, users can configure <code>root</code> for all services in one place. However, this is a large breaking changes and users will need to maintain the <code>root</code> logic everywhere.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2><h3 id="implement-fromstr-for-config"><a class="doc-anchor" href="#implement-fromstr-for-config">§</a>Implement <code>FromStr</code> for <code>Config</code></h3>
+<p>We can implement <code>FromStr</code> for <code>Config</code> so that users can parse a config from a string.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>cfg = Config::from_str(<span class="string">"s3://bucket/path/to/file?access_key_id=xxx&amp;secret_access_key=xxx"</span>)<span class="question-mark">?</span>;</code></pre></div>
+<h3 id="implement-serialize-for-config"><a class="doc-anchor" href="#implement-serialize-for-config">§</a>Implement <code>Serialize</code> for <code>Config</code></h3>
+<p>We can implement <code>Serialize</code> for <code>Config</code> so that users can serialize a config.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// Serialize
+</span><span class="kw">let </span>bs = serde_json::to_vec(<span class="kw-2">&amp;</span>cfg)<span class="question-mark">?</span>;
+<span class="comment">// Deserialize
+</span><span class="kw">let </span>cfg: Config = serde_json::from_slice(<span class="kw-2">&amp;</span>bs)<span class="question-mark">?</span>;</code></pre></div>
+<h3 id="implement-check-for-config"><a class="doc-anchor" href="#implement-check-for-config">§</a>Implement <code>check</code> for <code>Config</code></h3>
+<p>Implement check for config so that users can check if a config is valid before <code>build</code>.</p>
+</div></details></section></div></main></body></html>

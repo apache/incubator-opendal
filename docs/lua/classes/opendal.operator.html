@@ -1,0 +1,329 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN"
+   "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<html>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8"/>
+<head>
+    <title>Reference</title>
+    <link rel="stylesheet" href="../ldoc.css" type="text/css" />
+</head>
+<body>
+
+<div id="container">
+
+<div id="product">
+	<div id="product_logo"></div>
+	<div id="product_name"><big><b></b></big></div>
+	<div id="product_description"></div>
+</div> <!-- id="product" -->
+
+
+<div id="main">
+
+
+<!-- Menu -->
+
+<div id="navigation">
+<br/>
+<h1>ldoc</h1>
+
+
+<ul>
+  <li><a href="../index.html">Index</a></li>
+</ul>
+
+<h2>Contents</h2>
+<ul>
+<li><a href="#Methods">Methods</a></li>
+</ul>
+
+
+<h2>Classes</h2>
+<ul class="nowrap">
+  <li><a href="../classes/opendal.metadata.html">opendal.metadata</a></li>
+  <li><strong>opendal.operator</strong></li>
+</ul>
+
+</div>
+
+<div id="content">
+
+<h1>Class <code>opendal.operator</code></h1>
+<p>OpenDAL operator.</p>
+<p></p>
+
+
+<h2><a href="#Methods">Methods</a></h2>
+<table class="function_list">
+	<tr>
+	<td class="name" nowrap><a href="#opendal.operator:new">opendal.operator:new (string, table)</a></td>
+	<td class="summary">Construct an operator based on scheme and option.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#opendal.operator:write">opendal.operator:write (string, string)</a></td>
+	<td class="summary">Blockingly write raw bytes to path.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#opendal.operator:read">opendal.operator:read (string)</a></td>
+	<td class="summary">Blockingly read raw bytes from path.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#opendal.operator:delete">opendal.operator:delete (string)</a></td>
+	<td class="summary">Blockingly delete the object in path.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#opendal.operator:rename">opendal.operator:rename (string, string)</a></td>
+	<td class="summary">Blockingly rename the object of src to dst.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#opendal.operator:create_dir">opendal.operator:create_dir (string)</a></td>
+	<td class="summary">Blockingly create the object in path.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#opendal.operator:is_exist">opendal.operator:is_exist (string)</a></td>
+	<td class="summary">Check whether the path exists.</td>
+	</tr>
+	<tr>
+	<td class="name" nowrap><a href="#opendal.operator:stat">opendal.operator:stat (string)</a></td>
+	<td class="summary">Stat the path, return its metadata.</td>
+	</tr>
+</table>
+
+<br/>
+<br/>
+
+
+    <h2 class="section-header "><a name="Methods"></a>Methods</h2>
+
+    <dl class="function">
+    <dt>
+    <a name = "opendal.operator:new"></a>
+    <strong>opendal.operator:new (string, table)</strong>
+    </dt>
+    <dd>
+    Construct an operator based on scheme and option.  Uses an table of key-value pairs to initialize
+ the operator based on provided scheme and options. For each scheme, i.e. Backend,
+ different options could be set, you may  reference the https://opendal.apache.org/docs/category/services/
+ for each service, especially for the **Configuration Part**.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">string</span>
+         scheme the service scheme you want to specify, e.g. "fs", "s3", "supabase"
+        </li>
+        <li><span class="parameter">table</span>
+         options the table to the options for this operators
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+
+        table, error  opendal operator table which contain opendal operator instance, error nil if success, others otherwise
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "opendal.operator:write"></a>
+    <strong>opendal.operator:write (string, string)</strong>
+    </dt>
+    <dd>
+    Blockingly write raw bytes to path.
+  Write the bytes into the path blockingly, returns nil if success, others otherwise
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">string</span>
+         bytes the bytes to be written
+        </li>
+        <li><span class="parameter">string</span>
+         bytes the bytes to be written
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+
+        error nil if success, otherwise error message
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "opendal.operator:read"></a>
+    <strong>opendal.operator:read (string)</strong>
+    </dt>
+    <dd>
+    Blockingly read raw bytes from path.
+  Read the data out from `path` blockingly by operator, returns the string if success, others otherwise
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">string</span>
+         path the designated path you want to write your bytes in
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+
+        string, error read data, error nil if success, otherwise error message
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "opendal.operator:delete"></a>
+    <strong>opendal.operator:delete (string)</strong>
+    </dt>
+    <dd>
+    Blockingly delete the object in path.
+  Delete the object in path blockingly, returns error nil
+  if success, others otherwise
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">string</span>
+         path the designated path you want to write your delete
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+
+        error error nil if success, otherwise error message
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "opendal.operator:rename"></a>
+    <strong>opendal.operator:rename (string, string)</strong>
+    </dt>
+    <dd>
+    Blockingly rename the object of src to dst.
+  Rename the object in path blockingly, returns error nil
+  if success, others otherwise
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">string</span>
+         dst the designated path you want to rename your destination path
+        </li>
+        <li><span class="parameter">string</span>
+         dst the designated path you want to rename your destination path
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+
+        error error nil if success, otherwise error message
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "opendal.operator:create_dir"></a>
+    <strong>opendal.operator:create_dir (string)</strong>
+    </dt>
+    <dd>
+    Blockingly create the object in path.
+  Create directory the object in path blockingly, returns error nil
+  if success, others otherwise
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">string</span>
+         path the designated path you want to create your directory
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+
+        error error nil if success, otherwise error message
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "opendal.operator:is_exist"></a>
+    <strong>opendal.operator:is_exist (string)</strong>
+    </dt>
+    <dd>
+    Check whether the path exists.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">string</span>
+         path the designated path you want to write your delete
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+
+        bool, error true or false depend on operator instance and path, error nil if success, otherwise error message
+    </ol>
+
+
+
+
+</dd>
+    <dt>
+    <a name = "opendal.operator:stat"></a>
+    <strong>opendal.operator:stat (string)</strong>
+    </dt>
+    <dd>
+    Stat the path, return its metadata.
+
+
+    <h3>Parameters:</h3>
+    <ul>
+        <li><span class="parameter">string</span>
+         ,path the designated path you want to write your delete
+        </li>
+    </ul>
+
+    <h3>Returns:</h3>
+    <ol>
+
+        table , error opendal.metadata instance table, error nil if success, otherwise error message
+    </ol>
+
+
+
+
+</dd>
+</dl>
+
+
+</div> <!-- id="content" -->
+</div> <!-- id="main" -->
+<div id="about">
+<i>generated by <a href="http://github.com/lunarmodules/LDoc">LDoc 1.5.0</a></i>
+<i style="float:right;">Last updated 2025-01-17 06:34:09 </i>
+</div> <!-- id="about" -->
+</div> <!-- id="container" -->
+</body>
+</html>

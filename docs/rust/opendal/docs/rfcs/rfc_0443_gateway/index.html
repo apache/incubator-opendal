@@ -1,0 +1,52 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Gateway"><title>opendal::docs::rfcs::rfc_0443_gateway - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_0443_gateway</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_0443_gateway</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#94">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Gateway</p>
+<ul>
+<li>Proposal Name: <code>gateway</code></li>
+<li>Start Date: 2022-07-18</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/443">apache/opendal#443</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/444">apache/opendal#444</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Add Gateway for OpenDAL.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>Our users want features like <a href="https://github.com/gaul/s3proxy">S3 Proxy</a> and <a href="https://blog.min.io/deprecation-of-the-minio-gateway/">minio Gateway</a> so that they can access all their data in the same way.</p>
+<p>By providing a native gateway, we can empower users to access different storage in the same API.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>OpenDAL will provide a new binary called: <code>oay</code>. It’s a shortcut of <code>OpenDAL Gateway</code>.</p>
+<p>Uses can install this binary via:</p>
+<div class="example-wrap"><pre class="language-shell"><code>cargo install oay
+</code></pre></div>
+<p>Or using they favourite package management:</p>
+<div class="example-wrap"><pre class="language-shell"><code># Archlinux
+pacman -S oay
+# Debian / Ubuntu
+apt install oay
+# Rocky Linux / Fedora
+dnf install oay
+# macOS
+brew install oay
+</code></pre></div>
+<p>With <code>oay</code>, users can:</p>
+<ul>
+<li>Serve <code>fs</code> backend with S3 compatible API.</li>
+<li>Serve <code>s3</code> backend with Azblob API</li>
+<li>Serve as a s3 signing services</li>
+</ul>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p><code>oay</code> will be a separate crate apart from <code>opendal</code> so we will not pollute the dependencies of <code>opendal</code>. But <code>oay</code> will be releases at the same time with the same version of <code>opendal</code>. That means <code>oay</code> will always use the same (latest) version of opendal.</p>
+<p>Most operations of <code>oay</code> should be trivial, we will propose new RFCs if requiring big changes.</p>
+<p><code>oay</code> won’t keep configuration. All config will go through environment.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>None</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<ul>
+<li><a href="https://github.com/gaul/s3proxy">S3 Proxy</a></li>
+<li><a href="https://blog.min.io/deprecation-of-the-minio-gateway/">minio Gateway</a></li>
+<li><a href="https://github.com/oxyno-zeta/s3-proxy">oxyno-zeta/s3-proxy</a></li>
+</ul>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>None</p>
+</div></details></section></div></main></body></html>

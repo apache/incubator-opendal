@@ -1,0 +1,108 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Object versioning"><title>opendal::docs::rfcs::rfc_2602_object_versioning - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_2602_object_versioning</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_2602_object_versioning</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#174">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Object versioning</p>
+<ul>
+<li>Proposal Name: object_versioning</li>
+<li>Start Date: 2023-07-06</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/2602">apache/opendal#2602</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/2611">apache/opendal#2611</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>This proposal describes the object versioning (or object version control) feature of OpenDAL.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>There is a kind of storage service, which is called object storage service, 
+provides a simple and scalable way to store, organize, and access unstructured data. 
+These services store data as objects within buckets. 
+And an object is a file and any metadata that describes that file, a bucket is a container for objects. </p>
+<p>The object versioning provided by these services is a very useful feature. 
+It allows users to keep multiple versions of an object in the same bucket. 
+If users enable object versioning, each object will have a history of versions. 
+Each version will have a unique version ID, which is a string that is unique for each version of an object.</p>
+<p>(The object, bucket,
+and version ID mentioned here are all concepts of object storage services,
+they could be called differently in different services, 
+but they are the same thing.)</p>
+<p>OpenDAL provides support for some of those services, such as S3, GCS, Azure Blob Storage, etc.
+Now we want to add support for object versioning to OpenDAL.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>When object versioning is enabled, the following operations will be supported:</p>
+<ul>
+<li><code>stat</code>: Get the metadata of an object with specific version ID.</li>
+<li><code>read</code>: Read a specific version of an object.</li>
+<li><code>delete</code>: Delete a specific version of an object.</li>
+</ul>
+<p>Code example:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// To get the current version ID of a file
+</span><span class="kw">let </span>meta = op.stat(<span class="string">"path/to/file"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let </span>version_id = meta.version().expect(<span class="string">"just for example"</span>);
+
+<span class="comment">// To fetch the metadata of specific version of a file
+</span><span class="kw">let </span>meta = op.stat_with(<span class="string">"path/to/file"</span>).version(<span class="string">"version_id"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let </span>version_id = meta.version().expect(<span class="string">"just for example"</span>); <span class="comment">// get the version ID
+
+// To read an file with specific version ID
+</span><span class="kw">let </span>content = op.read_with(<span class="string">"path/to/file"</span>).version(<span class="string">"version_id"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="comment">// To delete an file with specific version ID
+</span>op.delete_with(<span class="string">"path/to/file"</span>).version(<span class="string">"version_id"</span>).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>Those operations with object version are different from the normal operations:</p>
+<ul>
+<li><code>stat</code>: when getting the metadata of a file, it will always get the metadata of the latest version of the file if no version ID is specified. And there will be a new field <code>version</code> in the metadata to indicate the version ID of the file.</li>
+<li><code>read</code>: when reading a file, it will always read the latest version of the file if no version ID is specified.</li>
+<li><code>delete</code>: when deleting a file, it will always delete the latest version of the file if no version ID is specified. And users will not be able to read this file without specifying the version ID, unless they specify a version not be deleted.</li>
+</ul>
+<p>And with object versioning, when writing an object, 
+it will always create a new version of the object than overwrite the old version. 
+But here it is imperceptible to the user. 
+Because the version id is generated by the service itself, it cannot be specified by the user and user cannot override the historical version.</p>
+<p>To implement object versioning, we will do the following:</p>
+<ul>
+<li>Add a new field <code>version</code> to <code>OpStat</code>, <code>OpRead</code> and <code>OpDelete</code> struct.</li>
+<li>Add a new field <code>version</code> to <code>ObjectMetadata</code> struct.</li>
+<li>Add a new property(setter) <code>version</code> to the return value of <code>stat_with</code>, <code>read_with</code> method.</li>
+<li>Add a new method <code>delete_with</code> and add a new property(setter) <code>version</code> to the return value of <code>delete_with</code> method.</li>
+</ul>
+<p>For service backend, it should support the following operations:</p>
+<ul>
+<li><code>stat</code>: Get the metadata of an object with specific version ID.</li>
+<li><code>read</code>: Read a specific version of an object.</li>
+<li><code>delete</code>: Delete a specific version of an object.</li>
+</ul>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="what-is-object-versioning"><a class="doc-anchor" href="#what-is-object-versioning">§</a>What is object versioning?</h3>
+<p>Object versioning is a feature that allows users to keep multiple versions of an object in the same bucket.</p>
+<p>It’s a way to preserve, retrieve, and restore every version of every object stored in a bucket.</p>
+<p>With object versioning, users can easily recover from both unintended user actions and application failures.</p>
+<h3 id="how-does-object-versioning-work"><a class="doc-anchor" href="#how-does-object-versioning-work">§</a>How does object versioning work?</h3>
+<p>When object versioning is enabled, each object will have a history of versions. Each version will have a unique version ID, which is a string that is unique for each version of an object.</p>
+<p>The version ID is not a timestamp.
+It is not guaranteed to be sequential.
+Many object storage services produce object version IDs by themselves, using their own algorithms.
+Users cannot specify the version ID when writing an object.</p>
+<h3 id="will-object-versioning-affect-the-existing-code"><a class="doc-anchor" href="#will-object-versioning-affect-the-existing-code">§</a>Will object versioning affect the existing code?</h3>
+<p>There is no difference between whether object versioning is enabled or not when writing an object.
+The storage service will always create a new version of the object than overwrite the old version when writing an object.
+But here it is imperceptible to the user.</p>
+<h3 id="what-are-the-benefits-of-object-versioning"><a class="doc-anchor" href="#what-are-the-benefits-of-object-versioning">§</a>What are the benefits of object versioning?</h3>
+<p>With object versioning, users can:</p>
+<ul>
+<li>Track the history of a file.</li>
+<li>Implement optimistic concurrency control.</li>
+<li>Implement a simple backup system.</li>
+</ul>
+<h3 id="reference"><a class="doc-anchor" href="#reference">§</a>reference</h3>
+<ul>
+<li><a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/Versioning.html">AWS S3 Object Versioning</a></li>
+<li><a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/versioning-workflows.html">How does AWS S3 object versioning work?</a></li>
+<li><a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/manage-versioning-examples.html">How to enable object versioning for a bucket in AWS S3</a></li>
+<li><a href="https://cloud.google.com/storage/docs/object-versioning">Google Cloud Storage Object Versioning</a></li>
+<li><a href="https://docs.microsoft.com/en-us/azure/storage/blobs/versioning-overview">Azure Blob Storage Object Versioning</a></li>
+</ul>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>Impl a new method <code>list_versions</code>(list all versions of an object).</p>
+</div></details></section></div></main></body></html>

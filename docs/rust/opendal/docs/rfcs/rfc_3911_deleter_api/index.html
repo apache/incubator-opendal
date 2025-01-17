@@ -1,0 +1,130 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Deleter API"><title>opendal::docs::rfcs::rfc_3911_deleter_api - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_3911_deleter_api</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_3911_deleter_api</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#230">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Deleter API</p>
+<ul>
+<li>Proposal Name: <code>deleter_api</code></li>
+<li>Start Date: 2024-01-04</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/3911">apache/opendal#3911</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/3922">apache/opendal#3922</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Introduce the <code>Deleter</code> API to enhance batch and recursive deletion capabilities.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>All OpenDAL’s public API follow the same design:</p>
+<ul>
+<li><code>read</code>: Execute a read operation.</li>
+<li><code>read_with</code>: Execute a read operation with additional options, like range and if_match.</li>
+<li><code>reader</code>: Create a reader for streaming data, enabling flexible access.</li>
+<li><code>reader_with</code>: Create a reader with advanced options.</li>
+</ul>
+<p>However, <code>delete</code> operations vary. OpenDAL offers several methods for file deletion:</p>
+<ul>
+<li><code>delete</code>: Delete a single file or an empty dir.</li>
+<li><code>remove</code>: Remove a list of files.</li>
+<li><code>remove_via</code>: Remove files produced by a stream.</li>
+<li><code>remove_all</code>: Remove all files under a path.</li>
+</ul>
+<p>This design is not consistent with the other APIs, and it is not easy to use.</p>
+<p>So I propose <code>Deleter</code> to address them all at once.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>The following new API will be added to <code>Operator</code>:</p>
+<div class="example-wrap"><pre class="language-diff"><code>impl Operator {
+  pub async fn detele(&amp;self, path: &amp;str) -&gt; Result&lt;()&gt;;
++  pub fn delete_with(&amp;self, path: &amp;str) -&gt; FutureDelete;
+
++  pub async fn deleter(&amp;self) -&gt; Result&lt;Deleter&gt;;
++  pub fn deleter_with(&amp;self) -&gt; FutureDeleter;
+}
+</code></pre></div>
+<ul>
+<li><code>delete</code> is the existing API, which deletes a single file or an empty dir.</li>
+<li><code>delete_with</code> is an extension of the existing <code>delete</code> API, which supports additional options, such as <code>version</code>.</li>
+<li><code>deleter</code> is a new API that returns a <code>Deleter</code> instance.</li>
+<li><code>deleter_with</code> is an extension of the existing <code>deleter</code> API, which supports additional options, such as <code>concurrent</code>.</li>
+</ul>
+<p>The following new options will be available for <code>delete_with</code> and <code>deleter_with</code>:</p>
+<ul>
+<li><code>concurrent</code>: How many delete tasks can be performed concurrently?</li>
+<li><code>buffer</code>: How many files can be buffered for send in a single batch?</li>
+</ul>
+<p>Users can delete multiple files in this way:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>deleter = op.deleter().<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="comment">// Add a single file to the deleter.
+</span>deleter.delete(path).<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="comment">// Add a stream of files to the deleter.
+</span>deleter.delete_all(<span class="kw-2">&amp;mut </span>lister).<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="comment">// Close deleter, make sure all input files are deleted.
+</span>deleter.close().<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p><code>Deleter</code> also implements <a href="https://docs.rs/futures/latest/futures/sink/trait.Sink.html"><code>Sink</code></a>, so all the methods of <code>Sink</code> are available for <code>Deleter</code>. For example, users can use <a href="https://docs.rs/futures/latest/futures/stream/trait.StreamExt.html#method.forward"><code>forward</code></a> to forward a stream of files to <code>Deleter</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// Init a deleter to start batch delete tasks.
+</span><span class="kw">let </span>deleter = op.deleter().<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="comment">// List all files that ends with tmp
+</span><span class="kw">let </span>lister = op.lister(path).<span class="kw">await</span><span class="question-mark">?
+  </span>.filter(|x|future::ready(x.ends_with(<span class="string">".tmp"</span>)));
+
+<span class="comment">// Forward all paths into deleter.
+</span>lister.forward(deleter).<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="comment">// Send all from a stream into deleter.
+</span>deleter.send_all(<span class="kw-2">&amp;mut </span>lister).<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="comment">// Close the deleter.
+</span>deleter.close().<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>Users can control the behavior of <code>Deleter</code> by setting the options:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>deleter = op.deleter_with()
+  <span class="comment">// Allow up to 8 concurrent delete tasks, default to 1.
+  </span>.concurrent(<span class="number">8</span>)
+  <span class="comment">// Configure the buffer size to 1000, default value provided by services.
+  </span>.buffer(<span class="number">1000</span>)
+  .<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="comment">// Add a single file to the deleter.
+</span>deleter.delete(path).<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="comment">// Add a stream of files to the deleter.
+</span>deleter.delete_all(<span class="kw-2">&amp;mut </span>lister).<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="comment">// Close deleter, make sure all input files are deleted.
+</span>deleter.close().<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>In response to <code>Deleter</code> API, we will remove APIs like <code>remove</code>, <code>remove_via</code> and <code>remove_all</code>.</p>
+<ul>
+<li><code>remove</code> and <code>remove_via</code> could be replaced by <code>Deleter</code> directly.</li>
+<li><code>remove_all</code> could be replaced by <code>delete_with(path).recursive(true)</code>.</li>
+</ul>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>To provide those public APIs, we will add a new associated type in <code>Accessor</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">trait </span>Accessor {
+    ...
+    
+    <span class="kw">type </span>Deleter = oio::Delete;
+    <span class="kw">type </span>BlockingDeleter = oio::BlockingDelete;
+}</code></pre></div>
+<p>And the <code>delete</code> API will be changed to return a <code>oio::Delete</code> instead:</p>
+<div class="example-wrap"><pre class="language-diff"><code>trait Accessor {
+-  async fn delete(&amp;self) -&gt; Result&lt;(RpDelete, Self::Deleter)&gt;;
++  async fn delete(&amp;self, args: OpDelete) -&gt; Result&lt;(RpDelete, Self::Deleter)&gt;;
+}
+</code></pre></div>
+<p>Along with this change, we will remove the <code>batch</code> API from <code>Accessor</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">trait </span>Accessor {
+-   <span class="kw">async fn </span>batch(<span class="kw-2">&amp;</span><span class="self">self</span>, args: OpBatch) -&gt; <span class="prelude-ty">Result</span>&lt;RpBatch&gt;;
+}</code></pre></div>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<ul>
+<li>Big breaking changes.</li>
+</ul>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>None.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2><h3 id="add-api-that-accepts-intoiterator"><a class="doc-anchor" href="#add-api-that-accepts-intoiterator">§</a>Add API that accepts <code>IntoIterator</code></h3>
+<p>It’s possible to add a new API that accepts <code>IntoIterator</code> so users can input <code>Vec&lt;String&gt;</code> or <code>Iter&lt;String&gt;</code> into <code>Deleter</code>.</p>
+</div></details></section></div></main></body></html>

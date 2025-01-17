@@ -1,0 +1,216 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Command line interface"><title>opendal::docs::rfcs::rfc_0423_command_line_interface - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_0423_command_line_interface</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_0423_command_line_interface</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#82">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Command line interface</p>
+<ul>
+<li>Proposal Name: <code>command_line_interface</code></li>
+<li>Start Date: 2022-07-08</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/423">apache/opendal#423</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/422">apache/opendal#422</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Add command line interface for OpenDAL.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<blockquote>
+<p><strong>Q</strong>: There are so many cli out there, why we still need a cli for OpenDAL?</p>
+<p><strong>A</strong>: Because there are so many cli out there.</p>
+</blockquote>
+<p>To manipulate our date store in different could service, we need to install different clis:</p>
+<ul>
+<li><a href="https://github.com/aws/aws-cli"><code>aws-cli</code></a>/<a href="https://s3tools.org/s3cmd"><code>s3cmd</code></a>/… for AWS (S3)</li>
+<li><a href="https://github.com/Azure/azure-storage-azcopy"><code>azcopy</code></a> for Azure Storage Service</li>
+<li><a href="https://cloud.google.com/sdk/docs/install"><code>gcloud</code></a> for Google Cloud</li>
+</ul>
+<p>Those clis provide native and seamless experiences for their own products but also lock us and our data. </p>
+<p>However, for 80% cases, we just want to do simple jobs like <code>cp</code>, <code>mv</code> and <code>rm</code>. It’s boring to figure out how to use them:</p>
+<ul>
+<li><code>aws --endpoint-url http://127.0.0.1:9900/ s3 cp data s3://testbucket/data  --recursive</code></li>
+<li><code>azcopy copy 'C:\myDirectory' 'https://mystorageaccount.blob.core.windows.net/mycontainer' --recursive</code></li>
+<li><code>gsutil cp data gs://testbucket/</code></li>
+</ul>
+<p>Can we use them in the same way? Can we let the data flow freely? </p>
+<p>Let’s look back OpenDAL’s slogan:</p>
+<p><strong>Open Data Access Layer that connect the whole world together</strong></p>
+<p>This is a natural extension for OpenDAL: providing a command line interface!</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>OpenDAL will provide a new cli called: <code>oli</code>. It’s a shortcut of <code>OpenDAL Command Line Interface</code>.</p>
+<p>Users can install this cli via:</p>
+<div class="example-wrap"><pre class="language-shell"><code>cargo install oli
+</code></pre></div>
+<p>Or using they favourite package management:</p>
+<div class="example-wrap"><pre class="language-shell"><code># Archlinux
+pacman -S oli
+# Debian / Ubuntu
+apt install oli
+# Rocky Linux / Fedora
+dnf install oli
+# macOS
+brew install oli
+</code></pre></div>
+<p>With <code>oli</code>, users can:</p>
+<ul>
+<li>Upload files to s3: <code>oli cp books.csv s3://bucket/books.csv</code></li>
+<li>Download files from azblob: <code>oli cp azblob://bucket/books.csv /tmp/books.csv</code></li>
+<li>Move data between storage services: <code>oli mv s3://bucket/dir azblob://bucket/dir</code></li>
+<li>Delete all files: <code>oli rm -rf s3://bucket</code></li>
+</ul>
+<p><code>oli</code> also provide alias to make cloud data manipulating even natural:</p>
+<ul>
+<li><code>ocp</code> for <code>oli cp</code></li>
+<li><code>ols</code> for <code>oli ls</code></li>
+<li><code>omv</code> for <code>oli mv</code></li>
+<li><code>orm</code> for <code>oli rm</code></li>
+<li><code>ostat</code> for <code>oli stat</code></li>
+</ul>
+<p><code>oli</code> will provide profile management so users don’t need to provide credential every time:</p>
+<ul>
+<li><code>oli profile add my_s3 --bucket test --access-key-id=example --secret-access-key=example</code></li>
+<li><code>ocp my_s3://dir /tmp/dir</code></li>
+</ul>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p><code>oli</code> will be a separate crate apart from <code>opendal</code> so we will not pollute the dependencies of <code>opendal</code>. But <code>oli</code> will be releases at the same time with the same version of <code>opendal</code>. That means <code>oli</code> will always use the same (latest) version of opendal.</p>
+<p>Most operations of <code>oli</code> should be trivial, we will propose new RFCs if requiring big changes.</p>
+<p><code>oli</code> won’t keep configuration. All config will go through environment, for example:</p>
+<ul>
+<li><code>OIL_COLOR=always</code></li>
+<li><code>OIL_CONCURRENCY=16</code></li>
+</ul>
+<p>Besides, <code>oil</code> will read profile from env like <code>cargo</code>:</p>
+<ul>
+<li><code>OIL_PROFILE_TEST_TYPE=s3</code></li>
+<li><code>OIL_PROFILE_TEST_ENDPOINT=http://127.0.0.1:1090</code></li>
+<li><code>OIL_PROFILE_TEST_BUCKET=test_bucket</code></li>
+<li><code>OIL_PROFILE_TEST_ACCESS_KEPT_ID=access_key_id</code></li>
+<li><code>OIL_PROFILE_TEST_SECRET_ACCESS_KEY=secret_access_key</code></li>
+</ul>
+<p>With those environments, we can:</p>
+<div class="example-wrap"><pre class="language-shell"><code>ocp path/to/dir test://test/to/dir
+</code></pre></div><h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="s3cmd"><a class="doc-anchor" href="#s3cmd">§</a>s3cmd</h3>
+<p><a href="https://s3tools.org/s3cmd">s3cmd</a> is a command line s3 client for Linux and Mac.</p>
+<div class="example-wrap"><pre class="language-shell"><code>Usage: s3cmd [options] COMMAND [parameters]
+
+S3cmd is a tool for managing objects in Amazon S3 storage. It allows for
+making and removing &quot;buckets&quot; and uploading, downloading and removing
+&quot;objects&quot; from these buckets.
+
+Commands:
+  Make bucket
+      s3cmd mb s3://BUCKET
+  Remove bucket
+      s3cmd rb s3://BUCKET
+  List objects or buckets
+      s3cmd ls [s3://BUCKET[/PREFIX]]
+  List all object in all buckets
+      s3cmd la 
+  Put file into bucket
+      s3cmd put FILE [FILE...] s3://BUCKET[/PREFIX]
+  Get file from bucket
+      s3cmd get s3://BUCKET/OBJECT LOCAL_FILE
+  Delete file from bucket
+      s3cmd del s3://BUCKET/OBJECT
+  Delete file from bucket (alias for del)
+      s3cmd rm s3://BUCKET/OBJECT
+  Restore file from Glacier storage
+      s3cmd restore s3://BUCKET/OBJECT
+  Synchronize a directory tree to S3 (checks files freshness using 
+       size and md5 checksum, unless overridden by options, see below)
+      s3cmd sync LOCAL_DIR s3://BUCKET[/PREFIX] or s3://BUCKET[/PREFIX] LOCAL_DIR
+  Disk usage by buckets
+      s3cmd du [s3://BUCKET[/PREFIX]]
+  Get various information about Buckets or Files
+      s3cmd info s3://BUCKET[/OBJECT]
+  Copy object
+      s3cmd cp s3://BUCKET1/OBJECT1 s3://BUCKET2[/OBJECT2]
+  Modify object metadata
+      s3cmd modify s3://BUCKET1/OBJECT
+  Move object
+      s3cmd mv s3://BUCKET1/OBJECT1 s3://BUCKET2[/OBJECT2]
+  Modify Access control list for Bucket or Files
+      s3cmd setacl s3://BUCKET[/OBJECT]
+  Modify Bucket Policy
+      s3cmd setpolicy FILE s3://BUCKET
+  Delete Bucket Policy
+      s3cmd delpolicy s3://BUCKET
+  Modify Bucket CORS
+      s3cmd setcors FILE s3://BUCKET
+  Delete Bucket CORS
+      s3cmd delcors s3://BUCKET
+  Modify Bucket Requester Pays policy
+      s3cmd payer s3://BUCKET
+  Show multipart uploads
+      s3cmd multipart s3://BUCKET [Id]
+  Abort a multipart upload
+      s3cmd abortmp s3://BUCKET/OBJECT Id
+  List parts of a multipart upload
+      s3cmd listmp s3://BUCKET/OBJECT Id
+  Enable/disable bucket access logging
+      s3cmd accesslog s3://BUCKET
+  Sign arbitrary string using the secret key
+      s3cmd sign STRING-TO-SIGN
+  Sign an S3 URL to provide limited public access with expiry
+      s3cmd signurl s3://BUCKET/OBJECT &lt;expiry_epoch|+expiry_offset&gt;
+  Fix invalid file names in a bucket
+      s3cmd fixbucket s3://BUCKET[/PREFIX]
+  Create Website from bucket
+      s3cmd ws-create s3://BUCKET
+  Delete Website
+      s3cmd ws-delete s3://BUCKET
+  Info about Website
+      s3cmd ws-info s3://BUCKET
+  Set or delete expiration rule for the bucket
+      s3cmd expire s3://BUCKET
+  Upload a lifecycle policy for the bucket
+      s3cmd setlifecycle FILE s3://BUCKET
+  Get a lifecycle policy for the bucket
+      s3cmd getlifecycle s3://BUCKET
+  Remove a lifecycle policy for the bucket
+      s3cmd dellifecycle s3://BUCKET
+  List CloudFront distribution points
+      s3cmd cflist 
+  Display CloudFront distribution point parameters
+      s3cmd cfinfo [cf://DIST_ID]
+  Create CloudFront distribution point
+      s3cmd cfcreate s3://BUCKET
+  Delete CloudFront distribution point
+      s3cmd cfdelete cf://DIST_ID
+  Change CloudFront distribution point parameters
+      s3cmd cfmodify cf://DIST_ID
+  Display CloudFront invalidation request(s) status
+      s3cmd cfinvalinfo cf://DIST_ID[/INVAL_ID]
+</code></pre></div><h3 id="aws-cli"><a class="doc-anchor" href="#aws-cli">§</a>aws-cli</h3>
+<p><a href="https://aws.amazon.com/cli/">aws-cli</a> is the official cli provided by AWS.</p>
+<div class="example-wrap"><pre class="language-shell"><code>$ aws s3 ls s3://mybucket
+        LastWriteTime            Length Name
+        ------------             ------ ----
+                                PRE myfolder/
+2013-09-03 10:00:00           1234 myfile.txt
+
+$ aws s3 cp myfolder s3://mybucket/myfolder --recursive
+upload: myfolder/file1.txt to s3://mybucket/myfolder/file1.txt
+upload: myfolder/subfolder/file1.txt to s3://mybucket/myfolder/subfolder/file1.txt
+
+$ aws s3 sync myfolder s3://mybucket/myfolder --exclude *.tmp
+upload: myfolder/newfile.txt to s3://mybucket/myfolder/newfile.txt
+</code></pre></div><h3 id="azcopy"><a class="doc-anchor" href="#azcopy">§</a>azcopy</h3>
+<p><a href="https://github.com/Azure/azure-storage-azcopy">azcopy</a> is the new Azure Storage data transfer utility.</p>
+<div class="example-wrap"><pre class="language-shell"><code>azcopy copy &#39;C:\myDirectory\myTextFile.txt&#39; &#39;https://mystorageaccount.blob.core.windows.net/mycontainer/myTextFile.txt&#39;
+
+azcopy copy &#39;https://mystorageaccount.blob.core.windows.net/mycontainer/myTextFile.txt&#39; &#39;C:\myDirectory\myTextFile.txt&#39;
+
+azcopy sync &#39;C:\myDirectory&#39; &#39;https://mystorageaccount.blob.core.windows.net/mycontainer&#39; --recursive
+</code></pre></div><h3 id="gsutil"><a class="doc-anchor" href="#gsutil">§</a>gsutil</h3>
+<p><a href="https://cloud.google.com/storage/docs/gsutil">gsutil</a> is a Python application that lets you access Cloud Storage from the command line.</p>
+<div class="example-wrap"><pre class="language-shell"><code>gsutil cp [OPTION]... src_url dst_url
+gsutil cp [OPTION]... src_url... dst_url
+gsutil cp [OPTION]... -I dst_url
+
+gsutil mv [-p] src_url dst_url
+gsutil mv [-p] src_url... dst_url
+gsutil mv [-p] -I dst_url
+
+gsutil rm [-f] [-r] url...
+gsutil rm [-f] [-r] -I
+</code></pre></div><h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>None.</p>
+</div></details></section></div></main></body></html>

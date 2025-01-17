@@ -1,0 +1,82 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Operation extension"><title>opendal::docs::rfcs::rfc_1735_operation_extension - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_1735_operation_extension</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_1735_operation_extension</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#158">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Operation extension</p>
+<ul>
+<li>Proposal Name: <code>operation_extension</code></li>
+<li>Start Date: 2023-03-23</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/1735">apache/opendal#1735</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/1738">apache/opendal#1738</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Extend operation capabilities to support additional native features.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>OpenDAL only supports a limited set of capabilities for operations.</p>
+<ul>
+<li><code>read</code>/<code>stat</code>: only supports <code>range</code></li>
+<li><code>write</code>: only supports <code>content_type</code> and <code>content_disposition</code></li>
+</ul>
+<p>Our community has a strong need for more additional native features. For example:</p>
+<ul>
+<li><a href="https://github.com/apache/opendal/issues/892">opendal#892</a> wants <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cache-Control">Cache-Control</a>: Allow users to specify the cache control headers for the uploaded files.</li>
+<li><a href="https://github.com/apache/opendal/issues/825">opendal#825</a> wants <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-Match">If-Match</a> and <a href="https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/If-None-Match">If-None-Match</a>: Allow users to makes a request conditional.</li>
+<li><a href="https://github.com/apache/opendal/issues/1726">opendal#1726</a> wants <a href="https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html">response-content-disposition</a>: Allow users to specify the content disposition for the downloaded files.</li>
+</ul>
+<p>All of these feature requests are essentially asking for the same thing: the capability to define supplementary arguments for operations, particularly about HTTP services.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>In this RFC, we will allow users to specify the standard HTTP headers like cache_control/if_match:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>op = OpRead::default().
+    with_cache_control(<span class="string">"max-age=3600"</span>).
+    with_if_match(<span class="string">"\"bfc13a64729c4290ef5b2c2730249c88ca92d82d\""</span>);
+<span class="kw">let </span>bs = o.read_with(op).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>Also, we will support some non-standard but widely used features like <code>response-content-disposition</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>op = OpRead::default().
+    with_override_content_disposition(<span class="string">"attachment; filename=\"foo.txt\""</span>);
+<span class="kw">let </span>req = op.presign_read_with(<span class="string">"filename"</span>, Duration::hours(<span class="number">1</span>), op)<span class="question-mark">?</span>;</code></pre></div>
+<p>And, finally, we will support allow specify the default headers for services. Take <code>s3</code>’s <code>storage_class</code> as an example:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>builder = S3::default();
+builder.default_storage_class(<span class="string">"STANDARD_IA"</span>);
+builder.default_cache_control(<span class="string">"max-age=3600"</span>);</code></pre></div>
+<p>In general, we will support the following features:</p>
+<ul>
+<li>Allow users to specify the (non-)standard HTTP headers for operations.</li>
+<li>Allow users to specify the default HTTP headers for services.</li>
+</ul>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>We will make the following changes in OpenDAL:</p>
+<p>For <code>OpRead</code> &amp; <code>OpStat</code>:</p>
+<div class="example-wrap"><pre class="language-diff"><code>pub struct OpRead {
+    br: BytesRange,
++   cache_control: Option&lt;String&gt;,
++   if_match: Option&lt;String&gt;,
++   if_none_match: Option&lt;String&gt;,
++   override_content_disposition: Option&lt;String&gt;,
+}
+</code></pre></div>
+<p>For <code>OpWrite</code>:</p>
+<div class="example-wrap"><pre class="language-diff"><code>pub struct OpWrite {
+    append: bool,
+
+    content_type: Option&lt;String&gt;,
+    content_disposition: Option&lt;String&gt;,
++   cache_control: Option&lt;String&gt;,
+}
+</code></pre></div>
+<p>We will provide different default options for each service. For example, we can add <code>default_storage_class</code> for <code>s3</code>.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="why-using-override_content_disposition-instead-of-response_content_disposition"><a class="doc-anchor" href="#why-using-override_content_disposition-instead-of-response_content_disposition">§</a>Why using <code>override_content_disposition</code> instead of <code>response_content_disposition</code>?</h3>
+<p><code>response_content_disposition</code> is not a part of HTTP standard, it’s the private API provided by <code>s3</code>.</p>
+<ul>
+<li><code>azblob</code> will use <code>x-ms-blob-content-disposition</code> header</li>
+<li><code>ocios</code> will use <code>httpResponseContentDisposition</code> query</li>
+</ul>
+<p>OpenDAL does not accept the query as is. Instead, we have created a more readable name <code>override_content_disposition</code> to clarify its purpose.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2><h3 id="strict-mode"><a class="doc-anchor" href="#strict-mode">§</a>Strict Mode</h3>
+<p>Additionally, we have implemented a <code>strict</code> option for the <code>Operator</code>. If users enable this option, OpenDAL will return an error message for unsupported options. Otherwise, it will ignore them.</p>
+<p>For instance, if users rely on the <code>if_match</code> behavior but services like <code>fs</code> and <code>hdfs</code> do not support it natively, they can use the <code>op.with_strict()</code> function to prompt OpenDAL to return an error.</p>
+</div></details></section></div></main></body></html>

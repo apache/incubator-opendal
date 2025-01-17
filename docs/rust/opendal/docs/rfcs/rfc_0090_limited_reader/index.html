@@ -1,0 +1,120 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Limited reader"><title>opendal::docs::rfcs::rfc_0090_limited_reader - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_0090_limited_reader</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_0090_limited_reader</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#42">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Limited reader</p>
+<ul>
+<li>Proposal Name: <code>limited_reader</code></li>
+<li>Start Date: 2022-03-02</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/0090">apache/opendal#0090</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/0090">apache/opendal#0090</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Native support for the limited reader.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>In proposal <a href="./0041-object-native-api.md">object-native-api</a> we introduced <code>Reader</code>, in which we will send request like:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>op = OpRead {
+    path: <span class="self">self</span>.path.to_string(),
+    offset: <span class="prelude-val">Some</span>(<span class="self">self</span>.current_offset()),
+    size: <span class="prelude-val">None</span>,
+};</code></pre></div>
+<p>In this implementation, we depend on the HTTP client to drop the request when we stop reading. However, we always read too much extra data, which decreases our reading performance.</p>
+<p>Here is a benchmark around reading the whole file and only reading half:</p>
+<div class="example-wrap"><pre class="language-txt"><code>s3/read/1c741003-40ef-43a9-b23f-b6a32ed7c4c6
+                        time:   [7.2697 ms 7.3521 ms 7.4378 ms]
+                        thrpt:  [2.1008 GiB/s 2.1252 GiB/s 2.1493 GiB/s]
+s3/read_half/1c741003-40ef-43a9-b23f-b6a32ed7c4c6
+                        time:   [7.0645 ms 7.1524 ms 7.2473 ms]
+                        thrpt:  [1.0780 GiB/s 1.0923 GiB/s 1.1059 GiB/s]
+</code></pre></div>
+<p>So our current behavior is buggy, and we need more clear API to address that.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>We will remove <code>Reader::total_size()</code> from public API instead of adding the following APIs for <code>Object</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub fn </span>reader(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Reader {}
+<span class="kw">pub fn </span>range_reader(<span class="kw-2">&amp;</span><span class="self">self</span>, offset: u64, size: u64) -&gt; Reader {}
+<span class="kw">pub fn </span>offset_reader(<span class="kw-2">&amp;</span><span class="self">self</span>, offset: u64) -&gt; Reader {}
+<span class="kw">pub fn </span>limited_reader(<span class="kw-2">&amp;</span><span class="self">self</span>, size: u64) -&gt; Reader {}</code></pre></div>
+<ul>
+<li><code>reader</code>: returns a new reader who can read the whole file.</li>
+<li><code>range_reader</code>: returns a ranged reader which read <code>[offset, offset+size)</code>.</li>
+<li><code>offset_reader</code>: returns a reader from offset <code>[offset:]</code></li>
+<li><code>limited_reader</code>: returns a limited reader <code>[:size]</code></li>
+</ul>
+<p>Take <code>parquet</code>’s actual logic as an example. We can rewrite:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">async fn </span>_read_single_column_async&lt;<span class="lifetime">'b</span>, R, F&gt;(
+    factory: F,
+    meta: <span class="kw-2">&amp;</span>ColumnChunkMetaData,
+) -&gt; <span class="prelude-ty">Result</span>&lt;(<span class="kw-2">&amp;</span>ColumnChunkMetaData, Vec&lt;u8&gt;)&gt;
+<span class="kw">where
+    </span>R: AsyncRead + AsyncSeek + Send + Unpin,
+    F: Fn() -&gt; BoxFuture&lt;<span class="lifetime">'b</span>, std::io::Result&lt;R&gt;&gt;,
+{
+    <span class="kw">let </span><span class="kw-2">mut </span>reader = factory().<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="kw">let </span>(start, len) = meta.byte_range();
+    reader.seek(std::io::SeekFrom::Start(start)).<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="kw">let </span><span class="kw-2">mut </span>chunk = <span class="macro">vec!</span>[<span class="number">0</span>; len <span class="kw">as </span>usize];
+    reader.read_exact(<span class="kw-2">&amp;mut </span>chunk).<span class="kw">await</span><span class="question-mark">?</span>;
+    Result::Ok((meta, chunk))
+}</code></pre></div>
+<p>into</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">async fn </span>_read_single_column_async&lt;<span class="lifetime">'b</span>, R, F&gt;(
+    factory: F,
+    meta: <span class="kw-2">&amp;</span>ColumnChunkMetaData,
+) -&gt; <span class="prelude-ty">Result</span>&lt;(<span class="kw-2">&amp;</span>ColumnChunkMetaData, Vec&lt;u8&gt;)&gt;
+<span class="kw">where
+    </span>R: AsyncRead + AsyncSeek + Send + Unpin,
+    F: Fn(usize, usize) -&gt; BoxFuture&lt;<span class="lifetime">'b</span>, std::io::Result&lt;R&gt;&gt;,
+{
+    <span class="kw">let </span>(start, len) = meta.byte_range();
+    <span class="kw">let </span><span class="kw-2">mut </span>reader = factory(start, len).<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="kw">let </span><span class="kw-2">mut </span>chunk = <span class="macro">vec!</span>[<span class="number">0</span>; len <span class="kw">as </span>usize];
+    reader.read_exact(<span class="kw-2">&amp;mut </span>chunk).<span class="kw">await</span><span class="question-mark">?</span>;
+    Result::Ok((meta, chunk))
+}</code></pre></div>
+<p>So that:</p>
+<ul>
+<li>No extra data will be read.</li>
+<li>No extra <code>seek</code>/<code>stat</code> operation is needed.</li>
+</ul>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>Inside <code>Reader</code>, we will correctly maintain <code>offset</code>, <code>size</code>, and <code>pos</code>.</p>
+<ul>
+<li>If <code>offset</code> is <code>None</code>, we will use <code>0</code> instead.</li>
+<li>If <code>size</code> is <code>None</code>, we will use <code>meta.content_length() - self.offset.unwrap_or_default()</code> instead.</li>
+</ul>
+<p>We will calculate <code>Reader</code> current offset and size easily:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">fn </span>current_offset(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; u64 {
+    <span class="self">self</span>.offset.unwrap_or_default() + <span class="self">self</span>.pos
+}
+
+<span class="kw">fn </span>current_size(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;u64&gt; {
+    <span class="self">self</span>.size.map(|v| v - <span class="self">self</span>.pos)
+}</code></pre></div>
+<p>Instead of constantly requesting the entire object content, we will set the size:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>op = OpRead {
+    path: <span class="self">self</span>.path.to_string(),
+    offset: <span class="prelude-val">Some</span>(<span class="self">self</span>.current_offset()),
+    size: <span class="self">self</span>.current_size(),
+};</code></pre></div>
+<p>After this change, we will have a similar throughput for <code>read_all</code> and <code>read_half</code>:</p>
+<div class="example-wrap"><pre class="language-txt"><code>s3/read/6dd40f8d-7455-451e-b510-3b7ac23e0468
+                        time:   [4.9554 ms 5.0888 ms 5.2282 ms]
+                        thrpt:  [2.9886 GiB/s 3.0704 GiB/s 3.1532 GiB/s]
+s3/read_half/6dd40f8d-7455-451e-b510-3b7ac23e0468
+                        time:   [3.1868 ms 3.2494 ms 3.3052 ms]
+                        thrpt:  [2.3637 GiB/s 2.4043 GiB/s 2.4515 GiB/s]
+</code></pre></div><h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>None</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<ul>
+<li>Refactor the parquet reading logic to make the most use of <code>range_reader</code>.</li>
+</ul>
+</div></details></section></div></main></body></html>

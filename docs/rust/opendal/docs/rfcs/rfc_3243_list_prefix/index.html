@@ -1,0 +1,108 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="List prefix"><title>opendal::docs::rfcs::rfc_3243_list_prefix - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_3243_list_prefix</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_3243_list_prefix</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#206">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>List prefix</p>
+<ul>
+<li>Proposal Name: <code>list_prefix</code></li>
+<li>Start Date: 2023-10-08</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/3243">apache/opendal#3243</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/3247">apache/opendal#3247</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Allow users to specify a prefix and remove the requirement that the path must end with <code>/</code>.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>OpenDAL uses <code>/</code> to distinguish between a file and a directory. This design is necessary for object storage services such as S3 and GCS, where both <code>abc</code> (file) and <code>abc/</code> (directory) can coexist. We require users to provide the correct path to the API. For instance, when using <code>read(&quot;abc/&quot;)</code>, it returns <code>IsADirectory</code>, whereas with <code>list(&quot;abc/&quot;)</code> it returns <code>NotADirectory</code>. This behavior may be perplexing for users.</p>
+<p>As a side-effect of this design, OpenDAL always return exist for <code>stat(&quot;not_exist/&quot;)</code> since there is no way for OpenDAL to check if <code>not_exist/file_example</code> is exist via <code>HeadObject</code> call.</p>
+<p>There are some issues and pull requests related to those issues.</p>
+<ul>
+<li><a href="https://github.com/apache/opendal/issues/3199">Invalid metadata for dir objects in s3</a></li>
+<li><a href="https://github.com/apache/opendal/issues/2086"><code>is_exist</code> always return true for key end with ‘/’, in S3 service</a></li>
+</ul>
+<p>POSIX-like file systems also have their own issues, as they lack native support for listing a prefix.</p>
+<p>Give file tree like the following:</p>
+<div class="example-wrap"><pre class="language-shell"><code>abc/
+abc/def
+abc/xyz/
+</code></pre></div>
+<p>Calling <code>list(&quot;ab&quot;)</code> will return <code>NotFound</code> after we removing the requirement that the path must end with <code>/</code>.</p>
+<p>So I propose the following changes of OpenDAL API behaviors:</p>
+<ul>
+<li>Remove the requirement that the path for <code>list</code> must end with <code>/</code>.</li>
+<li>Object storage services will use <code>list_object</code> API to check if a dir is exist.</li>
+<li>Simulate the list prefix behavior for POSIX-like file systems.</li>
+</ul>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>Given the following file tree:</p>
+<div class="example-wrap"><pre class="language-shell"><code>abc/
+abc/def_file
+abc/def_dir/
+abc/def_dir/xyz_file
+abc/def_dir/xyz_dir/
+</code></pre></div>
+<p>While listing a path:</p>
+<div><table><thead><tr><th>Case</th><th>Path</th><th>Result</th><th>Description</th></tr></thead><tbody>
+<tr><td>list dir</td><td><code>abc/</code></td><td><code>abc/def_file</code> <br/> <code>abc/def_dir/</code></td><td>children that matches the dir</td></tr>
+<tr><td>list prefix</td><td><code>abc/def</code></td><td><code>abc/def_file</code> <br/> <code>abc/def_dir/</code></td><td>children that matches the prefix</td></tr>
+<tr><td>list file</td><td><code>abc/def_file</code></td><td><code>abc/def_file</code></td><td>the only children that matches the path</td></tr>
+<tr><td>list dir without <code>/</code></td><td><code>abc/def_dir</code></td><td><code>abc/def_dir/</code></td><td>the only children that matches the path</td></tr>
+<tr><td>list file ends with <code>/</code></td><td><code>abc/def_file/</code></td><td>EMPTY</td><td>no children matches the dir</td></tr>
+<tr><td>list not exist dir</td><td><code>def/</code></td><td>EMPTY</td><td>no children found matches the dir</td></tr>
+<tr><td>list not exist file</td><td><code>def</code></td><td>EMPTY</td><td>no children found matches the prefix</td></tr>
+</tbody></table>
+</div>
+<p>While listing a path with <code>delimiter</code> set to <code>&quot;&quot;</code>:</p>
+<div><table><thead><tr><th>Case</th><th>Path</th><th>Result</th><th>Description</th></tr></thead><tbody>
+<tr><td>list dir</td><td><code>abc/</code></td><td><code>abc/def_file</code> <br/> <code>abc/def_dir/</code> <br/> <code>abc/def_dir/xyz_file</code> <br/> <code>abc/def_dir/xyz_dir/</code></td><td>children that matches the dir</td></tr>
+<tr><td>list prefix</td><td><code>abc/def</code></td><td><code>abc/def_file</code> <br/> <code>abc/def_dir/</code> <br/> <code>abc/def_dir/xyz_file</code> <br/> <code>abc/def_dir/xyz_dir/</code></td><td>children that matches the prefix</td></tr>
+<tr><td>list file</td><td><code>abc/def_file</code></td><td><code>abc/def_file</code></td><td>the only children that matches the path</td></tr>
+<tr><td>list dir without <code>/</code></td><td><code>abc/def_dir</code></td><td><code>abc/def_dir/</code> <br/> <code>abc/def_dir/xyz_file</code> <br/> <code>abc/def_dir/xyz_dir/</code></td><td>children that matches the path</td></tr>
+<tr><td>list file ends with <code>/</code></td><td><code>abc/def_file/</code></td><td>EMPTY</td><td>no children matches the dir</td></tr>
+<tr><td>list not exist dir</td><td><code>def/</code></td><td>EMPTY</td><td>no children found matches the dir</td></tr>
+<tr><td>list not exist file</td><td><code>def</code></td><td>EMPTY</td><td>no children found matches the prefix</td></tr>
+</tbody></table>
+</div>
+<p>While stat a path:</p>
+<div><table><thead><tr><th>Case</th><th>Path</th><th>Result</th></tr></thead><tbody>
+<tr><td>stat existing dir</td><td><code>abc/</code></td><td>Metadata with dir mode</td></tr>
+<tr><td>stat existing file</td><td><code>abc/def_file</code></td><td>Metadata with file mode</td></tr>
+<tr><td>stat dir without <code>/</code></td><td><code>abc/def_dir</code></td><td>Error <code>NotFound</code> or metadata with dir mode</td></tr>
+<tr><td>stat file with <code>/</code></td><td><code>abc/def_file/</code></td><td>Error <code>NotFound</code></td></tr>
+<tr><td>stat not existing path</td><td><code>xyz</code></td><td>Error <code>NotFound</code></td></tr>
+</tbody></table>
+</div>
+<p>While create dir on a path:</p>
+<div><table><thead><tr><th>Case</th><th>Path</th><th>Result</th></tr></thead><tbody>
+<tr><td>create dir on existing dir</td><td><code>abc/</code></td><td>Ok</td></tr>
+<tr><td>create dir on existing file</td><td><code>abc</code></td><td>Error with <code>NotADirectory</code></td></tr>
+<tr><td>create dir with <code>/</code></td><td><code>xyz/</code></td><td>Ok</td></tr>
+<tr><td>create dir without <code>/</code></td><td><code>xyz</code></td><td>Ok with <code>xyz/</code> created</td></tr>
+</tbody></table>
+</div><h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>For POSIX-like services, we will:</p>
+<ul>
+<li>Simulate the list prefix behavior by listing the parent dir and filter the children that matches the prefix.</li>
+<li>Return <code>NotFound</code> while stat an existing file with <code>/</code></li>
+</ul>
+<p>For object storage services, we will:</p>
+<ul>
+<li>Use <code>list_object</code> API while stat a path ends with <code>/</code>.
+<ul>
+<li>Return dir metadata if the dir is exist or there is at least a children.</li>
+<li>Return <code>NotFound</code> if the dir is not exist and there is no children.</li>
+</ul>
+</li>
+<li>Check path before create dir with a path not ends with <code>/</code>.
+<ul>
+<li>Return <code>NotADirectory</code> if the path is exist.</li>
+<li>Create the dir with <code>/</code> appended.</li>
+</ul>
+</li>
+</ul>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>None</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>None</p>
+</div></details></section></div></main></body></html>

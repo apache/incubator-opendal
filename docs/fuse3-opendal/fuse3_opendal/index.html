@@ -1,0 +1,37 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="`fuse3_opendal` is an `fuse3` implementation using opendal."><title>fuse3_opendal - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="fuse3_opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod crate"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button></nav><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../fuse3_opendal/index.html">fuse3_opendal</a><span class="version">0.0.11</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section><ul class="block"><li><a href="#structs">Structs</a></li></ul></section></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Crate <a class="mod" href="#">fuse3_opendal</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../src/fuse3_opendal/lib.rs.html#18-60">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p><code>fuse3_opendal</code> is an <a href="https://github.com/Sherlock-Holo/fuse3"><code>fuse3</code></a> implementation using opendal.</p>
+<p>This crate can help you to access ANY storage services by mounting locally by <a href="https://www.kernel.org/doc/html/next/filesystems/fuse.html"><code>FUSE</code></a>.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>fuse3::path::Session;
+<span class="kw">use </span>fuse3::MountOptions;
+<span class="kw">use </span>fuse3::Result;
+<span class="kw">use </span>fuse3_opendal::Filesystem;
+<span class="kw">use </span>opendal::services::Memory;
+<span class="kw">use </span>opendal::Operator;
+
+<span class="attr">#[tokio::test]
+</span><span class="kw">async fn </span>test() -&gt; <span class="prelude-ty">Result</span>&lt;()&gt; {
+    <span class="comment">// Build opendal Operator.
+    </span><span class="kw">let </span>op = Operator::new(Memory::default())<span class="question-mark">?</span>.finish();
+
+    <span class="comment">// Build fuse3 file system.
+    </span><span class="kw">let </span>fs = Filesystem::new(op, <span class="number">1000</span>, <span class="number">1000</span>);
+
+    <span class="comment">// Configure mount options.
+    </span><span class="kw">let </span>mount_options = MountOptions::default();
+
+    <span class="comment">// Start a fuse3 session and mount it.
+    </span><span class="kw">let </span><span class="kw-2">mut </span>mount_handle = Session::new(mount_options)
+        .mount_with_unprivileged(fs, <span class="string">"/tmp/mount_test"</span>)
+        .<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="kw">let </span>handle = <span class="kw-2">&amp;mut </span>mount_handle;
+
+    <span class="macro">tokio::select!</span> {
+        res = handle =&gt; res<span class="question-mark">?</span>,
+        <span class="kw">_ </span>= tokio::signal::ctrl_c() =&gt; {
+            mount_handle.unmount().<span class="kw">await</span><span class="question-mark">?
+        </span>}
+    }
+
+    <span class="prelude-val">Ok</span>(())
+}</code></pre></div>
+</div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><ul class="item-table"><li><div class="item-name"><a class="struct" href="struct.Filesystem.html" title="struct fuse3_opendal::Filesystem">Filesystem</a></div><div class="desc docblock-short"><code>Filesystem</code> represents the filesystem that implements [<code>PathFilesystem</code>] by opendal.</div></li></ul></section></div></main></body></html>

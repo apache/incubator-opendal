@@ -1,0 +1,106 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Context"><title>opendal::docs::rfcs::rfc_5479_context - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_5479_context</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_5479_context</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#250">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Context</p>
+<ul>
+<li>Proposal Name: <code>context</code></li>
+<li>Start Date: 2024-12-30</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/5480">apache/opendal#5480</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/5479">apache/opendal#5479</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Add <code>Context</code> in opendal to distribute global resources like http client, runtime, etc.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>OpenDAL now includes two global resources, the <code>http client</code> and <code>runtime</code>, which are utilized by the specified service across all enabled layers.</p>
+<p>However, it’s a bit challenging for layers to interact with these global resources.</p>
+<h3 id="for-http-client"><a class="doc-anchor" href="#for-http-client">§</a>For http client</h3>
+<p>Layers cannot directly access the HTTP client. The only way to interact with the HTTP client is through the service builder, such as <a href="https://docs.rs/opendal/latest/opendal/services/struct.S3.html#method.http_client"><code>S3::http_client()</code></a>. Layers like logging and metrics do not have direct access to the HTTP client.</p>
+<p>Users need to implement the <code>HttpFetcher</code> trait to interact with the HTTP client. However, the drawback is that users lack context for the given requests; they do not know which service the request originates from or which operation it is performing.</p>
+<h3 id="for-runtime"><a class="doc-anchor" href="#for-runtime">§</a>For runtime</h3>
+<p>OpenDAL has the <a href="https://docs.rs/opendal/latest/opendal/trait.Execute.html"><code>Execute</code></a> for users to implement so that they can interact with the runtime. However, the API is difficult to use, as layers need to extract and construct the <code>Executor</code> for every request.</p>
+<p>For example:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">async fn </span>read(<span class="kw-2">&amp;</span><span class="self">self</span>, path: <span class="kw-2">&amp;</span>str, <span class="kw-2">mut </span>args: OpRead) -&gt; <span class="prelude-ty">Result</span>&lt;(RpRead, <span class="self">Self</span>::Reader)&gt; {
+    <span class="kw">if let </span><span class="prelude-val">Some</span>(exec) = args.executor().cloned() {
+        args = args.with_executor(Executor::with(TimeoutExecutor::new(
+            exec.into_inner(),
+            <span class="self">self</span>.io_timeout,
+        )));
+    }
+
+    <span class="self">self</span>.io_timeout(Operation::Read, <span class="self">self</span>.inner.read(path, args))
+        .<span class="kw">await
+        </span>.map(|(rp, r)| (rp, TimeoutWrapper::new(r, <span class="self">self</span>.io_timeout)))
+}</code></pre></div>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>So I propose to add a <code>Context</code> to OpenDAL to distribute global resources like the HTTP client and runtime.</p>
+<p>The <code>Context</code> is a struct that contains the global resources, such as the HTTP client and runtime. It is passed to the service builder and layers so that they can interact with the global resources.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>ctx = Context::default();
+ctx.set_http_client(my_http_client);
+ctx.set_executor(my_executor);
+
+<span class="kw">let </span>op = op.with_context(ctx);</code></pre></div>
+<p>The following API will be added:</p>
+<ul>
+<li>new struct <code>Context</code></li>
+<li><code>Context::default()</code></li>
+<li><code>Context::load_http_client(&amp;self) -&gt; HttpClient</code></li>
+<li><code>Context::load_executor(&amp;self) -&gt; Executor</code></li>
+<li><code>Context::update_http_client(&amp;self, f: impl FnOnce(HttpClient) -&gt; HttpClient)</code></li>
+<li><code>Context::update_executor(&amp;self, f: impl FnOnce(Executor) -&gt; Executor)</code></li>
+<li><code>Operator::with_context(ctx: Context) -&gt; Operator</code></li>
+</ul>
+<p>The following API will be deprecated:</p>
+<ul>
+<li><code>Operator::default_executor</code></li>
+<li><code>Operator::with_default_executor</code></li>
+<li><code>OpRead::with_executor</code></li>
+<li><code>OpRead::executor</code></li>
+<li><code>OpWrite::with_executor</code></li>
+<li><code>OpWrite::executor</code></li>
+<li>All services builders’ <code>http_client</code> API</li>
+</ul>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>We will add <code>Context</code> struct in <code>AccessInfo</code>. Every service must use <code>Context::default()</code> for <code>AccessInfo</code> and stores the same instance of <code>Context</code> in the service core. All the following usage of http client or runtime should be through the <code>Context</code> instead.</p>
+<p>The <code>Context</code> itself is a struct wrapped by something like <code>ArcSwap&lt;T&gt;</code>, allowing us to update it atomically.</p>
+<p>The layers will switch to <code>Context</code> to get the global resources instead of <code>OpRead</code>.</p>
+<p>We no longer need to hijack the read operation.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>- <span class="kw">async fn </span>read(<span class="kw-2">&amp;</span><span class="self">self</span>, path: <span class="kw-2">&amp;</span>str, <span class="kw-2">mut </span>args: OpRead) -&gt; <span class="prelude-ty">Result</span>&lt;(RpRead, <span class="self">Self</span>::Reader)&gt; {
+-    <span class="kw">if let </span><span class="prelude-val">Some</span>(exec) = args.executor().cloned() {
+-        args = args.with_executor(Executor::with(TimeoutExecutor::new(
+-            exec.into_inner(),
+-            <span class="self">self</span>.io_timeout,
+-        )));
+-    }
+-    
+-    ...
+- }</code></pre></div>
+<p>Instead, we can directly get the executor from the <code>Context</code> during <code>layer</code>.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl</span>&lt;A: Access&gt; Layer&lt;A&gt; <span class="kw">for </span>TimeoutLayer {
+    <span class="kw">type </span>LayeredAccess = TimeoutAccessor&lt;A&gt;;
+
+    <span class="kw">fn </span>layer(<span class="kw-2">&amp;</span><span class="self">self</span>, inner: A) -&gt; <span class="self">Self</span>::LayeredAccess {
+        inner
+            .info()
+            .context()
+            .update_executor(|exec| Executor::with(TimeoutExecutor::new(exec, <span class="self">self</span>.io_timeout)));
+
+        TimeoutAccessor {
+            inner,
+
+            timeout: <span class="self">self</span>.timeout,
+            io_timeout: <span class="self">self</span>.io_timeout,
+        }
+    }
+}</code></pre></div>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>A bit cost (<code>50ns</code>) for every operation that <code>load_http_client</code>.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>None.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>None.</p>
+</div></details></section></div></main></body></html>

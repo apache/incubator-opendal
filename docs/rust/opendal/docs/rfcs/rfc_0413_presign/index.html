@@ -1,0 +1,106 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Presign"><title>opendal::docs::rfcs::rfc_0413_presign - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_0413_presign</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_0413_presign</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#78">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Presign</p>
+<ul>
+<li>Proposal Name: <code>presign</code></li>
+<li>Start Date: 2022-06-30</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/413">apache/opendal#0413</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/394">apache/opendal#394</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Add presign support in OpenDAL so users can generate a pre-signed URL without leaking <code>serect_key</code>.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<blockquote>
+<p>By default, all S3 objects are private. Only the object owner has permission to access them. However, the object owner can optionally share objects with others by creating a presigned URL, using their own security credentials, to grant time-limited permission to download the objects.</p>
+<p>From <a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/ShareObjectPreSignedURL.html">Sharing objects using presigned URLs</a></p>
+</blockquote>
+<p>We can use this presigned URL for:</p>
+<ul>
+<li>Download the object within the expired time from a bucket directly</li>
+<li>Upload content to the bucket on client-side</li>
+</ul>
+<p>Adding this feature in OpenDAL will make users’ lives easier to generate presigned URLs across different storage services.</p>
+<p>The whole process would be:</p>
+<div class="example-wrap"><pre class="language-text"><code>            ┌────────────┐
+            │    User    ├─────────────────────┐
+            └──┬─────▲───┘                     │
+               │     │      4. Send Request to S3 Directly
+1. Request Resource  │                         │
+               │     │                         │
+               │     │                         │
+               │     │                         ▼
+               │  3. Return Request     ┌────────────┐
+               │     │                  │            │
+               │     │                  │     S3     │
+            ┌──▼─────┴───┐              │            │
+            │            │              └────────────┘
+            │     App    │
+            │ ┌────────┐ │
+            │ │ OpenDAL│ │
+            │ ├────────┤ │
+            └─┴──┼─────┴─┘
+                 │      ▲
+                 └──────┘
+          2. Generate Request
+</code></pre></div><h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>With this feature, our users can:</p>
+<h3 id="generate-presigned-url-for-downloading"><a class="doc-anchor" href="#generate-presigned-url-for-downloading">§</a>Generate presigned URL for downloading</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>req = op.presign_read(<span class="string">"path/to/file"</span>)<span class="question-mark">?</span>;
+<span class="comment">// req.method: GET
+// req.url: https://s3.amazonaws.com/examplebucket/test.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&amp;X-Amz-Credential=access_key_id/20130721/us-east-1/s3/aws4_request&amp;X-Amz-Date=20130721T201207Z&amp;X-Amz-Expires=86400&amp;X-Amz-SignedHeaders=host&amp;X-Amz-Signature=&lt;signature-value&gt;</span></code></pre></div>
+<p>Users can download this object directly from the s3 bucket. For example:</p>
+<div class="example-wrap"><pre class="language-shell"><code>curl &lt;generated_url&gt; -O test.txt
+</code></pre></div><h3 id="generate-presigned-url-for-uploading"><a class="doc-anchor" href="#generate-presigned-url-for-uploading">§</a>Generate presigned URL for uploading</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>req = op.presign_write(<span class="string">"path/to/file"</span>)<span class="question-mark">?</span>;
+<span class="comment">// req.method: PUT
+// req.url: https://s3.amazonaws.com/examplebucket/test.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256&amp;X-Amz-Credential=access_key_id/20130721/us-east-1/s3/aws4_request&amp;X-Amz-Date=20130721T201207Z&amp;X-Amz-Expires=86400&amp;X-Amz-SignedHeaders=host&amp;X-Amz-Signature=&lt;signature-value&gt;</span></code></pre></div>
+<p>Users can upload content directly to the s3 bucket. For example:</p>
+<div class="example-wrap"><pre class="language-shell"><code>curl -X PUT &lt;generated_url&gt; -T &quot;/tmp/test.txt&quot;
+</code></pre></div><h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p><code>Accessor</code> will add a new API <code>presign</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Accessor {
+    <span class="kw">fn </span>presign(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpPresign) -&gt; <span class="prelude-ty">Result</span>&lt;PresignedRequest&gt; {..}
+}</code></pre></div>
+<p><code>presign</code> accepts <code>OpPresign</code> and returns <code>Result&lt;PresignedRequest&gt;</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">struct </span>OpPresign {
+    path: String,
+    op: Operation,
+    expire: time::Duration,
+}
+
+<span class="kw">struct </span>PresignedRequest {}
+
+<span class="kw">impl </span>PresignedRequest {
+    <span class="kw">pub fn </span>method(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>http::Method {..}
+    <span class="kw">pub fn </span>url(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>http::Uri {..}
+}</code></pre></div>
+<p>We are building a new struct to avoid leaking underlying implementations like <code>hyper::Request&lt;T&gt;</code> to users.</p>
+<p>This feature will be a new capability in <code>AccessorCapability</code> as described in <a href="./0409-accessor-capabilities.md">RFC-0409: Accessor Capabilities</a></p>
+<p>Based on <code>Accessor::presign</code>, we will export public APIs in <code>Operator</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Operator {
+    <span class="kw">fn </span>presign_read(<span class="kw-2">&amp;</span><span class="self">self</span>, path: <span class="kw-2">&amp;</span>str) -&gt; <span class="prelude-ty">Result</span>&lt;PresignedRequest&gt; {}
+    <span class="kw">fn </span>presign_write(<span class="kw-2">&amp;</span><span class="self">self</span>, path: <span class="kw-2">&amp;</span>str) -&gt; <span class="prelude-ty">Result</span>&lt;PresignedRequest&gt; {}
+}</code></pre></div>
+<p>Although it’s possible to generate URLs for <code>create</code>, <code>delete</code>, <code>stat</code>, and <code>list</code>, there are no obvious use-cases. So we will not add them to this proposal.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="query-sign-support-status"><a class="doc-anchor" href="#query-sign-support-status">§</a>Query Sign Support Status</h3>
+<ul>
+<li>s3: <a href="https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-query-string-auth.html">Authenticating Requests: Using Query Parameters (AWS Signature Version 4)</a></li>
+<li>azblob: <a href="https://docs.microsoft.com/en-us/rest/api/storageservices/delegate-access-with-shared-access-signature">Delegate access with a shared access signature</a></li>
+<li>gcs: <a href="https://cloud.google.com/storage/docs/access-control/signed-urls">Signed URLs</a> (Only for XML API)</li>
+</ul>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2><h3 id="awscli-presign"><a class="doc-anchor" href="#awscli-presign">§</a>awscli presign</h3>
+<p>AWS CLI has native presign support</p>
+<div class="example-wrap"><pre class="language-shell"><code>&gt; aws s3 presign s3://DOC-EXAMPLE-BUCKET/test2.txt
+https://DOC-EXAMPLE-BUCKET.s3.us-west-2.amazonaws.com/key?X-Amz-Algorithm=AWS4-HMAC-SHA256&amp;X-Amz-Credential=AKIAEXAMPLE123456789%2F20210621%2Fus-west-2%2Fs3%2Faws4_request&amp;X-Amz-Date=20210621T041609Z&amp;X-Amz-Expires=3600&amp;X-Amz-SignedHeaders=host&amp;X-Amz-Signature=EXAMBLE1234494d5fba3fed607f98018e1dfc62e2529ae96d844123456
+</code></pre></div>
+<p>Refer to <a href="https://awscli.amazonaws.com/v2/documentation/api/latest/reference/s3/presign.html">AWS CLI Command Reference</a> for more information.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<ul>
+<li>Add <code>stat</code>/<code>list</code>/<code>delete</code> support</li>
+</ul>
+</div></details></section></div></main></body></html>

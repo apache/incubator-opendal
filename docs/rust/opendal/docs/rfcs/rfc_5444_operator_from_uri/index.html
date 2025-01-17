@@ -1,0 +1,120 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Operator from uri"><title>opendal::docs::rfcs::rfc_5444_operator_from_uri - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_5444_operator_from_uri</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_5444_operator_from_uri</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#246">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Operator from uri</p>
+<ul>
+<li>Proposal Name: <code>operator_from_uri</code></li>
+<li>Start Date: 2024-12-23</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/5444">apache/opendal#5444</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/5445">apache/opendal#5445</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>This RFC proposes adding URI-based configuration support to OpenDAL, allowing users to create operators directly from URIs. The proposal introduces a new <code>from_uri</code> API in both the <code>Operator</code> and <code>Configurator</code> traits, along with an <code>OperatorRegistry</code> to manage operator factories.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>Currently, creating an operator in OpenDAL requires explicit configuration through builder patterns. While this approach provides type safety and clear documentation, it can be verbose and inflexible for simple use cases. Many storage systems are naturally identified by URIs (e.g., <code>s3://bucket/path</code>, <code>fs:///path/to/dir</code>).</p>
+<p>Adding URI-based configuration would:</p>
+<ul>
+<li>Simplify operator creation for common use cases</li>
+<li>Enable configuration via connection strings (common in many applications)</li>
+<li>Make OpenDAL more approachable for new users</li>
+<li>Allow dynamic operator creation based on runtime configuration</li>
+</ul>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>The new API allows creating operators directly from URIs:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// Create an operator using URI
+</span><span class="kw">let </span>op = Operator::from_uri(<span class="string">"s3://my-bucket/path"</span>, <span class="macro">vec!</span>[
+    (<span class="string">"endpoint"</span>.to_string(), <span class="string">"http://localhost:8080"to_string</span>()),
+])<span class="question-mark">?</span>;
+
+<span class="comment">// Users can pass options through the URI along with additional key-value pairs
+// The extra options will override identical options specified in the URI
+</span><span class="kw">let </span>op = Operator::from_uri(<span class="string">"s3://my-bucket/path?region=us-east-1"</span>, <span class="macro">vec!</span>[
+    (<span class="string">"endpoint"</span>.to_string(), <span class="string">"http://localhost:8080"to_string</span>()),
+])<span class="question-mark">?</span>;
+
+<span class="comment">// Create a file system operator
+</span><span class="kw">let </span>op = Operator::from_uri(<span class="string">"fs:///tmp/test"</span>, <span class="macro">vec!</span>[])<span class="question-mark">?</span>;</code></pre></div>
+<p>OpenDAL will, by default, register services enabled by features in a global <code>OperatorRegistry</code>. Users can also create custom operator registries to support their own schemes or additional options.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// Using with custom registry
+</span><span class="kw">let </span>registry = OperatorRegistry::new();
+registry.register(<span class="string">"custom"</span>, my_factory);
+<span class="kw">let </span>op = registry.parse(<span class="string">"custom://endpoint"</span>, options)<span class="question-mark">?</span>;</code></pre></div>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>The implementation consists of three main components:</p>
+<ol>
+<li>The <code>OperatorFactory</code> and <code>OperatorRegistry</code>:</li>
+</ol>
+<p><code>OperatorFactory</code> is a function type that takes a URI and a map of options and returns an <code>Operator</code>. <code>OperatorRegistry</code> manages operator factories for different schemes.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">type </span>OperatorFactory = <span class="kw">fn</span>(http::Uri, HashMap&lt;String, String&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;Operator&gt;;
+
+<span class="kw">pub struct </span>OperatorRegistry { ... }
+
+<span class="kw">impl </span>OperatorRegistry {
+    <span class="kw">fn </span>register(<span class="kw-2">&amp;</span><span class="self">self</span>, scheme: <span class="kw-2">&amp;</span>str, factory: OperatorFactory) {
+        ...
+    }
+
+    <span class="kw">fn </span>parse(<span class="kw-2">&amp;</span><span class="self">self</span>, uri: <span class="kw-2">&amp;</span>str, options: <span class="kw">impl </span>IntoIterator&lt;Item = (String, String)&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;Operator&gt; {
+        ...
+    }
+}</code></pre></div>
+<ol start="2">
+<li>The <code>Configurator</code> trait extension:</li>
+</ol>
+<p><code>Configurator</code> will add a new API to create a configuration from a URI and options. OpenDAL will provide default implementations for common configurations. But services can override this method to support their own special needs.</p>
+<p>For example, S3 might need to extract the <code>bucket</code> and <code>region</code> from the URI when possible.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Configurator <span class="kw">for </span>S3Config {
+    <span class="kw">fn </span>from_uri(uri: <span class="kw-2">&amp;</span>str, options: <span class="kw">impl </span>IntoIterator&lt;Item = (String, String)&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>&gt; {
+        ...
+    }
+}</code></pre></div>
+<ol start="3">
+<li>The <code>Operator</code> <code>from_uri</code> method:</li>
+</ol>
+<p>The <code>Operator</code> trait will add a new <code>from_uri</code> method to create an operator from a URI and options. This method will use the global <code>OperatorRegistry</code> to find the appropriate factory for the scheme.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Operator {
+    <span class="kw">pub fn </span>from_uri(
+        uri: <span class="kw-2">&amp;</span>str,
+        options: <span class="kw">impl </span>IntoIterator&lt;Item = (String, String)&gt;,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>&gt; {
+        ...
+    }
+}</code></pre></div>
+<p>We are intentionally using <code>&amp;str</code> instead of <code>Scheme</code> here to simplify working with external components outside this crate. Additionally, we plan to remove <code>Scheme</code> from our public API soon to enable splitting OpenDAL into multiple crates.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<ul>
+<li>Increases API surface area</li>
+<li>Less type safety compared to builder patterns</li>
+<li>Potential for confusing error messages with invalid URIs</li>
+<li>Need to maintain backwards compatibility</li>
+</ul>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>Alternatives considered:</p>
+<ol>
+<li>Connection string format instead of URIs</li>
+<li>Builder pattern with URI parsing</li>
+<li>Macro-based configuration</li>
+</ol>
+<p>URI-based configuration was chosen because:</p>
+<ul>
+<li>URIs are widely understood</li>
+<li>Natural fit for storage locations</li>
+<li>Extensible through custom schemes</li>
+<li>Common in similar tools</li>
+</ul>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>Similar patterns exist in:</p>
+<ul>
+<li>Database connection strings (PostgreSQL, MongoDB)</li>
+<li><a href="https://docs.rs/object_store/latest/object_store/fn.parse_url.html"><code>object_store::parse_url</code></a></li>
+</ul>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<ul>
+<li>Support for connection string format.</li>
+<li>Configuration presets like <code>r2</code> and <code>s3</code> with directory bucket enabled.</li>
+</ul>
+</div></details></section></div></main></body></html>

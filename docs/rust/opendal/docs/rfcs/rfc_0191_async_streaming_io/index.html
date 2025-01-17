@@ -1,0 +1,254 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Async streaming IO"><title>opendal::docs::rfcs::rfc_0191_async_streaming_io - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_0191_async_streaming_io</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_0191_async_streaming_io</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#50">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Async streaming IO</p>
+<ul>
+<li>Proposal Name: <code>async_streaming_io</code></li>
+<li>Start Date: 2022-03-28</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/191">apache/opendal#191</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/190">apache/opendal#190</a></li>
+</ul>
+<p><strong>Reverted</strong></p>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Use <code>Stream</code>/<code>Sink</code> instead of <code>AsyncRead</code> in <code>Accessor</code>.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p><code>Accessor</code> intends to be the <code>underlying trait of all backends for implementers</code>. However, it’s not so underlying enough.</p>
+<h3 id="over-wrapped"><a class="doc-anchor" href="#over-wrapped">§</a>Over-wrapped</h3>
+<p><code>Accessor</code> returns a <code>BoxedAsyncReader</code> for <code>read</code> operation:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub type </span>BoxedAsyncReader = Box&lt;<span class="kw">dyn </span>AsyncRead + Unpin + Send&gt;;
+
+<span class="kw">pub trait </span>Accessor {
+    <span class="kw">async fn </span>read(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpRead) -&gt; <span class="prelude-ty">Result</span>&lt;BoxedAsyncReader&gt; {
+        <span class="kw">let _ </span>= args;
+        <span class="macro">unimplemented!</span>()
+    }
+}</code></pre></div>
+<p>And we are exposing <code>Reader</code>, which implements <code>AsyncRead</code> and <code>AsyncSeek</code> to end-users. For every call to <code>Reader::poll_read()</code>, we need:</p>
+<ul>
+<li><code>Reader::poll_read()</code></li>
+<li><code>BoxedAsyncReader::poll_read()</code></li>
+<li><code>IntoAsyncRead&lt;ByteStream&gt;::poll_read()</code></li>
+<li><code>ByteStream::poll_next()</code></li>
+</ul>
+<p>If we could return a <code>Stream</code> directly, we can transform the call stack into:</p>
+<ul>
+<li><code>Reader::poll_read()</code></li>
+<li><code>ByteStream::poll_next()</code></li>
+</ul>
+<p>In this way, we operate on the underlying IO stream, and the caller must keep track of the reading states.</p>
+<h3 id="inconsistent"><a class="doc-anchor" href="#inconsistent">§</a>Inconsistent</h3>
+<p>OpenDAL’s <code>read</code> and <code>write</code> behavior is not consistent.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub type </span>BoxedAsyncReader = Box&lt;<span class="kw">dyn </span>AsyncRead + Unpin + Send&gt;;
+
+<span class="kw">pub trait </span>Accessor: Send + Sync + Debug {
+    <span class="kw">async fn </span>read(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpRead) -&gt; <span class="prelude-ty">Result</span>&lt;BoxedAsyncReader&gt; {
+        <span class="kw">let _ </span>= args;
+        <span class="macro">unimplemented!</span>()
+    }
+    <span class="kw">async fn </span>write(<span class="kw-2">&amp;</span><span class="self">self</span>, r: BoxedAsyncReader, args: <span class="kw-2">&amp;</span>OpWrite) -&gt; <span class="prelude-ty">Result</span>&lt;usize&gt; {
+        <span class="kw">let </span>(<span class="kw">_</span>, <span class="kw">_</span>) = (r, args);
+        <span class="macro">unimplemented!</span>()
+    }
+}</code></pre></div>
+<p>For <code>read</code>, OpenDAL returns a <code>BoxedAsyncReader</code> which users can decide when and how to read data. But for <code>write</code>, OpenDAL accepts a <code>BoxedAsyncReader</code> instead, in which users can’t control the writing logic. How large will the writing buffer size be? When to call <code>flush</code>?</p>
+<h3 id="service-native-optimization"><a class="doc-anchor" href="#service-native-optimization">§</a>Service native optimization</h3>
+<p>OpenDAL knows more about the service detail, but returning <code>BoxedAsyncReader</code> makes it can’t fully use the advantage.</p>
+<p>For example, most object storage services use HTTP to transfer data which is TCP stream-based. The most efficient way is to return a full TCP buffer, but users don’t know about that. First, users could have continuous small reads on stream. To overcome the poor performance, they have to use <code>BufReader</code>, which adds a new buffering between reading. Then, users don’t know the correct (best) buffer size to set.</p>
+<p>Via returning a <code>Stream</code>, users could benefit from it in both ways:</p>
+<ul>
+<li>Users who want underlying control can operate on the <code>Stream</code> directly.</li>
+<li>Users who don’t care about the behavior can use OpenDAL provided Reader, which always adopts the best optimization.</li>
+</ul>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>Within the <code>async_streaming_io</code> feature, we will add the following new APIs to <code>Object</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Object {
+    <span class="kw">pub async fn </span>stream(<span class="kw-2">&amp;</span><span class="self">self</span>, offset: <span class="prelude-ty">Option</span>&lt;u64&gt;, size: <span class="prelude-ty">Option</span>&lt;u64&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;BytesStream&gt; {}
+    <span class="kw">pub async fn </span>sink(<span class="kw-2">&amp;</span><span class="self">self</span>, size: u64) -&gt; <span class="prelude-ty">Result</span>&lt;BytesSink&gt; {}
+}</code></pre></div>
+<p>Users can control the underlying logic of those bytes, streams, and sinks.</p>
+<p>For example, they can:</p>
+<ul>
+<li>Read data on demand: <code>stream.next().await</code></li>
+<li>Write data on demand: <code>sink.feed(bs).await; sink.close().await;</code></li>
+</ul>
+<p>Based on <code>stream</code> and <code>sink</code>, <code>Object</code> will provide more optimized helper functions like:</p>
+<ul>
+<li><code>async read(offset: Option&lt;u64&gt;, size: Option&lt;u64&gt;) -&gt; Result&lt;bytes::Bytes&gt;</code></li>
+<li><code>async write(bs: bytes::Bytes) -&gt; Result&lt;()&gt;</code></li>
+</ul>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p><code>read</code> and <code>write</code> in <code>Accessor</code> will be refactored into streaming-based:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub type </span>BytesStream =  Box&lt;<span class="kw">dyn </span>Stream + Unpin + Send&gt;;
+<span class="kw">pub type </span>BytesSink =  Box&lt;<span class="kw">dyn </span>Sink + Unpin + Send&gt;;
+
+<span class="kw">pub trait </span>Accessor: Send + Sync + Debug {
+    <span class="kw">async fn </span>read(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpRead) -&gt; <span class="prelude-ty">Result</span>&lt;BytesStream&gt; {
+        <span class="kw">let _ </span>= args;
+        <span class="macro">unimplemented!</span>()
+    }
+    <span class="kw">async fn </span>write(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpWrite) -&gt; <span class="prelude-ty">Result</span>&lt;BytesSink&gt; {
+        <span class="kw">let _ </span>= args;
+        <span class="macro">unimplemented!</span>()
+    }
+}</code></pre></div>
+<p>All other IO functions will be adapted to fit these changes.</p>
+<p>For fs, it’s simple to implement <code>Stream</code> and <code>Sink</code> for <code>tokio::fs::File</code>.</p>
+<p>We will return a <code>BodySinker</code> instead for all HTTP-based storage services. In which we maintain a <code>put_object</code> <code>ResponseFuture</code> that construct by <code>hyper</code> and a <code>sender</code> part of the channel. All data sent by users will be passed to <code>ResponseFuture</code> via the unbuffered channel.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">struct </span>BodySinker {
+    fut: ResponseFuture,
+    sender: Sender&lt;bytes::Bytes&gt;
+}</code></pre></div>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2><h3 id="performance-regression-on-fs"><a class="doc-anchor" href="#performance-regression-on-fs">§</a>Performance regression on fs</h3>
+<p><code>fs</code> is not stream based backend, and convert from <code>Reader</code> to <code>Stream</code> is not zero cost. Based on benchmark over <code>IntoStream</code>, we can get nearly 70% performance drawback (pure memory):</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>into_stream/into_stream time:   [<span class="number">1.3046 </span>ms <span class="number">1.3056 </span>ms <span class="number">1.3068 </span>ms]
+                        thrpt:  [<span class="number">2.9891 </span>GiB/s <span class="number">2.9919 </span>GiB/s <span class="number">2.9942 </span>GiB/s]
+into_stream/raw_reader  time:   [<span class="number">382.10 </span>us <span class="number">383.52 </span>us <span class="number">385.16 </span>us]
+                        thrpt:  [<span class="number">10.142 </span>GiB/s <span class="number">10.185 </span>GiB/s <span class="number">10.223 </span>GiB/s]</code></pre></div>
+<p>However, real fs is not as fast as memory and most overhead will happen at disk side, so that performance regression is allowed (at least at this time).</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="performance-for-switching-from-reader-to-stream"><a class="doc-anchor" href="#performance-for-switching-from-reader-to-stream">§</a>Performance for switching from Reader to Stream</h3>
+<p>Before</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>read_full/<span class="number">4.00 </span>KiB      time:   [<span class="number">455.70 </span>us <span class="number">466.18 </span>us <span class="number">476.93 </span>us]
+                        thrpt:  [<span class="number">8.1904 </span>MiB/s <span class="number">8.3794 </span>MiB/s <span class="number">8.5719 </span>MiB/s]
+read_full/<span class="number">256 </span>KiB       time:   [<span class="number">530.63 </span>us <span class="number">544.30 </span>us <span class="number">557.84 </span>us]
+                        thrpt:  [<span class="number">448.16 </span>MiB/s <span class="number">459.30 </span>MiB/s <span class="number">471.14 </span>MiB/s]
+read_full/<span class="number">4.00 </span>MiB      time:   [<span class="number">1.5569 </span>ms <span class="number">1.6152 </span>ms <span class="number">1.6743 </span>ms]
+                        thrpt:  [<span class="number">2.3330 </span>GiB/s <span class="number">2.4184 </span>GiB/s <span class="number">2.5090 </span>GiB/s]
+read_full/<span class="number">16.0 </span>MiB      time:   [<span class="number">5.7337 </span>ms <span class="number">5.9087 </span>ms <span class="number">6.0813 </span>ms]
+                        thrpt:  [<span class="number">2.5693 </span>GiB/s <span class="number">2.6444 </span>GiB/s <span class="number">2.7251 </span>GiB/s]</code></pre></div>
+<p>After</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>read_full/<span class="number">4.00 </span>KiB      time:   [<span class="number">455.67 </span>us <span class="number">466.03 </span>us <span class="number">476.21 </span>us]
+                        thrpt:  [<span class="number">8.2027 </span>MiB/s <span class="number">8.3819 </span>MiB/s <span class="number">8.5725 </span>MiB/s]
+                 change:
+                        time:   [-<span class="number">2.1168</span>% +<span class="number">0.6241</span>% +<span class="number">3.8735</span>%] (p = <span class="number">0.68 </span>&gt; <span class="number">0.05</span>)
+                        thrpt:  [-<span class="number">3.7291</span>% -<span class="number">0.6203</span>% +<span class="number">2.1625</span>%]
+                        No change <span class="kw">in </span>performance detected.
+read_full/<span class="number">256 </span>KiB       time:   [<span class="number">521.04 </span>us <span class="number">535.20 </span>us <span class="number">548.74 </span>us]
+                        thrpt:  [<span class="number">455.59 </span>MiB/s <span class="number">467.11 </span>MiB/s <span class="number">479.81 </span>MiB/s]
+                 change:
+                        time:   [-<span class="number">7.8470</span>% -<span class="number">4.7987</span>% -<span class="number">1.4955</span>%] (p = <span class="number">0.01 </span>&lt; <span class="number">0.05</span>)
+                        thrpt:  [+<span class="number">1.5182</span>% +<span class="number">5.0406</span>% +<span class="number">8.5152</span>%]
+                        Performance has improved.
+read_full/<span class="number">4.00 </span>MiB      time:   [<span class="number">1.4571 </span>ms <span class="number">1.5184 </span>ms <span class="number">1.5843 </span>ms]
+                        thrpt:  [<span class="number">2.4655 </span>GiB/s <span class="number">2.5725 </span>GiB/s <span class="number">2.6808 </span>GiB/s]
+                 change:
+                        time:   [-<span class="number">5.4403</span>% -<span class="number">1.5696</span>% +<span class="number">2.3719</span>%] (p = <span class="number">0.44 </span>&gt; <span class="number">0.05</span>)
+                        thrpt:  [-<span class="number">2.3170</span>% +<span class="number">1.5946</span>% +<span class="number">5.7533</span>%]
+                        No change <span class="kw">in </span>performance detected.
+read_full/<span class="number">16.0 </span>MiB      time:   [<span class="number">5.0201 </span>ms <span class="number">5.2105 </span>ms <span class="number">5.3986 </span>ms]
+                        thrpt:  [<span class="number">2.8943 </span>GiB/s <span class="number">2.9988 </span>GiB/s <span class="number">3.1125 </span>GiB/s]
+                 change:
+                        time:   [-<span class="number">15.917</span>% -<span class="number">11.816</span>% -<span class="number">7.5219</span>%] (p = <span class="number">0.00 </span>&lt; <span class="number">0.05</span>)
+                        thrpt:  [+<span class="number">8.1337</span>% +<span class="number">13.400</span>% +<span class="number">18.930</span>%]
+                        Performance has improved.</code></pre></div>
+<h3 id="performance-for-the-extra-channel-in-write"><a class="doc-anchor" href="#performance-for-the-extra-channel-in-write">§</a>Performance for the extra channel in <code>write</code></h3>
+<p>Based on the benchmark during research, the <strong>unbuffered</strong> channel does improve the performance a bit in some cases:</p>
+<p>Before:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>write_once/<span class="number">4.00 </span>KiB     time:   [<span class="number">564.11 </span>us <span class="number">575.17 </span>us <span class="number">586.15 </span>us]
+                        thrpt:  [<span class="number">6.6642 </span>MiB/s <span class="number">6.7914 </span>MiB/s <span class="number">6.9246 </span>MiB/s]
+write_once/<span class="number">256 </span>KiB      time:   [<span class="number">1.3600 </span>ms <span class="number">1.3896 </span>ms <span class="number">1.4168 </span>ms]
+                        thrpt:  [<span class="number">176.46 </span>MiB/s <span class="number">179.90 </span>MiB/s <span class="number">183.82 </span>MiB/s]
+write_once/<span class="number">4.00 </span>MiB     time:   [<span class="number">11.394 </span>ms <span class="number">11.555 </span>ms <span class="number">11.717 </span>ms]
+                        thrpt:  [<span class="number">341.39 </span>MiB/s <span class="number">346.18 </span>MiB/s <span class="number">351.07 </span>MiB/s]
+write_once/<span class="number">16.0 </span>MiB     time:   [<span class="number">41.829 </span>ms <span class="number">42.645 </span>ms <span class="number">43.454 </span>ms]
+                        thrpt:  [<span class="number">368.20 </span>MiB/s <span class="number">375.19 </span>MiB/s <span class="number">382.51 </span>MiB/s]</code></pre></div>
+<p>After:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>write_once/<span class="number">4.00 </span>KiB     time:   [<span class="number">572.20 </span>us <span class="number">583.62 </span>us <span class="number">595.21 </span>us]
+                        thrpt:  [<span class="number">6.5628 </span>MiB/s <span class="number">6.6932 </span>MiB/s <span class="number">6.8267 </span>MiB/s]
+                 change:
+                        time:   [-<span class="number">6.3126</span>% -<span class="number">3.8179</span>% -<span class="number">1.0733</span>%] (p = <span class="number">0.00 </span>&lt; <span class="number">0.05</span>)
+                        thrpt:  [+<span class="number">1.0849</span>% +<span class="number">3.9695</span>% +<span class="number">6.7380</span>%]
+                        Performance has improved.
+write_once/<span class="number">256 </span>KiB      time:   [<span class="number">1.3192 </span>ms <span class="number">1.3456 </span>ms <span class="number">1.3738 </span>ms]
+                        thrpt:  [<span class="number">181.98 </span>MiB/s <span class="number">185.79 </span>MiB/s <span class="number">189.50 </span>MiB/s]
+                 change:
+                        time:   [-<span class="number">0.5899</span>% +<span class="number">1.7476</span>% +<span class="number">4.1037</span>%] (p = <span class="number">0.15 </span>&gt; <span class="number">0.05</span>)
+                        thrpt:  [-<span class="number">3.9420</span>% -<span class="number">1.7176</span>% +<span class="number">0.5934</span>%]
+                        No change <span class="kw">in </span>performance detected.
+write_once/<span class="number">4.00 </span>MiB     time:   [<span class="number">10.855 </span>ms <span class="number">11.039 </span>ms <span class="number">11.228 </span>ms]
+                        thrpt:  [<span class="number">356.25 </span>MiB/s <span class="number">362.34 </span>MiB/s <span class="number">368.51 </span>MiB/s]
+                 change:
+                        time:   [-<span class="number">6.9651</span>% -<span class="number">4.8176</span>% -<span class="number">2.5681</span>%] (p = <span class="number">0.00 </span>&lt; <span class="number">0.05</span>)
+                        thrpt:  [+<span class="number">2.6358</span>% +<span class="number">5.0614</span>% +<span class="number">7.4866</span>%]
+                        Performance has improved.
+write_once/<span class="number">16.0 </span>MiB     time:   [<span class="number">38.706 </span>ms <span class="number">39.577 </span>ms <span class="number">40.457 </span>ms]
+                        thrpt:  [<span class="number">395.48 </span>MiB/s <span class="number">404.27 </span>MiB/s <span class="number">413.37 </span>MiB/s]
+                 change:
+                        time:   [-<span class="number">10.829</span>% -<span class="number">8.3611</span>% -<span class="number">5.8702</span>%] (p = <span class="number">0.00 </span>&lt; <span class="number">0.05</span>)
+                        thrpt:  [+<span class="number">6.2363</span>% +<span class="number">9.1240</span>% +<span class="number">12.145</span>%]
+                        Performance has improved.</code></pre></div>
+<h3 id="add-complexity-on-the-services-side"><a class="doc-anchor" href="#add-complexity-on-the-services-side">§</a>Add complexity on the services side</h3>
+<p>Returning <code>Stream</code> and <code>Sink</code> make it complex to implement. At first glance, it does. But in reality, it’s not.</p>
+<p>Note: HTTP (especially for hyper) is stream-oriented.</p>
+<ul>
+<li>Returning a <code>stream</code> is more straightforward than <code>reader</code>.</li>
+<li>Returning <code>Sink</code> is covered by the global shared <code>BodySinker</code> struct.</li>
+</ul>
+<p>Other helper functions will be covered at the Object-level which services don’t need to bother.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2><h3 id="returning-a-writer"><a class="doc-anchor" href="#returning-a-writer">§</a>Returning a <code>Writer</code></h3>
+<p>The most natural extending is to return <code>BoxedAsyncWriter</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Accessor: Send + Sync + Debug {
+    <span class="doccomment">/// Read data from the underlying storage into input writer.
+    </span><span class="kw">async fn </span>read(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpRead) -&gt; <span class="prelude-ty">Result</span>&lt;BoxedAsyncReader&gt; {
+        <span class="kw">let _ </span>= args;
+        <span class="macro">unimplemented!</span>()
+    }
+    <span class="doccomment">/// Write data from input reader to the underlying storage.
+    </span><span class="kw">async fn </span>write(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpWrite) -&gt; <span class="prelude-ty">Result</span>&lt;BoxedAsyncWriter&gt; {
+        <span class="kw">let _ </span>= args;
+        <span class="macro">unimplemented!</span>()
+    }
+}</code></pre></div>
+<p>But it only fixes the <code>Inconsistent</code> concern and can’t help with other issues.</p>
+<h3 id="slice-based-api"><a class="doc-anchor" href="#slice-based-api">§</a>Slice based API</h3>
+<p>Most rust IO APIs are based on slice:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Accessor: Send + Sync + Debug {
+    <span class="doccomment">/// Read data from the underlying storage into input writer.
+    </span><span class="kw">async fn </span>read(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpRead, bs: <span class="kw-2">&amp;mut </span>[u8]) -&gt; <span class="prelude-ty">Result</span>&lt;usize&gt; {
+        <span class="kw">let _ </span>= args;
+        <span class="macro">unimplemented!</span>()
+    }
+    <span class="doccomment">/// Write data from input reader to the underlying storage.
+    </span><span class="kw">async fn </span>write(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpWrite, bs: <span class="kw-2">&amp;</span>[u8]) -&gt; <span class="prelude-ty">Result</span>&lt;usize&gt; {
+        <span class="kw">let _ </span>= args;
+        <span class="macro">unimplemented!</span>()
+    }
+}</code></pre></div>
+<p>The problem is <code>Accessor</code> doesn’t have states:</p>
+<ul>
+<li>If we require all data must be passed at one time, we can’t support large files read &amp; write</li>
+<li>If we allow users to call <code>read</code>/<code>write</code> multiple times, we need to implement another <code>Reader</code> and <code>Writer</code> alike logic.</li>
+</ul>
+<h3 id="accept-reader-and-writer"><a class="doc-anchor" href="#accept-reader-and-writer">§</a>Accept <code>Reader</code> and <code>Writer</code></h3>
+<p>It’s also possible to accept <code>Reader</code> and <code>Writer</code> instead.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Accessor: Send + Sync + Debug {
+    <span class="doccomment">/// Read data from the underlying storage into input writer.
+    </span><span class="kw">async fn </span>read(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpRead, w: BoxedAsyncWriter) -&gt; <span class="prelude-ty">Result</span>&lt;usize&gt; {
+        <span class="kw">let _ </span>= args;
+        <span class="macro">unimplemented!</span>()
+    }
+    <span class="doccomment">/// Write data from input reader to the underlying storage.
+    </span><span class="kw">async fn </span>write(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpWrite, r: BoxedAsyncReader) -&gt; <span class="prelude-ty">Result</span>&lt;usize&gt; {
+        <span class="kw">let _ </span>= args;
+        <span class="macro">unimplemented!</span>()
+    }
+}</code></pre></div>
+<p>This API design addressed all concerns but made it hard for users to use. Primarily, we can’t support <code>futures::AsyncRead</code> and <code>tokio::AsyncRead</code> simultaneously.</p>
+<p>For example, we can’t accept a <code>Box::new(Vec::new())</code>, user can’t get this vec from OpenDAL.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<ul>
+<li>Implement <code>Object::read_into(w: BoxedAsyncWriter)</code></li>
+<li>Implement <code>Object::write_from(r: BoxedAsyncReader)</code></li>
+</ul>
+</div></details></section></div></main></body></html>

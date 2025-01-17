@@ -1,0 +1,47 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Object handler"><title>opendal::docs::rfcs::rfc_1085_object_handler - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_1085_object_handler</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_1085_object_handler</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#138">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Object handler</p>
+<ul>
+<li>Proposal Name: <code>object_handler</code></li>
+<li>Start Date: 2022-12-19</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/1085">apache/opendal#1085</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/1085">apache/opendal#1085</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Returning a <code>file description</code> to users for native seek support.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>OpenDAL’s goal is to <code>access data freely, painlessly, and efficiently</code>, so we build an operation first API which means we provide operation instead of the file description. Users don’t need to call <code>open</code> before <code>read</code>; OpenDAL will handle all the open and close functions.</p>
+<p>However, our users do want to control the complex behavior of that:</p>
+<ul>
+<li>Some storage backends have native <code>seek</code> support, but OpenDAL can’t fully use them.</li>
+<li>Users want to improve performance by reusing the same file description without <code>open</code> and <code>close</code> for every read operation.</li>
+</ul>
+<p>This RFC will fill this gap.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>Users can get an object handler like:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>oh: ObjectHandler = op.object(<span class="string">"path/to/file"</span>).open().<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p><code>ObjectHandler</code> will implement <code>AsyncRead</code> and <code>AsyncSeek</code> so it can be used like <code>tokio::fs::File</code>. If the backend supports native seek operation, we will take the native process; otherwise, we will fall back to simulation implementations.</p>
+<p>The blocking version will be provided by:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>boh: BlockingObjectHandler = op.object(<span class="string">"path/to/file"</span>).blocking_open()<span class="question-mark">?</span>;</code></pre></div>
+<p>And <code>BlockingObjectHandler</code> will implement <code>Read</code> and <code>Seek</code> so it can be used like <code>std::fs::File</code>. If the backend supports native seek operation, we will take the native process; otherwise, we will fall back to simulation implementations.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>This RFC will add a new API <code>open</code> in <code>Accessor</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Accessor {
+    <span class="kw">async fn </span>open(<span class="kw-2">&amp;</span><span class="self">self</span>, path: <span class="kw-2">&amp;</span>str, args: OpOpen) -&gt; <span class="prelude-ty">Result</span>&lt;(RpOpen, BytesHandler)&gt;;
+}</code></pre></div>
+<p>Only services that support native <code>seek</code> operations can implement this API, like <code>fs</code> and <code>hdfs</code>. For services that do not support native <code>seek</code> operations like <code>s3</code> and <code>azblob</code>, we will fall back to the simulation implementations: maintaining an in-memory index instead.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="how-about-writing-operations"><a class="doc-anchor" href="#how-about-writing-operations">§</a>How about writing operations?</h3>
+<p>Ideally, writing on <code>ObjectHandler</code> should also be supported. But we still don’t know how this API will be used. Let’s apply this API for <code>read</code> first.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<ul>
+<li>Add write support</li>
+<li>Adopt native <code>pread</code></li>
+</ul>
+</div></details></section></div></main></body></html>

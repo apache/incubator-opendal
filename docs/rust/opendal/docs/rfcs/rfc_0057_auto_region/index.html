@@ -1,0 +1,126 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Auto region"><title>opendal::docs::rfcs::rfc_0057_auto_region - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_0057_auto_region</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_0057_auto_region</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#34">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Auto region</p>
+<ul>
+<li>Proposal Name: <code>auto_region</code></li>
+<li>Start Date: 2022-02-24</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/57">apache/opendal#57</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/58">apache/opendal#58</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Automatically detecting user’s s3 region.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>Current behavior for <code>region</code> and <code>endpoint</code> is buggy. <code>endpoint=https://s3.amazonaws.com</code> and <code>endpoint=&quot;&quot;</code> are expected to be the same, because <code>endpoint=&quot;&quot;</code> means take the default value <code>https://s3.amazonaws.com</code>. However, they aren’t.</p>
+<p>S3 SDK has a mechanism to construct the correct API endpoint. It works like <code>format!(&quot;s3.{}.amazonaws.com&quot;, region)</code> internally. But if we specify the endpoint to <code>https://s3.amazonaws.com</code>, SDK will take this endpoint static.</p>
+<p>So users could meet errors like:</p>
+<div class="example-wrap"><pre class="language-shell"><code>attempting to access must be addressed using the specified endpoint
+</code></pre></div>
+<p>Automatically detecting the user’s s3 region will help resolve this problem. Users don’t need to care about the region anymore, <code>OpenDAL</code> will figure it out. Everything works regardless of whether the input is <code>s3.amazonaws.com</code> or <code>s3.us-east-1.amazonaws.com</code>.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p><code>OpenDAL</code> will remove <code>region</code> option, and users only need to set the <code>endpoint</code> now.</p>
+<p>Valid input including:</p>
+<ul>
+<li><code>https://s3.amazonaws.com</code></li>
+<li><code>https://s3.us-east-1.amazonaws.com</code></li>
+<li><code>https://oss-ap-northeast-1.aliyuncs.com</code></li>
+<li><code>http://127.0.0.1:9000</code></li>
+</ul>
+<p><code>OpenDAL</code> will handle the <code>region</code> internally and automatically.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>S3 services support mechanism to indicate the correct region on itself.</p>
+<p>Sending a <code>HEAD</code> request to <code>&lt;endpoint&gt;/&lt;bucket&gt;</code> will get a response like:</p>
+<div class="example-wrap"><pre class="language-shell"><code>:) curl -I https://s3.amazonaws.com/databend-shared
+HTTP/1.1 301 Moved Permanently
+x-amz-bucket-region: us-east-2
+x-amz-request-id: NPYSWK7WXJD1KQG7
+x-amz-id-2: 3FJSJ5HACKqLbeeXBUUE3GoPL1IGDjLl6SZx/fw2MS+k0GND0UwDib5YQXE6CThiQxpYBWZjgxs=
+Content-Type: application/xml
+Date: Thu, 24 Feb 2022 05:15:13 GMT
+Server: AmazonS3
+</code></pre></div>
+<p><code>x-amz-bucket-region: us-east-2</code> will be returned, and we can use this region to construct the correct endpoint for this bucket:</p>
+<div class="example-wrap"><pre class="language-shell"><code>:) curl -I https://s3.us-east-2.amazonaws.com/databend-shared
+HTTP/1.1 403 Forbidden
+x-amz-bucket-region: us-east-2
+x-amz-request-id: 98CN5MYV3GQ1XMPY
+x-amz-id-2: Tdxy36bRRP21Oip18KMQ7FG63MTeXOpXdd5/N3izFH0oalPODVaRlpCkDU3oUN0HIE24/ezX5Dc=
+Content-Type: application/xml
+Date: Thu, 24 Feb 2022 05:16:57 GMT
+Server: AmazonS3
+</code></pre></div>
+<p>It also works for S3 compilable services like minio:</p>
+<div class="example-wrap"><pre class="language-shell"><code># Start minio with `MINIO_SITE_REGION` configured
+:) MINIO_SITE_REGION=test minio server .
+# Sending request to minio bucket
+:) curl -I 127.0.0.1:9900/databend
+HTTP/1.1 403 Forbidden
+Accept-Ranges: bytes
+Content-Length: 0
+Content-Security-Policy: block-all-mixed-content
+Server: MinIO
+Strict-Transport-Security: max-age=31536000; includeSubDomains
+Vary: Origin
+Vary: Accept-Encoding
+X-Amz-Bucket-Region: test
+X-Amz-Request-Id: 16D6A12DCA57E0FA
+X-Content-Type-Options: nosniff
+X-Xss-Protection: 1; mode=block
+Date: Thu, 24 Feb 2022 05:18:51 GMT
+</code></pre></div>
+<p>We can use this mechanism to detect <code>region</code> automatically. The algorithm works as follows:</p>
+<ul>
+<li>If <code>endpoint</code> is empty, fill it will <code>https://s3.amazonaws.com</code> and the corresponding template: <code>https://s3.{region}.amazonaws.com</code>.</li>
+<li>Sending a <code>HEAD</code> request to <code>&lt;endpoint&gt;/&lt;bucket&gt;</code>.</li>
+<li>If got <code>200</code> or <code>403</code> response, the endpoint works.
+<ul>
+<li>Use this endpoint directly without filling the template.</li>
+<li>Take the header <code>x-amz-bucket-region</code> as the region to fill the endpoint.</li>
+<li>Use the fallback value <code>us-east-1</code> to make SDK happy if the header not exists.</li>
+</ul>
+</li>
+<li>If got a <code>301</code> response, the endpoint needs construction.
+<ul>
+<li>Take the header <code>x-amz-bucket-region</code> as the region to fill the endpoint.</li>
+<li>Return an error to the user if not exist.</li>
+</ul>
+</li>
+<li>If got <code>404</code>, the bucket could not exist, or the endpoint is incorrect.
+<ul>
+<li>Return an error to the user.</li>
+</ul>
+</li>
+</ul>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="use-virtual-style-bucketendpoint"><a class="doc-anchor" href="#use-virtual-style-bucketendpoint">§</a>Use virtual style <code>&lt;bucket&gt;.&lt;endpoint&gt;</code>?</h3>
+<p>The virtual style works too. But not all services support this kind of API endpoint. For example, using <code>http://testbucket.127.0.0.1</code> is wrong, and we need to do extra checks.</p>
+<p>Using <code>&lt;endpoint&gt;/&lt;bucket&gt;</code> makes everything easier.</p>
+<h3 id="use-listbuckets-api"><a class="doc-anchor" href="#use-listbuckets-api">§</a>Use <code>ListBuckets</code> API?</h3>
+<p><code>ListBuckets</code> requires higher permission than normal bucket read and write operations. It’s better to finish the job without requesting more permission. </p>
+<h3 id="misbehavior-s3-compilable-services"><a class="doc-anchor" href="#misbehavior-s3-compilable-services">§</a>Misbehavior S3 Compilable Services</h3>
+<p>Many services didn’t implement S3 API correctly.</p>
+<p>Aliyun OSS will return <code>404</code> for every bucket:</p>
+<div class="example-wrap"><pre class="language-shell"><code>:) curl -I https://aliyuncs.com/&lt;my-existing-bucket&gt;
+HTTP/2 404
+date: Thu, 24 Feb 2022 05:32:57 GMT
+content-type: text/html
+content-length: 690
+ufe-result: A6
+set-cookie: thw=cn; Path=/; Domain=.taobao.com; Expires=Fri, 24-Feb-23 05:32:57 GMT;
+server: Tengine/Aserver
+</code></pre></div>
+<p>QingStor Object Storage will return <code>307</code> with the <code>Location</code> header:</p>
+<div class="example-wrap"><pre class="language-shell"><code>:) curl -I https://s3.qingstor.com/community
+HTTP/1.1 301 Moved Permanently
+Server: nginx/1.13.6
+Date: Thu, 24 Feb 2022 05:33:55 GMT
+Connection: keep-alive
+Location: https://pek3a.s3.qingstor.com/community
+X-Qs-Request-Id: 05b83b615c801a3d
+</code></pre></div>
+<p>In this proposal, we will not figure them out. It’s easier for the user to fill the correct endpoint instead of automatically detecting them.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>None</p>
+</div></details></section></div></main></body></html>

@@ -1,0 +1,153 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Range Based Read API"><title>opendal::docs::rfcs::rfc_4382_range_based_read - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_4382_range_based_read</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_4382_range_based_read</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#234">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Range Based Read API</p>
+<ul>
+<li>Proposal Name: <code>range_based_read</code></li>
+<li>Start Date: 2024-03-20</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/4382">apache/opendal#4382</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/4383">apache/opendal#4383</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Convert <code>oio::Read</code> into a stateless, range-based reading pattern.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>The current <code>oio::Read</code> API is stateful:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Read: Unpin + Send + Sync {
+    <span class="kw">fn </span>read(<span class="kw-2">&amp;mut </span><span class="self">self</span>, limit: usize) -&gt; <span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;Bytes&gt;&gt; + Send;
+    <span class="kw">fn </span>seek(<span class="kw-2">&amp;mut </span><span class="self">self</span>, pos: io::SeekFrom) -&gt; <span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;u64&gt;&gt; + Send;
+}</code></pre></div>
+<p>Users use <code>read</code> to retrieve data from storage and can use <code>seek</code> to navigate to specific positions. OpenDAL manages the underlying state. This design is good for users from <code>std::io::Read</code>, <code>futures::AsyncRead</code> and <code>tokio::io::AsyncRead</code>.</p>
+<p>OpenDAL also provides <code>range</code> option at the <code>Operator</code> level for users to read a specific range of data. The most common usage will be like:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>r: Reader = op.reader_with(path).range(<span class="number">1024</span>..<span class="number">2048</span>).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>However, after observing our users, we found that:</p>
+<ul>
+<li><code>AsyncSeek</code> in <code>Reader</code> is prone to misuse.</li>
+<li><code>Reader</code> does not support concurrent reading.</li>
+<li><code>Reader</code> can’t adopt Completion-based IO</li>
+</ul>
+<h3 id="misuse-of-asyncseek"><a class="doc-anchor" href="#misuse-of-asyncseek">§</a>Misuse of <code>AsyncSeek</code></h3>
+<p>When designing <code>Reader</code>, I expected users to check the <code>read_can_seek</code> capability to determine if the underlying storage services natively support <code>seek</code>. However, many users are unaware of this and directly use <code>seek</code>, leading to suboptimal performance.</p>
+<p>For example, <code>s3</code> storage does not support <code>seek</code> natively. When users call <code>seek</code>, opendal will drop current reader and sending a new request. This behavior is hidden from users and can lead to unexpected performance issues like <a href="https://github.com/apache/opendal/issues/3725">What’s going on in my parquet stream</a>.</p>
+<h3 id="lack-of-concurrent-reading"><a class="doc-anchor" href="#lack-of-concurrent-reading">§</a>Lack of concurrent reading</h3>
+<p><code>oio::Read</code> complicates supporting concurrent reading. Users must implement a feature similar to merge IO, as discussed in <a href="https://github.com/apache/opendal/issues/3675">support merge io read api by settings</a>.</p>
+<p>There is no way for opendal to support this feature.</p>
+<h3 id="cant-adopt-completion-based-io"><a class="doc-anchor" href="#cant-adopt-completion-based-io">§</a>Can’t adopt Completion-based IO</h3>
+<p>Completion-based IO requires take the buffer’s owner ship. But API that take <code>&amp;mut [u8]</code> can’t do that.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>So I propose to convert <code>Reader</code> into a stateless, range-based reading pattern.</p>
+<p>We will remove the following <code>impl</code> from <code>Reader</code>:</p>
+<ul>
+<li><code>futures::AsyncRead</code></li>
+<li><code>futures::AsyncSeek</code></li>
+<li><code>futures::Stream</code></li>
+<li><code>tokio::AsyncRead</code></li>
+<li><code>tokio::AsyncSeek</code></li>
+</ul>
+<p>We will add the following new APIs to <code>Reader</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Reader {
+    <span class="doccomment">/// Read data from the storage at the specified offset.
+     </span><span class="kw">pub async fn </span>read(<span class="kw-2">&amp;</span><span class="self">self</span>, buf: <span class="kw-2">&amp;mut </span><span class="kw">impl </span>BufMut, offset: u64, limit: usize) -&gt; <span class="prelude-ty">Result</span>&lt;usize&gt;;
+
+    <span class="doccomment">/// Read data from the storage at the specified range.
+    </span><span class="kw">pub async fn </span>read_range(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        buf: <span class="kw-2">&amp;mut </span><span class="kw">impl </span>BufMut,
+        range: <span class="kw">impl </span>RangeBounds&lt;u64&gt;,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;usize&gt;;
+
+    <span class="doccomment">/// Read all data from the storage into given buf.
+    </span><span class="kw">pub async fn </span>read_to_end(<span class="kw-2">&amp;</span><span class="self">self</span>, buf: <span class="kw-2">&amp;mut </span><span class="kw">impl </span>BufMut) -&gt; <span class="prelude-ty">Result</span>&lt;usize&gt;;
+
+    <span class="doccomment">/// Copy data from the storage into given writer.
+    </span><span class="kw">pub async fn </span>copy(<span class="kw-2">&amp;mut </span><span class="self">self</span>, write_into: <span class="kw-2">&amp;mut </span><span class="kw">impl </span>futures::AsyncWrite) -&gt; <span class="prelude-ty">Result</span>&lt;u64&gt;;
+
+    <span class="doccomment">/// Sink date from the storage into given sink.
+    </span><span class="kw">pub async fn </span>sink&lt;S, T&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, sink_from: <span class="kw-2">&amp;mut </span>S) -&gt; <span class="prelude-ty">Result</span>&lt;u64&gt;
+    <span class="kw">where
+        </span>S: futures::Sink&lt;T, Error = Error&gt;,
+        T: Into&lt;Bytes&gt;,
+}</code></pre></div>
+<p>Apart from <code>Reader</code>’s own API, we will also provide convert to existing IO APIs like:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Reader {
+    <span class="doccomment">/// Convert Reader into `futures::AsyncRead`  
+    </span><span class="kw">pub fn </span>into_futures_io_async_read(<span class="self">self</span>, range: Range&lt;u64&gt;) -&gt; FuturesIoAsyncReader;
+    
+    <span class="doccomment">/// Convert Reader into `futures::Stream`
+    </span><span class="kw">pub fn </span>into_futures_bytes_stream(<span class="self">self</span>, range: Range&lt;u64&gt;) -&gt; FuturesBytesStream;
+}</code></pre></div>
+<p>After this change, users will be able to use <code>Reader</code> to read data from storage in a stateless, range-based pattern. Users can also convert <code>Reader</code> into <code>futures::AsyncRead</code>, <code>futures::AsyncSeek</code> and <code>futures::Stream</code> as needed.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>The new raw API will be:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Read: Unpin + Send + Sync {
+    <span class="kw">fn </span>read_at(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        offset: u64,
+        limit: usize,
+    ) -&gt; <span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;oio::Buffer&gt;&gt; + Send;
+}</code></pre></div>
+<p>The API is similar to <a href="https://doc.rust-lang.org/std/fs/struct.File.html#method.read_at"><code>ReadAt</code></a>, but with following changes:</p>
+<div class="example-wrap"><pre class="language-diff"><code>- async fn read_at(&amp;self, buf: &amp;mut [u8], offset: u64) -&gt; Result&lt;usize&gt;
++ async fn read_at(&amp;self, offset: u64, limit: usize) -&gt; Result&lt;oio::Buffer&gt;
+</code></pre></div>
+<ul>
+<li>opendal chooses to use <code>oio::Buffer</code> instead of <code>&amp;mut [u8]</code> to avoid lifetime issues.</li>
+<li>opendal chooses to return <code>oio::Buffer</code> to let services itself manage the buffer.</li>
+</ul>
+<p>For example, http based storage services like <code>s3</code> is a stream that generating data on the fly.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2><h3 id="breaking-changes-to-reader"><a class="doc-anchor" href="#breaking-changes-to-reader">§</a>Breaking changes to <code>Reader</code></h3>
+<p>This change will break the existing <code>Reader</code> API. Users will need to update their code to use the new <code>Reader</code> API.</p>
+<p>Users wishing to migrate to the new range-based API will need to update their code. Those who simply want to use <code>futures::AsyncRead</code> can instead utilize <code>Reader::into_futures_read</code>.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>None.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2><h3 id="object_stores-api-design"><a class="doc-anchor" href="#object_stores-api-design">§</a><code>object_store</code>’s API design</h3>
+<p>Current API design inspired from <code>object_store</code>’s <code>ObjectStore</code> a lot:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="attr">#[async_trait]
+</span><span class="kw">pub trait </span>ObjectStore: std::fmt::Display + Send + Sync + Debug + <span class="lifetime">'static </span>{
+    <span class="doccomment">/// Return the bytes that are stored at the specified location.
+    </span><span class="kw">async fn </span>get(<span class="kw-2">&amp;</span><span class="self">self</span>, location: <span class="kw-2">&amp;</span>Path) -&gt; <span class="prelude-ty">Result</span>&lt;GetResult&gt; {
+        <span class="self">self</span>.get_opts(location, GetOptions::default()).<span class="kw">await
+    </span>}
+
+    <span class="doccomment">/// Perform a get request with options
+    </span><span class="kw">async fn </span>get_opts(<span class="kw-2">&amp;</span><span class="self">self</span>, location: <span class="kw-2">&amp;</span>Path, options: GetOptions) -&gt; <span class="prelude-ty">Result</span>&lt;GetResult&gt;;
+
+    <span class="doccomment">/// Return the bytes that are stored at the specified location
+    /// in the given byte range.
+    ///
+    /// See [`GetRange::Bounded`] for more details on how `range` gets interpreted
+    </span><span class="kw">async fn </span>get_range(<span class="kw-2">&amp;</span><span class="self">self</span>, location: <span class="kw-2">&amp;</span>Path, range: Range&lt;usize&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;Bytes&gt; {
+        <span class="kw">let </span>options = GetOptions {
+            range: <span class="prelude-val">Some</span>(range.into()),
+            ..Default::default()
+        };
+        <span class="self">self</span>.get_opts(location, options).<span class="kw">await</span><span class="question-mark">?</span>.bytes().<span class="kw">await
+    </span>}
+    
+    <span class="doccomment">/// Return the bytes that are stored at the specified location
+    /// in the given byte ranges
+    </span><span class="kw">async fn </span>get_ranges(<span class="kw-2">&amp;</span><span class="self">self</span>, location: <span class="kw-2">&amp;</span>Path, ranges: <span class="kw-2">&amp;</span>[Range&lt;usize&gt;]) -&gt; <span class="prelude-ty">Result</span>&lt;Vec&lt;Bytes&gt;&gt; {
+        coalesce_ranges(
+            ranges,
+            |range| <span class="self">self</span>.get_range(location, range),
+            OBJECT_STORE_COALESCE_DEFAULT,
+        )
+        .<span class="kw">await
+    </span>}
+}</code></pre></div>
+<p>We can add support that similar to <code>get_ranges</code> in the future.</p>
+<p>OpenDAL opts to return a <code>Reader</code> rather than directly implementing <code>read</code> to allow for optimization with storage services like <code>fs</code> to reduce the extra <code>open</code> syscall. </p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2><h3 id="buffer"><a class="doc-anchor" href="#buffer">§</a>Buffer</h3>
+<p>After switching to range-based reading, we can no longer keep a buffer within the reader. As of writing this proposal, users should use <code>into_async_buf_read</code> instead.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2><h3 id="read-ranges"><a class="doc-anchor" href="#read-ranges">§</a>Read Ranges</h3>
+<p>We can implement <code>read_ranges</code> support in the future. This will allow users to read multiple ranges of data in less requests.</p>
+<h3 id="native-read_at-for-fs-and-hdfs"><a class="doc-anchor" href="#native-read_at-for-fs-and-hdfs">§</a>Native <code>read_at</code> for fs and hdfs</h3>
+<p>We can reduce unnecessary <code>open</code> and <code>seek</code> syscalls by using the <code>read_at</code> API across different platforms.</p>
+<h3 id="auto-range-read"><a class="doc-anchor" href="#auto-range-read">§</a>Auto Range Read</h3>
+<p>We can implement <a href="https://github.com/apache/opendal/issues/1105">Auto ranged read support</a> like AWS S3 Crt Client. For examples, split the range into multiple ranges and read them concurrently. </p>
+<p>Services can define the preferred io size as default, and users can override it. For example, s3 can use <code>8 MiB</code> as preferred io size, while fs can use <code>4 KiB</code> instead.</p>
+<h3 id="completion-based-io"><a class="doc-anchor" href="#completion-based-io">§</a>Completion-based IO</h3>
+<p><code>oio::Read</code> is designed with Completion-based IO in mind. We can add IOCP/io_uring support in the future.</p>
+</div></details></section></div></main></body></html>

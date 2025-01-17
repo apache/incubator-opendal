@@ -1,0 +1,104 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Refactor error"><title>opendal::docs::rfcs::rfc_0977_refactor_error - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_0977_refactor_error</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_0977_refactor_error</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#134">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Refactor error</p>
+<ul>
+<li>Proposal Name: <code>refactor-error</code></li>
+<li>Start Date: 2022-11-21</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/977">apache/opendal#977</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/pull/976">apache/opendal#976</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Use a separate error instead of <code>std::io::Error</code>.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>OpenDAL is used to use <code>std::io::Error</code> for all functions. This design is natural and easy to use. But there are many problems with the usage:</p>
+<h3 id="not-friendly-for-retry"><a class="doc-anchor" href="#not-friendly-for-retry">§</a>Not friendly for retry</h3>
+<p><code>io::Error</code> can’t carry retry-related information. In <a href="./0247-retryable-error.md">RFC-0247: Retryable Error</a>, we use <code>io::ErrorKind::Interrupt</code> to indicate this error is retryable. But this change will hide the real error kind from the underlying. To mark this error has been retried, we have to add another new error wrapper:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="attr">#[derive(thiserror::Error, Debug)]
+#[error(<span class="string">"permanent error: still failing after retry, source: {source}"</span>)]
+</span><span class="kw">struct </span>PermanentError {
+    source: Error,
+}</code></pre></div>
+<h3 id="errorkind-is-inaccurate"><a class="doc-anchor" href="#errorkind-is-inaccurate">§</a>ErrorKind is inaccurate</h3>
+<p><code>std::io::ErrorKind</code> is used to represent errors returned from system io, which is unsuitable for mistakes that have business semantics. For example, users can’t distinguish <code>ObjectNotFound</code> or <code>BucketNotFound</code> from <code>ErrorKind::NotFound</code>.</p>
+<h3 id="errorkind-is-incomplete"><a class="doc-anchor" href="#errorkind-is-incomplete">§</a>ErrorKind is incomplete</h3>
+<p>OpenDAL has been waiting for features <a href="https://github.com/rust-lang/rust/issues/86442"><code>io_error_more</code></a> to be stabilized for a long time. But there is no progress so far, which makes it impossible to return <code>ErrorKind::IsADirectory</code> or <code>ErrorKind::NotADirectory</code> on stable rust.</p>
+<h3 id="error-is-not-easy-to-carry-context"><a class="doc-anchor" href="#error-is-not-easy-to-carry-context">§</a>Error is not easy to carry context</h3>
+<p>To carry context inside <code>std::io::Error</code>, we have to check and make sure all functions are constructed <code>ObjectError</code> or <code>BackendError</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="attr">#[derive(Error, Debug)]
+#[error(<span class="string">"object error: (op: {op}, path: {path}, source: {source})"</span>)]
+</span><span class="kw">pub struct </span>ObjectError {
+    op: Operation,
+    path: String,
+    source: anyhow::Error,
+}</code></pre></div>
+<p>To make everything worse, we can’t prevent opendal returns raw io errors directly. For example, in <code>Object::range_read</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub async fn </span>range_read(<span class="kw-2">&amp;</span><span class="self">self</span>, range: <span class="kw">impl </span>RangeBounds&lt;u64&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;Vec&lt;u8&gt;&gt; {
+    ...
+
+    io::copy(s, <span class="kw-2">&amp;mut </span>bs).<span class="kw">await</span><span class="question-mark">?</span>;
+
+    <span class="prelude-val">Ok</span>(bs.into_inner())
+}</code></pre></div>
+<p>We leaked the <code>io::Error</code> without any context.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>Thus, I propose to add <code>opendal::Error</code> back with everything improved.</p>
+<p>Users will have similar usage as before:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">if let </span><span class="prelude-val">Err</span>(e) = op.object(<span class="string">"test_file"</span>).metadata().<span class="kw">await </span>{
+    <span class="kw">if </span>e.kind() == ErrorKind::ObjectNotFound {
+        <span class="macro">println!</span>(<span class="string">"object not exist"</span>)
+    }
+}</code></pre></div>
+<p>Users can check if this error a <code>temporary</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">if </span>err.is_temporary() {
+    <span class="comment">// retry the operation
+</span>}</code></pre></div>
+<p>Users can print error messages via <code>Display</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>&gt; <span class="macro">println!</span>(<span class="string">"{}"</span>, err);
+
+ObjectNotFound (permanent) at read, context: { service: S3, path: path/to/file } =&gt; status code: <span class="number">404</span>, headers: {<span class="string">"x-amz-request-id"</span>: <span class="string">"GCYDTQX51YRSF4ZF"</span>, <span class="string">"x-amz-id-2"</span>: <span class="string">"EH0vV6lTwWk+lFXqCMCBSk1oovqhG4bzALU9+sUudyw7TEVrfWm2o/AFJKhYKpdGqOoBZGgMTC0="</span>, <span class="string">"content-type"</span>: <span class="string">"application/xml"</span>, <span class="string">"date"</span>: <span class="string">"Mon, 21 Nov 2022 05:26:37 GMT"</span>, <span class="string">"server"</span>: <span class="string">"AmazonS3"</span>}, body: <span class="string">""</span></code></pre></div>
+<p>Also, users can choose to print the more verbose message via <code>Debug</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>&gt; <span class="macro">println!</span>(<span class="string">"{:?}"</span>, err);
+
+ObjectNotFound (permanent) at read =&gt; status code: <span class="number">404</span>, headers: {<span class="string">"x-amz-request-id"</span>: <span class="string">"GCYDTQX51YRSF4ZF"</span>, <span class="string">"x-amz-id-2"</span>: <span class="string">"EH0vV6lTwWk+lFXqCMCBSk1oovqhG4bzALU9+sUudyw7TEVrfWm2o/AFJKhYKpdGqOoBZGgMTC0="</span>, <span class="string">"content-type"</span>: <span class="string">"application/xml"</span>, <span class="string">"date"</span>: <span class="string">"Mon, 21 Nov 2022 05:26:37 GMT"</span>, <span class="string">"server"</span>: <span class="string">"AmazonS3"</span>}, body: <span class="string">""
+
+</span>Context:
+    service: S3
+    path: path/to/file
+
+Source: &lt;source error&gt;
+
+Backtrace: &lt;backtrace <span class="kw">if </span>we have&gt;</code></pre></div>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>We will add new <code>Error</code> and <code>ErrorKind</code> in opendal:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>Error {
+    kind: ErrorKind,
+    message: String,
+
+    status: ErrorStatus,
+    operation: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str,
+    context: Vec&lt;(<span class="kw-2">&amp;</span><span class="lifetime">'static </span>str, String)&gt;,
+    source: <span class="prelude-ty">Option</span>&lt;anyhow::Error&gt;,
+}</code></pre></div>
+<ul>
+<li>status: the status of this error, which indicates if this error is temporary</li>
+<li>operation: the operation which generates this error</li>
+<li>context: the context related to this error</li>
+<li>source: the underlying source error</li>
+</ul>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2><h3 id="breaking-changes"><a class="doc-anchor" href="#breaking-changes">§</a>Breaking changes</h3>
+<p>This RFC will lead to a breaking at user side.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>None.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2><h3 id="more-errorkind"><a class="doc-anchor" href="#more-errorkind">§</a>More ErrorKind</h3>
+<p>We can add more error kinds to make it possible for users to check.</p>
+</div></details></section></div></main></body></html>

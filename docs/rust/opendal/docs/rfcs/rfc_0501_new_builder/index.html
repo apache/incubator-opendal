@@ -1,0 +1,78 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="New builder"><title>opendal::docs::rfcs::rfc_0501_new_builder - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_0501_new_builder</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_0501_new_builder</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#98">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>New builder</p>
+<ul>
+<li>Proposal Name: <code>new_builder</code></li>
+<li>Start Date: 2022-08-03</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/501">apache/opendal#501</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/502">apache/opendal#502</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Allow users to build services without async.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>Most services share a similar builder API to construct backends.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Builder {
+    <span class="kw">pub async fn </span>finish(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;Arc&lt;<span class="kw">dyn </span>Accessor&gt;&gt; {}
+}</code></pre></div>
+<p>We have <code>async</code> here so that every user who wants to build services backend must go through an async runtime. Even for <code>memory</code> backend:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Builder {
+    <span class="doccomment">/// Consume builder to build a memory backend.
+    </span><span class="kw">pub async fn </span>finish(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;Arc&lt;<span class="kw">dyn </span>Accessor&gt;&gt; {
+        <span class="prelude-val">Ok</span>(Arc::new(Backend::default()))
+    }
+}</code></pre></div>
+<p>Only <code>s3</code> services need to call async functions <code>detect_region</code> to get the correct region.</p>
+<p>So, we can provide blocking <code>Builder</code> APIs and move async-related logic out for users to call out. This way, our users can build services without playing with async runtime.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>After this change, all our services builder will add a new API:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Builder {
+    <span class="kw">pub fn </span>build(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;Backend&gt; {}
+}</code></pre></div>
+<p>Along with this change, our <code>Operator</code> will accept <code>impl Accessor + 'static</code> instead of <code>Arc&lt;dyn Accessor&gt;</code> anymore:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Operator {
+    <span class="kw">pub fn </span>new(accessor: <span class="kw">impl </span>Accessor + <span class="lifetime">'static</span>) -&gt; <span class="self">Self </span>{}
+}</code></pre></div>
+<p>Also, we will implement <code>From&lt;impl Accessor + 'static&gt;</code> for <code>Operator</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl</span>&lt;A&gt; From&lt;A&gt; <span class="kw">for </span>Operator
+<span class="kw">where
+    </span>A: Accessor + <span class="lifetime">'static</span>,
+{
+    <span class="kw">fn </span>from(acc: A) -&gt; <span class="self">Self </span>{
+        Operator::newx(acc)
+    }
+}</code></pre></div>
+<p>We can initiate an operator quicker:</p>
+<div class="example-wrap"><pre class="language-diff"><code>- let op: Operator = Operator::new(fs::Backend::build().finish().await?);
++ let op: Operator = fs::Builder::new().build()?.into();
+</code></pre></div><h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>We will add the following APIs:</p>
+<ul>
+<li>All builders will add <code>build(&amp;mut self) -&gt; Result&lt;Backend&gt;</code></li>
+<li><code>impl&lt;A&gt; From&lt;A&gt; for Operator where A: Accessor + 'static</code></li>
+</ul>
+<p>We will deprecate the following APIs:</p>
+<ul>
+<li>All builders <code>finish()</code> API (should be replaced by <code>build()</code>)</li>
+<li>All services <code>build()</code> API (should be replaced by <code>Builder::new()</code> or <code>Builder::default()</code>)</li>
+</ul>
+<p>We will change the following APIs:</p>
+<ul>
+<li>Operator: <code>new(accessor: Arc&lt;dyn Accessor&gt;)</code> -&gt; <code>fn new(accessor: impl dyn Accessor + 'static)</code></li>
+<li>Operator: <code>async fn from_iter()</code> -&gt; <code>fn from_iter()</code></li>
+<li>Operator: <code>async fn from_env()</code> -&gt; <code>fn from_env()</code></li>
+</ul>
+<p>Most services will work the same, except for <code>s3</code>: <code>s3</code> depends on <code>detect_region</code> to check the correct region if the user doesn’t input. After this change, <code>s3::Builder.build()</code> will return error if <code>region</code> is missing. Users should call <code>detect_region</code> by themselves to get the region.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>None.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>None.</p>
+</div></details></section></div></main></body></html>

@@ -1,0 +1,81 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Lazy reader"><title>opendal::docs::rfcs::rfc_3356_lazy_reader - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_3356_lazy_reader</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_3356_lazy_reader</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#210">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Lazy reader</p>
+<ul>
+<li>Proposal Name: <code>lazy_reader</code></li>
+<li>Start Date: 2023-10-22</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/3356">apache/opendal#3356</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/3359">apache/opendal#3359</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Doing read IO in a lazy way.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>The aim is to minimize IO cost. OpenDAL sends an actual IO request to the storage when <code>Accessor::read()</code> is invoked. For storage services such as S3, this equates to an IO request. However, in practical scenarios, users typically create a reader and use <code>seek</code> to navigate to the correct position.</p>
+<p>Take <a href="https://docs.rs/parquet2/latest/src/parquet2/read/metadata.rs.html">parquet2 read_metadata</a> as an example:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="doccomment">/// Reads a [`FileMetaData`] from the reader, located at the end of the file.
+</span><span class="kw">pub fn </span>read_metadata&lt;R: Read + Seek&gt;(reader: <span class="kw-2">&amp;mut </span>R) -&gt; <span class="prelude-ty">Result</span>&lt;FileMetaData&gt; {
+    <span class="comment">// check file is large enough to hold footer
+    </span><span class="kw">let </span>file_size = stream_len(reader)<span class="question-mark">?</span>;
+    <span class="kw">if </span>file_size &lt; HEADER_SIZE + FOOTER_SIZE {
+        <span class="kw">return </span><span class="prelude-val">Err</span>(Error::oos(
+            <span class="string">"A parquet file must contain a header and footer with at least 12 bytes"</span>,
+        ));
+    }
+
+    <span class="comment">// read and cache up to DEFAULT_FOOTER_READ_SIZE bytes from the end and process the footer
+    </span><span class="kw">let </span>default_end_len = min(DEFAULT_FOOTER_READ_SIZE, file_size) <span class="kw">as </span>usize;
+    reader.seek(SeekFrom::End(-(default_end_len <span class="kw">as </span>i64)))<span class="question-mark">?</span>;
+
+    ...
+
+    deserialize_metadata(reader, max_size)
+}</code></pre></div>
+<p>In <code>read_metadata</code>, we initiate a seek as soon as the reader is invoked. This action, when performed on non-seekable storage services such as s3, results in an immediate HTTP request and cancellation. By postponing the IO request until the first <code>read</code> call, we can significantly reduce the number of IO requests.</p>
+<p>The expense of initiating and immediately aborting an HTTP request is significant. Here are the benchmark results, using a stat call as our baseline:</p>
+<p>On minio server that setup locally:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>service_s3_read_stat/<span class="number">4.00 </span>MiB
+                        time:   [<span class="number">315.23 </span>µs <span class="number">328.23 </span>µs <span class="number">341.42 </span>µs]
+                        
+service_s3_read_abort/<span class="number">4.00 </span>MiB
+                        time:   [<span class="number">961.69 </span>µs <span class="number">980.68 </span>µs <span class="number">999.50 </span>µs]</code></pre></div>
+<p>On remote storage services with high latency:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>service_s3_read_stat/<span class="number">4.00 </span>MiB
+                        time:   [<span class="number">407.85 </span>ms <span class="number">409.61 </span>ms <span class="number">411.39 </span>ms]
+
+service_s3_read_abort/<span class="number">4.00 </span>MiB
+                        time:   [<span class="number">1.5282 </span>s <span class="number">1.5554 </span>s <span class="number">1.5828 </span>s]
+</code></pre></div>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>There have been no changes to the API. The only modification is that the IO request has been deferred until the first <code>read</code> call, meaning no errors will be returned when calling <code>op.reader()</code>. For instance, users won’t encounter a <code>file not found</code> error when invoking <code>op.reader()</code>.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>Most changes will happen inside <code>CompleteLayer</code>. In the past, we will call <code>Accessor::read()</code> directly in <code>complete_reader</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">async fn </span>complete_reader(
+    <span class="kw-2">&amp;</span><span class="self">self</span>,
+    path: <span class="kw-2">&amp;</span>str,
+    args: OpRead,
+) -&gt; <span class="prelude-ty">Result</span>&lt;(RpRead, CompleteReader&lt;A, A::Reader&gt;)&gt; {
+    ..
+
+    <span class="kw">let </span>seekable = capability.read_can_seek;
+    <span class="kw">let </span>streamable = capability.read_can_next;
+
+    <span class="kw">let </span>range = args.range();
+    <span class="kw">let </span>(rp, r) = <span class="self">self</span>.inner.read(path, args).<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="kw">let </span>content_length = rp.metadata().content_length();
+    
+    ...
+}</code></pre></div>
+<p>In the future, we will postpone the <code>Accessor::read()</code> request until the first <code>read</code> call.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>None</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2><h3 id="add-read_at-for-oioreader"><a class="doc-anchor" href="#add-read_at-for-oioreader">§</a>Add <code>read_at</code> for <code>oio::Reader</code></h3>
+<p>After <code>oio::Reader</code> becomes zero cost, we can add <code>read_at</code> to <code>oio::Reader</code> to support read data by range.</p>
+</div></details></section></div></main></body></html>

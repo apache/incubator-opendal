@@ -1,0 +1,101 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Remove object concept"><title>opendal::docs::rfcs::rfc_1477_remove_object_concept - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_1477_remove_object_concept</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_1477_remove_object_concept</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#154">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Remove object concept</p>
+<ul>
+<li>Proposal Name: <code>remove_object_concept</code></li>
+<li>Start Date: <code>2023-03-05</code></li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/1477">apache/opendal#1477</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/0000">apache/opendal#0000</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Eliminating the Object concept to enhance the readability of OpenDAL.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>OpenDAL introduces <a href="../rfc_0041_object_native_api/index.html" title="mod opendal::docs::rfcs::rfc_0041_object_native_api">Object Native API</a> to resolve the problem of not being easy to use:</p>
+<div class="example-wrap"><pre class="language-diff"><code>- let reader = SeekableReader::new(op, path, stream_len);
++ let reader = op.object(&amp;path).reader().await?;
+
+- op.stat(&amp;path).run().await
++ op.object(&amp;path).stat().await
+</code></pre></div>
+<p>However, times are changing. After the list operation has been moved to the <code>Object</code> level, <code>Object</code> is now more like a wrapper for <code>Operator</code>. The only meaningful API of <code>Operator</code> now is <code>Operator::object</code>.</p>
+<p>Writing <code>op.object(&amp;path)</code> repeatedly is boring. Let’s take real example from databend as an example:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">if let </span><span class="prelude-val">Some</span>(dir) = dir_path {
+    <span class="kw">match </span>op.object(<span class="kw-2">&amp;</span>dir).stat().<span class="kw">await </span>{
+        <span class="prelude-val">Ok</span>(<span class="kw">_</span>) =&gt; {
+            <span class="kw">let </span><span class="kw-2">mut </span>ds = op.object(<span class="kw-2">&amp;</span>dir).scan().<span class="kw">await</span><span class="question-mark">?</span>;
+            <span class="kw">while let </span><span class="prelude-val">Some</span>(de) = ds.try_next().<span class="kw">await</span><span class="question-mark">? </span>{
+                <span class="kw">if let </span><span class="prelude-val">Some</span>(fi) = stat_file(de).<span class="kw">await</span><span class="question-mark">? </span>{
+                    files.push(fi)
+                }
+            }
+        }
+        <span class="prelude-val">Err</span>(e) =&gt; <span class="macro">warn!</span>(<span class="string">"ignore listing {path}/, because: {:?}"</span>, e),
+    };
+}</code></pre></div>
+<p>We designed <code>Object</code> to make users can reuse the same <code>Object</code>. However, nearly no users use our API this way. Most users just build a new <code>Object</code> every time. There are two problems:</p>
+<h3 id="extra-cost"><a class="doc-anchor" href="#extra-cost">§</a>Extra cost</h3>
+<p><code>Object::new()</code> is not zero cost:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">fn </span>with(op: Operator, path: <span class="kw-2">&amp;</span>str, meta: <span class="prelude-ty">Option</span>&lt;ObjectMetadata&gt;) -&gt; <span class="self">Self </span>{
+    <span class="self">Self </span>{
+        acc: op.inner(),
+        path: Arc::new(normalize_path(path)),
+        meta: meta.map(Arc::new),
+    }
+}</code></pre></div>
+<p>The <code>Object</code> must contain an <code>Operator</code> and an <code>Arc</code> of strings. With the introduction of <a href="../rfc_1398_query_based_metadata/index.html" title="mod opendal::docs::rfcs::rfc_1398_query_based_metadata">Query Based Metadata</a>, there is no longer a need to perform operations on the object.</p>
+<h3 id="complex-concepts"><a class="doc-anchor" href="#complex-concepts">§</a>Complex concepts</h3>
+<p>The term <code>Object</code> is applied in various fields, making it difficult to provide a concise definition of <code>opendal::Object</code>. Moreover, this could potentially confuse our users who may assume that <code>opendal::Object</code> is primarily intended for object storage services.</p>
+<p>I propose eliminating the intermediate API layer of <code>Object</code> and enabling users to directly utilize <code>Operator</code>.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>After this RFC is implemented, our users can:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>op.read(<span class="string">"file"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+op.range_read(<span class="string">"file"</span>, <span class="number">0</span>..<span class="number">1024</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+op.reader(<span class="string">"file"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+
+op.write(<span class="string">"file"</span>, bs).<span class="kw">await</span><span class="question-mark">?</span>;
+op.writer(<span class="string">"file"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+
+op.stat(<span class="string">"path"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+
+op.delete(<span class="string">"path"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+op.remove(<span class="macro">vec!</span>[<span class="string">"path_a"</span>]).<span class="kw">await</span><span class="question-mark">?</span>;
+op.remove_all(<span class="string">"path"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+
+op.create_dir(<span class="string">"dir/"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+
+op.list(<span class="string">"dir/"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+op.scan(<span class="string">"dir/"</span>).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>We will include the <code>BlockingOperator</code> for enhanced ease of use while performing blocking operations.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>bop = op.blocking();
+
+bop.read(<span class="string">"file"</span>)<span class="question-mark">?</span>;
+bop.write(<span class="string">"file"</span>, bs)<span class="question-mark">?</span>;</code></pre></div>
+<p>The scan/list result will be an <code>Entry</code> or <code>BlockingEntry</code> that contains the same fields as Object, but is only used for scan/list entries.</p>
+<p>The public API should look like:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Entry {
+    <span class="kw">pub fn </span>mode(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; EntryType;
+    <span class="kw">pub fn </span>path(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw-2">&amp;</span>str;
+    <span class="kw">pub async fn </span>stat(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;Metadata&gt;;
+    <span class="kw">pub async fn </span>metadata(<span class="kw-2">&amp;</span><span class="self">self</span>, key: <span class="kw">impl </span>Into&lt;MetaKey&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;Metadata&gt;;
+    ...
+}</code></pre></div>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>We will remove <code>Object</code> entirely and move all <code>Object</code> APIs to <code>Operator</code> instead:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>- op.object(<span class="string">"path"</span>).read().<span class="kw">await
+</span>+ op.read(<span class="string">"path"</span>).<span class="kw">await</span></code></pre></div>
+<p>Along with this change, we should also rename the <code>ObjectXxx</code> structs, such as <code>ObjectReader</code> to <code>Reader</code>.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2><h3 id="breaking-changes"><a class="doc-anchor" href="#breaking-changes">§</a>Breaking Changes</h3>
+<p>This RFC proposes a major breaking change that will require almost all current usage to be rewritten.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>None</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>None</p>
+</div></details></section></div></main></body></html>

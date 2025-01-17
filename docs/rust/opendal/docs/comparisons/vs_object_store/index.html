@@ -1,0 +1,140 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="OpenDAL vs object_store"><title>opendal::docs::comparisons::vs_object_store - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module vs_object_store</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::comparisons</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">comparisons</a>::<wbr><a class="mod" href="#">vs_object_store</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/comparisons/mod.rs.html#30">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h2 id="opendal-vs-object_store"><a class="doc-anchor" href="#opendal-vs-object_store">§</a>OpenDAL vs object_store</h2>
+<blockquote>
+<p>NOTE: This document is written by OpenDAL’s maintainers and not reviewed by
+object_store’s maintainers. So it could not be very objective.</p>
+</blockquote>
+<h3 id="about-object_store"><a class="doc-anchor" href="#about-object_store">§</a>About object_store</h3>
+<p><a href="https://crates.io/crates/object_store">object_store</a> is</p>
+<blockquote>
+<p>A focused, easy to use, idiomatic, high performance, <code>async</code> object store library interacting with object stores.</p>
+</blockquote>
+<p>It was initially developed for <a href="https://github.com/influxdata/influxdb_iox/">InfluxDB IOx</a> and later split out and donated to <a href="https://arrow.apache.org/">Apache Arrow</a>.</p>
+<h3 id="similarities"><a class="doc-anchor" href="#similarities">§</a>Similarities</h3><h4 id="language"><a class="doc-anchor" href="#language">§</a>Language</h4>
+<p>Yes, of course. Both <code>opendal</code> and <code>object_store</code> are developed in <a href="https://www.rust-lang.org/">Rust</a>, a language empowering everyone to build reliable and efficient software.</p>
+<h4 id="license"><a class="doc-anchor" href="#license">§</a>License</h4>
+<p>Both <code>opendal</code> and <code>object_store</code> are licensed under <a href="https://www.apache.org/licenses/LICENSE-2.0">Apache 2.0</a>.</p>
+<h4 id="owner"><a class="doc-anchor" href="#owner">§</a>Owner</h4>
+<p><code>object_store</code> is a part of <code>Apache Arrow</code> which means it’s hosted and maintained by the <a href="https://www.apache.org/">Apache Software Foundation</a>.</p>
+<p><code>opendal</code> is now hosted by the <a href="https://www.apache.org/">Apache Software Foundation</a> also.</p>
+<h4 id="domain"><a class="doc-anchor" href="#domain">§</a>Domain</h4>
+<p>Both <code>opendal</code> and <code>object_store</code> can be used to access data stored on object storage services. The primary users of those projects are both cloud-native databases too:</p>
+<ul>
+<li><code>opendal</code> is mainly used by:
+<ul>
+<li><a href="https://github.com/datafuselabs/databend">databend</a>: A modern Elasticity and Performance cloud data warehouse</li>
+<li><a href="https://github.com/GreptimeTeam/greptimedb">GreptimeDB</a>: An open-source, cloud-native, distributed time-series database.</li>
+<li><a href="https://github.com/mozilla/sccache/">mozilla/sccache</a>: sccache is ccache with cloud storage</li>
+<li><a href="https://github.com/risingwavelabs/risingwave">risingwave</a>: A Distributed SQL Database for Stream Processing</li>
+<li><a href="https://github.com/vectordotdev/vector">Vector</a>: A high-performance observability data pipeline.</li>
+</ul>
+</li>
+<li><code>object_store</code> is mainly used by:
+<ul>
+<li><a href="https://github.com/apache/arrow-datafusion">datafusion</a>: Apache Arrow DataFusion SQL Query Engine</li>
+<li><a href="https://github.com/influxdata/influxdb_iox/">Influxdb IOx</a>: The new core of InfluxDB is written in Rust on top of Apache Arrow.</li>
+</ul>
+</li>
+</ul>
+<h3 id="differences"><a class="doc-anchor" href="#differences">§</a>Differences</h3><h4 id="vision"><a class="doc-anchor" href="#vision">§</a>Vision</h4>
+<p><code>opendal</code> is Open Data Access Layer that accesses data freely, painlessly, and efficiently. <code>object_store</code> is more focused on async object store support.</p>
+<p>You will see the different visions lead to very different routes.</p>
+<h4 id="design"><a class="doc-anchor" href="#design">§</a>Design</h4>
+<p><code>object_store</code> exposed a trait called <a href="https://docs.rs/object_store/latest/object_store/trait.ObjectStore.html"><code>ObjectStore</code></a> to users.</p>
+<p>Users need to build a <code>dyn ObjectStore</code> and operate on it directly:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>object_store: Arc&lt;<span class="kw">dyn </span>ObjectStore&gt; = Arc::new(get_object_store());
+<span class="kw">let </span>path: Path = <span class="string">"data/file01.parquet"</span>.try_into()<span class="question-mark">?</span>;
+<span class="kw">let </span>stream = object_store
+    .get(<span class="kw-2">&amp;</span>path)
+    .<span class="kw">await</span><span class="question-mark">?
+    </span>.into_stream();</code></pre></div>
+<p><code>opendal</code> has a similar trait called <a href="../../../raw/trait.Access.html" title="trait opendal::raw::Access"><code>Access</code></a></p>
+<p>But <code>opendal</code> don’t expose this trait to end users directly. Instead, <code>opendal</code> expose a new struct called <a href="../../../struct.Operator.html" title="struct opendal::Operator"><code>Operator</code></a> and builds public API on it.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>op: Operator = Operator::from_env(Scheme::S3)<span class="question-mark">?</span>;
+<span class="kw">let </span>r = op.reader(<span class="string">"data/file01.parquet"</span>).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<h4 id="interception"><a class="doc-anchor" href="#interception">§</a>Interception</h4>
+<p>Both <code>object_store</code> and <code>opendal</code> provide a mechanism to intercept operations.</p>
+<p><code>object_store</code> called <code>Adapters</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>object_store = ThrottledStore::new(get_object_store(), ThrottleConfig::default())</code></pre></div>
+<p><code>opendal</code> called <a href="../../../raw/trait.Layer.html" title="trait opendal::raw::Layer"><code>Layer</code></a>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>op = op.layer(TracingLayer).layer(MetricsLayer);</code></pre></div>
+<p>At the time of writing:</p>
+<p>object_store (<code>v0.5.0</code>) supports:</p>
+<ul>
+<li>ThrottleStore: Rate Throttling</li>
+<li>LimitStore: Concurrent Request Limit</li>
+</ul>
+<p>opendal supports:</p>
+<ul>
+<li>ImmutableIndexLayer: immutable in-memory index.</li>
+<li>LoggingLayer: logging.</li>
+<li>MetadataCacheLayer: metadata cache.</li>
+<li>ContentCacheLayer: content data cache.</li>
+<li>MetricsLayer: metrics</li>
+<li>RetryLayer: retry</li>
+<li>SubdirLayer: Allow switch directory without changing original operator.</li>
+<li>TracingLayer: tracing</li>
+</ul>
+<h4 id="services"><a class="doc-anchor" href="#services">§</a>Services</h4>
+<p><code>opendal</code> and <code>object_store</code> have different visions, so they have other services support:</p>
+<div><table><thead><tr><th>service</th><th>opendal</th><th>object_store</th></tr></thead><tbody>
+<tr><td>azblob</td><td>Y</td><td>Y</td></tr>
+<tr><td>fs</td><td>Y</td><td>Y</td></tr>
+<tr><td>ftp</td><td>Y</td><td>N</td></tr>
+<tr><td>gcs</td><td>Y</td><td>Y</td></tr>
+<tr><td>hdfs</td><td>Y</td><td>Y <em>(via <a href="https://github.com/datafusion-contrib/datafusion-objectstore-hdfs/">datafusion-objectstore-hdfs</a>)</em></td></tr>
+<tr><td>http</td><td>Y <em>(read only)</em></td><td>N</td></tr>
+<tr><td>ipfs</td><td>Y <em>(read only)</em></td><td>N</td></tr>
+<tr><td>ipmfs</td><td>Y</td><td>N</td></tr>
+<tr><td>memory</td><td>Y</td><td>Y</td></tr>
+<tr><td>obs</td><td>Y</td><td>N</td></tr>
+<tr><td>s3</td><td>Y</td><td>Y</td></tr>
+</tbody></table>
+</div>
+<p>opendal has an idea called <a href="../../../struct.Capability.html" title="struct opendal::Capability"><code>Capability</code></a>, so it’s services may have different capability sets. For example, opendal’s <code>http</code> and <code>ipfs</code> are read only.</p>
+<h4 id="features"><a class="doc-anchor" href="#features">§</a>Features</h4>
+<p><code>opendal</code> and <code>object_store</code> have different visions, so they have different feature sets:</p>
+<div><table><thead><tr><th>opendal</th><th>object_store</th><th>notes</th></tr></thead><tbody>
+<tr><td>metadata</td><td>-</td><td>get some metadata from underlying storage</td></tr>
+<tr><td>create</td><td>put</td><td>-</td></tr>
+<tr><td>read</td><td>get</td><td>-</td></tr>
+<tr><td>read</td><td>get_range</td><td>-</td></tr>
+<tr><td>-</td><td>get_ranges</td><td>opendal doesn’t support read multiple ranges</td></tr>
+<tr><td>write</td><td>put</td><td>-</td></tr>
+<tr><td>stat</td><td>head</td><td>-</td></tr>
+<tr><td>delete</td><td>delete</td><td>-</td></tr>
+<tr><td>-</td><td>list</td><td>opendal doesn’t support list with prefix</td></tr>
+<tr><td>list</td><td>list_with_delimiter</td><td>-</td></tr>
+<tr><td>-</td><td>copy</td><td>-</td></tr>
+<tr><td>-</td><td>copy_if_not_exists</td><td>-</td></tr>
+<tr><td>-</td><td>rename</td><td>-</td></tr>
+<tr><td>-</td><td>rename_if_not_exists</td><td>-</td></tr>
+<tr><td>presign</td><td>-</td><td>get a presign URL of object</td></tr>
+<tr><td>multipart</td><td>multipart</td><td>both support, but API is different</td></tr>
+<tr><td>blocking</td><td>-</td><td>opendal supports blocking API</td></tr>
+</tbody></table>
+</div><h3 id="demo-show"><a class="doc-anchor" href="#demo-show">§</a>Demo show</h3>
+<p>The most straightforward complete demo how to read a file from s3:</p>
+<p><code>opendal</code></p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>builder = S3::default();
+builder.bucket(<span class="string">"example"</span>);
+builder.access_key_id(<span class="string">"access_key_id"</span>);
+builder.secret_access_key(<span class="string">"secret_access_key"</span>);
+
+<span class="kw">let </span>store = Operator::new(builder)<span class="question-mark">?</span>.finish();
+<span class="kw">let </span>r = store.reader(<span class="string">"data.parquet"</span>).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p><code>object_store</code></p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>builder = AmazonS3Builder::new()
+.with_bucket_name(<span class="string">"example"</span>)
+.with_access_key_id(<span class="string">"access_key_id"</span>)
+.with_secret_access_key(<span class="string">"secret_access_key"</span>);
+
+<span class="kw">let </span>store = Arc::new(builder.build()<span class="question-mark">?</span>);
+<span class="kw">let </span>path: Path = <span class="string">"data.parquet"</span>.try_into().unwrap();
+<span class="kw">let </span>stream = store.get(<span class="kw-2">&amp;</span>path).<span class="kw">await</span>()<span class="question-mark">?</span>.into_stream();</code></pre></div>
+</div></details></section></div></main></body></html>

@@ -1,0 +1,165 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="List metadata reuse"><title>opendal::docs::rfcs::rfc_0561_list_metadata_reuse - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_0561_list_metadata_reuse</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_0561_list_metadata_reuse</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#106">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>List metadata reuse</p>
+<ul>
+<li>Proposal Name: <code>list_metadata_reuse</code></li>
+<li>Start Date: 2022-08-23</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/561">apache/opendal#561</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/pull/570">apache/opendal#570</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Reuse metadata returned during listing, by extending <code>DirEntry</code> with some metadata fields.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>Users may expect to browse metadata of some directories’ child files and directories. Using <code>walk()</code> of <code>BatchOperator</code> seems to be an ideal way to complete this job. </p>
+<p>Thus, they start iterating on it, but soon they realized the <code>DirEntry</code>, could only offer the name (or path, more precisely) and access mode of the object, and it’s not enough.</p>
+<p>So they have to call <code>metadata()</code> for each name they extracted from the iterator.</p>
+<p>The final example looks like:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>op = Operator::from_env(Scheme::Gcs)<span class="question-mark">?</span>.batch();
+
+<span class="comment">// here is a network request
+</span><span class="kw">let </span><span class="kw-2">mut </span>dir_stream = op.walk(<span class="string">"/dir/to/walk"</span>)<span class="question-mark">?</span>;
+
+<span class="kw">while let </span><span class="prelude-val">Some</span>(<span class="prelude-val">Ok</span>(file)) = dir_stream.next().<span class="kw">await </span>{
+    <span class="kw">let </span>path = file.path();
+
+    <span class="comment">// here is another network request
+    </span><span class="kw">let </span>size = file.metadata().<span class="kw">await</span><span class="question-mark">?</span>.content_length();
+    <span class="macro">println!</span>(<span class="string">"size of file {} is {}B"</span>, path, size);
+}</code></pre></div>
+<p>But…wait! many storage-services returns object metadata when listing, like HDFS, AWS and GCS. The rust standard library returns metadata when listing local file systems, too.</p>
+<p>In the previous versions of OpenDAL those fields were just get ignored. This wastes users’ time on requesting on metadata.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>The loop in main will be changed to the following code with this RFC:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">while let </span><span class="prelude-val">Some</span>(<span class="prelude-val">Ok</span>(file)) = dir_stream.next().<span class="kw">await </span>{
+    <span class="kw">let </span>size = <span class="kw">if let </span><span class="prelude-val">Some</span>(len) = file.content_length() {
+        len
+    } <span class="kw">else </span>{
+        file.metadata().<span class="kw">await</span><span class="question-mark">?</span>.content_length();
+    };
+    <span class="kw">let </span>name = file.path();
+    <span class="macro">println!</span>(<span class="string">"size of file {} is {}B"</span>, path, size);
+}</code></pre></div>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>Extend <code>DirEntry</code> with metadata fields:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>DirEntry {
+    acc: Arc&lt;<span class="kw">dyn </span>Accessor&gt;,
+
+    mode: ObjectMode,
+    path: String,
+
+    <span class="comment">// newly add metadata fields
+    </span>content_length: <span class="prelude-ty">Option</span>&lt;u64&gt;,  <span class="comment">// size of file
+    </span>content_md5: <span class="prelude-ty">Option</span>&lt;String&gt;,
+    last_modified: <span class="prelude-ty">Option</span>&lt;OffsetDateTime&gt;,
+}
+
+<span class="kw">impl </span>DirEntry {
+    <span class="kw">pub fn </span>content_length(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;u64&gt; {
+        <span class="self">self</span>.content_length
+    }
+    <span class="kw">pub fn </span>last_modified(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;OffsetDateTime&gt; {
+        <span class="self">self</span>.last_modified
+    }
+    <span class="kw">pub fn </span>content_md5(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;OffsetDateTime&gt; {
+        <span class="self">self</span>.content_md5
+    }
+}</code></pre></div>
+<p>For all services that supplies metadata during listing, like AWS, GCS and HDFS. Those optional fields will be filled up; Meanwhile for those services doesn’t return metadata during listing, like in memory storages, just left them as <code>None</code>.</p>
+<p>As you can see, for those services returning metadata when listing, the operation of listing metadata will save many unnecessary requests.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>Add complexity to <code>DirEntry</code>. To use the improved features of <code>DirEntry</code>, users have to explicitly check the existence of metadata fields.</p>
+<p>The size of <code>DirEntry</code> increased from 40 bytes to 80 bytes, a 100% percent growth requires more memory.</p>
+<h2 id="rational-and-alternatives"><a class="doc-anchor" href="#rational-and-alternatives">§</a>Rational and alternatives</h2>
+<p>The largest drawback of performance usually comes from network or hard disk operations. By letting <code>DirEntry</code> storing some metadata, many redundant requests could be avoided.</p>
+<h3 id="embed-a-structure-containing-metadata"><a class="doc-anchor" href="#embed-a-structure-containing-metadata">§</a>Embed a Structure Containing Metadata</h3>
+<p>Define a <code>MetaLite</code> structure containing some metadata fields, and embed it in <code>DirEntry</code></p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">struct </span>MetaLite {
+    <span class="kw">pub </span>content_length: u64,  <span class="comment">// size of file
+    </span><span class="kw">pub </span>content_md5: String,
+    <span class="kw">pub </span>last_modified: OffsetDateTime,
+}
+
+<span class="kw">pub struct </span>DirEntry {
+    acc: Arc&lt;<span class="kw">dyn </span>Accessor&gt;,
+    
+    mode: ObjectMode,
+    path: String,
+    
+    <span class="comment">// newly add metadata struct
+    </span>metadata: <span class="prelude-ty">Option</span>&lt;MetaLite&gt;,
+}
+
+<span class="kw">impl </span>DirEntry {
+    <span class="comment">// get size of file
+    </span><span class="kw">pub fn </span>content_length(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;u64&gt; {
+        <span class="self">self</span>.metadata.as_ref().map(|m| m.content_length)
+    }
+    <span class="comment">// get the last modified time
+    </span><span class="kw">pub fn </span>last_modified(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;OffsetDateTime&gt; {
+        <span class="self">self</span>.metadata.as_ref().map(|m| m.last_modified)
+    }
+    <span class="comment">// get md5 message digest
+    </span><span class="kw">pub fn </span>content_md5(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;String&gt; {
+        <span class="self">self</span>.metadata.as_ref().map(|m| m.content_md5)
+    }
+}</code></pre></div>
+<p>The existence of those newly added metadata fields is highly correlated. If one field does not exist, the others neither.</p>
+<p>By wrapping them together in an embedded structure, 8 bytes of space for each <code>DirEntry</code> object could be saved. In the future, more metadata fields may be added to <code>DirEntry</code>, then a lot more space could be saved.</p>
+<p>This approach could be slower because some intermediate functions are involved. But it’s worth sacrificing rarely used features’ performance to save memory.</p>
+<h3 id="embed-a-objectmetadata-into-direntry"><a class="doc-anchor" href="#embed-a-objectmetadata-into-direntry">§</a>Embed a <code>ObjectMetadata</code> into <code>DirEntry</code></h3>
+<ul>
+<li>Embed a <code>ObjectMetadata</code> struct into <code>DirEntry</code></li>
+<li>Remove the <code>ObjectMode</code> field in <code>DirEntry</code></li>
+<li>Change <code>ObjectMetadata</code>’s <code>content_length</code> field’s type to <code>Option&lt;u64&gt;</code>.</li>
+</ul>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>DirEntry {
+    acc: Arc&lt;<span class="kw">dyn </span>Accessor&gt;,
+
+    <span class="comment">// - mode: ObjectMode, removed
+    </span>path: String,
+
+    <span class="comment">// newly add metadata struct
+    </span>metadata: ObjectMetadata,
+}
+
+<span class="kw">impl </span>DirEntry {
+    <span class="kw">pub fn </span>mode(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; ObjectMode {
+        <span class="self">self</span>.metadata.mode()
+    }
+    <span class="kw">pub fn </span>content_length(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;u64&gt; {
+        <span class="self">self</span>.metadata.content_length()
+    }
+    <span class="kw">pub fn </span>content_md5(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>str&gt; {
+        <span class="self">self</span>.metadata.content_md5()
+    }
+    <span class="comment">// other metadata getters...
+</span>}</code></pre></div>
+<p>In the degree of memory layout, it’s the same as proposed way in this RFC. This approach offers more metadata fields and fewer changes to code.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2><h3 id="switch-to-alternative-implement-approaches"><a class="doc-anchor" href="#switch-to-alternative-implement-approaches">§</a>Switch to Alternative Implement Approaches</h3>
+<p>As the growing of metadata fields, someday the alternatives could be better. And other RFCs will be raised then.</p>
+<h3 id="more-fields"><a class="doc-anchor" href="#more-fields">§</a>More Fields</h3>
+<p>Add more metadata fields to DirEntry, like:</p>
+<ul>
+<li>accessed: the last access timestamp of object</li>
+</ul>
+<h3 id="simplified-get"><a class="doc-anchor" href="#simplified-get">§</a>Simplified Get</h3>
+<p>Users have to explicitly check if those metadata fields actual present in the DirEntry. This may be done inside the getter itself.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>path = file.path();
+
+<span class="comment">// if content_length is not exist
+// this getter will automatically fetch from the storage service.
+</span><span class="kw">let </span>size = file.content_length().<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="comment">// the previous getter can cache metadata fetched from service
+// so this function could return instantly.
+</span><span class="kw">let </span>md5 = file.content_md5().<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="macro">println!</span>(<span class="string">"size of file {} is {}B, md5 outcome of file is {}"</span>, path, size, md5);</code></pre></div>
+</div></details></section></div></main></body></html>

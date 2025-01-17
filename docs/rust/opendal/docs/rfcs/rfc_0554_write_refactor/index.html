@@ -1,0 +1,65 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Write refactor"><title>opendal::docs::rfcs::rfc_0554_write_refactor - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_0554_write_refactor</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_0554_write_refactor</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#102">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Write refactor</p>
+<ul>
+<li>Proposal Name: <code>write_refactor</code></li>
+<li>Start Date: 2022-08-22</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/554">apache/opendal#554</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/555">apache/opendal#555</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Refactor <code>write</code> operation to accept a <code>BytesReader</code> instead.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>To simulate the similar operation like POSIX fs, OpenDAL returns <code>BytesWriter</code> for users to write, flush and close:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Accessor {
+    <span class="kw">async fn </span>write(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpWrite) -&gt; <span class="prelude-ty">Result</span>&lt;BytesWriter&gt; {}
+}</code></pre></div>
+<p><code>Operator</code> builds the high level APIs upon this:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Object {
+    <span class="kw">pub async fn </span>write(<span class="kw-2">&amp;</span><span class="self">self</span>, bs: <span class="kw">impl </span>AsRef&lt;[u8]&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt; {}
+    
+    <span class="kw">pub async fn </span>writer(<span class="kw-2">&amp;</span><span class="self">self</span>, size: u64) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="kw">impl </span>BytesWrite&gt; {}
+}</code></pre></div>
+<p>However, we are meeting the following problems:</p>
+<ul>
+<li>Performance: HTTP body channel is mush slower than read from Reader directly.</li>
+<li>Complicity: Service implementer have to deal with APIs like <code>new_http_channel</code>.</li>
+<li>Extensibility: Current design can’t be extended to multipart APIs.</li>
+</ul>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>Underlying <code>write</code> implementations will be replaced by:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Accessor {
+    <span class="kw">async fn </span>write(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpWrite, r: BytesReader) -&gt; <span class="prelude-ty">Result</span>&lt;u64&gt; {}
+}</code></pre></div>
+<p>Existing API will have no changes, and we will add a new API:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Object {
+    <span class="kw">pub async fn </span>write_from(<span class="kw-2">&amp;</span><span class="self">self</span>, size: u64, r: <span class="kw">impl </span>BytesRead) -&gt; <span class="prelude-ty">Result</span>&lt;u64&gt; {}
+}</code></pre></div>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p><code>Accessor</code>’s <code>write</code> API will be changed to accept a <code>BytesReader</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Accessor {
+    <span class="kw">async fn </span>write(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpWrite, r: BytesReader) -&gt; <span class="prelude-ty">Result</span>&lt;u64&gt; {}
+}</code></pre></div>
+<p>We will provide <code>Operator::writer</code> based on this new API instead.</p>
+<p><a href="./0438-multipart.md">RFC-0438: Multipart</a> will also be updated to:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Accessor {
+    <span class="kw">async fn </span>write_multipart(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpWriteMultipart, r: BytesReader) -&gt; <span class="prelude-ty">Result</span>&lt;u64&gt; {}
+}</code></pre></div>
+<p>In this way, we don’t need to introduce a <code>PartWriter</code>.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2><h3 id="layer-api-breakage"><a class="doc-anchor" href="#layer-api-breakage">§</a>Layer API breakage</h3>
+<p>This change will introduce break changes to layers.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>None.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<ul>
+<li><a href="./0191-async-streaming-io.md">RFC-0191: Async Streaming IO</a></li>
+</ul>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>None.</p>
+</div></details></section></div></main></body></html>

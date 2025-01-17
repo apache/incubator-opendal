@@ -1,0 +1,60 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# All configurations could be found here: https://github.com/apache/infrastructure-asfyaml/
+
+github:
+  description: "Apache OpenDAL: One Layer, All Storage."
+  homepage: https://opendal.apache.org
+  labels:
+    - rust
+    - storage
+    - s3
+    - gcs
+    - azblob
+    - redis
+    - hacktoberfest
+  enabled_merge_buttons:
+    squash: true
+    merge: false
+    rebase: false
+  protected_branches:
+    main:
+      required_pull_request_reviews:
+        required_approving_review_count: 1
+  custom_subjects:
+    new_discussion: "{title}"
+    edit_discussion: "Re: {title}"
+    close_discussion: "Re: {title}"
+    close_discussion_with_comment: "Re: {title}"
+    reopen_discussion: "Re: {title}"
+    new_comment_discussion: "Re: {title}"
+    edit_comment_discussion: "Re: {title}"
+    delete_comment_discussion: "Re: {title}"
+
+notifications:
+  commits: commits@opendal.apache.org
+  issues: commits@opendal.apache.org
+  pullrequests: commits@opendal.apache.org
+  discussions: dev@opendal.apache.org
+
+staging:
+  profile: ~
+  autostage: site/*
+
+publish:
+  whoami: gh-pages

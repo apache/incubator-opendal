@@ -1,0 +1,57 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Retryable error"><title>opendal::docs::rfcs::rfc_0247_retryable_error - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_0247_retryable_error</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_0247_retryable_error</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#62">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Retryable error</p>
+<ul>
+<li>Proposal Name: <code>retryable_error</code></li>
+<li>Start Date: 2022-04-12</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/247">apache/opendal#247</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/248">apache/opendal#248</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Treat <code>io::ErrorKind::Interrupt</code> as retryable error.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>Supports retry make our users’ lives easier:</p>
+<blockquote>
+<p><a href="https://github.com/apache/opendal/issues/196">Feature request: Custom retries for the s3 backend</a></p>
+<p>While the reading/writing from/to s3, AWS occasionally returns errors that could be retried (at least 5xx?). Currently, in the databend, this will fail the whole execution of the statement (which may have been running for an extended time).</p>
+</blockquote>
+<p>Most users may need this retry feature, like <code>decompress</code>. Implementing it in OpenDAL will make users no bother, no backoff logic.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>With the <code>retry</code> feature enabled:</p>
+<div class="example-wrap"><pre class="language-toml"><code>opendal = {version=&quot;0.5.2&quot;, features=[&quot;retry&quot;]}
+</code></pre></div>
+<p>Users can configure the retry behavior easily:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>backoff = ExponentialBackoff::default();
+<span class="kw">let </span>op = op.with_backoff(backoff);</code></pre></div>
+<p>All requests sent by <code>op</code> will be automatically retried.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>We will implement retry features via adding a new <code>Layer</code>.</p>
+<p>In the retry layer, we will support retrying all operations. To do our best to keep retrying read &amp; write, we will implement <code>RetryableReader</code> and <code>RetryableWriter</code>, which will support retry while no actual IO happens.</p>
+<h3 id="retry-operations"><a class="doc-anchor" href="#retry-operations">§</a>Retry operations</h3>
+<p>Most operations are safe to retry, like <code>list</code>, <code>stat</code>, <code>delete</code> and <code>create</code>.</p>
+<p>We will retry those operations via input backoff.</p>
+<h3 id="retry-io-operations"><a class="doc-anchor" href="#retry-io-operations">§</a>Retry IO operations</h3>
+<p>Retry IO operations are a bit complex because IO operations have side effects, especially for HTTP-based services like s3. We can’t resume an operation during the reading process without sending new requests.</p>
+<p>This proposal will do the best we can: retry the operation if no actual IO happens.</p>
+<p>If we meet an internal error before reading/writing the user’s buffer, it’s safe and cheap to retry it with precisely the same argument.</p>
+<h3 id="retryable-error"><a class="doc-anchor" href="#retryable-error">§</a>Retryable Error</h3>
+<ul>
+<li>Operator MAY retry <code>io::ErrorKind::Interrupt</code> errors.</li>
+<li>Services SHOULD return <code>io::ErrorKind::Interrupt</code> kind if the error is retryable.</li>
+</ul>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2><h3 id="write-operation-cant-be-retried"><a class="doc-anchor" href="#write-operation-cant-be-retried">§</a>Write operation can’t be retried</h3>
+<p>As we return <code>Writer</code> to users, there is no way for OpenDAL to get the input data again.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="implement-retry-at-operator-level"><a class="doc-anchor" href="#implement-retry-at-operator-level">§</a>Implement retry at operator level</h3>
+<p>We need to implement retry logic for every operator function, and can’t address the same problem:</p>
+<ul>
+<li><code>Reader</code> / <code>Writer</code> can’t be retired.</li>
+<li>Intrusive design that users cannot expand on their own</li>
+</ul>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<ul>
+<li><code>read</code> and <code>write</code> can’t be retried during IO.</li>
+</ul>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>None</p>
+</div></details></section></div></main></body></html>

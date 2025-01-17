@@ -1,0 +1,56 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Concurrent stat in list"><title>opendal::docs::rfcs::rfc_3574_concurrent_stat_in_list - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_3574_concurrent_stat_in_list</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_3574_concurrent_stat_in_list</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#218">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Concurrent stat in list</p>
+<ul>
+<li>Proposal Name: <code>concurrent_stat_in_list</code></li>
+<li>Start Date: 2023-11-13</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/3574">apache/opendal#3574</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/3575">apache/opendal#3575</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Add concurrent stat in list operation.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p><a href="https://github.com/apache/opendal/pull/2779">RFC-2779</a> allows user to list with metakey.
+However, the stat inside list could make the list process much slower. We should allow concurrent stat during list so that stat could be sent concurrently.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>For users who want to concurrently run statistics in list operations, they will call the new API <code>concurrent</code>. The <code>concurrent</code> function will take a number as input, and this number will represent the maximum concurrent stat handlers.</p>
+<p>The default behavior remains unchanged, so users using <code>op.list_with()</code> are not affected. And this implementation should be zero cost to users who don’t want to do concurrent stat.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>op.lister_with(path).metakey(Metakey::ContentLength).concurrent(<span class="number">10</span>).<span class="kw">await</span><span class="question-mark">?</span></code></pre></div>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>When <code>concurrent</code> is set and <code>list_with</code> is called, the list operation will be split into two parts:  list and stat.</p>
+<p>The list part will iterate through the entries inside the buffer, and if its <code>metakey</code> is unknown, it will send a stat request to the storage service.</p>
+<p>We will add a new field <code>concurrent</code> to <code>OpList</code>. The type of <code>concurrent</code> is <code>Option&lt;u32&gt;</code>. If <code>concurrent</code> is <code>None</code>, it means the default behavior. If <code>concurrent</code> is <code>Some(n)</code>, it means the maximum concurrent stat handlers are <code>n</code>.</p>
+<p>Then we could use a sized <code>VecDeque</code> to limit the maximum concurrent stat handlers. Additionally, we could use handlers <code>JoinHandle&lt;T&gt;</code> inside <code>VecDeque</code> to spawn and queue the stat tasks. 
+While iterating through the entries, we should check if the <code>metakey</code> is unknown and if the <code>VecDeque</code> is full. If the <code>metakey</code> is unknown and the <code>VecDeque</code> is full, we should wait and join the handle once it’s finished, since we need to keep the entry order.</p>
+<p>If the metakey is unknown and the handlers are full, we should break the loop and wait for the spawned tasks inside handlers to finish. After the spawned tasks finish, we should iterate through the handlers and return the result.</p>
+<p>If the metakey is known, we should check if the handlers are empty. If true, return the result immediately; otherwise, we should wait for the spawned tasks to finish.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<ol>
+<li>More memory usage</li>
+<li>More complex code</li>
+<li>More complex testing</li>
+</ol>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="why-not-vecdequeboxfuturestatic-x"><a class="doc-anchor" href="#why-not-vecdequeboxfuturestatic-x">§</a>Why not <code>VecDeque&lt;BoxFuture&lt;'static, X&gt;&gt;</code>?</h3>
+<p>To maintain the order of returned entries, we need to pre-run future entries before returning the current one to address the slowness issue. 
+Although we could use <code>VecDeque&lt;BoxFuture&lt;'static, X&gt;&gt;</code> to store the spawned tasks, 
+using it here would prevent us from executing the async block concurrently when we only have one <code>cx: &amp;mut Context&lt;'_&gt;</code>.</p>
+<h3 id="do-we-need-semaphore"><a class="doc-anchor" href="#do-we-need-semaphore">§</a>Do we need <code>Semaphore</code>?</h3>
+<p>No, we can control the concurrent number by limiting the length of the <code>VecDeque</code>.
+Using a <code>semaphore</code> will introduce more cost and memory.</p>
+<h3 id="why-not-using-joinset"><a class="doc-anchor" href="#why-not-using-joinset">§</a>Why not using <code>JoinSet</code>?</h3>
+<p>The main reason is that <code>JoinSet</code> can’t maintain the order of entries.</p>
+<p>The other reason is that <code>JoinSet</code> requires mutability to spawn or join the next task, and <code>tokio::spawn()</code> requires the async block to be <code>'static</code>.
+This implies that we need to use <code>Arc&lt;T&gt;</code> to wrap our <code>JoinSet</code>. However, to change the value inside <code>Arc</code>, we need to introduce a <code>Mutex</code>. Since it’s inside an async block, we need to use Tokio’s <code>Mutex</code> to satisfy the <code>Sync</code> bound. 
+Therefore, for every operation on the <code>JoinSet</code>, there will be an <code>.await</code> on the lock outside the async block, making concurrency impossible inside <code>poll_next()</code>.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<ul>
+<li>How to implement a similar logic to <code>blocking</code> API? 
+<ul>
+<li>Quoted from <a href="https://github.com/oowl">oowl</a>: It seems these features can be implemented in blocking mode, but it may require breaking something in OpenDAL, such as using some pthread API in blocking mode.</li>
+</ul>
+</li>
+</ul>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>None</p>
+</div></details></section></div></main></body></html>

@@ -1,0 +1,58 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="List With Deleted"><title>opendal::docs::rfcs::rfc_5495_list_with_deleted - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_5495_list_with_deleted</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_5495_list_with_deleted</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#258">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>List With Deleted</p>
+<ul>
+<li>Proposal Name: <code>list_with_deleted</code></li>
+<li>Start Date: 2025-01-02</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/0000">apache/opendal#5495</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/5496">apache/opendal#5496</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Add <code>list_with(path).deleted(true)</code> to enable users to list deleted files from storage services.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>OpenDAL is currently working on adding support for file versions, allowing users to read, list, and delete them.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// Read given version
+</span>op.read_with(path).version(version_id).<span class="kw">await</span>;
+<span class="comment">// Fetch the metadata of given version.
+</span>op.stat_with(path).version(version_id).<span class="kw">await</span>;
+<span class="comment">// Delete the given version.
+</span>op.delete_with(path).version(version_id).<span class="kw">await</span>;
+<span class="comment">// List the path's versions.
+</span>op.list_with(path).versions().<span class="kw">await</span>;</code></pre></div>
+<p>However, to implement the complete data recovery workflow, we should also include support for recovering deleted files from storage services. This feature is referred to as <code>DeleteMarker</code> in S3 and <code>Soft Deleted</code> in Azure Blob Storage or Google Cloud Storage. Users can utilize these deleted files (or versions) to restore files that may have been accidentally deleted.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>I suggest adding <code>list_with(path).deleted(true)</code> to allow users to list deleted files from storage services.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>entries = op.list_with(path).deleted(<span class="bool-val">true</span>).<span class="kw">await</span>;</code></pre></div>
+<p>Please note that <code>deleted</code> here means “including deleted files” rather than “only deleted files.” Therefore, <code>list_with(path).deleted(true)</code> will list both current files and deleted ones.</p>
+<p>At the same time, we will add an <code>is_deleted</code> field to the <code>Metadata</code> struct to indicate whether the file has been deleted. Together with the existing <code>is_current</code> field, we will have the following matrix:</p>
+<div><table><thead><tr><th><code>is_current</code></th><th><code>is_deleted</code></th><th>Description</th></tr></thead><tbody>
+<tr><td><code>Some(true)</code></td><td><code>false</code></td><td><strong>The metadata’s associated version is the latest, current version.</strong> This is the normal state, indicating that this version is the most up-to-date and accessible version.</td></tr>
+<tr><td><code>Some(true)</code></td><td><code>true</code></td><td><strong>The metadata’s associated version is the latest, deleted version (Latest Delete Marker or Soft Deleted).</strong> This is particularly important in object storage systems like S3. It signifies that this version is the <strong>most recent delete marker</strong>, indicating the object has been deleted. Subsequent GET requests will return 404 errors unless a specific version ID is provided.</td></tr>
+<tr><td><code>Some(false)</code></td><td><code>false</code></td><td><strong>The metadata’s associated version is neither the latest version nor deleted.</strong> This indicates that this version is a previous version, still accessible by specifying its version ID.</td></tr>
+<tr><td><code>Some(false)</code></td><td><code>true</code></td><td><strong>The metadata’s associated version is not the latest version and is deleted.</strong> This represents a historical version that has been marked for deletion. Users will need to specify the version ID to access it, and accessing it may be subject to specific delete marker behavior (e.g., in S3, it might not return actual data but a specific delete marker response).</td></tr>
+<tr><td><code>None</code></td><td><code>false</code></td><td><strong>The metadata’s associated file is not deleted, but its version status is either unknown or it is not the latest version.</strong> This likely indicates that versioning is not enabled for this file, or versioning information is unavailable.</td></tr>
+<tr><td><code>None</code></td><td><code>true</code></td><td><strong>The metadata’s associated file is deleted, but its version status is either unknown or it is not the latest version.</strong> This typically means the file was deleted without versioning enabled, or its versioning information is unavailable. This may represent an actual data deletion operation rather than an S3 delete marker.</td></tr>
+</tbody></table>
+</div><h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<ul>
+<li>Implement the <code>list_with(path).deleted(true)</code> API for the <code>Operator</code>.</li>
+<li>Add an <code>is_deleted</code> field to <code>Metadata</code>.</li>
+<li>Integrate logic for including deleted files into the <code>list</code> method of the storage service.</li>
+</ul>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="why-including-deleted-files-rather-than-only-deleted-files"><a class="doc-anchor" href="#why-including-deleted-files-rather-than-only-deleted-files">§</a>Why “including deleted files” rather than “only deleted files”?</h3>
+<p>Most storage services are designed to list files along with deleted files, rather than exclusively listing deleted files. For example:</p>
+<ul>
+<li>S3’s <a href="https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectVersions.html">ListObjectVersions</a> API lists all versions of an object, including delete markers.</li>
+<li>GCS’s <a href="https://cloud.google.com/storage/docs/json_api/v1/objects/list">list</a> API includes a parameter <code>softDeleted</code> to display soft-deleted files.</li>
+<li>AzBlob’s <a href="https://learn.microsoft.com/en-us/rest/api/storageservices/list-blobs">List Blobs</a> API supports the parameter <code>include=deleted</code> to list soft-deleted blobs.</li>
+</ul>
+<p>So, it is more natural to list files along with deleted files, rather than only listing deleted files.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>None.</p>
+</div></details></section></div></main></body></html>

@@ -1,0 +1,231 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Redis service"><title>opendal::docs::rfcs::rfc_0623_redis_service - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_0623_redis_service</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_0623_redis_service</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#114">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Redis service</p>
+<ul>
+<li>Proposal Name: <code>redis_service</code></li>
+<li>Start Date: 2022-08-31</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/0623">apache/opendal#0623</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/0641">apache/opendal#641</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Use <a href="https://redis.io">redis</a> as a service of OpenDAL.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>Redis is a fast, in-memory cache with persistent and distributed storage functionalities. It’s widely used in production.</p>
+<p>Users also demand more backend support. Redis is a good candidate.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>Users only need to provide the network address, username and password to create a Redis Operator. Then everything will act as other operators do.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal::services::redis::Builder;
+<span class="kw">use </span>opendal::Operator;
+
+<span class="kw">let </span>builder = Builder::default();
+
+<span class="comment">// set the endpoint of redis server
+</span>builder.endpoint(<span class="string">"tcps://domain.to.redis:2333"</span>);
+<span class="comment">// set the username of redis
+</span>builder.username(<span class="string">"example"</span>);
+<span class="comment">// set the password
+</span>builder.password(<span class="kw-2">&amp;</span>std::env::var(<span class="string">"OPENDAL_REDIS_PASSWORD"</span>).expect(<span class="string">"env OPENDAL_REDIS_PASSWORD not set"</span>));
+<span class="comment">// root path
+</span>builder.root(<span class="string">"/example/"</span>);
+
+<span class="kw">let </span>op = Operator::new(
+    builder.build()<span class="question-mark">?    </span><span class="comment">// services::redis::Backend
+</span>);
+
+<span class="comment">// congratulations, you can use `op` just like any other operators!</span></code></pre></div>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>To ease the development, <a href="https://crates.io/crates/redis">redis-rs</a> will be used.</p>
+<p>Redis offers a key-value view, so the path of files could be represented as the key of the key-value pair.</p>
+<p>The content of file will be represented directly as <code>String</code>, and metadata will be encoded as <a href="https://github.com/bincode-org/bincode.git"><code>bincode</code></a> before storing as <code>String</code>.</p>
+<div class="example-wrap"><pre class="language-text"><code>+------------------------------------------+
+|Object: /home/monika/                     |
+|                                          |           SET
+|child: Key: v0:k:/home/monika/           -+---------&gt; 1) /home/monika/poem0.txt
+|                                          |
+|/* directory has no content  */           |
+|                                          |
+|metadata: Key: v0:m:/home/monika/         |
++------------------------------------------+
+
++------------------------------------------+
+|Object: /home/monika/poem0.txt            |
+|                                          |
+| /*      file has no children        */   |
+|                                          |
+|content: Key: v0:c:/home/monika/poem0.txt-+--+
+|                                          |  |
+|metadata: Key: v0:m:/home/monika/poem0.txt|  |
+|  |                                       |  |
++--+---------------------------------------+  |
+   |                                          v
+   +&gt; STRING                                STRING
+     +----------------------+              +--------------------+
+     |\x00\x00\x00\x00\xe6\a|              |1JU5T3MON1K413097321|
+     |\x00\x00\xf8\x00\a4)!V|              |&amp;JU5$T!M0N1K4$%#@#$%|
+     |\x81&amp;\x00\x00\x00Q\x00|              |3231J)U_ST#MONIKA@#$|
+     |         ...          |              |1557(m0N1ka3just4M  |
+     +----------------------+              |      ...           |
+                                           +--------------------+
+</code></pre></div>
+<p>The <a href="https://crates.io/crates/redis">redis-rs</a>’s high level APIs is preferred.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">const </span>VERSION: usize = <span class="number">0</span>;
+
+<span class="doccomment">/// meta_key will produce the key to object's metadata
+/// "/path/to/object/" -&gt; "v{VERSION}:m:/path/to/object"
+</span><span class="kw">fn </span>meta_key(path: <span class="kw-2">&amp;</span>str) -&gt; String {
+    <span class="macro">format!</span>(<span class="string">"v{}:m:{}"</span>, VERSION, path)
+}
+
+<span class="doccomment">/// content_key will produce the key to object's content
+/// "/path/to/object/" -&gt; "v{VERSION}:c:/path/to/object"
+</span><span class="kw">fn </span>content_key(path: <span class="kw-2">&amp;</span>str) -&gt; String {
+    <span class="macro">format!</span>(<span class="string">"v{}:c:{}"</span>, VERSION, path)
+}
+
+<span class="kw">fn </span>connect() -&gt; <span class="prelude-ty">Result</span>&lt;()&gt; {
+    <span class="kw">let </span>client = redis::Client::open(<span class="string">"redis://localhost:6379"</span>)<span class="question-mark">?</span>;
+    <span class="kw">let </span>con = client.get_async_connection()<span class="question-mark">?</span>;
+}</code></pre></div>
+<h3 id="forward-compatibility"><a class="doc-anchor" href="#forward-compatibility">§</a>Forward Compatibility</h3>
+<p>All keys used will have a <code>v0</code> prefix, indicating it’s using the very first version of <code>OpenDAL</code> <code>Redis</code> API.</p>
+<p>When there are changes to the layout, like refactoring the layout of storage, the version number should be updated, too. Further versions should take the compatibility with former implementations into consideration.</p>
+<h3 id="create-file"><a class="doc-anchor" href="#create-file">§</a>Create File</h3>
+<p>If user is creating a file with root <code>/home/monika/</code>, and relative path <code>poem0.txt</code>.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// mode: ObjectMode
+// path: relative path string
+</span><span class="kw">let </span>path = get_abs_path(path);  <span class="comment">// /home/monika/ &lt;&gt; /poem.txt -&gt; /home/monika/poem.txt
+</span><span class="kw">let </span>m_path = meta_key(path);  <span class="comment">// path of metadata
+</span><span class="kw">let </span>c_path = content_key(path);  <span class="comment">// path of content
+</span><span class="kw">let </span>last_modified = OffsetDatetime::now_utc().to_string();
+
+<span class="kw">let </span><span class="kw-2">mut </span>meta = ObjectMeta::default();
+meta.set_mode(ObjectMode::FILE);
+meta.set_last_modified(OffsetDatetime::now_utc());
+
+<span class="kw">let </span>encoded = bincode::encode_to_vec(meta)<span class="question-mark">?</span>;
+
+con.set(c_path, <span class="string">""</span>.to_string())<span class="question-mark">?</span>;
+con.set(m_path, encoded.as_slice())<span class="question-mark">?</span>;</code></pre></div>
+<p>This will create two key-value pair. For object content, its key is <code>v0:c:/home/monika/poem0.txt</code>, the value is an empty <code>String</code>; For metadata, the key is <code>v0:m:/home/monika/poem0.txt</code>, the value is a <code>bincode</code> encoded <code>ObjectMetadata</code> structure binary string.</p>
+<p>On creating a file or directory, the backend should also create its all parent directories if not present.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// create a file under `PATH`
+</span><span class="kw">let </span><span class="kw-2">mut </span>path = std::path::PathBuf::new(PATH);
+<span class="kw">let </span><span class="kw-2">mut </span>con = client.new_async_connection().<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="kw">while let </span><span class="prelude-val">Some</span>(parent) = path.parent() {
+    <span class="kw">let </span>(p, c): (String, String) = (parent.display(), path.display());
+    <span class="kw">let </span>to_children = <span class="macro">format!</span>(<span class="string">"v0:ch:{}"</span>, p);
+    con.sadd(to_children, c).<span class="kw">await</span><span class="question-mark">?</span>;
+    path = parent;
+}</code></pre></div>
+<h3 id="read-file"><a class="doc-anchor" href="#read-file">§</a>Read File</h3>
+<p>Opendal empowers users to read with the <code>path</code> object, <code>offset</code> of the cursor and <code>size</code> to read. Redis provided a <code>GETRANGE</code> command which perfectly fit into it.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// path: "poem0.txt"
+// offset: Option&lt;u64&gt;, the offset of reading
+// size: Option&lt;u64&gt;, the size of reading
+</span><span class="kw">let </span>path = get_abs_path(path);
+<span class="kw">let </span>c_path = content_key(path);
+<span class="kw">let </span>(<span class="kw-2">mut </span>start, <span class="kw-2">mut </span>end) = (<span class="number">0</span>, -<span class="number">1</span>);
+<span class="kw">if let </span><span class="prelude-val">Some</span>(offset) = offset {
+    start = offset;
+}
+<span class="kw">if let </span><span class="prelude-val">Some</span>(size) = size {
+    end = start + size;
+}
+<span class="kw">let </span>buf: Vec&lt;u8&gt; = con.getrange(c_path, start, end).<span class="kw">await</span><span class="question-mark">?</span>;
+Box::new(buf)</code></pre></div>
+<div class="example-wrap"><pre class="language-redis"><code>GET v0:c:/home/monika/poem0.txt
+</code></pre></div><h3 id="write-file"><a class="doc-anchor" href="#write-file">§</a>Write File</h3>
+<p>Redis ensures the writing of a single entry to be atomic, no locking is required.</p>
+<p>What needs to take care by opendal, besides the content of object, is its metadata. For example, though offering a <code>OBJECT IDLETIME</code> command, redis cannot record the last modified time of a key, so this should be done in opendal.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>redis::AsyncCommands;
+<span class="comment">// args: &amp;OpWrite
+// r: BytesReader
+</span><span class="kw">let </span><span class="kw-2">mut </span>buf = <span class="macro">vec!</span>[];
+<span class="kw">let </span>content_length: u64 = futures::io::copy(r, <span class="kw-2">&amp;mut </span>buf).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let </span>last_modified: String = OffsetDateTime::now().to_string();
+
+<span class="comment">// content md5 will not be offered
+
+</span><span class="kw">let </span><span class="kw-2">mut </span>meta = ObjectMetadata::default();
+meta.set_content_length(content_length);
+meta.set_last_modified(last_modified);
+
+<span class="comment">// `ObjectMetadata` has implemented the `Serialize` and `Deserialize` trait of `Serde`
+// so bincode could serialize and deserialize it.
+</span><span class="kw">let </span>bytes = bincode::encode_to_vec(<span class="kw-2">&amp;</span>meta)<span class="question-mark">?</span>;
+
+<span class="kw">let </span>path = get_abs_path(args.path());
+<span class="kw">let </span>m_path = meta_key(path);
+<span class="kw">let </span>c_path = content_key(path);
+
+con.set(c_path, content).<span class="kw">await</span><span class="question-mark">?</span>;
+con.set(m_path, bytes).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<div class="example-wrap"><pre class="language-redis"><code>SET v0:c:/home/monika/poem.txt content_string
+SET v0:m:/home/monika/poem.txt &lt;bincode encoded metadata&gt;
+</code></pre></div><h3 id="stat"><a class="doc-anchor" href="#stat">§</a>Stat</h3>
+<p>To get the metadata of an object, using the <code>GET</code> command and deserialize from bincode.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>path = get_abs_path(args.path());
+<span class="kw">let </span>meta = meta_key(path);
+<span class="kw">let </span>bin: Vec&lt;u8&gt; = con.get(meta).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let </span>meta: ObjectMeta = bincode::deserialize(bin.as_slice())<span class="question-mark">?</span>;</code></pre></div>
+<div class="example-wrap"><pre class="language-redis"><code>GET v0:m:/home/monika/poem.txt
+</code></pre></div><h3 id="list"><a class="doc-anchor" href="#list">§</a>List</h3>
+<p>For listing directories, just <code>SSCAN</code> through the child list of the directory, nice and correct.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// print all sub-directories of `PATH`
+
+</span><span class="kw">let </span>s_key = <span class="macro">format!</span>(<span class="string">"v0:k:{}"</span>, PATH);
+<span class="kw">let </span><span class="kw-2">mut </span>con = client.new_async_connection().<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let </span><span class="kw-2">mut </span>it = con.sscan::&lt;<span class="kw-2">&amp;</span>str, String&gt;(s_key).<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="kw">while let </span><span class="prelude-val">Some</span>(child) = it.next_item().<span class="kw">await </span>{
+    <span class="macro">println!</span>(<span class="string">"get sub-dir: {}"</span>, child);
+}</code></pre></div>
+<h3 id="delete"><a class="doc-anchor" href="#delete">§</a>Delete</h3>
+<p>All subdirectories of path will be listed and removed.</p>
+<p>On deleting a file or directory, the backend should remove the entry from its parent’s <code>SET</code>, and remove all children of entry.</p>
+<p>This could be done by postorder deleting.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">async fn </span>remove_entry(con: <span class="kw-2">&amp;mut </span>redis::aio::AsyncConnection, entry: String) {
+    <span class="kw">let </span>skey = <span class="macro">format!</span>(<span class="string">"v0:ch:{}"</span>, entry);
+    <span class="kw">let </span>it = con.sscan::&lt;<span class="kw-2">&amp;</span>str, String&gt;(skey).<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="kw">while let </span><span class="prelude-val">Some</span>(child) = it.next_item().<span class="kw">await </span>{
+        remove_entry(<span class="kw-2">&amp;mut </span>con, child).<span class="kw">await</span>;
+    }
+    <span class="kw">if let </span><span class="prelude-val">Some</span>(parent) = std::PathBuf::new(entry).parent() {
+        <span class="kw">let </span>p: String = parent.display();
+        <span class="kw">let </span>parent_skey = <span class="macro">format!</span>(<span class="string">"v0:ch:{}"</span>, p);
+        <span class="kw">let _ </span>= con.srem(parent_skey, entry).<span class="kw">await</span>;
+    }
+    <span class="comment">// remove metadata and content
+</span>}</code></pre></div>
+<h3 id="blocking-apis"><a class="doc-anchor" href="#blocking-apis">§</a>Blocking APIs</h3>
+<p><code>redis-rs</code> also offers a synchronous version of API, just port the functions above to its synchronous version.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<ol>
+<li>New dependencies is introduced: <code>redis-rs</code> and <code>bincode</code>;</li>
+<li>Some calculations have to be done in client side, this will affect the performance;</li>
+<li>Grouping atomic operations together doesn’t promise transactional access, this may lead to data racing issues.</li>
+<li>Writing large binary strings requiring copying all data from pipe(or <code>BytesReader</code> in opendal) to RAM, and then send to redis.</li>
+</ol>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="redisjson-module"><a class="doc-anchor" href="#redisjson-module">§</a>RedisJSON module</h3>
+<p>The <a href="https://redis.io/docs/stack/json/"><code>RedisJSON</code></a> module provides JSON support for Redis, and supports depth up to 128. Working on a JSON api could be easier than manually parsing or deserializing from <code>HASH</code>.</p>
+<p>Since <code>bincode</code> also offers the ability of deserializing and serializing, <code>RedisJSON</code> won’t be used.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>The implementation proposed here is far from perfect.</p>
+<ul>
+<li>The data organization could be optimized to make it acts more like a filesystem</li>
+<li>Making a customized redis module to calculate metadata on redis side</li>
+<li>Wait for stable of <code>bincode</code> 2.0, and bump to it.</li>
+</ul>
+</div></details></section></div></main></body></html>

@@ -1,0 +1,1 @@
+searchState.loadedDescShard("unftp_sbe_opendal", 0, "<code>unftp-sbe-opendal</code> is an unftp <code>StorageBackend</code> …\nA wrapper around <code>opendal::Metadata</code> to implement …\nReturns the argument unchanged.\nReturns the argument unchanged.\nCalls <code>U::from(self)</code>.\nCalls <code>U::from(self)</code>.")

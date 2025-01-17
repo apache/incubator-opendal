@@ -1,0 +1,85 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="The core concepts of OpenDAL’s public API."><title>opendal::docs::concepts - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module concepts</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../index.html">opendal</a>::<wbr><a href="../index.html">docs</a>::<wbr><a class="mod" href="#">concepts</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../src/opendal/docs/concepts.rs.html#18-135">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>The core concepts of OpenDAL’s public API.</p>
+<p>OpenDAL provides a unified abstraction that helps developers access all storage services.</p>
+<p>There are two core concepts in OpenDAL:</p>
+<ul>
+<li><a href="../../trait.Builder.html" title="trait opendal::Builder"><code>Builder</code></a>: Builder accepts a series of parameters to set up an instance of underlying services.
+You can adjust the behaviour of underlying services with these parameters.</li>
+<li><a href="../../struct.Operator.html" title="struct opendal::Operator"><code>Operator</code></a>: Developer can access underlying storage services with manipulating one Operator.
+The Operator is a delegate for underlying implementation detail, and provides one unified access interface,
+including <code>read</code>, <code>write</code>, <code>list</code> and so on.</li>
+</ul>
+<p>If you are interested in internal implementation details, please have a look at <a href="../internals/index.html" title="mod opendal::docs::internals"><code>internals</code></a>.</p>
+<h2 id="builder"><a class="doc-anchor" href="#builder">§</a>Builder</h2>
+<p>Let’s start with <a href="../../trait.Builder.html" title="trait opendal::Builder"><code>Builder</code></a>.</p>
+<p>A <code>Builder</code> is a trait that is implemented by the underlying services. We can use a <code>Builder</code> to configure and create a service.
+Developer can only create one service via Builder, in other words, Builder is the only public API provided by services.
+And other detailed implementation will be hidden.</p>
+<div class="example-wrap"><pre class="language-text"><code>┌───────────┐                 ┌───────────┐
+│           │     build()     │           │
+│  Builder  ├────────────────►│  Service  │
+│           │                 │           │
+└───────────┘                 └───────────┘
+</code></pre></div>
+<p>All <a href="../../trait.Builder.html" title="trait opendal::Builder"><code>Builder</code></a> provided by OpenDAL is under <a href="../../services/index.html" title="mod opendal::services"><code>services</code></a>, we can refer to them like <code>opendal::services::S3</code>.
+By right the builder will be named like <code>OneServiceBuilder</code>, but usually we will export it to public with renaming it as one
+general name. For example, we will rename <code>S3Builder</code> to <code>S3</code> and developer will use <code>S3</code> finally.</p>
+<p>For example:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal::services::S3;
+
+<span class="kw">let </span><span class="kw-2">mut </span>builder = S3::default();
+builder.bucket(<span class="string">"example"</span>);
+builder.root(<span class="string">"/path/to/file"</span>);</code></pre></div>
+<h2 id="operator"><a class="doc-anchor" href="#operator">§</a>Operator</h2>
+<p>The <a href="../../struct.Operator.html" title="struct opendal::Operator"><code>Operator</code></a> is a delegate for Service, the underlying implementation detail that implements <a href="../../raw/trait.Access.html" title="trait opendal::raw::Access"><code>Access</code></a>,
+and it also provides one unified access interface.
+It will hold one reference of Service with its all generic types erased by OpenDAL,
+which is the reason why we say the Operator is the delegate of one Service.</p>
+<div class="example-wrap"><pre class="language-text"><code>                  ┌────────────────────┐
+                  │      Operator      │
+                  │         │delegate  │
+┌─────────┐ build │         ▼          │ rely on ┌─────────────────────┐
+│ Builder ├───────┼──►┌────────────┐   │◄────────┤ business logic code │
+└─────────┘       │   │  Service   │   │         └─────────────────────┘
+                  └───┴────────────┴───┘
+</code></pre></div>
+<p><code>Operator</code> can be built from <code>Builder</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal::services::S3;
+<span class="kw">use </span>opendal::Operator;
+
+<span class="kw">let </span><span class="kw-2">mut </span>builder = S3::default();
+builder.bucket(<span class="string">"example"</span>);
+builder.root(<span class="string">"/path/to/file"</span>);
+
+<span class="kw">let </span>op = Operator::new(builder)<span class="question-mark">?</span>.finish();</code></pre></div>
+<ul>
+<li><code>Operator</code> has it’s internal <code>Arc</code>, so it’s <strong>cheap</strong> to clone it.</li>
+<li><code>Operator</code> doesn’t have generic parameters or lifetimes, so it’s <strong>easy</strong> to use it everywhere.</li>
+<li><code>Operator</code> implements <code>Send</code> and <code>Sync</code>, so it’s <strong>safe</strong> to send it between threads.</li>
+</ul>
+<p>After get an <code>Operator</code>, we can do operations on different paths.</p>
+<div class="example-wrap"><pre class="language-text"><code>                           ┌──────────────┐
+                 ┌────────►│ read(&quot;abc&quot;)  │
+                 │         └──────────────┘
+┌───────────┐    │
+│ Operator  │    │         ┌──────────────┐
+│ ┌───────┐ ├────┼────────►│ write(&quot;def&quot;) │
+│ │Service│ │    │         └──────────────┘
+└─┴───────┴─┘    │
+                 │         ┌──────────────┐
+                 └────────►│ list(&quot;ghi/&quot;) │
+                           └──────────────┘
+</code></pre></div>
+<p>We can read data with given path in this way:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal::services::S3;
+<span class="kw">use </span>opendal::Operator;
+
+<span class="kw">let </span><span class="kw-2">mut </span>builder = S3::default();
+builder.bucket(<span class="string">"example"</span>);
+builder.root(<span class="string">"/path/to/file"</span>);
+
+<span class="kw">let </span>op = Operator::new(builder)<span class="question-mark">?</span>.finish();
+<span class="kw">let </span>bs: Vec&lt;u8&gt; = op.read(<span class="string">"abc"</span>).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+</div></details></section></div></main></body></html>

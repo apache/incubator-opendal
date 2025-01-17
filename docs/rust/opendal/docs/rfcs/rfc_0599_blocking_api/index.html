@@ -1,0 +1,123 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Blocking API"><title>opendal::docs::rfcs::rfc_0599_blocking_api - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_0599_blocking_api</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_0599_blocking_api</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#110">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Blocking API</p>
+<ul>
+<li>Proposal Name: <code>blocking_api</code></li>
+<li>Start Date: 2022-08-30</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/599">apache/opendal#599</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/601">apache/opendal#601</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>We are adding a blocking API for OpenDAL.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>Blocking API is the most requested feature inside the OpenDAL community: <a href="https://github.com/apache/opendal/discussions/68">Opendal support sync read/write API</a></p>
+<p>Our users want blocking API for:</p>
+<ul>
+<li>Higher performance for local IO</li>
+<li>Using OpenDAL in a non-async environment</li>
+</ul>
+<p>However, supporting sync and async API in current Rust is a painful job, especially for an IO library like OpenDAL. For example:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Object {
+    <span class="kw">pub async fn </span>reader(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="kw">impl </span>BytesRead&gt; {}
+}</code></pre></div>
+<p>Supporting blocking API doesn’t mean removing the <code>async</code> from the function. We should also handle the returning <code>Reader</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Object {
+    <span class="kw">pub fn </span>reader(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="kw">impl </span>Read&gt; {}
+}</code></pre></div>
+<p>Until now, I still don’t know how to handle them correctly. But we need to have a start: not perfect, but enough for our users to have a try.</p>
+<p>So this RFC is an <strong>experiment</strong> try to introduce blocking API support. I expect the OpenDAL community will evaluate those APIs and keep improving them. And finally, we will pick up the best one for stabilizing.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>With this RFC, we can call blocking API with the <code>blocking_</code> prefix:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">fn </span>main() -&gt; <span class="prelude-ty">Result</span>&lt;()&gt; {
+    <span class="comment">// Init Operator
+    </span><span class="kw">let </span>op = Operator::from_env(Scheme::Fs)<span class="question-mark">?</span>;
+
+    <span class="comment">// Create object handler.
+    </span><span class="kw">let </span>o = op.object(<span class="string">"test_file"</span>);
+
+    <span class="comment">// Write data info object;
+    </span>o.blocking_write(<span class="string">"Hello, World!"</span>)<span class="question-mark">?</span>;
+
+    <span class="comment">// Read data from object;
+    </span><span class="kw">let </span>bs = o.blocking_read()<span class="question-mark">?</span>;
+
+    <span class="comment">// Read range from the object;
+    </span><span class="kw">let </span>bs = o.blocking_range_read(<span class="number">1</span>..=<span class="number">11</span>)<span class="question-mark">?</span>;
+
+    <span class="comment">// Get the object's path
+    </span><span class="kw">let </span>name = o.name();
+    <span class="kw">let </span>path = o.path();
+
+    <span class="comment">// Fetch more meta about the object.
+    </span><span class="kw">let </span>meta = o.blocking_metadata()<span class="question-mark">?</span>;
+    <span class="kw">let </span>mode = meta.mode();
+    <span class="kw">let </span>length = meta.content_length();
+    <span class="kw">let </span>content_md5 = meta.content_md5();
+    <span class="kw">let </span>etag = meta.etag();
+
+    <span class="comment">// Delete object.
+    </span>o.blocking_delete()<span class="question-mark">?</span>;
+
+    <span class="comment">// List dir object.
+    </span><span class="kw">let </span>o = op.object(<span class="string">"test_dir/"</span>);
+    <span class="kw">let </span><span class="kw-2">mut </span>ds = o.blocking_list()<span class="question-mark">?</span>;
+    <span class="kw">while let </span><span class="prelude-val">Some</span>(entry) = ds.try_next()<span class="question-mark">? </span>{
+        <span class="kw">let </span>path = entry.path();
+        <span class="kw">let </span>mode = entry.mode();
+    }
+
+    <span class="prelude-val">Ok</span>(())
+}</code></pre></div>
+<p>All async public APIs of <code>Object</code> and <code>Operator</code> will have a sync version with <code>blocking_</code> prefix. And they will share precisely the same semantics.</p>
+<p>The differences are:</p>
+<ul>
+<li>They will be executed and blocked on the current thread.</li>
+<li>Input and output’s <code>Reader</code> will become the blocking version like <code>std::io::Read</code>.</li>
+<li>Output’s <code>DirStreamer</code> will become the blocking version like <code>Iterator</code>.</li>
+</ul>
+<p>Thanks to <a href="./0501-new-builder.md">RFC-0501: New Builder</a>, all our builder-related APIs have been transformed into blocking APIs, so we don’t change our initiation logic.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>Under the hood, we will add the following APIs in <code>Accessor</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">trait </span>Accessor {
+    <span class="kw">fn </span>blocking_create(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpCreate) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;;
+    
+    <span class="kw">fn </span>blocking_read(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpRead) -&gt; <span class="prelude-ty">Result</span>&lt;BlockingBytesReader&gt;;
+    
+    <span class="kw">fn </span>blocking_write(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpWrite, r: BlockingBytesReader) -&gt; <span class="prelude-ty">Result</span>&lt;u64&gt;;
+    
+    <span class="kw">fn </span>blocking_stat(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpStat) -&gt; <span class="prelude-ty">Result</span>&lt;ObjectMetadata&gt;;
+    
+    <span class="kw">fn </span>blocking_delete(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpDelete) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;;
+    
+    <span class="kw">fn </span>blocking_list(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpList) -&gt; <span class="prelude-ty">Result</span>&lt;DirIterator&gt;;
+}</code></pre></div>
+<p>Notes:</p>
+<ul>
+<li><code>BlockingBytesReader</code> is a boxed <code>std::io::Read</code>.</li>
+<li>All blocking operations are happening on the current thread.</li>
+<li>Blocking operation is implemented natively, no <code>futures::block_on</code>.</li>
+</ul>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2><h3 id="two-sets-of-apis"><a class="doc-anchor" href="#two-sets-of-apis">§</a>Two sets of APIs</h3>
+<p>This RFC will add a new set of APIs, adding complicity for OpenDAL.</p>
+<p>And users may misuse them. For example: using <code>blocking_read</code> in an async context could block the entire thread.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="use-features-to-switch-async-and-sync"><a class="doc-anchor" href="#use-features-to-switch-async-and-sync">§</a>Use features to switch <code>async</code> and <code>sync</code></h3>
+<p>Some crates provide features to switch the <code>async</code> and <code>sync</code> versions of API.</p>
+<p>In this way:</p>
+<ul>
+<li>We can’t provide two kinds of API at the same time.</li>
+<li>Users must decide to use <code>async</code> or <code>sync</code> at compile time.</li>
+</ul>
+<h3 id="use-blocking-io-functions-in-local-fs-services"><a class="doc-anchor" href="#use-blocking-io-functions-in-local-fs-services">§</a>Use blocking IO functions in local fs services</h3>
+<blockquote>
+<p>Can we use blocking IO functions in local fs services to implement Accessor’s asynchronous functions directly? What is the drawback of our current non-blocking API?</p>
+</blockquote>
+<p>We can’t run blocking IO functions inside the <code>async</code> context. We need to let the local thread pool execute them and use <code>mio</code> to listen to the events. If we do so, congrats, we are building <code>tokio::fs</code> again!</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>None</p>
+</div></details></section></div></main></body></html>

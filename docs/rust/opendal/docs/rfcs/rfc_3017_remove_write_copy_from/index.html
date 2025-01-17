@@ -1,0 +1,72 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Remove write copy from"><title>opendal::docs::rfcs::rfc_3017_remove_write_copy_from - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_3017_remove_write_copy_from</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_3017_remove_write_copy_from</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#194">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Remove write copy from</p>
+<ul>
+<li>Proposal Name: <code>remove_write_copy_from</code></li>
+<li>Start Date: 2023-09-06</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/3017">apache/opendal#3017</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/3017">apache/opendal#3017</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Remove the <code>oio::Write::copy_from()</code> API pending a more thoughtful design.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>In <a href="./2083_writer_sink_api.md">RFC-2083: Writer Sink API</a>, we launched an API, initially named <code>sink</code> and changed to <code>copy_from</code>, that enables data writing from a <code>Reader</code> to a <code>Writer</code> object.</p>
+<p>The current API signature is:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Write: Unpin + Send + Sync {
+    <span class="doccomment">/// Copies data from the given reader to the writer.
+    ///
+    /// # Behavior
+    ///
+    /// - `Ok(n)` indicates successful writing of `n` bytes.
+    /// - `Err(err)` indicates a failure, resulting in zero bytes written.
+    ///
+    /// A situation where `n &lt; size` may arise; the caller should then transmit the remaining bytes until the full amount is written.
+    </span><span class="kw">async fn </span>copy_from(<span class="kw-2">&amp;mut </span><span class="self">self</span>, size: u64, src: oio::Reader) -&gt; <span class="prelude-ty">Result</span>&lt;u64&gt;;
+}</code></pre></div>
+<p>The API has the following limitations:</p>
+<ul>
+<li>Incompatibility with existing buffering and retry mechanisms.</li>
+<li>Imposes ownership requirements on the reader, complicating its use. The reader must be recreated for every write operation.</li>
+</ul>
+<p>Due to restrictions in both Rust and Hyper’s APIs, the following ideal implementation is currently unattainable:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Write: Unpin + Send + Sync {
+    <span class="kw">async fn </span>copy_from(<span class="kw-2">&amp;mut </span><span class="self">self</span>, size: u64, src: <span class="kw-2">&amp;mut </span><span class="kw">impl </span>oio::Read) -&gt; <span class="prelude-ty">Result</span>&lt;u64&gt;;
+}</code></pre></div>
+<ul>
+<li>Rust doesn’t allow us to have <code>impl oio::Read</code> in trait method if we want object safe.</li>
+<li>hyper doesn’t allow us to use reference here, it requires <code>impl Stream + 'static</code>.</li>
+</ul>
+<p>Given these constraints, the proposal is to remove <code>oio::Write::copy_from</code> until a more fitting design becomes feasible.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>The <code>Writer::sink()</code> and <code>Writer::copy()</code> methods will be kept, but it’s internal implementation will be changed to use <code>AsyncWrite</code> instead. For example:</p>
+<div class="example-wrap"><pre class="language-diff"><code>pub async fn copy&lt;R&gt;(&amp;mut self, size: u64, read_from: R) -&gt; Result&lt;u64&gt;
+where
+    R: futures::AsyncRead + Send + Sync + Unpin + &#39;static,
+{
+    if let State::Idle(Some(w)) = &amp;mut self.state {
+        let r = Box::new(oio::into_streamable_read(
+            oio::into_read_from_file(read_from, 0, size),
+            64 * 1024,
+        ));
+-       w.copy_from(size, r).await
++       futures::io::copy(&amp;mut r, w).await
+    } else {
+        unreachable!(
+            &quot;writer state invalid while copy, expect Idle, actual {}&quot;,
+            self.state
+        );
+    }
+}
+</code></pre></div><h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>The method <code>oio::Write::copy_from</code> will be removed.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>The deprecation eliminates the ability to stream data uploads. A viable alternative is to directly use <code>AsyncWrite</code> offered by <code>Writer</code>.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and Alternatives</h2>
+<p>N/A</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior Art</h2>
+<p>N/A</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved Questions</h2>
+<p>N/A</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future Possibilities</h2>
+<p>Introduce utility functions such as <code>Writer::copy_from(r: &amp;dyn AsyncRead)</code> when possible.</p>
+</div></details></section></div></main></body></html>

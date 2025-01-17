@@ -1,0 +1,157 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Executor API"><title>opendal::docs::rfcs::rfc_4638_executor - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_4638_executor</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_4638_executor</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#238">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Executor API</p>
+<ul>
+<li>Proposal Name: <code>executor</code></li>
+<li>Start Date: 2024-05-23</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/4638">apache/opendal#4638</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/4639">apache/opendal#4639</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Add executor in opendal to allow running tasks concurrently in background.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>OpenDAL offers top-tier support for concurrent execution, allowing tasks to run simultaneously in the background. Users can easily enable concurrent file read/write operations with just one line of code:</p>
+<div class="example-wrap"><pre class="language-diff"><code> let mut w = op
+     .writer_with(path)
+     .chunk(8 * 1024 * 1024) // 8 MiB per chunk
++    .concurrent(16) // 16 concurrent tasks
+     .await?;
+     
+ w.write(bs).await?;
+ w.write(bs).await?; // The submitted tasks only be executed while user calling `write`.
+ ...
+ sleep(Duration::from_secs(10)).await; // The submitted tasks make no progress during `sleep`.
+ ...
+ w.close().await?;
+</code></pre></div>
+<p>However, the execution of those tasks relies on users continuously calling <code>write</code>. They cannot run tasks concurrently in the background. (I explained the technical details in the <code>Rationale and alternatives</code> section.)</p>
+<p>This can result in the following issues:</p>
+<ul>
+<li>Task latency may increase as tasks are not executed until the task queue is full.</li>
+<li>Memory usage may be high because all chunks must be held in memory until the task is completed.</li>
+</ul>
+<p>I propose introducing an executor abstraction in OpenDAL to enable concurrent background task execution. The executor will automatically manage the tasks in the background without requiring users to drive the progress manually.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>OpenDAL will add a new <code>Executor</code> struct to manage concurrent tasks.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>Executor {
+    ...
+}
+
+<span class="kw">pub struct </span>Task {
+    ...
+}
+
+<span class="kw">impl </span>Executor {
+    <span class="doccomment">/// Create a new tokio based executor.
+    </span><span class="kw">pub fn </span>new() -&gt; <span class="self">Self </span>{ ... }
+    
+    <span class="doccomment">/// Create a new executor with given execute impl.
+    </span><span class="kw">pub fn </span>with(exec: Arc&lt;<span class="kw">dyn </span>Execute&gt;) -&gt; <span class="self">Self </span>{ ... }
+
+    <span class="doccomment">/// Run given future in background immediately.
+    </span><span class="kw">pub fn </span>execute&lt;F&gt;(<span class="kw-2">&amp;</span><span class="self">self</span>, f: F) -&gt; Task&lt;F::Output&gt;
+    <span class="kw">where
+        </span>F: Future + Send + <span class="lifetime">'static</span>,
+    {
+        ...
+    }
+}</code></pre></div>
+<p>The <code>Executor</code> uses the <code>tokio</code> runtime by default but users can also provide their own runtime by:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Execute {
+    <span class="kw">fn </span>execute(<span class="kw-2">&amp;</span><span class="self">self</span>, f: BoxedFuture&lt;()&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;;
+}</code></pre></div>
+<p>Users can set executor in <code>OpWrite</code> / <code>OpRead</code> to enable concurrent background task execution:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>+ <span class="kw">let </span>exec = Executor::new();
+  <span class="kw">let </span>w = op
+      .writer_with(path)
+      .chunk(<span class="number">8 </span>* <span class="number">1024 </span>* <span class="number">1024</span>) <span class="comment">// 8 MiB per chunk
+      </span>.concurrent(<span class="number">16</span>) <span class="comment">// 16 concurrent tasks
+</span>+     .executor(exec) <span class="comment">// Use specified executor
+      </span>.<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>Specifying an executor every time is cumbersome. Users can also set a global executor for given operator:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>+ <span class="kw">let </span>exec = Executor::new();
++ <span class="kw">let </span>op = op.with_default_executor(exec);
+
+  <span class="kw">let </span>w = op
+      .writer_with(path)
+      .chunk(<span class="number">8 </span>* <span class="number">1024 </span>* <span class="number">1024</span>) <span class="comment">// 8 MiB per chunk
+      </span>.concurrent(<span class="number">16</span>) <span class="comment">// 16 concurrent tasks
+      </span>.<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>As mentioned in the <code>Guide-level explanation</code>, the <code>Executor</code> struct will manage concurrent tasks in the background. <code>Executor</code> will be powered by trait <code>Execute</code> to support different underlying runtimes. To make trait <code>Execute</code> object safe, we only accept <code>BoxedFuture&lt;()&gt;</code> as input. <code>Executor</code> will handle the future output and return the result to the caller.</p>
+<p>Operations that supporting concurrent execution will add a new field:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>OpXxx {
+    ...
+    executor: <span class="prelude-ty">Option</span>&lt;Executor&gt;,
+}</code></pre></div>
+<p>Operator will add a new field to store the default executor:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>Operator {
+    ...
+    default_executor: <span class="prelude-ty">Option</span>&lt;Executor&gt;,
+}</code></pre></div>
+<p>The <code>Task</code> spawned by <code>Executor</code> will be a future that can be awaited to fetch the result:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>res = task.<span class="kw">await</span>;</code></pre></div>
+<p>The task will be executed immediately after calling <code>execute</code>. Users can also cancel the task by dropping the <code>Task</code> object. Users don’t need to poll those <code>Task</code> object to make progress.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2><h3 id="complexity"><a class="doc-anchor" href="#complexity">§</a>Complexity</h3>
+<p>To support concurrent execution, we need to introduce:</p>
+<ul>
+<li>a new <code>Executor</code> struct </li>
+<li>a new <code>Task</code> struct</li>
+<li>a new <code>Execute</code> trait</li>
+</ul>
+<p>This may increase the complexity of the codebase.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="why-introducing-so-many-new-abstractions"><a class="doc-anchor" href="#why-introducing-so-many-new-abstractions">§</a>Why introducing so many new abstractions?</h3>
+<p>We need to introduce new abstractions to support concurrent execution across different runtimes. Unfortunately, this is the current reality of async rust.</p>
+<p>Supporting just one or two runtimes by adding features is much easier. Supporting only Tokio is extremely simple, requiring about 10 lines of changes. However, this violates our vision of free data access.</p>
+<p>Firstly, we don’t want to force our users to use Tokio. We aim to support all runtimes, including async-std, smol, and others.</p>
+<p>Secondly, OpenDAL should be capable of running in any environment, including embedded systems. We don’t want to restrict our users to a specific runtime.</p>
+<p>Finally, users may have their own preferences for observability and performance in their runtime. We intend to accommodate these needs effortlessly.</p>
+<h3 id="why-concurrentfutures-doesnt-work"><a class="doc-anchor" href="#why-concurrentfutures-doesnt-work">§</a>Why <code>ConcurrentFutures</code> doesn’t work?</h3>
+<p><code>ConcurrentFutures</code> is a <code>Vec&lt;impl Future&gt;</code>, users need to keep calling <code>poll_next</code> to make progress. This is not suitable for our use case. We need a way to run tasks in the background without user intervention.</p>
+<blockquote>
+<p>I’ve heard that futures will wake up when they’re ready, and it’s the runtime’s job to poll them, right?</p>
+</blockquote>
+<p>No, it’s partially correct. The runtime will wake up the future when it’s ready, but it’s the user’s job to poll the future. The runtime will not poll the future automatically unless it’s managed by the runtime.</p>
+<p>For tokio, that means all futures provided by tokio, like <code>tokio::time::Sleep</code>, will be polled by tokio runtime. However, if you create a future by yourself, you need to poll it manually.</p>
+<p>I have an example to explain this:</p>
+<p><em>Try it at <a href="https://play.rust-lang.org/?version=stable&amp;mode=debug&amp;edition=2021&amp;gist=628e67adef90128151e175d22c87808e">playground</a></em></p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>futures::stream::FuturesUnordered;
+<span class="kw">use </span>futures::StreamExt;
+<span class="kw">use </span>std::time::Duration;
+<span class="kw">use </span>tokio::time::{sleep, Instant};
+
+<span class="attr">#[tokio::main]
+</span><span class="kw">async fn </span>main() {
+    <span class="kw">let </span>now = Instant::now();
+    <span class="kw">let </span><span class="kw-2">mut </span>cf = FuturesUnordered::new();
+
+    <span class="comment">// cf.push(Box::pin(sleep(Duration::from_secs(3))));
+    </span>cf.push(Box::pin(<span class="kw">async move </span>{
+        sleep(Duration::from_secs(<span class="number">3</span>)).<span class="kw">await</span>;
+        <span class="macro">println!</span>(<span class="string">"async task finished at {}s"</span>, now.elapsed().as_secs_f64());
+    }));
+    sleep(Duration::from_secs(<span class="number">4</span>)).<span class="kw">await</span>;
+    <span class="macro">println!</span>(<span class="string">"outer sleep finished at {}s"</span>, now.elapsed().as_secs_f64());
+
+    <span class="kw">let _</span>: Vec&lt;()&gt; = cf.collect().<span class="kw">await</span>;
+    <span class="macro">println!</span>(<span class="string">"consumed: {}s"</span>, now.elapsed().as_secs_f64())
+}</code></pre></div>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2><h3 id="blocking-executor"><a class="doc-anchor" href="#blocking-executor">§</a>Blocking Executor</h3>
+<p>This proposal mainly focuses on async tasks. However, we can also consider adding blocking support to <code>Executor</code>. Users can use concurrent tasks in blocking context too:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code> <span class="kw">let </span>w = op
+     .writer_with(path)
+     .chunk(<span class="number">8 </span>* <span class="number">1024 </span>* <span class="number">1024</span>) <span class="comment">// 8 MiB per chunk
+</span>+    .concurrent(<span class="number">16</span>) <span class="comment">// 16 concurrent tasks
+     </span>.<span class="kw">do</span>()<span class="question-mark">?</span>;</code></pre></div>
+</div></details></section></div></main></body></html>

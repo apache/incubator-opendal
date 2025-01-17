@@ -1,0 +1,1 @@
+searchState.loadedDescShard("dav_server_opendalfs", 0, "dav-server-opendalfs is an dav-server implementation using …\nOpendalFs is a <code>DavFileSystem</code> implementation for opendal.\nReturns the argument unchanged.\nCalls <code>U::from(self)</code>.\nCreate a new <code>OpendalFs</code> instance.")

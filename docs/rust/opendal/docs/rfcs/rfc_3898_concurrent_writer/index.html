@@ -1,0 +1,50 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Concurrent Writer"><title>opendal::docs::rfcs::rfc_3898_concurrent_writer - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_3898_concurrent_writer</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_3898_concurrent_writer</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#226">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Concurrent Writer</p>
+<ul>
+<li>Proposal Name: <code>concurrent_writer</code></li>
+<li>Start Date: 2024-01-02</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/3898">apache/opendal#3898</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/3899">apache/opendal#3899</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Enhance the <code>Writer</code> by adding concurrent write capabilities.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>Certain services, such as S3, GCS, and AzBlob, offer the <code>multi_write</code> functionality, allowing users to perform multiple write operations for uploading of large files. If a service support <code>multi_write</code>, the <a href="https://opendal.apache.org/docs/rust/opendal/struct.Capability.html#structfield.write_can_multi">Capability::write_can_multi</a> metadata should be set to <code>true</code>. </p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>    <span class="kw">let </span><span class="kw-2">mut </span>writer = op.writer(<span class="string">"path/to"</span>).<span class="kw">await</span><span class="question-mark">?</span>; <span class="comment">// a writers supports the `multi_write`.
+    </span>writer.write(part0).<span class="kw">await</span><span class="question-mark">?</span>;
+    writer.write(part1).<span class="kw">await</span><span class="question-mark">?</span>; <span class="comment">// It starts to upload after the `part0` is finished.
+    </span>writer.close().<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>Currently, when invoking a <code>Writer</code> that supports the <code>multi_write</code> functionality, multiple writes are proceed serially, without fully leveraging the potential for improved throughput through concurrent uploads. We should enhance support to allow concurrent processing of multiple write operations.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>For users who want to concurrent writer, they will call the new API <code>concurrent</code>. And the default behavior remains unchanged, so users using <code>op.writer_with()</code> are not affected. The <code>concurrent</code> function will take a number as input, and this number will represent the maximum concurrent write task amount the writer can perform.</p>
+<ul>
+<li>If <code>concurrent</code> is set to 0 or 1, it functions with default behavior(writes serially). </li>
+<li>However, if <code>concurrent</code> is set to number larger than 1. It enables concurrent uploading of up to <code>concurrent</code> write tasks and allows users to initiate additional write tasks without waiting to complete the previous write operation, as long as the inner task queue still has available slots.</li>
+</ul>
+<p>The concurrent write feature operate independently of other features.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>w = op.writer_with(path).concurrent(<span class="number">8</span>).<span class="kw">await</span>;
+w.write(part0).<span class="kw">await</span><span class="question-mark">?</span>;
+w.write(part1).<span class="kw">await</span><span class="question-mark">?</span>; <span class="comment">// `write` won't wait for part0.
+</span>w.close().<span class="kw">await</span><span class="question-mark">?</span>; <span class="comment">// `close` will make sure all parts are finished.</span></code></pre></div>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>The S3 and similar services use <code>MultipartUploadWriter</code>, while GCS uses <code>RangeWriter</code>. We can enhance these services by adding concurrent write features to them. A <code>concurrent</code> field of type <code>usize</code> will be introduced to <code>OpWrite</code> to allow the user to set the maximum concurrent write task amount. For other services that don’t support <code>multi_write</code>, setting the concurrent parameter will have no effect, maintaining the default behavior.</p>
+<p>This feature will be implemented in the <code>MultipartUploadWriter</code> and <code>RangeWriter</code>, which will utilize a <code>ConcurrentFutures&lt;WriteTask&gt;</code> as a task queue to store concurrent write tasks. </p>
+<p>When the upper layer invokes <code>poll_write</code>, the  <code>Writer</code> pushes write to the task queue (<code>ConcurrentFutures&lt;WriteTask&gt;</code>) if there are available slots, and then relinquishes control back to the upper layer. This allows for up to <code>concurrent</code> write tasks to uploaded concurrently without waiting. If the task queue is full, the <code>Writer</code> waits for the first task to yield results.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<ul>
+<li>More memory usage</li>
+<li>More concurrent connections</li>
+</ul>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>None</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<ul>
+<li>Adding <code>write_at</code> for <code>fs</code>.</li>
+<li>Use <code>ConcurrentFutureUnordered</code> instead of <code>ConcurrentFutures.</code></li>
+</ul>
+</div></details></section></div></main></body></html>

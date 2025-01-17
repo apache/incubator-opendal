@@ -1,0 +1,1 @@
+window.ALL_CRATES = ["object_store_opendal"];

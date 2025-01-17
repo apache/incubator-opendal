@@ -1,0 +1,109 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="List with metakey"><title>opendal::docs::rfcs::rfc_2779_list_with_metakey - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_2779_list_with_metakey</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_2779_list_with_metakey</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#186">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>List with metakey</p>
+<ul>
+<li>Proposal Name: <code>list_with_metakey</code></li>
+<li>Start Date: 2023-08-04</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/2779">apache/opendal#2779</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/2802">apache/opendal#2802</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Move <code>Operator</code> <code>metadata</code> API to <code>list_with().metakey()</code> to simplify the usage.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>The current <code>Entry</code> metadata API is:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal::Entry;
+<span class="kw">use </span>opendal::Metakey;
+
+<span class="kw">let </span>meta = op
+    .metadata(<span class="kw-2">&amp;</span>entry, Metakey::ContentLength | Metakey::ContentType)
+    .<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>This API is difficult to understand and rarely used correctly. And in reality, users always fetch the same set of metadata during listing.</p>
+<p>Take one of our users code as an example:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>stream = <span class="self">self
+    </span>.inner
+    .scan(<span class="kw-2">&amp;</span>path)
+    .<span class="kw">await
+    </span>.map_err(|err| format_object_store_error(err, <span class="kw-2">&amp;</span>path))<span class="question-mark">?</span>;
+
+<span class="kw">let </span>stream = stream.then(|res| <span class="kw">async </span>{
+    <span class="kw">let </span>entry = res.map_err(|err| format_object_store_error(err, <span class="string">""</span>))<span class="question-mark">?</span>;
+    <span class="kw">let </span>meta = <span class="self">self
+        </span>.inner
+        .metadata(<span class="kw-2">&amp;</span>entry, Metakey::ContentLength | Metakey::LastModified)
+        .<span class="kw">await
+        </span>.map_err(|err| format_object_store_error(err, entry.path()))<span class="question-mark">?</span>;
+
+    <span class="prelude-val">Ok</span>(format_object_meta(entry.path(), <span class="kw-2">&amp;</span>meta))
+});
+
+<span class="prelude-val">Ok</span>(stream.boxed())</code></pre></div>
+<p>By moving metadata to <code>lister</code>, our user code can be simplified to:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>stream = <span class="self">self
+    </span>.inner
+    .scan_with(<span class="kw-2">&amp;</span>path)
+    .metakey(Metakey::ContentLength | Metakey::LastModified)
+    .<span class="kw">await
+    </span>.map_err(|err| format_object_store_error(err, <span class="kw-2">&amp;</span>path))<span class="question-mark">?</span>;
+
+<span class="kw">let </span>stream = stream.then(|res| <span class="kw">async </span>{
+    <span class="kw">let </span>entry = res.map_err(|err| format_object_store_error(err, <span class="string">""</span>))<span class="question-mark">?</span>;
+    <span class="kw">let </span>meta = entry.into_metadata()
+
+    <span class="prelude-val">Ok</span>(format_object_meta(entry.path(), <span class="kw-2">&amp;</span>meta))
+});
+
+<span class="prelude-val">Ok</span>(stream.boxed())</code></pre></div>
+<p>By introducing this change:</p>
+<ul>
+<li>Users don’t need to capture <code>Operator</code> in the closure.</li>
+<li>Users don’t need to do async call like <code>metadata()</code> again.</li>
+</ul>
+<p>If we don’t have this change:</p>
+<ul>
+<li>every place that could receive a <code>fn()</code> must use <code>Fn()</code> instead which enforce users to have a generic parameter in their code.</li>
+<li>It’s harder for other languages binding to implement <code>op.metadata()</code> right.</li>
+</ul>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>The new API will be:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>entries: Vec&lt;Entry&gt; = op
+  .list_with(<span class="string">"dir"</span>)
+  .metakey(Metakey::ContentLength | Metakey::ContentType).<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="kw">let </span>meta: <span class="kw-2">&amp;</span>Metadata = entries[<span class="number">0</span>].metadata();</code></pre></div>
+<p>Metadata can be queried directly when listing entries via <code>metadata()</code>, and later extracted via <code>into_parts()</code>.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2><h3 id="how-metakey-works"><a class="doc-anchor" href="#how-metakey-works">§</a>How metakey works</h3>
+<p>For every services, <code>stat</code> will return the full set of it’s metadata. For example, <code>s3</code> will return <code>ContentLength | ContentType | LastModified | ...</code>, and <code>fs</code> will return <code>ContentLength | LastModified</code>. And most services will return part of those metadata during <code>list</code>. <code>s3</code> will return <code>ContentLength</code>, <code>LastModified</code>, but <code>fs</code> returns none of them.</p>
+<p>So when users use <code>list</code> to list entries, they will get a list of entries with incomplete metadata. The metadata could be in three states:</p>
+<ul>
+<li>Filled: the metadata is returned in <code>list</code></li>
+<li>NotExist: the metadata is not supported by service.</li>
+<li>Unknown: the metadata is supported by service but not returned in <code>list</code>.</li>
+</ul>
+<p>By accept <code>metakey</code>, we can compare the returning entry’s metadata with metakey:</p>
+<ul>
+<li>Return the entry if metakey already met by <code>Filled</code> and <code>NotExist</code>.</li>
+<li>Send <code>stat</code> call to fetch the metadata if metadata is <code>Unknown</code>.</li>
+</ul>
+<h3 id="changes"><a class="doc-anchor" href="#changes">§</a>Changes</h3>
+<p>We will add <code>metakey</code> into <code>OpList</code>. Underlying services can use those information to try their best to fetch the metadata.</p>
+<p>There are following possibilities:</p>
+<ul>
+<li>The entry metadata is met: <code>Lister</code> return the entry directly</li>
+<li>The entry metadata is not met and not fully filled: <code>Lister</code> will try to send <code>stat</code> call to fetch the metadata</li>
+<li>The entry metadata is not met and fully filled: <code>Lister</code> will return the entry directly.</li>
+</ul>
+<p>To make sure we can handle all metadata correctly, we will add a new capability called <code>stat_complete_metakey</code>. This capability will be used to indicate the complete set of metadata that can be fetched via <code>stat</code> call. For example, <code>s3</code> can set this capability to <code>ContentLength | ContentType | LastModified | ...</code>, and <code>fs</code> only have <code>ContentLength | LastModified</code>. <code>Lister</code> can use this capability to decide whether to send <code>stat</code> call or not.</p>
+<p>Services’ lister implementation should not changed.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>Keeping the complex standalone API has limited benefit given low usage.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2><h3 id="add-glob-and-regex-support-for-lister"><a class="doc-anchor" href="#add-glob-and-regex-support-for-lister">§</a>Add glob and regex support for Lister</h3>
+<p>We can add <code>glob</code> and <code>regex</code> support for <code>Lister</code> to make it more powerful.</p>
+</div></details></section></div></main></body></html>

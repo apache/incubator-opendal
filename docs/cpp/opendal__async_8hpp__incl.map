@@ -1,0 +1,15 @@
+<map id="/home/runner/work/opendal/opendal/bindings/cpp/include/opendal_async.hpp" name="/home/runner/work/opendal/opendal/bindings/cpp/include/opendal_async.hpp">
+<area shape="rect" id="Node000001" title=" " alt="" coords="70,5,285,60"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="5,108,80,133"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="138,62,74,103,71,98,135,58"/>
+<area shape="rect" id="Node000003" title=" " alt="" coords="104,108,157,133"/>
+<area shape="poly" id="edge2_Node000001_Node000003" title=" " alt="" coords="165,61,146,97,141,95,161,59"/>
+<area shape="rect" id="Node000004" title=" " alt="" coords="181,108,269,133"/>
+<area shape="poly" id="edge3_Node000001_Node000004" title=" " alt="" coords="194,59,214,95,210,97,190,61"/>
+<area shape="rect" id="Node000005" href="$async__defs_8hpp.html" title=" " alt="" coords="293,108,416,133"/>
+<area shape="poly" id="edge4_Node000001_Node000005" title=" " alt="" coords="233,58,320,100,317,104,230,62"/>
+<area shape="rect" id="Node000006" title=" " alt="" coords="245,181,331,207"/>
+<area shape="poly" id="edge5_Node000005_Node000006" title=" " alt="" coords="346,135,310,173,306,169,342,132"/>
+<area shape="rect" id="Node000007" title=" " alt="" coords="356,181,487,207"/>
+<area shape="poly" id="edge6_Node000005_Node000007" title=" " alt="" coords="368,132,403,169,399,173,364,135"/>
+</map>

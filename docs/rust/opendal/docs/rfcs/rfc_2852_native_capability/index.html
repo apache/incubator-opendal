@@ -1,0 +1,38 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Native capability"><title>opendal::docs::rfcs::rfc_2852_native_capability - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_2852_native_capability</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_2852_native_capability</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#190">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Native capability</p>
+<ul>
+<li>Proposal Name: <code>native_capability</code></li>
+<li>Start Date: 2023-08-11</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/2852">apache/opendal#2852</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/2859">apache/opendal#2859</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Add <code>native_capability</code> and <code>full_capability</code> to <code>Operator</code> so that users can make more informed decisions.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>OpenDAL adds <code>Capability</code> to inform users whether a service supports a specific feature. However, this is not enough for users to make decisions. OpenDAL doesn’t simply expose the services’ API directly; instead, it simulates the behavior to make it more useful.</p>
+<p>For example, <code>s3</code> doesn’t support seek operations like a local file system. But it’s a quite common operation for users. So OpenDAL will try to simulate the behavior by calculating the correct offset and reading the data from that offset instead. After this simulation, the <code>s3</code> service has the <code>read_can_seek</code> capability now.</p>
+<p>As another example, most services like <code>s3</code> don’t support blocking operations. OpenDAL implements a <code>BlockingLayer</code> to make it possible. After this implementation, the <code>s3</code> service has the <code>blocking</code> capability now.</p>
+<p>However, these capabilities alone are insufficient for users to make informed decisions. Take the <code>s3</code> service’s <code>blocking</code> capability as an example. Users are unable to determine whether it is a native capability or not, which may result in them unknowingly utilizing this feature in performance-sensitive scenarios, leading to significantly poor performance.</p>
+<p>So this proposal intends to address this issue by adding <code>native_capability</code> and <code>full_capability</code> to <code>OperatorInfo</code>. Users can use <code>native_capability</code> to determine whether a capability is native or not.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>We will add two new APIs <code>native_capability()</code> and <code>full_capability()</code> in <code>OperatorInfo</code>, and remove the <code>capability()</code> and related <code>can_xxx()</code> API.</p>
+<div class="example-wrap"><pre class="language-diff"><code>+ pub fn native_capability(&amp;self) -&gt; Capability
++ pub fn full_capability(&amp;self) -&gt; Capability
+- pub fn capability(&amp;self) -&gt; Capability
+</code></pre></div><h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>We will add two new fields <code>native_capability</code> and <code>full_capability</code> in <code>AccessorInfo</code>:</p>
+<ul>
+<li>Services SHOULD only set <code>native_capability</code>, and <code>full_capability</code> will be the same as <code>native_capability</code>.</li>
+<li>Layers MAY change <code>full_capability</code> and MUST NOT modify <code>native_capability</code>.</li>
+<li><code>OperatorInfo</code> should forward <code>native_capability()</code> and <code>full_capability()</code> to <code>AccessorInfo</code>.</li>
+</ul>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>None</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>None</p>
+</div></details></section></div></main></body></html>

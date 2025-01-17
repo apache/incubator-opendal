@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["Backend","Capability","Info","Value"],"trait":["Adapter"]};

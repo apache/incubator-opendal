@@ -1,0 +1,152 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Object native API"><title>opendal::docs::rfcs::rfc_0041_object_native_api - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_0041_object_native_api</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_0041_object_native_api</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#26">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Object native API</p>
+<ul>
+<li>Proposal Name: <code>object_native_api</code></li>
+<li>Start Date: 2022-02-18</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/41">apache/opendal#41</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/pull/35">apache/opendal#35</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Refactor API in object native way to make it easier to user.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p><code>opendal</code> is not easy to use.</p>
+<p>In our early adoption project <code>databend</code>, we can see a lot of code looks like:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>data_accessor = <span class="self">self</span>.data_accessor.clone();
+<span class="kw">let </span>path = <span class="self">self</span>.path.clone();
+<span class="kw">let </span>reader = SeekableReader::new(data_accessor, path.as_str(), stream_len);
+<span class="kw">let </span>reader = BufReader::with_capacity(read_buffer_size <span class="kw">as </span>usize, reader);
+<span class="self">Self</span>::read_column(reader, <span class="kw-2">&amp;</span>col_meta, data_type.clone(), arrow_type.clone()).<span class="kw">await</span></code></pre></div>
+<p>And</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>op.stat(<span class="kw-2">&amp;</span>path).run().<span class="kw">await</span></code></pre></div>
+<h3 id="conclusion"><a class="doc-anchor" href="#conclusion">§</a>Conclusion</h3>
+<p>So in this proposal, I expect to address those problems. After implementing this proposal, we have a faster and easier-to-use <code>opendal</code>.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>To operate on an object, we will use <code>Operator::object()</code> to create a new handler:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>o = op.object(<span class="string">"path/to/file"</span>);</code></pre></div>
+<p>All operations that are available for <code>Object</code> for now includes:</p>
+<ul>
+<li><code>metadata</code>: get object metadata (return an error if not exist).</li>
+<li><code>delete</code>: delete an object.</li>
+<li><code>reader</code>: create a new reader to read data from this object.</li>
+<li><code>writer</code>: create a new writer to write data into this object.</li>
+</ul>
+<p>Here is an example:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>anyhow::Result;
+<span class="kw">use </span>futures::AsyncReadExt;
+
+<span class="kw">use </span>opendal::services::fs;
+<span class="kw">use </span>opendal::Operator;
+
+<span class="attr">#[tokio::main]
+</span><span class="kw">async fn </span>main() -&gt; <span class="prelude-ty">Result</span>&lt;()&gt; {
+    <span class="kw">let </span>op = Operator::new(fs::Backend::build().root(<span class="string">"/tmp"</span>).finish().<span class="kw">await</span><span class="question-mark">?</span>);
+
+    <span class="kw">let </span>o = op.object(<span class="string">"test_file"</span>);
+
+    <span class="comment">// Write data info file;
+    </span><span class="kw">let </span>w = o.writer();
+    <span class="kw">let </span>n = w
+        .write_bytes(<span class="string">"Hello, World!"</span>.to_string().into_bytes())
+        .<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="macro">assert_eq!</span>(n, <span class="number">13</span>);
+
+    <span class="comment">// Read data from file;
+    </span><span class="kw">let </span><span class="kw-2">mut </span>r = o.reader();
+    <span class="kw">let </span><span class="kw-2">mut </span>buf = <span class="macro">vec!</span>[];
+    <span class="kw">let </span>n = r.read_to_end(<span class="kw-2">&amp;mut </span>buf).<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="macro">assert_eq!</span>(n, <span class="number">13</span>);
+    <span class="macro">assert_eq!</span>(String::from_utf8_lossy(<span class="kw-2">&amp;</span>buf), <span class="string">"Hello, World!"</span>);
+
+    <span class="comment">// Get file's Metadata
+    </span><span class="kw">let </span>meta = o.metadata().<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="macro">assert_eq!</span>(meta.content_length(), <span class="number">13</span>);
+
+    <span class="comment">// Delete file.
+    </span>o.delete().<span class="kw">await</span><span class="question-mark">?</span>;
+
+    <span class="prelude-val">Ok</span>(())
+}</code></pre></div>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2><h3 id="native-reader-support"><a class="doc-anchor" href="#native-reader-support">§</a>Native Reader support</h3>
+<p>We will provide a <code>Reader</code> (which implement both <code>AsyncRead + AsyncSeek</code>) for user instead of just a <code>AsyncRead</code>. In this <code>Reader</code>, we will:</p>
+<ul>
+<li>Not maintain internal buffer: caller can decide to wrap into <code>BufReader</code>.</li>
+<li>Only rely on accessor’s <code>read</code> and <code>stat</code> operations.</li>
+</ul>
+<p>To avoid the extra cost for <code>stat</code>, we will:</p>
+<ul>
+<li>Allow user specify total_size for <code>Reader</code>.</li>
+<li>Lazily Send <code>stat</code> while the first time <code>SeekFrom::End()</code></li>
+</ul>
+<p>To avoid the extra cost for <code>poll_read</code>, we will:</p>
+<ul>
+<li>Keep the underlying <code>BoxedAsyncRead</code> open, so that we can reuse the same connection/fd.</li>
+</ul>
+<p>With these change, we can improve the <code>Reader</code> performance both on local fs and remote storage:</p>
+<ul>
+<li>fs, before</li>
+</ul>
+<div class="example-wrap"><pre class="language-shell"><code>Benchmarking fs/bench_read/64226295-b7a7-416e-94ce-666ac3ab037b:
+                        time:   [16.060 ms 17.109 ms 18.124 ms]
+                        thrpt:  [882.82 MiB/s 935.20 MiB/s 996.24 MiB/s]
+
+Benchmarking fs/bench_buf_read/64226295-b7a7-416e-94ce-666ac3ab037b:
+                        time:   [14.779 ms 14.857 ms 14.938 ms]
+                        thrpt:  [1.0460 GiB/s 1.0517 GiB/s 1.0572 GiB/s]
+</code></pre></div>
+<ul>
+<li>fs, after</li>
+</ul>
+<div class="example-wrap"><pre class="language-shell"><code>Benchmarking fs/bench_read/df531bc7-54c8-43b6-b412-e4f7b9589876:
+                        time:   [14.654 ms 15.452 ms 16.273 ms]
+                        thrpt:  [983.20 MiB/s 1.0112 GiB/s 1.0663 GiB/s]
+
+Benchmarking fs/bench_buf_read/df531bc7-54c8-43b6-b412-e4f7b9589876:
+                        time:   [5.5589 ms 5.5825 ms 5.6076 ms]
+                        thrpt:  [2.7864 GiB/s 2.7989 GiB/s 2.8108 GiB/s]
+</code></pre></div>
+<ul>
+<li>s3, before</li>
+</ul>
+<div class="example-wrap"><pre class="language-shell"><code>Benchmarking s3/bench_read/72025a81-a4b6-46dc-b485-8d875d23c3a5:
+                        time:   [4.8315 ms 4.9331 ms 5.0403 ms]
+                        thrpt:  [3.1000 GiB/s 3.1674 GiB/s 3.2340 GiB/s]
+
+Benchmarking s3/bench_buf_read/72025a81-a4b6-46dc-b485-8d875d23c3a5:
+                        time:   [16.246 ms 16.539 ms 16.833 ms]
+                        thrpt:  [950.52 MiB/s 967.39 MiB/s 984.84 MiB/s]
+</code></pre></div>
+<ul>
+<li>s3, after</li>
+</ul>
+<div class="example-wrap"><pre class="language-shell"><code>Benchmarking s3/bench_read/6971c464-15f7-48d6-b69c-c8abc7774802:
+                        time:   [4.4222 ms 4.5685 ms 4.7181 ms]
+                        thrpt:  [3.3117 GiB/s 3.4202 GiB/s 3.5333 GiB/s]
+
+Benchmarking s3/bench_buf_read/6971c464-15f7-48d6-b69c-c8abc7774802:
+                        time:   [5.5598 ms 5.7174 ms 5.8691 ms]
+                        thrpt:  [2.6622 GiB/s 2.7329 GiB/s 2.8103 GiB/s]
+</code></pre></div><h3 id="object-api"><a class="doc-anchor" href="#object-api">§</a>Object API</h3>
+<p>Other changes are just a re-order of APIs.</p>
+<ul>
+<li><code>Operator::read() -&gt; BoxedAsyncRead</code> =&gt; <code>Object::reader() -&gt; Reader</code></li>
+<li><code>Operator::write(r: BoxedAsyncRead, size: u64)</code> =&gt; <code>Object::writer() -&gt; Writer</code></li>
+<li><code>Operator::stat() -&gt; Object</code> =&gt; <code>Object::stat() -&gt; Metadata</code></li>
+<li><code>Operator::delete()</code> =&gt; <code>Object::delete()</code></li>
+</ul>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>None</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<ul>
+<li>Implement <code>AsyncWrite</code> for <code>Writer</code> so that we can use <code>Writer</code> easier.</li>
+<li>Implement <code>Operator::objects()</code> to return an object iterator.</li>
+</ul>
+</div></details></section></div></main></body></html>

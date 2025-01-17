@@ -1,0 +1,74 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Writer sink API"><title>opendal::docs::rfcs::rfc_2083_writer_sink_api - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-46f98efaafac5295.ttf.woff2,FiraSans-Regular-018c141bf0843ffd.woff2,FiraSans-Medium-8f9a781e4970d388.woff2,SourceCodePro-Regular-562dcc5011b6de7d.ttf.woff2,SourceCodePro-Semibold-d899c5a5c4aeb14a.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2" crossorigin href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-76eba96aa4d2e634.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-dd39b87e5fcfba68.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.81.0-nightly (8337ba918 2024-06-12)" data-channel="nightly" data-search-js="search-0fe7219eb170c82e.js" data-settings-js="settings-4313503d2e1961c2.js" ><script src="../../../../static.files/storage-118b08c4c78b968e.js"></script><script defer src="../sidebar-items.js"></script><script defer src="../../../../static.files/main-20a3ad099b048cf2.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-df360f571f6edeae.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-422f7d1d52889060.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-2c020d218678b618.svg"></head><body class="rustdoc mod"><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><nav class="mobile-topbar"><button class="sidebar-menu-toggle" title="show sidebar"></button><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt=""></a></nav><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.51.1</span></h2></div><h2 class="location"><a href="#">Module rfc_2083_writer_sink_api</a></h2><div class="sidebar-elems"><h2><a href="../index.html">In opendal::docs::rfcs</a></h2></div></nav><div class="sidebar-resizer"></div><main><div class="width-limiter"><rustdoc-search></rustdoc-search><section id="main-content" class="content"><div class="main-heading"><h1>Module <a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a>::<wbr><a class="mod" href="#">rfc_2083_writer_sink_api</a><button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><span class="out-of-band"><a class="src" href="../../../../src/opendal/docs/rfcs/mod.rs.html#162">source</a> · <button id="toggle-all-docs" title="collapse all docs">[<span>&#x2212;</span>]</button></span></div><span class="item-info"><div class="stab portability">Available on <strong><code>docsrs</code></strong> only.</div></span><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Writer sink API</p>
+<ul>
+<li>Proposal Name: <code>writer_sink_api</code></li>
+<li>Start Date: 2023-04-23</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/2083">apache/opendal#2083</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/2084">apache/opendal#2084</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Include a <code>sink</code> API within the <code>Writer</code> to enable streaming writing.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>OpenDAL does not support streaming data uploads. Users must first load the data into memory and then send it to the <code>writer</code>.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>bs = balabala();
+w.write(bs).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let </span>bs = daladala();
+w.write(bs).<span class="kw">await</span><span class="question-mark">?</span>;
+...
+w.close().<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>There are two main drawbacks to OpenDAL:</p>
+<ul>
+<li>high memory usage, as reported in issue #1821 on GitHub</li>
+<li>low performance due to the need to buffer user data before sending it over the network.</li>
+</ul>
+<p>To address this issue, it would be beneficial for OpenDAL to provide an API that allows users to pass a stream or reader directly into the writer.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>I propose to add the following API to <code>Writer</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Writer {
+    <span class="kw">pub async fn </span>copy_from&lt;R&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, size: u64, r: R) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;
+    <span class="kw">where
+        </span>R: futures::AsyncRead + Send + Sync + <span class="lifetime">'static</span>;
+
+    <span class="kw">pub async fn </span>pipe_from&lt;S&gt;(<span class="kw-2">&amp;mut </span><span class="self">self</span>, size: u64, s: S) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;
+    <span class="kw">where
+        </span>S: futures::TryStream + Send + Sync + <span class="lifetime">'static
+        </span>Bytes: From&lt;S::Ok&gt;;
+}</code></pre></div>
+<p>Users can now upload data in a streaming way:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// Start writing the 5 TiB file.
+</span><span class="kw">let </span>w = op.writer_with(
+    OpWrite::default()
+        .with_content_length(<span class="number">5 </span>* <span class="number">1024 </span>* <span class="number">1024 </span>* <span class="number">1024 </span>* <span class="number">1024</span>));
+
+<span class="kw">let </span>r = balabala();
+<span class="comment">// Send to network directly without in-memory buffer.
+</span>w.copy_from(size, r).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="comment">// repeat...
+</span>...
+
+<span class="comment">// Close the write once we are ready!
+</span>w.close().<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>The underlying services will handle this stream in the most efficient way possible.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>To support <code>Wrtier::copy_from</code> and <code>Writer::pipe_from</code>, we will add a new API called <code>sink</code> inside <code>oio::Writer</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="attr">#[async_trait]
+</span><span class="kw">pub trait </span>Write: Unpin + Send + Sync {
+    <span class="kw">async fn </span>sink(<span class="kw-2">&amp;mut </span><span class="self">self</span>, size: u64, s: Box&lt;<span class="kw">dyn </span>futures::TryStream&lt;<span class="prelude-val">Ok</span>=Bytes&gt; + Send + Sync&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;;
+}</code></pre></div>
+<p>OpenDAL converts the user input reader and stream into a byte stream for <code>oio::Write</code>. Services that support streaming upload natively can directly pass the stream. If not, they can use <code>write</code> repeatedly to write the entire stream.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="whats-the-different-of-opwritecontent_length-and-sink-size"><a class="doc-anchor" href="#whats-the-different-of-opwritecontent_length-and-sink-size">§</a>What’s the different of <code>OpWrite::content_length</code> and <code>sink</code> size?</h3>
+<p>The <code>OpWrite::content_length</code> parameter specifies the total length of the file to be written, while the <code>size</code> argument in the <code>sink</code> API indicates the size of the reader or stream provided. Certain services may optimize by writing all content in a single request if <code>content_length</code> is the same with given <code>size</code>.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2><h3 id="retry-for-the-sink-api"><a class="doc-anchor" href="#retry-for-the-sink-api">§</a>Retry for the <code>sink</code> API</h3>
+<p>It’s impossible to retry the <code>sink</code> API itself, but we can provide a wrapper to retry the stream’s call of <code>next</code>. If we met a retryable error, we can call <code>next</code> again by crate like <code>backon</code>.</p>
+<h3 id="blocking-support-for-sink"><a class="doc-anchor" href="#blocking-support-for-sink">§</a>Blocking support for sink</h3>
+<p>We will add async support first.</p>
+</div></details></section></div></main></body></html>
