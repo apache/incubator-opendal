@@ -333,6 +333,32 @@ impl Buffer {
             }
         }
     }
+
+    /// Splits the current object into two parts at the specified index (`at`).
+    ///
+    /// The portion before the index is stored in the `left` object, while the portion
+    /// after the index is removed from the current object (`self`).
+    #[inline]
+    pub fn split_to(&mut self, at: usize) -> Self {
+        let mut left = self.clone();
+
+        left.truncate(at);
+        self.advance(at);
+        left
+    }
+
+    /// Splits the current object into two parts at the specified index (`at`).
+    ///
+    /// The portion before the index remains in the original object, while the portion
+    /// after the index is returned as a new object.
+    #[inline]
+    pub fn split_off(&mut self, at: usize) -> Self {
+        let mut right = self.clone();
+
+        self.truncate(at);
+        right.advance(at);
+        right
+    }
 }
 
 impl From<Vec<u8>> for Buffer {
