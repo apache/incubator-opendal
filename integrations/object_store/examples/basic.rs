@@ -3,24 +3,23 @@ use std::sync::Arc;
 use bytes::Bytes;
 use object_store::path::Path;
 use object_store::ObjectStore;
-use object_store_opendal::OpendalStore;
-use opendal::services::S3Config;
-use opendal::Operator;
 
+#[cfg(feature = "services-s3")]
+use object_store_opendal::AmazonS3Builder;
+
+#[cfg(feature = "services-s3")]
 #[tokio::main]
 async fn main() {
-    let mut cfg = S3Config::default();
-    cfg.access_key_id = Some("my_access_key".to_string());
-    cfg.secret_access_key = Some("my_secret_key".to_string());
-    cfg.endpoint = Some("my_endpoint".to_string());
-    cfg.region = Some("my_region".to_string());
-    cfg.bucket = "my_bucket".to_string();
+    let s3_store = AmazonS3Builder::new()
+        .with_access_key_id("my_access_key")
+        .with_secret_access_key("my_secret_key")
+        .with_endpoint("my_endpoint")
+        .with_region("my_region")
+        .with_bucket_name("my_bucket")
+        .build()
+        .unwrap();
 
-    // Create a new operator
-    let operator = Operator::from_config(cfg).unwrap().finish();
-
-    // Create a new object store
-    let object_store = Arc::new(OpendalStore::new(operator));
+    let object_store = Arc::new(s3_store);
 
     let path = Path::from("data/nested/test.txt");
     let bytes = Bytes::from_static(b"hello, world! I am nested.");
@@ -36,4 +35,9 @@ async fn main() {
         .unwrap();
 
     assert_eq!(content, bytes);
+}
+
+#[cfg(not(feature = "services-s3"))]
+fn main() {
+    println!("The 'services-s3' feature is not enabled.");
 }

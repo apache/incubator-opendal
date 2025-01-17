@@ -29,6 +29,7 @@ version = "0.49.0"
 
 [features]
 send_wrapper = ["dep:send_wrapper"]
+services-s3 = ["opendal/services-s3"]
 
 [[test]]
 harness = false
