@@ -70,6 +70,8 @@ pub mod constants {
     pub const X_AMZ_COPY_SOURCE_SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY_MD5: &str =
         "x-amz-copy-source-server-side-encryption-customer-key-md5";
 
+    pub const X_AMZ_WRITE_OFFSET_BYTES: &str = "x-amz-write-offset-bytes";
+
     pub const X_AMZ_META_PREFIX: &str = "x-amz-meta-";
 
     pub const RESPONSE_CONTENT_DISPOSITION: &str = "response-content-disposition";
@@ -100,6 +102,7 @@ pub struct S3Core {
     pub delete_max_size: usize,
     pub checksum_algorithm: Option<ChecksumAlgorithm>,
     pub disable_write_with_if_match: bool,
+    pub enable_write_with_append: bool,
 }
 
 impl Debug for S3Core {
@@ -289,6 +292,54 @@ impl S3Core {
         }
         req
     }
+
+    pub fn insert_metadata_headers(
+        &self,
+        mut req: http::request::Builder,
+        size: Option<u64>,
+        args: &OpWrite,
+    ) -> http::request::Builder {
+        if let Some(size) = size {
+            req = req.header(CONTENT_LENGTH, size.to_string())
+        }
+
+        if let Some(mime) = args.content_type() {
+            req = req.header(CONTENT_TYPE, mime)
+        }
+
+        if let Some(pos) = args.content_disposition() {
+            req = req.header(CONTENT_DISPOSITION, pos)
+        }
+
+        if let Some(encoding) = args.content_encoding() {
+            req = req.header(CONTENT_ENCODING, encoding);
+        }
+
+        if let Some(cache_control) = args.cache_control() {
+            req = req.header(CACHE_CONTROL, cache_control)
+        }
+
+        if let Some(if_match) = args.if_match() {
+            req = req.header(IF_MATCH, if_match);
+        }
+
+        if args.if_not_exists() {
+            req = req.header(IF_NONE_MATCH, "*");
+        }
+
+        // Set storage class header
+        if let Some(v) = &self.default_storage_class {
+            req = req.header(HeaderName::from_static(constants::X_AMZ_STORAGE_CLASS), v);
+        }
+
+        // Set user metadata headers.
+        if let Some(user_metadata) = args.user_metadata() {
+            for (key, value) in user_metadata {
+                req = req.header(format!("{X_AMZ_META_PREFIX}{key}"), value)
+            }
+        }
+        req
+    }
 }
 
 impl S3Core {
@@ -468,45 +519,7 @@ impl S3Core {
 
         let mut req = Request::put(&url);
 
-        if let Some(size) = size {
-            req = req.header(CONTENT_LENGTH, size.to_string())
-        }
-
-        if let Some(mime) = args.content_type() {
-            req = req.header(CONTENT_TYPE, mime)
-        }
-
-        if let Some(pos) = args.content_disposition() {
-            req = req.header(CONTENT_DISPOSITION, pos)
-        }
-
-        if let Some(encoding) = args.content_encoding() {
-            req = req.header(CONTENT_ENCODING, encoding);
-        }
-
-        if let Some(cache_control) = args.cache_control() {
-            req = req.header(CACHE_CONTROL, cache_control)
-        }
-
-        if let Some(if_match) = args.if_match() {
-            req = req.header(IF_MATCH, if_match);
-        }
-
-        if args.if_not_exists() {
-            req = req.header(IF_NONE_MATCH, "*");
-        }
-
-        // Set storage class header
-        if let Some(v) = &self.default_storage_class {
-            req = req.header(HeaderName::from_static(constants::X_AMZ_STORAGE_CLASS), v);
-        }
-
-        // Set user metadata headers.
-        if let Some(user_metadata) = args.user_metadata() {
-            for (key, value) in user_metadata {
-                req = req.header(format!("{X_AMZ_META_PREFIX}{key}"), value)
-            }
-        }
+        req = self.insert_metadata_headers(req, size, args);
 
         // Set SSE headers.
         req = self.insert_sse_headers(req, true);
@@ -516,6 +529,33 @@ impl S3Core {
             // Set Checksum header.
             req = self.insert_checksum_header(req, &checksum);
         }
+
+        // Set body
+        let req = req.body(body).map_err(new_request_build_error)?;
+
+        Ok(req)
+    }
+
+    pub fn s3_append_object_request(
+        &self,
+        path: &str,
+        position: u64,
+        size: u64,
+        args: &OpWrite,
+        body: Buffer,
+    ) -> Result<Request<Buffer>> {
+        let p = build_abs_path(&self.root, path);
+
+        let url = format!("{}/{}", self.endpoint, percent_encode_path(&p));
+
+        let mut req = Request::put(&url);
+
+        req = self.insert_metadata_headers(req, Some(size), args);
+
+        req = req.header(constants::X_AMZ_WRITE_OFFSET_BYTES, position.to_string());
+
+        // Set SSE headers.
+        req = self.insert_sse_headers(req, true);
 
         // Set body
         let req = req.body(body).map_err(new_request_build_error)?;

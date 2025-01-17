@@ -27,7 +27,7 @@ use super::error::S3Error;
 use crate::raw::*;
 use crate::*;
 
-pub type S3Writers = oio::MultipartWriter<S3Writer>;
+pub type S3Writers = TwoWays<oio::MultipartWriter<S3Writer>, oio::AppendWriter<S3Writer>>;
 
 pub struct S3Writer {
     core: Arc<S3Core>,
@@ -184,6 +184,40 @@ impl oio::MultipartWrite for S3Writer {
         match resp.status() {
             // s3 returns code 204 if abort succeeds.
             StatusCode::NO_CONTENT => Ok(()),
+            _ => Err(parse_error(resp)),
+        }
+    }
+}
+
+impl oio::AppendWrite for S3Writer {
+    async fn offset(&self) -> Result<u64> {
+        let resp = self
+            .core
+            .s3_head_object(&self.path, OpStat::default())
+            .await?;
+
+        let status = resp.status();
+
+        match status {
+            StatusCode::OK => Ok(parse_content_length(resp.headers())?.unwrap_or_default()),
+            StatusCode::NOT_FOUND => Ok(0),
+            _ => Err(parse_error(resp)),
+        }
+    }
+
+    async fn append(&self, offset: u64, size: u64, body: Buffer) -> Result<()> {
+        let mut req = self
+            .core
+            .s3_append_object_request(&self.path, offset, size, &self.op, body)?;
+
+        self.core.sign(&mut req).await?;
+
+        let resp = self.core.send(req).await?;
+
+        let status = resp.status();
+
+        match status {
+            StatusCode::OK => Ok(()),
             _ => Err(parse_error(resp)),
         }
     }

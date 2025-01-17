@@ -5,6 +5,7 @@ This service can be used to:
 - [x] stat
 - [x] read
 - [x] write
+- [x] append
 - [x] create_dir
 - [x] delete
 - [x] copy
