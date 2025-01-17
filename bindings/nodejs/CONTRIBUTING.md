@@ -79,11 +79,11 @@ Contains the following tools:
 
 ```bash
 # Install dependencies.
-> pnpm install
+pnpm install
 # Build from source.
-> pnpm build
+pnpm build
 # Build from source with debug info.
-> pnpm build:debug
+pnpm build:debug
 ```
 
 ## Test
@@ -92,8 +92,12 @@ We are using our own developed behavior testing framework.
 Taking 'service-memory' as an example, you can use the following command to run it.
 
 ```bash
-> OPENDAL_TEST=memory pnpm test
+OPENDAL_TEST=memory pnpm test
+```
 
+which will output:
+
+```
 ✓ |opendal| tests/service.test.mjs  (8 tests | 2 skipped) 40ms
 
  Test Files  1 passed (1)

@@ -19,7 +19,6 @@
 extern crate napi_derive;
 
 use std::collections::HashMap;
-use std::fmt::Display;
 use std::io::Read;
 use std::str::FromStr;
 use std::time::Duration;
@@ -29,6 +28,8 @@ use futures::TryStreamExt;
 use napi::bindgen_prelude::*;
 
 mod capability;
+
+type Result<T> = napi::Result<T, ErrorCode>;
 
 #[napi]
 pub struct Operator(opendal::Operator);
@@ -739,7 +740,7 @@ impl BlockingReader {
     #[napi]
     pub fn read(&mut self, mut buf: Buffer) -> Result<usize> {
         let buf = buf.as_mut();
-        let n = self.inner.read(buf).map_err(format_napi_error)?;
+        let n = self.inner.read(buf).map_err(format_io_error)?;
         Ok(n)
     }
 }
@@ -755,13 +756,13 @@ pub struct Reader {
 impl Reader {
     /// # Safety
     ///
-    /// > &mut self in async napi methods should be marked as unsafe
+    /// `&mut self` in async napi methods should be marked as unsafe
     ///
     /// Read bytes from this reader into given buffer.
     #[napi]
     pub async unsafe fn read(&mut self, mut buf: Buffer) -> Result<usize> {
         let buf = buf.as_mut();
-        let n = self.inner.read(buf).await.map_err(format_napi_error)?;
+        let n = self.inner.read(buf).await.map_err(format_io_error)?;
         Ok(n)
     }
 }
@@ -1144,9 +1145,75 @@ impl RetryLayer {
     }
 }
 
+#[repr(i32)]
+#[non_exhaustive]
+#[derive(Eq, PartialEq, Debug, Clone, Copy)]
+enum ErrorCode {
+    Unexpected = 1001,
+    Unsupported = 1002,
+    ConfigInvalid = 1003,
+    NotFound = 1004,
+    PermissionDenied = 1005,
+    IsADirectory = 1006,
+    NotADirectory = 1007,
+    AlreadyExists = 1008,
+    RateLimited = 1009,
+    IsSameFile = 1010,
+    ConditionNotMatch = 1011,
+    RangeNotSatisfied = 1012,
+}
+
+impl AsRef<str> for ErrorCode {
+    fn as_ref(&self) -> &str {
+        match self {
+            ErrorCode::Unexpected => "Unexpected",
+            ErrorCode::Unsupported => "Unsupported",
+            ErrorCode::ConfigInvalid => "ConfigInvalid",
+            ErrorCode::NotFound => "NotFound",
+            ErrorCode::PermissionDenied => "PermissionDenied",
+            ErrorCode::IsADirectory => "IsADirectory",
+            ErrorCode::NotADirectory => "NotADirectory",
+            ErrorCode::AlreadyExists => "AlreadyExists",
+            ErrorCode::RateLimited => "RateLimited",
+            ErrorCode::IsSameFile => "IsSameFile",
+            ErrorCode::ConditionNotMatch => "ConditionNotMatch",
+            ErrorCode::RangeNotSatisfied => "RangeNotSatisfied",
+        }
+    }
+}
+
+fn format_io_error(e: std::io::Error) -> Error<ErrorCode> {
+    format_napi_error(
+        opendal::Error::new(
+            match e.kind() {
+                std::io::ErrorKind::NotFound => opendal::ErrorKind::NotFound,
+                std::io::ErrorKind::PermissionDenied => opendal::ErrorKind::PermissionDenied,
+                _ => opendal::ErrorKind::Unexpected,
+            },
+            "failed to read bytes",
+        )
+        .set_source(e),
+    )
+}
+
 /// Format opendal error to napi error.
-///
-/// FIXME: handle error correctly.
-fn format_napi_error(err: impl Display) -> Error {
-    Error::from_reason(format!("{}", err))
+fn format_napi_error(err: opendal::Error) -> Error<ErrorCode> {
+    Error::new(
+        match err.kind() {
+            opendal::ErrorKind::Unexpected => ErrorCode::Unexpected,
+            opendal::ErrorKind::Unsupported => ErrorCode::Unsupported,
+            opendal::ErrorKind::ConfigInvalid => ErrorCode::ConfigInvalid,
+            opendal::ErrorKind::NotFound => ErrorCode::NotFound,
+            opendal::ErrorKind::PermissionDenied => ErrorCode::PermissionDenied,
+            opendal::ErrorKind::IsADirectory => ErrorCode::IsADirectory,
+            opendal::ErrorKind::NotADirectory => ErrorCode::NotADirectory,
+            opendal::ErrorKind::AlreadyExists => ErrorCode::AlreadyExists,
+            opendal::ErrorKind::RateLimited => ErrorCode::RateLimited,
+            opendal::ErrorKind::IsSameFile => ErrorCode::IsSameFile,
+            opendal::ErrorKind::ConditionNotMatch => ErrorCode::ConditionNotMatch,
+            opendal::ErrorKind::RangeNotSatisfied => ErrorCode::RangeNotSatisfied,
+            kind => unimplemented!("error kind not supported: {:?}", kind),
+        },
+        err.to_string(),
+    )
 }

@@ -156,12 +156,12 @@ crate-type = ["cdylib"]
 doc = false
 
 [dependencies]
-futures = "0.3.28"
-napi = { version = "2.11.3", default-features = false, features = [
+futures = "0.3.31"
+napi = { version = "3.0.0-alpha.13", default-features = false, features = [
   "napi6",
   "async",
 ] }
-napi-derive = "2.14.6"
+napi-derive = "3.0.0-alpha.13"
 # this crate won't be published, we always use the local version
 opendal = { version = ">=0", path = "../../core", features = [
   "layers-blocking",
