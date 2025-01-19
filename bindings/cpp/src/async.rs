@@ -103,6 +103,7 @@ unsafe fn operator_write(op: ffi::OperatorPtr, path: String, bs: Vec<u8>) -> Rus
             .0
             .write(&path, bs)
             .await
+            .map(|_| ())
             .map_err(|e| CxxAsyncException::new(e.to_string().into_boxed_str()))?)
     })
 }

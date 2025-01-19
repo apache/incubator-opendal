@@ -670,6 +670,7 @@ pub async fn test_write_with_append_returns_metadata(op: Operator) -> Result<()>
     let (content_two, _) = gen_bytes(op.info().full_capability());
 
     op.write_with(&path, content_one.clone())
+        .append(true)
         .await
         .expect("append file first time must success");
 
