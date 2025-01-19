@@ -522,10 +522,10 @@ where
             Error::new(ErrorKind::Unexpected, "writer has been closed or aborted")
         })?;
 
-        let ret = w.close().await;
+        let ret = w.close().await?;
         self.inner = None;
 
-        ret
+        Ok(ret)
     }
 
     async fn abort(&mut self) -> Result<()> {

@@ -838,17 +838,18 @@ mod tests {
 
         fn info(&self) -> Arc<AccessorInfo> {
             let mut am = AccessorInfo::default();
-            am.set_native_capability(Capability {
-                read: true,
-                write: true,
-                write_can_multi: true,
-                delete: true,
-                delete_max_size: Some(10),
-                stat: true,
-                list: true,
-                list_with_recursive: true,
-                ..Default::default()
-            });
+            am.set_scheme(Scheme::Custom("mock"))
+                .set_native_capability(Capability {
+                    read: true,
+                    write: true,
+                    write_can_multi: true,
+                    delete: true,
+                    delete_max_size: Some(10),
+                    stat: true,
+                    list: true,
+                    list_with_recursive: true,
+                    ..Default::default()
+                });
 
             am.into()
         }
