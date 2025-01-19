@@ -44,7 +44,7 @@ impl OssWriter {
 }
 
 impl oio::MultipartWrite for OssWriter {
-    async fn write_once(&self, size: u64, body: Buffer) -> Result<()> {
+    async fn write_once(&self, size: u64, body: Buffer) -> Result<Metadata> {
         let mut req =
             self.core
                 .oss_put_object_request(&self.path, Some(size), &self.op, body, false)?;
@@ -56,7 +56,7 @@ impl oio::MultipartWrite for OssWriter {
         let status = resp.status();
 
         match status {
-            StatusCode::CREATED | StatusCode::OK => Ok(()),
+            StatusCode::CREATED | StatusCode::OK => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }
@@ -127,7 +127,11 @@ impl oio::MultipartWrite for OssWriter {
         }
     }
 
-    async fn complete_part(&self, upload_id: &str, parts: &[oio::MultipartPart]) -> Result<()> {
+    async fn complete_part(
+        &self,
+        upload_id: &str,
+        parts: &[oio::MultipartPart],
+    ) -> Result<Metadata> {
         let parts = parts
             .iter()
             .map(|p| MultipartUploadPart {
@@ -144,7 +148,7 @@ impl oio::MultipartWrite for OssWriter {
         let status = resp.status();
 
         match status {
-            StatusCode::OK => Ok(()),
+            StatusCode::OK => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }

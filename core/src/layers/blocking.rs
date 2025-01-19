@@ -289,7 +289,7 @@ impl<I: oio::Write + 'static> oio::BlockingWrite for BlockingWrapper<I> {
         self.handle.block_on(self.inner.write(bs))
     }
 
-    fn close(&mut self) -> Result<()> {
+    fn close(&mut self) -> Result<Metadata> {
         self.handle.block_on(self.inner.close())
     }
 }

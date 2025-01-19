@@ -63,12 +63,12 @@ impl oio::Write for GhacWriter {
         Ok(())
     }
 
-    async fn close(&mut self) -> Result<()> {
+    async fn close(&mut self) -> Result<Metadata> {
         let req = self.backend.ghac_commit(self.cache_id, self.size)?;
         let resp = self.backend.client.send(req).await?;
 
         if resp.status().is_success() {
-            Ok(())
+            Ok(Metadata::default())
         } else {
             Err(parse_error(resp).map(|err| err.with_operation("Backend::ghac_commit")))
         }

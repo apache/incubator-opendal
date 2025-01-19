@@ -179,7 +179,7 @@ impl<R: oio::Write> oio::Write for AsyncBacktraceWrapper<R> {
     }
 
     #[async_backtrace::framed]
-    async fn close(&mut self) -> Result<()> {
+    async fn close(&mut self) -> Result<Metadata> {
         self.inner.close().await
     }
 
@@ -194,7 +194,7 @@ impl<R: oio::BlockingWrite> oio::BlockingWrite for AsyncBacktraceWrapper<R> {
         self.inner.write(bs)
     }
 
-    fn close(&mut self) -> Result<()> {
+    fn close(&mut self) -> Result<Metadata> {
         self.inner.close()
     }
 }

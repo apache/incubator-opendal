@@ -44,7 +44,7 @@ impl OneDriveWriter {
 }
 
 impl oio::OneShotWrite for OneDriveWriter {
-    async fn write_once(&self, bs: Buffer) -> Result<()> {
+    async fn write_once(&self, bs: Buffer) -> Result<Metadata> {
         let size = bs.len();
 
         if size <= Self::MAX_SIMPLE_SIZE {
@@ -53,7 +53,7 @@ impl oio::OneShotWrite for OneDriveWriter {
             self.write_chunked(bs.to_bytes()).await?;
         }
 
-        Ok(())
+        Ok(Metadata::default())
     }
 }
 

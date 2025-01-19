@@ -327,7 +327,7 @@ impl<R: oio::Write> oio::Write for FastraceWrapper<R> {
         self.inner.abort()
     }
 
-    fn close(&mut self) -> impl Future<Output = Result<()>> + MaybeSend {
+    fn close(&mut self) -> impl Future<Output = Result<Metadata>> + MaybeSend {
         let _g = self.span.set_local_parent();
         let _span = LocalSpan::enter_with_local_parent(Operation::WriterClose.into_static());
         self.inner.close()
@@ -342,7 +342,7 @@ impl<R: oio::BlockingWrite> oio::BlockingWrite for FastraceWrapper<R> {
         self.inner.write(bs)
     }
 
-    fn close(&mut self) -> Result<()> {
+    fn close(&mut self) -> Result<Metadata> {
         let _g = self.span.set_local_parent();
         let _span =
             LocalSpan::enter_with_local_parent(Operation::BlockingWriterClose.into_static());

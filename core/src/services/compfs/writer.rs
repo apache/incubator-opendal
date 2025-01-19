@@ -57,7 +57,7 @@ impl oio::Write for CompfsWriter {
         Ok(())
     }
 
-    async fn close(&mut self) -> Result<()> {
+    async fn close(&mut self) -> Result<Metadata> {
         let f = self.file.clone();
 
         self.core
@@ -67,7 +67,9 @@ impl oio::Write for CompfsWriter {
         let f = self.file.clone();
         self.core
             .exec(move || async move { f.into_inner().close().await })
-            .await
+            .await?;
+
+        Ok(Metadata::default())
     }
 
     async fn abort(&mut self) -> Result<()> {

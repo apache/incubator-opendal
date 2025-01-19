@@ -72,6 +72,9 @@ pub mod constants {
 
     pub const X_AMZ_META_PREFIX: &str = "x-amz-meta-";
 
+    pub const X_AMZ_VERSION_ID: &str = "x-amz-version-id";
+    pub const X_AMZ_OBJECT_SIZE: &str = "x-amz-object-size";
+
     pub const RESPONSE_CONTENT_DISPOSITION: &str = "response-content-disposition";
     pub const RESPONSE_CONTENT_TYPE: &str = "response-content-type";
     pub const RESPONSE_CACHE_CONTROL: &str = "response-cache-control";
@@ -940,6 +943,17 @@ pub struct CompleteMultipartUploadRequestPart {
     pub checksum_crc32c: Option<String>,
 }
 
+/// OutPut of `CompleteMultipartUpload` operation
+#[derive(Debug, Default, Deserialize)]
+#[serde[default, rename_all = "PascalCase"]]
+pub struct CompleteMultipartUploadResult {
+    pub bucket: String,
+    pub key: String,
+    pub location: String,
+    #[serde(rename = "ETag")]
+    pub etag: String,
+}
+
 /// Request of DeleteObjects.
 #[derive(Default, Debug, Serialize)]
 #[serde(default, rename = "Delete", rename_all = "PascalCase")]
@@ -1138,6 +1152,31 @@ mod tests {
                 // Cleanup space and new line
                 .replace([' ', '\n'], "")
         )
+    }
+
+    /// this example is from: https://docs.aws.amazon.com/AmazonS3/latest/API/API_CompleteMultipartUpload.html
+    #[test]
+    fn test_deserialize_complete_multipart_upload_result() {
+        let bs = Bytes::from(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+            <CompleteMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+             <Location>http://Example-Bucket.s3.region.amazonaws.com/Example-Object</Location>
+             <Bucket>Example-Bucket</Bucket>
+             <Key>Example-Object</Key>
+             <ETag>"3858f62230ac3c915f300c664312c11f-9"</ETag>
+            </CompleteMultipartUploadResult>"#,
+        );
+
+        let out: CompleteMultipartUploadResult =
+            quick_xml::de::from_reader(bs.reader()).expect("must success");
+
+        assert_eq!(out.bucket, "Example-Bucket");
+        assert_eq!(out.key, "Example-Object");
+        assert_eq!(
+            out.location,
+            "http://Example-Bucket.s3.region.amazonaws.com/Example-Object"
+        );
+        assert_eq!(out.etag, "\"3858f62230ac3c915f300c664312c11f-9\"");
     }
 
     /// This example is from https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html#API_DeleteObjects_Examples

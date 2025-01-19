@@ -367,7 +367,7 @@ impl<R: oio::Write> oio::Write for TimeoutWrapper<R> {
         Self::io_timeout(self.timeout, Operation::WriterWrite.into_static(), fut).await
     }
 
-    async fn close(&mut self) -> Result<()> {
+    async fn close(&mut self) -> Result<Metadata> {
         let fut = self.inner.close();
         Self::io_timeout(self.timeout, Operation::WriterClose.into_static(), fut).await
     }

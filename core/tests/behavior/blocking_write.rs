@@ -34,7 +34,8 @@ pub fn tests(op: &Operator, tests: &mut Vec<Trial>) {
             op,
             test_blocking_write_file,
             test_blocking_write_with_dir_path,
-            test_blocking_write_with_special_chars
+            test_blocking_write_with_special_chars,
+            test_blocking_write_returns_metadata
         ))
     }
 
@@ -42,6 +43,7 @@ pub fn tests(op: &Operator, tests: &mut Vec<Trial>) {
         tests.extend(blocking_trials!(
             op,
             test_blocking_write_with_append,
+            test_blocking_write_with_append_returns_metadata,
             test_blocking_writer_with_append
         ))
     }
@@ -100,6 +102,34 @@ pub fn test_blocking_write_with_special_chars(op: BlockingOperator) -> Result<()
     Ok(())
 }
 
+pub fn test_blocking_write_returns_metadata(op: BlockingOperator) -> Result<()> {
+    let (path, content, _) = TEST_FIXTURE.new_file(op.clone());
+
+    let meta = op.write(&path, content)?;
+
+    let stat_meta = op.stat(&path).expect("stat must succeed");
+
+    if meta.content_length() != 0 {
+        assert_eq!(meta.content_length(), stat_meta.content_length());
+    }
+    if let Some(last_modified_time) = meta.last_modified() {
+        assert_eq!(
+            last_modified_time,
+            stat_meta
+                .last_modified()
+                .expect("last_modified_time must exist")
+        );
+    }
+    if let Some(etag) = meta.etag() {
+        assert_eq!(etag, stat_meta.etag().expect("etag must exist"));
+    }
+    if let Some(version) = meta.version() {
+        assert_eq!(version, stat_meta.version().expect("version must exist"));
+    }
+
+    Ok(())
+}
+
 /// Test append to a file must success.
 pub fn test_blocking_write_with_append(op: BlockingOperator) -> Result<()> {
     let path = uuid::Uuid::new_v4().to_string();
@@ -123,6 +153,44 @@ pub fn test_blocking_write_with_append(op: BlockingOperator) -> Result<()> {
     assert_eq!(bs[size_one..], content_two);
 
     op.delete(&path).expect("delete file must success");
+
+    Ok(())
+}
+
+pub fn test_blocking_write_with_append_returns_metadata(op: BlockingOperator) -> Result<()> {
+    let (path, content_one, _) = TEST_FIXTURE.new_file(op.clone());
+
+    op.write_with(&path, content_one)
+        .append(true)
+        .call()
+        .expect("append file first time must success");
+
+    let (data, _) = gen_bytes(op.info().full_capability());
+    let meta = op
+        .write_with(&path, data)
+        .append(true)
+        .call()
+        .expect("append to an existing file must success");
+
+    let stat_meta = op.stat(&path).expect("stat must succeed");
+
+    if meta.content_length() != 0 {
+        assert_eq!(meta.content_length(), stat_meta.content_length());
+    }
+    if let Some(last_modified_time) = meta.last_modified() {
+        assert_eq!(
+            last_modified_time,
+            stat_meta
+                .last_modified()
+                .expect("last_modified_time must exist")
+        );
+    }
+    if let Some(etag) = meta.etag() {
+        assert_eq!(etag, stat_meta.etag().expect("etag must exist"));
+    }
+    if let Some(version) = meta.version() {
+        assert_eq!(version, stat_meta.version().expect("version must exist"));
+    }
 
     Ok(())
 }

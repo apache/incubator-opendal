@@ -108,13 +108,13 @@ impl oio::Write for AliyunDriveWriter {
         Ok(())
     }
 
-    async fn close(&mut self) -> Result<()> {
+    async fn close(&mut self) -> Result<Metadata> {
         let (Some(upload_id), Some(file_id)) = (self.upload_id.as_ref(), self.file_id.as_ref())
         else {
-            return Ok(());
+            return Ok(Metadata::default());
         };
         self.core.complete(file_id, upload_id).await?;
-        Ok(())
+        Ok(Metadata::default())
     }
 
     async fn abort(&mut self) -> Result<()> {

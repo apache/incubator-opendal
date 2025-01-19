@@ -38,7 +38,7 @@ impl DbfsWriter {
 }
 
 impl oio::OneShotWrite for DbfsWriter {
-    async fn write_once(&self, bs: Buffer) -> Result<()> {
+    async fn write_once(&self, bs: Buffer) -> Result<Metadata> {
         let size = bs.len();
 
         // MAX_BLOCK_SIZE_EXCEEDED will be thrown if this limit(1MB) is exceeded.
@@ -57,7 +57,7 @@ impl oio::OneShotWrite for DbfsWriter {
 
         let status = resp.status();
         match status {
-            StatusCode::CREATED | StatusCode::OK => Ok(()),
+            StatusCode::CREATED | StatusCode::OK => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }

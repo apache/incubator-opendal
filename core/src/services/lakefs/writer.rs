@@ -37,13 +37,13 @@ impl LakefsWriter {
 }
 
 impl oio::OneShotWrite for LakefsWriter {
-    async fn write_once(&self, bs: Buffer) -> Result<()> {
+    async fn write_once(&self, bs: Buffer) -> Result<Metadata> {
         let resp = self.core.upload_object(&self.path, &self.op, bs).await?;
 
         let status = resp.status();
 
         match status {
-            StatusCode::CREATED | StatusCode::OK => Ok(()),
+            StatusCode::CREATED | StatusCode::OK => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }

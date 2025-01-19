@@ -46,7 +46,7 @@ impl GcsWriter {
 }
 
 impl oio::MultipartWrite for GcsWriter {
-    async fn write_once(&self, _: u64, body: Buffer) -> Result<()> {
+    async fn write_once(&self, _: u64, body: Buffer) -> Result<Metadata> {
         let size = body.len() as u64;
         let mut req = self.core.gcs_insert_object_request(
             &percent_encode_path(&self.path),
@@ -62,7 +62,7 @@ impl oio::MultipartWrite for GcsWriter {
         let status = resp.status();
 
         match status {
-            StatusCode::CREATED | StatusCode::OK => Ok(()),
+            StatusCode::CREATED | StatusCode::OK => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }
@@ -118,7 +118,11 @@ impl oio::MultipartWrite for GcsWriter {
         })
     }
 
-    async fn complete_part(&self, upload_id: &str, parts: &[oio::MultipartPart]) -> Result<()> {
+    async fn complete_part(
+        &self,
+        upload_id: &str,
+        parts: &[oio::MultipartPart],
+    ) -> Result<Metadata> {
         let parts = parts
             .iter()
             .map(|p| CompleteMultipartUploadRequestPart {
@@ -135,7 +139,7 @@ impl oio::MultipartWrite for GcsWriter {
         if !resp.status().is_success() {
             return Err(parse_error(resp));
         }
-        Ok(())
+        Ok(Metadata::default())
     }
 
     async fn abort_part(&self, upload_id: &str) -> Result<()> {

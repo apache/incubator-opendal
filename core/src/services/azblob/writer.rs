@@ -106,7 +106,7 @@ impl oio::AppendWrite for AzblobWriter {
 }
 
 impl oio::BlockWrite for AzblobWriter {
-    async fn write_once(&self, size: u64, body: Buffer) -> Result<()> {
+    async fn write_once(&self, size: u64, body: Buffer) -> Result<Metadata> {
         let mut req: http::Request<Buffer> =
             self.core
                 .azblob_put_blob_request(&self.path, Some(size), &self.op, body)?;
@@ -117,7 +117,7 @@ impl oio::BlockWrite for AzblobWriter {
         let status = resp.status();
 
         match status {
-            StatusCode::CREATED | StatusCode::OK => Ok(()),
+            StatusCode::CREATED | StatusCode::OK => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }
@@ -135,7 +135,7 @@ impl oio::BlockWrite for AzblobWriter {
         }
     }
 
-    async fn complete_block(&self, block_ids: Vec<Uuid>) -> Result<()> {
+    async fn complete_block(&self, block_ids: Vec<Uuid>) -> Result<Metadata> {
         let resp = self
             .core
             .azblob_complete_put_block_list(&self.path, block_ids, &self.op)
@@ -143,7 +143,7 @@ impl oio::BlockWrite for AzblobWriter {
 
         let status = resp.status();
         match status {
-            StatusCode::CREATED | StatusCode::OK => Ok(()),
+            StatusCode::CREATED | StatusCode::OK => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }

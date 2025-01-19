@@ -727,7 +727,7 @@ impl Operator {
     /// # Ok(())
     /// # }
     /// ```
-    pub async fn write(&self, path: &str, bs: impl Into<Buffer>) -> Result<()> {
+    pub async fn write(&self, path: &str, bs: impl Into<Buffer>) -> Result<Metadata> {
         let bs = bs.into();
         self.write_with(path, bs).await
     }
@@ -1007,7 +1007,7 @@ impl Operator {
         &self,
         path: &str,
         bs: impl Into<Buffer>,
-    ) -> FutureWrite<impl Future<Output = Result<()>>> {
+    ) -> FutureWrite<impl Future<Output = Result<Metadata>>> {
         let path = normalize_path(path);
         let bs = bs.into();
 
@@ -1032,8 +1032,7 @@ impl Operator {
                 let context = WriteContext::new(inner, path, args, options);
                 let mut w = Writer::new(context).await?;
                 w.write(bs).await?;
-                w.close().await?;
-                Ok(())
+                w.close().await
             },
         )
     }

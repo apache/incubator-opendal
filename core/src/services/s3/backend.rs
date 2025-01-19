@@ -50,6 +50,7 @@ use crate::raw::oio::PageLister;
 use crate::raw::*;
 use crate::services::S3Config;
 use crate::*;
+use constants::X_AMZ_VERSION_ID;
 
 /// Allow constructing correct region endpoint if user gives a global endpoint.
 static ENDPOINT_TEMPLATES: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
@@ -1021,7 +1022,7 @@ impl Access for S3Backend {
                     meta.with_user_metadata(user_meta);
                 }
 
-                if let Some(v) = parse_header_to_str(headers, "x-amz-version-id")? {
+                if let Some(v) = parse_header_to_str(headers, X_AMZ_VERSION_ID)? {
                     meta.set_version(v);
                 }
 

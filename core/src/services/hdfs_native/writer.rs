@@ -35,7 +35,7 @@ impl oio::Write for HdfsNativeWriter {
         todo!()
     }
 
-    async fn close(&mut self) -> Result<()> {
+    async fn close(&mut self) -> Result<Metadata> {
         todo!()
     }
 

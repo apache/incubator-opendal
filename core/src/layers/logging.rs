@@ -1051,7 +1051,7 @@ impl<W: oio::Write, I: LoggingInterceptor> oio::Write for LoggingWriter<W, I> {
         }
     }
 
-    async fn close(&mut self) -> Result<()> {
+    async fn close(&mut self) -> Result<Metadata> {
         self.logger.log(
             &self.info,
             Operation::WriterClose,
@@ -1061,7 +1061,7 @@ impl<W: oio::Write, I: LoggingInterceptor> oio::Write for LoggingWriter<W, I> {
         );
 
         match self.inner.close().await {
-            Ok(_) => {
+            Ok(meta) => {
                 self.logger.log(
                     &self.info,
                     Operation::WriterClose,
@@ -1069,7 +1069,7 @@ impl<W: oio::Write, I: LoggingInterceptor> oio::Write for LoggingWriter<W, I> {
                     "succeeded",
                     None,
                 );
-                Ok(())
+                Ok(meta)
             }
             Err(err) => {
                 self.logger.log(
@@ -1133,7 +1133,7 @@ impl<W: oio::BlockingWrite, I: LoggingInterceptor> oio::BlockingWrite for Loggin
         }
     }
 
-    fn close(&mut self) -> Result<()> {
+    fn close(&mut self) -> Result<Metadata> {
         self.logger.log(
             &self.info,
             Operation::BlockingWriterClose,
@@ -1143,7 +1143,7 @@ impl<W: oio::BlockingWrite, I: LoggingInterceptor> oio::BlockingWrite for Loggin
         );
 
         match self.inner.close() {
-            Ok(_) => {
+            Ok(meta) => {
                 self.logger.log(
                     &self.info,
                     Operation::BlockingWriterWrite,
@@ -1151,7 +1151,7 @@ impl<W: oio::BlockingWrite, I: LoggingInterceptor> oio::BlockingWrite for Loggin
                     "succeeded",
                     None,
                 );
-                Ok(())
+                Ok(meta)
             }
             Err(err) => {
                 self.logger.log(

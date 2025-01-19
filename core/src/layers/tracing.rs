@@ -328,7 +328,7 @@ impl<R: oio::Write> oio::Write for TracingWrapper<R> {
         parent = &self.span,
         level = "trace",
         skip_all)]
-    fn close(&mut self) -> impl Future<Output = Result<()>> + MaybeSend {
+    fn close(&mut self) -> impl Future<Output = Result<Metadata>> + MaybeSend {
         self.inner.close()
     }
 }
@@ -346,7 +346,7 @@ impl<R: oio::BlockingWrite> oio::BlockingWrite for TracingWrapper<R> {
         parent = &self.span,
         level = "trace",
         skip_all)]
-    fn close(&mut self) -> Result<()> {
+    fn close(&mut self) -> Result<Metadata> {
         self.inner.close()
     }
 }

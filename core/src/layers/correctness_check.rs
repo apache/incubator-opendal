@@ -383,8 +383,8 @@ mod tests {
             Ok(())
         }
 
-        async fn close(&mut self) -> Result<()> {
-            Ok(())
+        async fn close(&mut self) -> Result<Metadata> {
+            Ok(Metadata::default())
         }
 
         async fn abort(&mut self) -> Result<()> {

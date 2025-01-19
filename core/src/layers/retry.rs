@@ -649,7 +649,7 @@ impl<R: oio::Write, I: RetryInterceptor> oio::Write for RetryWrapper<R, I> {
         res.map_err(|err| err.set_persistent())
     }
 
-    async fn close(&mut self) -> Result<()> {
+    async fn close(&mut self) -> Result<Metadata> {
         use backon::RetryableWithContext;
 
         let inner = self.take_inner()?;
@@ -684,7 +684,7 @@ impl<R: oio::BlockingWrite, I: RetryInterceptor> oio::BlockingWrite for RetryWra
             .map_err(|e| e.set_persistent())
     }
 
-    fn close(&mut self) -> Result<()> {
+    fn close(&mut self) -> Result<Metadata> {
         { || self.inner.as_mut().unwrap().close() }
             .retry(self.builder)
             .when(|e| e.is_temporary())
@@ -932,7 +932,7 @@ mod tests {
             Ok(())
         }
 
-        async fn close(&mut self) -> Result<()> {
+        async fn close(&mut self) -> Result<Metadata> {
             Err(Error::new(ErrorKind::Unexpected, "always close failed").set_temporary())
         }
 

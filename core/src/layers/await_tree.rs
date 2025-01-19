@@ -206,7 +206,7 @@ impl<R: oio::Write> oio::Write for AwaitTreeWrapper<R> {
             .instrument_await(format!("opendal::{}", Operation::WriterAbort.into_static()))
     }
 
-    fn close(&mut self) -> impl Future<Output = Result<()>> + MaybeSend {
+    fn close(&mut self) -> impl Future<Output = Result<Metadata>> + MaybeSend {
         self.inner
             .close()
             .instrument_await(format!("opendal::{}", Operation::WriterClose.into_static()))
@@ -218,7 +218,7 @@ impl<R: oio::BlockingWrite> oio::BlockingWrite for AwaitTreeWrapper<R> {
         self.inner.write(bs)
     }
 
-    fn close(&mut self) -> Result<()> {
+    fn close(&mut self) -> Result<Metadata> {
         self.inner.close()
     }
 }

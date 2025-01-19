@@ -40,7 +40,7 @@ impl VercelArtifactsWriter {
 }
 
 impl oio::OneShotWrite for VercelArtifactsWriter {
-    async fn write_once(&self, bs: Buffer) -> Result<()> {
+    async fn write_once(&self, bs: Buffer) -> Result<Metadata> {
         let resp = self
             .backend
             .vercel_artifacts_put(self.path.as_str(), bs.len() as u64, bs)
@@ -49,7 +49,7 @@ impl oio::OneShotWrite for VercelArtifactsWriter {
         let status = resp.status();
 
         match status {
-            StatusCode::OK | StatusCode::ACCEPTED => Ok(()),
+            StatusCode::OK | StatusCode::ACCEPTED => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }

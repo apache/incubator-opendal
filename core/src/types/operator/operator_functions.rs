@@ -69,7 +69,7 @@ impl<T, R> OperatorFunction<T, R> {
 pub struct FunctionWrite(
     /// The args for FunctionWrite is a bit special because we also
     /// need to move the bytes input this function.
-    pub(crate) OperatorFunction<(OpWrite, OpWriter, Buffer), ()>,
+    pub(crate) OperatorFunction<(OpWrite, OpWriter, Buffer), Metadata>,
 );
 
 impl FunctionWrite {
@@ -135,7 +135,7 @@ impl FunctionWrite {
 
     /// Call the function to consume all the input and generate a
     /// result.
-    pub fn call(self) -> Result<()> {
+    pub fn call(self) -> Result<Metadata> {
         self.0.call()
     }
 }

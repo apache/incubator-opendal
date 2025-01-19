@@ -83,7 +83,7 @@ impl BlockingWriter {
     ///
     /// Close should only be called when the writer is not closed or
     /// aborted, otherwise an unexpected error could be returned.
-    pub fn close(&mut self) -> Result<()> {
+    pub fn close(&mut self) -> Result<Metadata> {
         self.inner.close()
     }
 

@@ -39,7 +39,7 @@ impl YandexDiskWriter {
 }
 
 impl oio::OneShotWrite for YandexDiskWriter {
-    async fn write_once(&self, bs: Buffer) -> Result<()> {
+    async fn write_once(&self, bs: Buffer) -> Result<Metadata> {
         self.core.ensure_dir_exists(&self.path).await?;
 
         let upload_url = self.core.get_upload_url(&self.path).await?;
@@ -53,7 +53,7 @@ impl oio::OneShotWrite for YandexDiskWriter {
         let status = resp.status();
 
         match status {
-            StatusCode::CREATED => Ok(()),
+            StatusCode::CREATED => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }
