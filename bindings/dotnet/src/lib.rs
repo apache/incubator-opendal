@@ -61,7 +61,7 @@ pub unsafe extern "C" fn blocking_operator_write(
     let op = &*(op);
     let path = std::ffi::CStr::from_ptr(path).to_str().unwrap();
     let content = std::ffi::CStr::from_ptr(content).to_str().unwrap();
-    op.write(path, content.to_owned()).unwrap()
+    op.write(path, content.to_owned()).map(|_| ()).unwrap()
 }
 
 /// # Safety

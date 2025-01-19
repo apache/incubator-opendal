@@ -388,8 +388,9 @@ impl<R: oio::Write> oio::Write for DtraceLayerWrapper<R> {
         self.inner
             .close()
             .await
-            .map(|_| {
+            .map(|meta| {
                 probe_lazy!(opendal, writer_close_ok, c_path.as_ptr());
+                meta
             })
             .map_err(|err| {
                 probe_lazy!(opendal, writer_close_error, c_path.as_ptr());
@@ -418,8 +419,9 @@ impl<R: oio::BlockingWrite> oio::BlockingWrite for DtraceLayerWrapper<R> {
         probe_lazy!(opendal, blocking_writer_close_start, c_path.as_ptr());
         self.inner
             .close()
-            .map(|_| {
+            .map(|meta| {
                 probe_lazy!(opendal, blocking_writer_close_ok, c_path.as_ptr());
+                meta
             })
             .map_err(|err| {
                 probe_lazy!(opendal, blocking_writer_close_error, c_path.as_ptr());

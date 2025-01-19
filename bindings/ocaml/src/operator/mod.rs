@@ -91,7 +91,7 @@ pub fn blocking_write(
     path: String,
     bs: &'static [u8],
 ) -> Result<(), String> {
-    map_res_error(operator.0.write(path.as_str(), bs))
+    map_res_error(operator.0.write(path.as_str(), bs).map(|_| ()))
 }
 
 #[ocaml::func]
