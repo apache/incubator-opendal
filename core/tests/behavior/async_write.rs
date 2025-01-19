@@ -589,6 +589,10 @@ pub async fn test_writer_futures_copy_with_concurrent(op: Operator) -> Result<()
 }
 
 pub async fn test_writer_return_metadata(op: Operator) -> Result<()> {
+    if !op.info().full_capability().write_can_multi {
+        return Ok(());
+    }
+
     let path = TEST_FIXTURE.new_file_path();
     let size = 5 * 1024 * 1024; // write file with 5 MiB
     let content_a = gen_fixed_bytes(size);
