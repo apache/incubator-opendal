@@ -269,7 +269,7 @@ impl Operator {
                 writer = writer.cache_control(cache_control);
             }
         }
-        writer.await.map_err(format_napi_error)
+        writer.await.map(|_| ()).map_err(format_napi_error)
     }
 
     //noinspection DuplicatedCode
@@ -371,7 +371,7 @@ impl Operator {
                 writer = writer.cache_control(cache_control);
             }
         }
-        writer.call().map_err(format_napi_error)
+        writer.call().map(|_| ()).map_err(format_napi_error)
     }
 
     /// Copy file according to given `from` and `to` path.
@@ -809,7 +809,7 @@ impl BlockingWriter {
     /// ```
     #[napi]
     pub unsafe fn close(&mut self) -> Result<()> {
-        self.0.close().map_err(format_napi_error)
+        self.0.close().map(|_| ()).map_err(format_napi_error)
     }
 }
 
@@ -855,7 +855,7 @@ impl Writer {
     /// ```
     #[napi]
     pub async unsafe fn close(&mut self) -> Result<()> {
-        self.0.close().await.map_err(format_napi_error)
+        self.0.close().await.map(|_| ()).map_err(format_napi_error)
     }
 }
 

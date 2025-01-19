@@ -104,7 +104,7 @@ fn intern_write(
 ) -> Result<()> {
     let path = jstring_to_string(env, &path)?;
     let content = env.convert_byte_array(content)?;
-    Ok(op.write(&path, content)?)
+    Ok(op.write(&path, content).map(|_| ())?)
 }
 
 /// # Safety

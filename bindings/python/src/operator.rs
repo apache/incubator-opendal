@@ -135,7 +135,7 @@ impl Operator {
             write = write.cache_control(cache_control);
         }
 
-        write.call().map_err(format_pyerr)
+        write.call().map(|_| ()).map_err(format_pyerr)
     }
 
     /// Get current path's metadata **without cache** directly.
@@ -351,7 +351,7 @@ impl AsyncOperator {
             if let Some(cache_control) = &kwargs.cache_control {
                 write = write.cache_control(cache_control);
             }
-            write.await.map_err(format_pyerr)
+            write.await.map(|_| ()).map_err(format_pyerr)
         })
     }
 
