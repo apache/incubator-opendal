@@ -382,14 +382,15 @@ impl<R: oio::Write> oio::Write for DtraceLayerWrapper<R> {
             })
     }
 
-    async fn close(&mut self) -> Result<()> {
+    async fn close(&mut self) -> Result<Metadata> {
         let c_path = CString::new(self.path.clone()).unwrap();
         probe_lazy!(opendal, writer_close_start, c_path.as_ptr());
         self.inner
             .close()
             .await
-            .map(|_| {
+            .map(|meta| {
                 probe_lazy!(opendal, writer_close_ok, c_path.as_ptr());
+                meta
             })
             .map_err(|err| {
                 probe_lazy!(opendal, writer_close_error, c_path.as_ptr());
@@ -413,13 +414,14 @@ impl<R: oio::BlockingWrite> oio::BlockingWrite for DtraceLayerWrapper<R> {
             })
     }
 
-    fn close(&mut self) -> Result<()> {
+    fn close(&mut self) -> Result<Metadata> {
         let c_path = CString::new(self.path.clone()).unwrap();
         probe_lazy!(opendal, blocking_writer_close_start, c_path.as_ptr());
         self.inner
             .close()
-            .map(|_| {
+            .map(|meta| {
                 probe_lazy!(opendal, blocking_writer_close_ok, c_path.as_ptr());
+                meta
             })
             .map_err(|err| {
                 probe_lazy!(opendal, blocking_writer_close_error, c_path.as_ptr());

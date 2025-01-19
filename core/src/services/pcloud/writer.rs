@@ -40,7 +40,7 @@ impl PcloudWriter {
 }
 
 impl oio::OneShotWrite for PcloudWriter {
-    async fn write_once(&self, bs: Buffer) -> Result<()> {
+    async fn write_once(&self, bs: Buffer) -> Result<Metadata> {
         self.core.ensure_dir_exists(&self.path).await?;
 
         let resp = self.core.upload_file(&self.path, bs).await?;
@@ -58,7 +58,7 @@ impl oio::OneShotWrite for PcloudWriter {
                     return Err(Error::new(ErrorKind::Unexpected, format!("{resp:?}")));
                 }
 
-                Ok(())
+                Ok(Metadata::default())
             }
             _ => Err(parse_error(resp)),
         }

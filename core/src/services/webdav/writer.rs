@@ -38,7 +38,7 @@ impl WebdavWriter {
 }
 
 impl oio::OneShotWrite for WebdavWriter {
-    async fn write_once(&self, bs: Buffer) -> Result<()> {
+    async fn write_once(&self, bs: Buffer) -> Result<Metadata> {
         let resp = self
             .core
             .webdav_put(&self.path, Some(bs.len() as u64), &self.op, bs)
@@ -47,7 +47,9 @@ impl oio::OneShotWrite for WebdavWriter {
         let status = resp.status();
 
         match status {
-            StatusCode::CREATED | StatusCode::OK | StatusCode::NO_CONTENT => Ok(()),
+            StatusCode::CREATED | StatusCode::OK | StatusCode::NO_CONTENT => {
+                Ok(Metadata::default())
+            }
             _ => Err(parse_error(resp)),
         }
     }

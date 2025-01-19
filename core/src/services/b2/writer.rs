@@ -47,7 +47,7 @@ impl B2Writer {
 }
 
 impl oio::MultipartWrite for B2Writer {
-    async fn write_once(&self, size: u64, body: Buffer) -> Result<()> {
+    async fn write_once(&self, size: u64, body: Buffer) -> Result<Metadata> {
         let resp = self
             .core
             .upload_file(&self.path, Some(size), &self.op, body)
@@ -56,7 +56,7 @@ impl oio::MultipartWrite for B2Writer {
         let status = resp.status();
 
         match status {
-            StatusCode::OK => Ok(()),
+            StatusCode::OK => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }
@@ -113,7 +113,11 @@ impl oio::MultipartWrite for B2Writer {
         }
     }
 
-    async fn complete_part(&self, upload_id: &str, parts: &[oio::MultipartPart]) -> Result<()> {
+    async fn complete_part(
+        &self,
+        upload_id: &str,
+        parts: &[oio::MultipartPart],
+    ) -> Result<Metadata> {
         let part_sha1_array = parts
             .iter()
             .map(|p| {
@@ -134,7 +138,7 @@ impl oio::MultipartWrite for B2Writer {
         let status = resp.status();
 
         match status {
-            StatusCode::OK => Ok(()),
+            StatusCode::OK => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }

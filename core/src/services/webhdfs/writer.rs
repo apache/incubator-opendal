@@ -40,7 +40,7 @@ impl WebhdfsWriter {
 }
 
 impl oio::BlockWrite for WebhdfsWriter {
-    async fn write_once(&self, size: u64, body: Buffer) -> Result<()> {
+    async fn write_once(&self, size: u64, body: Buffer) -> Result<Metadata> {
         let req = self
             .backend
             .webhdfs_create_object_request(&self.path, Some(size), &self.op, body)
@@ -50,7 +50,7 @@ impl oio::BlockWrite for WebhdfsWriter {
 
         let status = resp.status();
         match status {
-            StatusCode::CREATED | StatusCode::OK => Ok(()),
+            StatusCode::CREATED | StatusCode::OK => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }
@@ -81,7 +81,7 @@ impl oio::BlockWrite for WebhdfsWriter {
         }
     }
 
-    async fn complete_block(&self, block_ids: Vec<Uuid>) -> Result<()> {
+    async fn complete_block(&self, block_ids: Vec<Uuid>) -> Result<Metadata> {
         let Some(ref atomic_write_dir) = self.backend.atomic_write_dir else {
             return Err(Error::new(
                 ErrorKind::Unsupported,
@@ -123,7 +123,7 @@ impl oio::BlockWrite for WebhdfsWriter {
         let status = resp.status();
 
         match status {
-            StatusCode::OK => Ok(()),
+            StatusCode::OK => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }

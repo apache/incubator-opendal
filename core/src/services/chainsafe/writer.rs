@@ -43,13 +43,13 @@ impl ChainsafeWriter {
 }
 
 impl oio::OneShotWrite for ChainsafeWriter {
-    async fn write_once(&self, bs: Buffer) -> Result<()> {
+    async fn write_once(&self, bs: Buffer) -> Result<Metadata> {
         let resp = self.core.upload_object(&self.path, bs).await?;
 
         let status = resp.status();
 
         match status {
-            StatusCode::OK => Ok(()),
+            StatusCode::OK => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }

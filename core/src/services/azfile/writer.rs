@@ -39,7 +39,7 @@ impl AzfileWriter {
 }
 
 impl oio::OneShotWrite for AzfileWriter {
-    async fn write_once(&self, bs: Buffer) -> Result<()> {
+    async fn write_once(&self, bs: Buffer) -> Result<Metadata> {
         let resp = self
             .core
             .azfile_create_file(&self.path, bs.len(), &self.op)
@@ -59,7 +59,7 @@ impl oio::OneShotWrite for AzfileWriter {
             .await?;
         let status = resp.status();
         match status {
-            StatusCode::OK | StatusCode::CREATED => Ok(()),
+            StatusCode::OK | StatusCode::CREATED => Ok(Metadata::default()),
             _ => Err(parse_error(resp).with_operation("Backend::azfile_update")),
         }
     }

@@ -233,7 +233,7 @@ impl<R: oio::Write> oio::Write for ThrottleWrapper<R> {
         self.inner.abort().await
     }
 
-    async fn close(&mut self) -> Result<()> {
+    async fn close(&mut self) -> Result<Metadata> {
         self.inner.close().await
     }
 }
@@ -261,7 +261,7 @@ impl<R: oio::BlockingWrite> oio::BlockingWrite for ThrottleWrapper<R> {
         }
     }
 
-    fn close(&mut self) -> Result<()> {
+    fn close(&mut self) -> Result<Metadata> {
         self.inner.close()
     }
 }

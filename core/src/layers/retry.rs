@@ -649,7 +649,7 @@ impl<R: oio::Write, I: RetryInterceptor> oio::Write for RetryWrapper<R, I> {
         res.map_err(|err| err.set_persistent())
     }
 
-    async fn close(&mut self) -> Result<()> {
+    async fn close(&mut self) -> Result<Metadata> {
         use backon::RetryableWithContext;
 
         let inner = self.take_inner()?;
@@ -684,7 +684,7 @@ impl<R: oio::BlockingWrite, I: RetryInterceptor> oio::BlockingWrite for RetryWra
             .map_err(|e| e.set_persistent())
     }
 
-    fn close(&mut self) -> Result<()> {
+    fn close(&mut self) -> Result<Metadata> {
         { || self.inner.as_mut().unwrap().close() }
             .retry(self.builder)
             .when(|e| e.is_temporary())
@@ -838,17 +838,18 @@ mod tests {
 
         fn info(&self) -> Arc<AccessorInfo> {
             let mut am = AccessorInfo::default();
-            am.set_native_capability(Capability {
-                read: true,
-                write: true,
-                write_can_multi: true,
-                delete: true,
-                delete_max_size: Some(10),
-                stat: true,
-                list: true,
-                list_with_recursive: true,
-                ..Default::default()
-            });
+            am.set_scheme(Scheme::Custom("mock"))
+                .set_native_capability(Capability {
+                    read: true,
+                    write: true,
+                    write_can_multi: true,
+                    delete: true,
+                    delete_max_size: Some(10),
+                    stat: true,
+                    list: true,
+                    list_with_recursive: true,
+                    ..Default::default()
+                });
 
             am.into()
         }
@@ -932,7 +933,7 @@ mod tests {
             Ok(())
         }
 
-        async fn close(&mut self) -> Result<()> {
+        async fn close(&mut self) -> Result<Metadata> {
             Err(Error::new(ErrorKind::Unexpected, "always close failed").set_temporary())
         }
 

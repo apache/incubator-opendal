@@ -38,13 +38,13 @@ impl GithubWriter {
 }
 
 impl oio::OneShotWrite for GithubWriter {
-    async fn write_once(&self, bs: Buffer) -> Result<()> {
+    async fn write_once(&self, bs: Buffer) -> Result<Metadata> {
         let resp = self.core.upload(&self.path, bs).await?;
 
         let status = resp.status();
 
         match status {
-            StatusCode::OK | StatusCode::CREATED => Ok(()),
+            StatusCode::OK | StatusCode::CREATED => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }

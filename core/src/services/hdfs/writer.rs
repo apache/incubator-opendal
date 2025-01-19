@@ -67,7 +67,7 @@ impl oio::Write for HdfsWriter<hdrs::AsyncFile> {
         Ok(())
     }
 
-    async fn close(&mut self) -> Result<()> {
+    async fn close(&mut self) -> Result<Metadata> {
         let f = self.f.as_mut().expect("HdfsWriter must be initialized");
         f.close().await.map_err(new_std_io_error)?;
 
@@ -84,7 +84,7 @@ impl oio::Write for HdfsWriter<hdrs::AsyncFile> {
                 .map_err(new_std_io_error)?
         }
 
-        Ok(())
+        Ok(Metadata::default())
     }
 
     async fn abort(&mut self) -> Result<()> {
@@ -106,7 +106,7 @@ impl oio::BlockingWrite for HdfsWriter<hdrs::File> {
         Ok(())
     }
 
-    fn close(&mut self) -> Result<()> {
+    fn close(&mut self) -> Result<Metadata> {
         let f = self.f.as_mut().expect("HdfsWriter must be initialized");
         f.flush().map_err(new_std_io_error)?;
 
@@ -122,6 +122,6 @@ impl oio::BlockingWrite for HdfsWriter<hdrs::File> {
                 .map_err(new_std_io_error)?;
         }
 
-        Ok(())
+        Ok(Metadata::default())
     }
 }

@@ -375,7 +375,7 @@ impl<T: oio::Write> oio::Write for ErrorContextWrapper<T> {
             })
     }
 
-    async fn close(&mut self) -> Result<()> {
+    async fn close(&mut self) -> Result<Metadata> {
         self.inner.close().await.map_err(|err| {
             err.with_operation(Operation::WriterClose)
                 .with_context("service", self.scheme)
@@ -411,7 +411,7 @@ impl<T: oio::BlockingWrite> oio::BlockingWrite for ErrorContextWrapper<T> {
             })
     }
 
-    fn close(&mut self) -> Result<()> {
+    fn close(&mut self) -> Result<Metadata> {
         self.inner.close().map_err(|err| {
             err.with_operation(Operation::BlockingWriterClose)
                 .with_context("service", self.scheme)

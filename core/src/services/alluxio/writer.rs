@@ -56,11 +56,13 @@ impl oio::Write for AlluxioWriter {
         Ok(())
     }
 
-    async fn close(&mut self) -> Result<()> {
+    async fn close(&mut self) -> Result<Metadata> {
         let Some(stream_id) = self.stream_id else {
-            return Ok(());
+            return Ok(Metadata::default());
         };
-        self.core.close(stream_id).await
+        self.core.close(stream_id).await?;
+
+        Ok(Metadata::default())
     }
 
     async fn abort(&mut self) -> Result<()> {

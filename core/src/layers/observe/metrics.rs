@@ -966,13 +966,13 @@ impl<R: oio::Write, I: MetricsIntercept> oio::Write for MetricsWrapper<R, I> {
         res
     }
 
-    async fn close(&mut self) -> Result<()> {
+    async fn close(&mut self) -> Result<Metadata> {
         let op = Operation::WriterClose;
 
         let start = Instant::now();
 
         let res = match self.inner.close().await {
-            Ok(()) => Ok(()),
+            Ok(meta) => Ok(meta),
             Err(err) => {
                 self.interceptor.observe_operation_errors_total(
                     self.scheme,
@@ -1069,13 +1069,13 @@ impl<R: oio::BlockingWrite, I: MetricsIntercept> oio::BlockingWrite for MetricsW
         res
     }
 
-    fn close(&mut self) -> Result<()> {
+    fn close(&mut self) -> Result<Metadata> {
         let op = Operation::BlockingWriterClose;
 
         let start = Instant::now();
 
         let res = match self.inner.close() {
-            Ok(()) => Ok(()),
+            Ok(meta) => Ok(meta),
             Err(err) => {
                 self.interceptor.observe_operation_errors_total(
                     self.scheme,

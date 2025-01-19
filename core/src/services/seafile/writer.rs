@@ -45,7 +45,7 @@ impl SeafileWriter {
 }
 
 impl oio::OneShotWrite for SeafileWriter {
-    async fn write_once(&self, bs: Buffer) -> Result<()> {
+    async fn write_once(&self, bs: Buffer) -> Result<Metadata> {
         let upload_url = self.core.get_upload_url().await?;
 
         let req = Request::post(upload_url);
@@ -79,7 +79,7 @@ impl oio::OneShotWrite for SeafileWriter {
         let status = resp.status();
 
         match status {
-            StatusCode::OK => Ok(()),
+            StatusCode::OK => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }

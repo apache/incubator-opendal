@@ -38,7 +38,7 @@ impl KoofrWriter {
 }
 
 impl oio::OneShotWrite for KoofrWriter {
-    async fn write_once(&self, bs: Buffer) -> Result<()> {
+    async fn write_once(&self, bs: Buffer) -> Result<Metadata> {
         self.core.ensure_dir_exists(&self.path).await?;
 
         let resp = self.core.put(&self.path, bs).await?;
@@ -46,7 +46,7 @@ impl oio::OneShotWrite for KoofrWriter {
         let status = resp.status();
 
         match status {
-            StatusCode::OK | StatusCode::CREATED => Ok(()),
+            StatusCode::OK | StatusCode::CREATED => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }

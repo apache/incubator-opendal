@@ -52,7 +52,7 @@ pub trait PositionWrite: Send + Sync + Unpin + 'static {
     ) -> impl Future<Output = Result<()>> + MaybeSend;
 
     /// close is used to close the underlying file.
-    fn close(&self) -> impl Future<Output = Result<()>> + MaybeSend;
+    fn close(&self) -> impl Future<Output = Result<Metadata>> + MaybeSend;
 
     /// abort is used to abort the underlying abort.
     fn abort(&self) -> impl Future<Output = Result<()>> + MaybeSend;
@@ -149,7 +149,7 @@ impl<W: PositionWrite> oio::Write for PositionWriter<W> {
         Ok(())
     }
 
-    async fn close(&mut self) -> Result<()> {
+    async fn close(&mut self) -> Result<Metadata> {
         // Make sure all tasks are finished.
         while self.tasks.next().await.transpose()?.is_some() {}
 
@@ -158,8 +158,7 @@ impl<W: PositionWrite> oio::Write for PositionWriter<W> {
             self.w.write_all_at(offset, buffer).await?;
             self.cache = None;
         }
-        self.w.close().await?;
-        Ok(())
+        self.w.close().await
     }
 
     async fn abort(&mut self) -> Result<()> {
@@ -228,8 +227,8 @@ mod tests {
             Ok(())
         }
 
-        async fn close(&self) -> Result<()> {
-            Ok(())
+        async fn close(&self) -> Result<Metadata> {
+            Ok(Metadata::default())
         }
 
         async fn abort(&self) -> Result<()> {

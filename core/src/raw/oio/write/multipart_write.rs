@@ -61,7 +61,11 @@ pub trait MultipartWrite: Send + Sync + Unpin + 'static {
     /// MultipartWriter will call this API when:
     ///
     /// - All the data has been written to the buffer and we can perform the upload at once.
-    fn write_once(&self, size: u64, body: Buffer) -> impl Future<Output = Result<()>> + MaybeSend;
+    fn write_once(
+        &self,
+        size: u64,
+        body: Buffer,
+    ) -> impl Future<Output = Result<Metadata>> + MaybeSend;
 
     /// initiate_part will call start a multipart upload and return the upload id.
     ///
@@ -69,7 +73,7 @@ pub trait MultipartWrite: Send + Sync + Unpin + 'static {
     ///
     /// - the total size of data is unknown.
     /// - the total size of data is known, but the size of current write
-    ///   is less then the total size.
+    ///   is less than the total size.
     fn initiate_part(&self) -> impl Future<Output = Result<String>> + MaybeSend;
 
     /// write_part will write a part of the data and returns the result
@@ -93,7 +97,7 @@ pub trait MultipartWrite: Send + Sync + Unpin + 'static {
         &self,
         upload_id: &str,
         parts: &[MultipartPart],
-    ) -> impl Future<Output = Result<()>> + MaybeSend;
+    ) -> impl Future<Output = Result<Metadata>> + MaybeSend;
 
     /// abort_part will cancel the multipart upload and purge all data.
     fn abort_part(&self, upload_id: &str) -> impl Future<Output = Result<()>> + MaybeSend;
@@ -237,7 +241,7 @@ where
         Ok(())
     }
 
-    async fn close(&mut self) -> Result<()> {
+    async fn close(&mut self) -> Result<Metadata> {
         let upload_id = match self.upload_id.clone() {
             Some(v) => v,
             None => {
@@ -245,10 +249,10 @@ where
                     Some(cache) => (cache.len(), cache),
                     None => (0, Buffer::new()),
                 };
-                // Call write_once if there is no upload_id.
-                self.w.write_once(size as u64, body).await?;
+
                 self.cache = None;
-                return Ok(());
+                // Call write_once if there is no upload_id.
+                return self.w.write_once(size as u64, body).await;
             }
         };
 
@@ -333,9 +337,9 @@ mod tests {
     }
 
     impl MultipartWrite for Arc<Mutex<TestWrite>> {
-        async fn write_once(&self, size: u64, _: Buffer) -> Result<()> {
+        async fn write_once(&self, size: u64, _: Buffer) -> Result<Metadata> {
             self.lock().await.length += size;
-            Ok(())
+            Ok(Metadata::default())
         }
 
         async fn initiate_part(&self) -> Result<String> {
@@ -378,12 +382,16 @@ mod tests {
             })
         }
 
-        async fn complete_part(&self, upload_id: &str, parts: &[MultipartPart]) -> Result<()> {
+        async fn complete_part(
+            &self,
+            upload_id: &str,
+            parts: &[MultipartPart],
+        ) -> Result<Metadata> {
             let test = self.lock().await;
             assert_eq!(upload_id, test.upload_id);
             assert_eq!(parts.len(), test.part_numbers.len());
 
-            Ok(())
+            Ok(Metadata::default())
         }
 
         async fn abort_part(&self, upload_id: &str) -> Result<()> {

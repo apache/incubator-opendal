@@ -184,7 +184,7 @@ impl WriteGenerator<oio::Writer> {
     }
 
     /// Finish the write process.
-    pub async fn close(&mut self) -> Result<()> {
+    pub async fn close(&mut self) -> Result<Metadata> {
         loop {
             if self.buffer.is_empty() {
                 break;
@@ -271,7 +271,7 @@ impl WriteGenerator<oio::BlockingWriter> {
     }
 
     /// Finish the write process.
-    pub fn close(&mut self) -> Result<()> {
+    pub fn close(&mut self) -> Result<Metadata> {
         loop {
             if self.buffer.is_empty() {
                 break;
@@ -315,8 +315,8 @@ mod tests {
             Ok(())
         }
 
-        async fn close(&mut self) -> Result<()> {
-            Ok(())
+        async fn close(&mut self) -> Result<Metadata> {
+            Ok(Metadata::default())
         }
 
         async fn abort(&mut self) -> Result<()> {

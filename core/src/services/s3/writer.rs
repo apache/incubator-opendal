@@ -17,15 +17,15 @@
 
 use std::sync::Arc;
 
-use bytes::Buf;
-use http::StatusCode;
-
 use super::core::*;
 use super::error::from_s3_error;
 use super::error::parse_error;
 use super::error::S3Error;
 use crate::raw::*;
 use crate::*;
+use bytes::Buf;
+use constants::{X_AMZ_OBJECT_SIZE, X_AMZ_VERSION_ID};
+use http::StatusCode;
 
 pub type S3Writers = oio::MultipartWriter<S3Writer>;
 
@@ -44,10 +44,26 @@ impl S3Writer {
             op,
         }
     }
+
+    fn parse_header_into_meta(path: &str, headers: &http::HeaderMap) -> Result<Metadata> {
+        let mut meta = Metadata::new(EntryMode::from_path(path));
+        if let Some(etag) = parse_etag(headers)? {
+            meta.set_etag(etag);
+        }
+        if let Some(version) = parse_header_to_str(headers, X_AMZ_VERSION_ID)? {
+            meta.set_version(version);
+        }
+        if let Some(size) = parse_header_to_str(headers, X_AMZ_OBJECT_SIZE)? {
+            if let Ok(value) = size.parse() {
+                meta.set_content_length(value);
+            }
+        }
+        Ok(meta)
+    }
 }
 
 impl oio::MultipartWrite for S3Writer {
-    async fn write_once(&self, size: u64, body: Buffer) -> Result<()> {
+    async fn write_once(&self, size: u64, body: Buffer) -> Result<Metadata> {
         let mut req = self
             .core
             .s3_put_object_request(&self.path, Some(size), &self.op, body)?;
@@ -58,8 +74,10 @@ impl oio::MultipartWrite for S3Writer {
 
         let status = resp.status();
 
+        let meta = S3Writer::parse_header_into_meta(&self.path, resp.headers())?;
+
         match status {
-            StatusCode::CREATED | StatusCode::OK => Ok(()),
+            StatusCode::CREATED | StatusCode::OK => Ok(meta),
             _ => Err(parse_error(resp)),
         }
     }
@@ -133,7 +151,11 @@ impl oio::MultipartWrite for S3Writer {
         }
     }
 
-    async fn complete_part(&self, upload_id: &str, parts: &[oio::MultipartPart]) -> Result<()> {
+    async fn complete_part(
+        &self,
+        upload_id: &str,
+        parts: &[oio::MultipartPart],
+    ) -> Result<Metadata> {
         let parts = parts
             .iter()
             .map(|p| match &self.core.checksum_algorithm {
@@ -159,18 +181,25 @@ impl oio::MultipartWrite for S3Writer {
 
         let status = resp.status();
 
+        let mut meta = S3Writer::parse_header_into_meta(&self.path, resp.headers())?;
+
         match status {
             StatusCode::OK => {
                 // still check if there is any error because S3 might return error for status code 200
                 // https://docs.aws.amazon.com/AmazonS3/latest/API/API_CompleteMultipartUpload.html#API_CompleteMultipartUpload_Example_4
                 let (parts, body) = resp.into_parts();
-                let maybe_error: S3Error =
-                    quick_xml::de::from_reader(body.reader()).map_err(new_xml_deserialize_error)?;
+
+                let maybe_error: S3Error = quick_xml::de::from_reader(body.clone().reader())
+                    .map_err(new_xml_deserialize_error)?;
                 if !maybe_error.code.is_empty() {
                     return Err(from_s3_error(maybe_error, parts));
                 }
 
-                Ok(())
+                let ret: CompleteMultipartUploadResult =
+                    quick_xml::de::from_reader(body.reader()).map_err(new_xml_deserialize_error)?;
+                meta.set_etag(&ret.etag);
+
+                Ok(meta)
             }
             _ => Err(parse_error(resp)),
         }

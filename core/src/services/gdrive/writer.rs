@@ -46,7 +46,7 @@ impl GdriveWriter {
 }
 
 impl oio::OneShotWrite for GdriveWriter {
-    async fn write_once(&self, bs: Buffer) -> Result<()> {
+    async fn write_once(&self, bs: Buffer) -> Result<Metadata> {
         let size = bs.len();
 
         let resp = if let Some(file_id) = &self.file_id {
@@ -69,7 +69,7 @@ impl oio::OneShotWrite for GdriveWriter {
                         serde_json::from_reader(bs.reader()).map_err(new_json_deserialize_error)?;
                     self.core.path_cache.insert(&self.path, &file.id).await;
                 }
-                Ok(())
+                Ok(Metadata::default())
             }
             _ => Err(parse_error(resp)),
         }

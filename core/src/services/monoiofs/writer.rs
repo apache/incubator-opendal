@@ -143,11 +143,13 @@ impl oio::Write for MonoiofsWriter {
     /// Send close request to worker thread and wait for result. Actual
     /// close happens in [`MonoiofsWriter::worker_entrypoint`] running
     /// on worker thread.
-    async fn close(&mut self) -> Result<()> {
+    async fn close(&mut self) -> Result<Metadata> {
         let (tx, rx) = oneshot::channel();
         self.core
             .unwrap(self.tx.send(WriterRequest::Close { tx }).await);
-        self.core.unwrap(rx.await)
+        self.core.unwrap(rx.await)?;
+
+        Ok(Metadata::default())
     }
 
     async fn abort(&mut self) -> Result<()> {

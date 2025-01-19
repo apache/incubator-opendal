@@ -37,14 +37,14 @@ impl DropboxWriter {
 }
 
 impl oio::OneShotWrite for DropboxWriter {
-    async fn write_once(&self, bs: Buffer) -> Result<()> {
+    async fn write_once(&self, bs: Buffer) -> Result<Metadata> {
         let resp = self
             .core
             .dropbox_update(&self.path, Some(bs.len()), &self.op, bs)
             .await?;
         let status = resp.status();
         match status {
-            StatusCode::OK => Ok(()),
+            StatusCode::OK => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }

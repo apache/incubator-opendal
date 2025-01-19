@@ -36,7 +36,7 @@ pub struct BufferSink {
 enum State {
     Idle(Option<WriteGenerator<oio::Writer>>),
     Writing(BoxedStaticFuture<(WriteGenerator<oio::Writer>, Result<usize>)>),
-    Closing(BoxedStaticFuture<(WriteGenerator<oio::Writer>, Result<()>)>),
+    Closing(BoxedStaticFuture<(WriteGenerator<oio::Writer>, Result<Metadata>)>),
 }
 
 /// # Safety

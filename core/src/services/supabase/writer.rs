@@ -42,7 +42,7 @@ impl SupabaseWriter {
 }
 
 impl oio::OneShotWrite for SupabaseWriter {
-    async fn write_once(&self, bs: Buffer) -> Result<()> {
+    async fn write_once(&self, bs: Buffer) -> Result<Metadata> {
         let mut req = self.core.supabase_upload_object_request(
             &self.path,
             Some(bs.len()),
@@ -55,7 +55,7 @@ impl oio::OneShotWrite for SupabaseWriter {
         let resp = self.core.send(req).await?;
 
         match resp.status() {
-            StatusCode::OK => Ok(()),
+            StatusCode::OK => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }

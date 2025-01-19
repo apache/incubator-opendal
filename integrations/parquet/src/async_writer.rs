@@ -97,6 +97,7 @@ impl AsyncFileWriter for AsyncWriter {
             self.inner
                 .close()
                 .await
+                .map(|_| ())
                 .map_err(|err| ParquetError::External(Box::new(err)))
         })
     }

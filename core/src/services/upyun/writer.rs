@@ -40,7 +40,7 @@ impl UpyunWriter {
 }
 
 impl oio::MultipartWrite for UpyunWriter {
-    async fn write_once(&self, size: u64, body: Buffer) -> Result<()> {
+    async fn write_once(&self, size: u64, body: Buffer) -> Result<Metadata> {
         let req = self.core.upload(&self.path, Some(size), &self.op, body)?;
 
         let resp = self.core.send(req).await?;
@@ -48,7 +48,7 @@ impl oio::MultipartWrite for UpyunWriter {
         let status = resp.status();
 
         match status {
-            StatusCode::OK => Ok(()),
+            StatusCode::OK => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }
@@ -100,7 +100,11 @@ impl oio::MultipartWrite for UpyunWriter {
         }
     }
 
-    async fn complete_part(&self, upload_id: &str, _parts: &[oio::MultipartPart]) -> Result<()> {
+    async fn complete_part(
+        &self,
+        upload_id: &str,
+        _parts: &[oio::MultipartPart],
+    ) -> Result<Metadata> {
         let resp = self
             .core
             .complete_multipart_upload(&self.path, upload_id)
@@ -109,7 +113,7 @@ impl oio::MultipartWrite for UpyunWriter {
         let status = resp.status();
 
         match status {
-            StatusCode::NO_CONTENT => Ok(()),
+            StatusCode::NO_CONTENT => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }

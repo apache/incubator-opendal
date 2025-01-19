@@ -69,6 +69,7 @@ impl Operator {
         rb_self
             .0
             .write(&path, bs.to_bytes())
+            .map(|_| ())
             .map_err(|err| Error::new(ruby.exception_runtime_error(), err.to_string()))
     }
 

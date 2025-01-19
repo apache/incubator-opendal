@@ -52,8 +52,10 @@ impl oio::Write for SftpWriter {
         Ok(())
     }
 
-    async fn close(&mut self) -> Result<()> {
-        self.file.shutdown().await.map_err(new_std_io_error)
+    async fn close(&mut self) -> Result<Metadata> {
+        self.file.shutdown().await.map_err(new_std_io_error)?;
+
+        Ok(Metadata::default())
     }
 
     async fn abort(&mut self) -> Result<()> {

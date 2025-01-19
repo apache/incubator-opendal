@@ -139,7 +139,7 @@ fn intern_write(
 }
 
 async fn do_write(op: &mut Operator, path: String, content: Vec<u8>) -> Result<()> {
-    Ok(op.write(&path, content).await?)
+    Ok(op.write(&path, content).await.map(|_| ())?)
 }
 
 /// # Safety
@@ -182,7 +182,11 @@ fn intern_append(
 }
 
 async fn do_append(op: &mut Operator, path: String, content: Vec<u8>) -> Result<()> {
-    Ok(op.write_with(&path, content).append(true).await?)
+    Ok(op
+        .write_with(&path, content)
+        .append(true)
+        .await
+        .map(|_| ())?)
 }
 
 /// # Safety

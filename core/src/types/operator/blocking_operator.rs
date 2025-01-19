@@ -470,7 +470,7 @@ impl BlockingOperator {
     /// # Ok(())
     /// # }
     /// ```
-    pub fn write(&self, path: &str, bs: impl Into<Buffer>) -> Result<()> {
+    pub fn write(&self, path: &str, bs: impl Into<Buffer>) -> Result<Metadata> {
         self.write_with(path, bs).call()
     }
 
@@ -633,8 +633,7 @@ impl BlockingOperator {
                 let context = WriteContext::new(inner, path, args, options);
                 let mut w = BlockingWriter::new(context)?;
                 w.write(bs)?;
-                w.close()?;
-                Ok(())
+                w.close()
             },
         ))
     }

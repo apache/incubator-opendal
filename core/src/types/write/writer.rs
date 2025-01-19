@@ -175,7 +175,7 @@ impl Writer {
     ///
     /// Close should only be called when the writer is not closed or
     /// aborted, otherwise an unexpected error could be returned.
-    pub async fn close(&mut self) -> Result<()> {
+    pub async fn close(&mut self) -> Result<Metadata> {
         self.inner.close().await
     }
 

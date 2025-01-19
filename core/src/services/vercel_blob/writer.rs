@@ -43,7 +43,7 @@ impl VercelBlobWriter {
 }
 
 impl oio::MultipartWrite for VercelBlobWriter {
-    async fn write_once(&self, size: u64, body: Buffer) -> Result<()> {
+    async fn write_once(&self, size: u64, body: Buffer) -> Result<Metadata> {
         let req = self
             .core
             .get_put_request(&self.path, Some(size), &self.op, body)?;
@@ -53,7 +53,7 @@ impl oio::MultipartWrite for VercelBlobWriter {
         let status = resp.status();
 
         match status {
-            StatusCode::OK => Ok(()),
+            StatusCode::OK => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }
@@ -112,7 +112,11 @@ impl oio::MultipartWrite for VercelBlobWriter {
         }
     }
 
-    async fn complete_part(&self, upload_id: &str, parts: &[oio::MultipartPart]) -> Result<()> {
+    async fn complete_part(
+        &self,
+        upload_id: &str,
+        parts: &[oio::MultipartPart],
+    ) -> Result<Metadata> {
         let parts = parts
             .iter()
             .map(|p| Part {
@@ -129,7 +133,7 @@ impl oio::MultipartWrite for VercelBlobWriter {
         let status = resp.status();
 
         match status {
-            StatusCode::OK => Ok(()),
+            StatusCode::OK => Ok(Metadata::default()),
             _ => Err(parse_error(resp)),
         }
     }
