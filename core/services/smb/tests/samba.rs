@@ -40,6 +40,56 @@ fn config(namespace: &str) -> SmbConfig {
 
 #[tokio::test]
 #[ignore = "requires the Samba fixture and OPENDAL_SMB_* configuration"]
+async fn independent_operators_create_missing_parent_concurrently() {
+    let first = Operator::new(config("concurrent-create").into_builder()).unwrap();
+    let second = Operator::new(config("concurrent-create").into_builder()).unwrap();
+    let barrier = tokio::sync::Barrier::new(2);
+    let (first_result, second_result) = tokio::join!(
+        async {
+            barrier.wait().await;
+            first.create_dir("parent/a/").await
+        },
+        async {
+            barrier.wait().await;
+            second.create_dir("parent/b/").await
+        },
+    );
+    first_result.unwrap();
+    second_result.unwrap();
+    assert!(first.stat("parent/a/").await.unwrap().is_dir());
+    assert!(second.stat("parent/b/").await.unwrap().is_dir());
+    first.delete("parent/a/").await.unwrap();
+    second.delete("parent/b/").await.unwrap();
+    first.delete("parent/").await.unwrap();
+    first.delete("/").await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires the Samba fixture and OPENDAL_SMB_* configuration"]
+async fn create_dir_rejects_target_file_without_changing_contents() {
+    let op = Operator::new(config("target-file").into_builder()).unwrap();
+    op.write("target", "unchanged").await.unwrap();
+    let error = op.create_dir("target/").await.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::NotADirectory);
+    assert_eq!(op.read("target").await.unwrap().to_vec(), b"unchanged");
+    op.delete("target").await.unwrap();
+    op.delete("/").await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires the Samba fixture and OPENDAL_SMB_* configuration"]
+async fn create_dir_rejects_intermediate_file_without_changing_contents() {
+    let op = Operator::new(config("intermediate-file").into_builder()).unwrap();
+    op.write("parent", "unchanged").await.unwrap();
+    let error = op.create_dir("parent/child/").await.unwrap_err();
+    assert_eq!(error.kind(), ErrorKind::NotADirectory);
+    assert_eq!(op.read("parent").await.unwrap().to_vec(), b"unchanged");
+    op.delete("parent").await.unwrap();
+    op.delete("/").await.unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires the Samba fixture and OPENDAL_SMB_* configuration"]
 async fn dropped_lister_releases_directory() {
     let op = Operator::new(config("lifecycle").into_builder()).unwrap();
     for i in 0..32 {

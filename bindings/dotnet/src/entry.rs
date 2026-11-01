@@ -18,7 +18,7 @@
 use std::ffi::{c_char, c_void};
 
 use crate::metadata::{OpendalMetadata, metadata_release_fields};
-use crate::utils::into_string_ptr;
+use crate::utils::{into_string_ptr, release_c_string};
 
 #[repr(C)]
 /// FFI representation of an OpenDAL entry.
@@ -85,9 +85,7 @@ pub(crate) unsafe fn entry_list_free(list: *mut OpendalEntryList) {
 
         let mut entries = Box::from_raw(std::ptr::slice_from_raw_parts_mut(list.entries, list.len));
         for entry in entries.iter_mut() {
-            if !entry.path.is_null() {
-                drop(std::ffi::CString::from_raw(entry.path));
-            }
+            release_c_string(&mut entry.path);
             metadata_release_fields(&mut entry.metadata);
         }
     }

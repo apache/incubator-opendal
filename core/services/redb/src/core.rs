@@ -38,6 +38,16 @@ impl Debug for RedbCore {
 }
 
 impl RedbCore {
+    pub fn scan(&self, prefix: &str) -> Result<redb::Range<'static, &'static str, &'static [u8]>> {
+        let read_txn = self.db.begin_read().map_err(parse_transaction_error)?;
+        let table_define: redb::TableDefinition<&str, &[u8]> =
+            redb::TableDefinition::new(&self.table);
+        let table = read_txn
+            .open_table(table_define)
+            .map_err(parse_table_error)?;
+        table.range(prefix..).map_err(parse_storage_error)
+    }
+
     pub fn get(&self, path: &str) -> Result<Option<Buffer>> {
         let read_txn = self.db.begin_read().map_err(parse_transaction_error)?;
 
@@ -108,7 +118,7 @@ fn parse_table_error(e: redb::TableError) -> Error {
     }
 }
 
-fn parse_storage_error(e: redb::StorageError) -> Error {
+pub(super) fn parse_storage_error(e: redb::StorageError) -> Error {
     Error::new(ErrorKind::Unexpected, "error from redb").set_source(e)
 }
 

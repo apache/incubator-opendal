@@ -26,8 +26,8 @@
 //! - Raw APIs are far less stable than public API, please don't rely on
 //!   them whenever possible.
 
-mod accessor;
-pub use accessor::*;
+mod service;
+pub use service::*;
 
 mod layer;
 pub use layer::*;

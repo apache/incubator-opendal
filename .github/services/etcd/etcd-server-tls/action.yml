@@ -15,12 +15,28 @@
 # specific language governing permissions and limitations
 # under the License.
 
-services:
-  minio:
-    image: quay.io/minio/minio:RELEASE.2024-09-22T00-33-43Z
-    ports:
-      - 9000:9000
-    command: server /data
-    environment:
-      MINIO_ROOT_USER: "minioadmin"
-      MINIO_ROOT_PASSWORD: "minioadmin"
+name: etcd-server-tls
+description: 'Behavior test for etcd with server-authenticated TLS'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Copy Etcd Certificate Files
+      shell: bash
+      working-directory: fixtures
+      run: |
+        mkdir -p /tmp/etcd
+        cp -r "$(pwd)/etcd/"* /tmp/etcd
+    - name: Setup etcd server TLS
+      shell: bash
+      working-directory: fixtures/etcd
+      run: docker compose -f docker-compose-standalone-server-tls.yml up -d --wait
+    - name: Setup
+      shell: bash
+      run: |
+        cat << EOF >> "$GITHUB_ENV"
+        OPENDAL_ETCD_ENDPOINTS=https://127.0.0.1:2379
+        OPENDAL_ETCD_ROOT=/tmp/opendal
+        OPENDAL_ETCD_CA_PATH=/tmp/etcd/ca.pem
+        OPENDAL_ETCD_MAX_DECODING_MESSAGE_SIZE=10485760
+        EOF

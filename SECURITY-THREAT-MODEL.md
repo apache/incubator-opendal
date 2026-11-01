@@ -39,7 +39,7 @@ uniform `Operator` API over many storage backends. It is not a daemon, gateway,
 identity provider, authorization service, sandbox, or multi-tenant broker.
 
 The purpose of this document is to help maintainers triage security reports by
-answering three questions:
+answering four questions:
 
 1. What is OpenDAL's security boundary?
 2. What security responsibilities do applications that use OpenDAL have?

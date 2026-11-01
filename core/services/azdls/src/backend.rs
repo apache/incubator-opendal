@@ -20,16 +20,15 @@ use std::sync::Arc;
 
 use http::StatusCode;
 use log::debug;
+use reqsign_azure_storage::ClientSecretCredentialProvider;
 use reqsign_azure_storage::Credential;
 use reqsign_azure_storage::DefaultCredentialProvider;
 use reqsign_azure_storage::RequestSigner;
 use reqsign_azure_storage::StaticCredentialProvider;
 use reqsign_core::Context;
-use reqsign_core::Env as _;
 use reqsign_core::OsEnv;
 use reqsign_core::ProvideCredentialChain;
 use reqsign_core::Signer;
-use reqsign_core::StaticEnv;
 use reqsign_file_read_tokio::TokioFileRead;
 
 use super::AZDLS_SCHEME;
@@ -191,6 +190,10 @@ impl AzdlsBuilder {
     }
 
     /// Replace the credential providers with a custom chain.
+    ///
+    /// Build the chain from [`opendal_core::reqsign_core`] and
+    /// [`crate::reqsign_azure_storage`] so that its types match the ones this
+    /// service is built with.
     pub fn credential_provider_chain(mut self, chain: ProvideCredentialChain<Credential>) -> Self {
         self.credential_providers = Some(chain);
         self
@@ -275,42 +278,27 @@ impl Builder for AzdlsBuilder {
             .clone()
             .or_else(|| azure_account_name_from_endpoint(endpoint.as_str()));
 
-        let mut envs = std::collections::HashMap::new();
+        let ctx = Context::new().with_file_read(TokioFileRead).with_env(OsEnv);
 
-        if let Some(v) = &account_name {
-            envs.insert("AZBLOB_ACCOUNT_NAME".to_string(), v.clone());
-            envs.insert("AZURE_STORAGE_ACCOUNT_NAME".to_string(), v.clone());
-        }
-        if let Some(v) = &self.config.account_key {
-            envs.insert("AZBLOB_ACCOUNT_KEY".to_string(), v.clone());
-            envs.insert("AZURE_STORAGE_ACCOUNT_KEY".to_string(), v.clone());
-        }
-        if let Some(v) = &self.config.sas_token {
-            envs.insert("AZURE_STORAGE_SAS_TOKEN".to_string(), v.clone());
+        let mut client_secret = ClientSecretCredentialProvider::new();
+        if let Some(v) = &self.config.tenant_id {
+            client_secret = client_secret.with_tenant_id(v);
         }
         if let Some(v) = &self.config.client_id {
-            envs.insert("AZURE_CLIENT_ID".to_string(), v.clone());
+            client_secret = client_secret.with_client_id(v);
         }
         if let Some(v) = &self.config.client_secret {
-            envs.insert("AZURE_CLIENT_SECRET".to_string(), v.clone());
-        }
-        if let Some(v) = &self.config.tenant_id {
-            envs.insert("AZURE_TENANT_ID".to_string(), v.clone());
+            client_secret = client_secret.with_client_secret(v);
         }
         if let Some(v) = &self.config.authority_host {
-            envs.insert("AZURE_AUTHORITY_HOST".to_string(), v.clone());
+            client_secret = client_secret.with_authority_host(v);
         }
 
-        let os_env = OsEnv;
-        let ctx = Context::new()
-            .with_file_read(TokioFileRead)
-            .with_env(StaticEnv {
-                home_dir: os_env.home_dir(),
-                envs,
-            });
-
-        let mut credential_providers =
-            ProvideCredentialChain::new().push(DefaultCredentialProvider::new());
+        let mut credential_providers = ProvideCredentialChain::new().push(
+            DefaultCredentialProvider::builder()
+                .client_secret(client_secret)
+                .build(),
+        );
 
         if let (Some(account_name), Some(account_key)) =
             (account_name.as_deref(), self.config.account_key.as_deref())

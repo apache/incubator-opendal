@@ -33,9 +33,9 @@ all-features = true
 
 [dependencies]
 mime_guess = "2.0.5"
-opendal-core = { path = "../../core", version = "0.59.3", default-features = false }
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false }
 
 [dev-dependencies]
 futures = { workspace = true }
-opendal-core = { path = "../../core", version = "0.59.3" }
+opendal-core = { path = "../../core", version = "0.59.5" }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

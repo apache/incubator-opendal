@@ -224,6 +224,7 @@ impl Builder for WebdavBuilder {
                 copy: true,
 
                 rename: true,
+                rename_with_if_not_exists: true,
 
                 list: true,
 
@@ -388,9 +389,12 @@ impl Service for WebdavBackend {
         ctx: &OperationContext,
         from: &str,
         to: &str,
-        _args: OpRename,
+        args: OpRename,
     ) -> Result<RpRename> {
-        let resp = self.core.webdav_move(ctx, from, to).await?;
+        let resp = self
+            .core
+            .webdav_move(ctx, from, to, args.if_not_exists())
+            .await?;
 
         let status = resp.status();
         match status {

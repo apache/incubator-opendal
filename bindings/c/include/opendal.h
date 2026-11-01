@@ -17,7 +17,6 @@
  * under the License.
  */
 
-
 #ifndef _OPENDAL_H
 #define _OPENDAL_H
 

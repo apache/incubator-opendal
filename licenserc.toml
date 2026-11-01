@@ -15,8 +15,10 @@
 # specific language governing permissions and limitations
 # under the License.
 
-headerPath = "Apache-2.0-ASF.txt"
+[header]
+builtin = "Apache-2.0-ASF"
 
+[files]
 excludes = [
   # Preserve third-party license headers.
   "core/services/gcs-grpc/proto/google/storage/v2/storage.proto",
@@ -51,5 +53,32 @@ excludes = [
 
 # HawkEye's default mapping does not cover .NET project and solution files,
 # which are XML documents and accept XML comments.
-[mapping.XML_STYLE]
-extensions = ["csproj", "slnx"]
+[[rules]]
+extensions = ["xml", "csproj", "slnx"]
+style_out = "xml_indent"
+
+# Preserve the existing indentation in XML license headers.
+[styles.xml_indent]
+end = "-->"
+kind = "block"
+prefix = "    "
+start = "<!--"
+suffix = ""
+
+[[rules]]
+filenames = ["mvnw.cmd"]
+style_out = "maven_batch"
+
+# Preserve the Maven wrapper's banner around its license header.
+[styles.maven_batch]
+end = "@REM ----------------------------------------------------------------------------"
+kind = "block"
+prefix = "@REM "
+start = "@REM ----------------------------------------------------------------------------"
+suffix = ""
+
+# Keep Go license headers compatible with gofmt and build tags.
+[[rules]]
+extensions = ["go"]
+style_out = "doubleslash"
+styles_in = ["doubleslash", "slashstar"]

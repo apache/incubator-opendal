@@ -561,10 +561,12 @@ pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
     let (parts, body) = resp.into_parts();
     let bs = body.to_bytes();
 
-    let (kind, _retryable) = match parts.status.as_u16() {
+    let (kind, retryable) = match parts.status.as_u16() {
         403 => (ErrorKind::PermissionDenied, false),
         404 => (ErrorKind::NotFound, false),
-        520 => (ErrorKind::Unexpected, false),
+        // Seafile reports a transient backend failure as a 5xx, including its own 520;
+        // retrying is the documented recovery, so mark these temporary.
+        500 | 502 | 503 | 504 | 520 => (ErrorKind::Unexpected, true),
         _ => (ErrorKind::Unexpected, false),
     };
 
@@ -576,6 +578,10 @@ pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
 
     err = err.with_context("service_operation", ctx.service_operation.0);
     err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
 
     err
 }

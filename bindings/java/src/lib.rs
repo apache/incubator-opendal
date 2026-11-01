@@ -39,6 +39,7 @@ mod layer;
 mod operator;
 mod operator_input_stream;
 mod operator_output_stream;
+mod operator_reader;
 mod utility;
 
 pub(crate) type Result<T> = std::result::Result<T, error::Error>;
@@ -94,11 +95,13 @@ fn make_operator_info<'a>(env: &mut Env<'a>, info: OperatorInfo) -> Result<JObje
 fn make_capability<'a>(env: &mut Env<'a>, cap: Capability) -> Result<JObject<'a>> {
     let capability = env.new_object(
         jni_str!("org/apache/opendal/Capability"),
-        jni_sig!("(ZZZZZZZZZZZZZZZZZZZZZZJJZZZZZZZZZZZZZZZ)V"),
+        jni_sig!("(ZZZZZZZZZZZZZZZZZZZZZZZZJJZZZZZZZZZZZZZZZ)V"),
         &[
             JValue::Bool(cap.stat),
             JValue::Bool(cap.stat_with_if_match),
             JValue::Bool(cap.stat_with_if_none_match),
+            JValue::Bool(cap.stat_with_if_version_match),
+            JValue::Bool(cap.stat_with_if_version_not_match),
             JValue::Bool(cap.stat_with_if_modified_since),
             JValue::Bool(cap.stat_with_if_unmodified_since),
             JValue::Bool(cap.stat_with_version),
@@ -178,11 +181,14 @@ fn make_metadata<'a>(env: &mut Env<'a>, metadata: Metadata) -> Result<JObject<'a
 
     let content_length = metadata.content_length() as jlong;
 
+    let user_metadata =
+        convert::hashmap_to_jmap(env, metadata.user_metadata().into_iter().flatten())?;
+
     let result = env
         .new_object(
             jni_str!("org/apache/opendal/Metadata"),
             jni_sig!(
-                "(IJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/time/Instant;Ljava/lang/String;)V"
+                "(IJLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/time/Instant;Ljava/lang/String;Ljava/util/Map;)V"
             ),
             &[
                 JValue::Int(mode as jint),
@@ -194,6 +200,7 @@ fn make_metadata<'a>(env: &mut Env<'a>, metadata: Metadata) -> Result<JObject<'a
                 JValue::Object(&etag),
                 JValue::Object(&last_modified),
                 JValue::Object(&version),
+                JValue::Object(&user_metadata),
             ],
         )?;
     Ok(result)
@@ -257,6 +264,8 @@ fn make_stat_options(env: &mut Env, options: &JObject) -> Result<opendal::option
     Ok(opendal::options::StatOptions {
         if_match: convert::read_string_field(env, options, "ifMatch")?,
         if_none_match: convert::read_string_field(env, options, "ifNoneMatch")?,
+        if_version_match: convert::read_string_field(env, options, "ifVersionMatch")?,
+        if_version_not_match: convert::read_string_field(env, options, "ifVersionNotMatch")?,
         if_modified_since: convert::read_instant_field_to_timestamp(
             env,
             options,
@@ -275,7 +284,6 @@ fn make_stat_options(env: &mut Env, options: &JObject) -> Result<opendal::option
             options,
             "overrideContentDisposition",
         )?,
-        ..Default::default()
     })
 }
 
@@ -288,13 +296,75 @@ fn make_read_options<'a>(
 
     Ok(opendal::options::ReadOptions {
         range: convert::offset_length_to_range(offset, length)?.into(),
+        override_content_type: convert::read_string_field(env, options, "overrideContentType")?,
+        override_cache_control: convert::read_string_field(env, options, "overrideCacheControl")?,
+        override_content_disposition: convert::read_string_field(
+            env,
+            options,
+            "overrideContentDisposition",
+        )?,
         ..Default::default()
     })
 }
 
-fn make_reader_options<'a>(
-    _: &mut Env<'a>,
-    _: &JObject,
+fn make_reader_options(
+    env: &mut Env,
+    options: &JObject,
 ) -> Result<opendal::options::ReaderOptions> {
-    Ok(opendal::options::ReaderOptions::default())
+    let concurrent = convert::read_int_field(env, options, "concurrent")?;
+    let chunk = convert::read_int64_field(env, options, "chunk")?;
+    let prefetch = convert::read_int_field(env, options, "prefetch")?;
+    let content_length_hint = convert::read_int64_field(env, options, "contentLengthHint")?;
+
+    if concurrent <= 0 {
+        return Err(Error::new(ErrorKind::ConfigInvalid, "concurrent must be positive").into());
+    }
+    let concurrent = usize::try_from(concurrent)
+        .map_err(|_| Error::new(ErrorKind::ConfigInvalid, "concurrent is too large"))?;
+    let chunk = match chunk {
+        -1 => None,
+        value if value > 0 => Some(
+            usize::try_from(value)
+                .map_err(|_| Error::new(ErrorKind::ConfigInvalid, "chunk is too large"))?,
+        ),
+        _ => {
+            return Err(
+                Error::new(ErrorKind::ConfigInvalid, "chunk must be -1 or positive").into(),
+            );
+        }
+    };
+    let prefetch = usize::try_from(prefetch)
+        .map_err(|_| Error::new(ErrorKind::ConfigInvalid, "prefetch must be non-negative"))?;
+    let content_length_hint = match content_length_hint {
+        -1 => None,
+        value => Some(u64::try_from(value).map_err(|_| {
+            Error::new(
+                ErrorKind::ConfigInvalid,
+                "contentLengthHint must be -1 or non-negative",
+            )
+        })?),
+    };
+
+    Ok(opendal::options::ReaderOptions {
+        version: convert::read_string_field(env, options, "version")?,
+        if_match: convert::read_string_field(env, options, "ifMatch")?,
+        if_none_match: convert::read_string_field(env, options, "ifNoneMatch")?,
+        if_version_match: convert::read_string_field(env, options, "ifVersionMatch")?,
+        if_version_not_match: convert::read_string_field(env, options, "ifVersionNotMatch")?,
+        if_modified_since: convert::read_instant_field_to_timestamp(
+            env,
+            options,
+            "ifModifiedSince",
+        )?,
+        if_unmodified_since: convert::read_instant_field_to_timestamp(
+            env,
+            options,
+            "ifUnmodifiedSince",
+        )?,
+        concurrent,
+        chunk,
+        prefetch,
+        content_length_hint,
+        ..Default::default()
+    })
 }

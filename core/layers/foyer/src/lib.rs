@@ -152,12 +152,27 @@ impl Code for FoyerValue {
 /// # Operation Behavior
 /// - `write`: [`FoyerLayer`] caches data after the service completes the write.
 /// - `read`: [`FoyerLayer`] checks the cache first. On a cache miss, it reads
-///   from the service and caches the result.
+///   and caches the entire object if its size is within the configured
+///   [`FoyerLayer::with_size_limit`] range, even when only a byte range is requested.
 /// - `delete`: [`FoyerLayer`] removes cached data after a successful delete when the deleter
 ///   closes. A failed delete is not invalidated. Cache invalidation happens before the underlying
 ///   deleter is closed, so the data remains invalidated if closing the deleter fails.
 /// - Other operations: [`FoyerLayer`] passes operations such as `list`, `copy`,
 ///   and `rename` to the service without caching their results.
+///
+/// # Range Reads
+///
+/// [`FoyerLayer`] caches entire objects, not individual byte ranges. For example,
+/// `operator.read_with("some/path").range(0..1024)` returns only the first 1024
+/// bytes, but on a cache miss the layer fetches and buffers the entire object
+/// before returning that range if the object is eligible for caching. On a cache
+/// hit, the layer returns the requested range from the cached object.
+///
+/// Reading a small range from a large object can therefore transfer and buffer
+/// much more data than requested, increasing read latency and memory usage.
+/// Use [`FoyerLayer::with_size_limit`] to exclude large objects from caching.
+/// On a cache miss, objects outside the configured size range are read directly
+/// from the service using the requested byte range.
 ///
 /// # Examples
 ///

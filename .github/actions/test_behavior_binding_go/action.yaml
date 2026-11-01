@@ -47,7 +47,7 @@ runs:
               fi
               cp bindings/go/Makefile .
               make tests
-              if [ "${{ inputs.setup }}" == "0_minio_s3" ]; then
+              if [ "${{ inputs.setup }}" == "0_silo_s3" ]; then
                 make bench
               fi
             env:

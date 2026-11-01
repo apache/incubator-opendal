@@ -13,6 +13,7 @@ Depending on its configuration and the backing system, this service can expose:
 - [x] list
 - [ ] copy
 - [x] rename
+- [x] rename (if_not_exists)
 - [ ] ~~presign~~
 
 Inspect the effective capability set with [`opendal_core::Operator::info`] and

@@ -92,7 +92,7 @@ impl ServiceInfo {
 
 /// Foundational trait for storage services.
 ///
-/// Every storage service (or backend) in OpenDAL implements [`Service`]. Services
+/// Every storage service in OpenDAL implements [`Service`]. Services
 /// and layers must implement every operation in this trait and declare their
 /// capabilities. This allows callers to detect unsupported operations.
 ///

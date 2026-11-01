@@ -18,7 +18,7 @@
 use std::ffi::{c_char, c_void};
 
 use crate::error::OpenDALError;
-use crate::utils::into_string_ptr;
+use crate::utils::{into_string_ptr, release_c_string, release_string_pairs, string_pairs};
 
 #[repr(C)]
 pub struct OpendalPresignedRequest {
@@ -32,44 +32,24 @@ pub struct OpendalPresignedRequest {
 pub fn into_presigned_request_ptr(
     request: opendal::raw::PresignedRequest,
 ) -> Result<*mut c_void, OpenDALError> {
-    let method = into_string_ptr(request.method().as_str().to_string());
-    let uri = into_string_ptr(request.uri().to_string());
-
-    let mut keys = Vec::new();
-    let mut values = Vec::new();
-
-    for (key, value) in request.header() {
-        let value = value
-            .to_str()
-            .map_err(|err| {
-                OpenDALError::from_opendal_error(opendal::Error::new(
-                    opendal::ErrorKind::Unexpected,
-                    err.to_string(),
-                ))
-            })?
-            .to_string();
-
-        keys.push(into_string_ptr(key.to_string()));
-        values.push(into_string_ptr(value));
-    }
-
-    let len = keys.len();
-    let (headers_keys, headers_values, headers_len) = if len == 0 {
-        (std::ptr::null_mut(), std::ptr::null_mut(), 0)
-    } else {
-        let mut keys = keys;
-        let mut values = values;
-        let keys_ptr = keys.as_mut_ptr();
-        let values_ptr = values.as_mut_ptr();
-        std::mem::forget(keys);
-        std::mem::forget(values);
-
-        (keys_ptr, values_ptr, len)
-    };
+    // Validate every header before allocating anything, so an invalid value
+    // returns an error without leaking the strings built so far.
+    let headers = request
+        .header()
+        .iter()
+        .map(|(key, value)| value.to_str().map(|value| (key.as_str(), value)))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|err| {
+            OpenDALError::from_opendal_error(opendal::Error::new(
+                opendal::ErrorKind::Unexpected,
+                err.to_string(),
+            ))
+        })?;
+    let (_, headers_keys, headers_values, headers_len) = string_pairs(Some(headers));
 
     let request = OpendalPresignedRequest {
-        method,
-        uri,
+        method: into_string_ptr(request.method().as_str()),
+        uri: into_string_ptr(request.uri().to_string()),
         headers_keys,
         headers_values,
         headers_len,
@@ -88,41 +68,13 @@ pub(crate) unsafe fn presigned_request_free(request: *mut OpendalPresignedReques
     }
 
     unsafe {
-        let request = Box::from_raw(request);
-
-        if !request.method.is_null() {
-            drop(std::ffi::CString::from_raw(request.method));
-        }
-        if !request.uri.is_null() {
-            drop(std::ffi::CString::from_raw(request.uri));
-        }
-
-        if request.headers_len > 0 {
-            if !request.headers_keys.is_null() {
-                let keys = Vec::from_raw_parts(
-                    request.headers_keys,
-                    request.headers_len,
-                    request.headers_len,
-                );
-                for key in keys {
-                    if !key.is_null() {
-                        drop(std::ffi::CString::from_raw(key));
-                    }
-                }
-            }
-
-            if !request.headers_values.is_null() {
-                let values = Vec::from_raw_parts(
-                    request.headers_values,
-                    request.headers_len,
-                    request.headers_len,
-                );
-                for value in values {
-                    if !value.is_null() {
-                        drop(std::ffi::CString::from_raw(value));
-                    }
-                }
-            }
-        }
+        let mut request = Box::from_raw(request);
+        release_c_string(&mut request.method);
+        release_c_string(&mut request.uri);
+        release_string_pairs(
+            &mut request.headers_keys,
+            &mut request.headers_values,
+            &mut request.headers_len,
+        );
     }
 }

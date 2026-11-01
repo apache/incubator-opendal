@@ -238,7 +238,15 @@ impl CompleteLister {
         }
         .into();
 
-        let stat_metadata = self.srv.stat(&self.ctx, &path, op).await?.into_metadata();
+        let stat_metadata = match self.srv.stat(&self.ctx, &path, op).await {
+            Ok(rp) => rp.into_metadata(),
+            // The entry comes from the service's own listing, so a stat that
+            // cannot see its target — a dangling symlink in fs, whose stat
+            // follows the link — cannot refine the mode, but it does not mean
+            // the entry is gone. Keep the entry as listed.
+            Err(err) if err.kind() == ErrorKind::NotFound => return Ok(entry),
+            Err(err) => return Err(err),
+        };
         if stat_metadata.mode() == EntryMode::Unknown {
             return Ok(entry);
         }
@@ -256,21 +264,15 @@ impl CompleteLister {
 
 impl oio::List for CompleteLister {
     async fn next(&mut self) -> Result<Option<oio::Entry>> {
-        loop {
-            let Some(entry) = self.inner.next().await? else {
-                return Ok(None);
-            };
+        let Some(entry) = self.inner.next().await? else {
+            return Ok(None);
+        };
 
-            if entry.mode() != EntryMode::Unknown || entry.metadata().is_deleted() {
-                return Ok(Some(entry));
-            }
-
-            match self.complete_unknown_entry_mode(entry).await {
-                Ok(entry) => return Ok(Some(entry)),
-                Err(err) if err.kind() == ErrorKind::NotFound => continue,
-                Err(err) => return Err(err),
-            }
+        if entry.mode() != EntryMode::Unknown || entry.metadata().is_deleted() {
+            return Ok(Some(entry));
         }
+
+        Ok(Some(self.complete_unknown_entry_mode(entry).await?))
     }
 }
 

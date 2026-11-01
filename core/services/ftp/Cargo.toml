@@ -36,7 +36,7 @@ asyncband = { workspace = true, features = ["pool"] }
 bytes = { workspace = true }
 http = { workspace = true }
 log = { workspace = true }
-opendal-core = { path = "../../core", version = "0.59.3", default-features = false }
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false }
 rustls-native-certs = "0.8"
 serde = { workspace = true, features = ["derive"] }
 suppaftp = { version = "10.0.2", default-features = false, features = [

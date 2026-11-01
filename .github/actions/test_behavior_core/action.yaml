@@ -102,7 +102,7 @@ runs:
               service_prefix=\$(printf '%s' "$TEST_SERVICE" | tr '[:lower:]-' '[:upper:]_')
               while IFS='=' read -r name _; do
                 case "\$name" in
-                  "OPENDAL_\${service_prefix}_"* | OPENDAL_DISABLE_RANDOM_ROOT | OPENDAL_TEST_CAPABILITY_OVERRIDES)
+                  "OPENDAL_\${service_prefix}_"* | OPENDAL_DISABLE_RANDOM_ROOT | OPENDAL_TEST_CAPABILITY_OVERRIDES | OPENDAL_TEST_IO_TIMEOUT)
                     echo "\$name=__OPENDAL_TEST_UNSET__" >>"\$GITHUB_ENV"
                     ;;
                 esac

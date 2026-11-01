@@ -136,8 +136,14 @@ impl SmbCore {
                 .create_file(&self.share.clone().with_path(&current), &args)
                 .await
                 .map_err(parse_smb_error)?;
+            // On a disk share, FILE_DIRECTORY_FILE guarantees a directory on success.
+            // Close the handle without relying on its response attribute bit.
             match resource {
                 Resource::Directory(dir) => RuntimeResource::new(dir)
+                    .close()
+                    .await
+                    .map_err(parse_smb_error)?,
+                Resource::File(file) => RuntimeResource::new(file)
                     .close()
                     .await
                     .map_err(parse_smb_error)?,

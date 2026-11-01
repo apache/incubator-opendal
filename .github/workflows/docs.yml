@@ -54,7 +54,7 @@ env:
   # This is the toolchain used by docs.rs
   #
   # Check this page for updating: https://docs.rs/crate/opendal/latest/builds
-  RUST_DOC_TOOLCHAIN: nightly-2026-04-30
+  RUST_DOC_TOOLCHAIN: nightly-2026-09-22
   # Enable cfg docsrs to make sure docs are built.
   RUSTDOCFLAGS: >-
     --cfg docsrs
@@ -196,7 +196,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
 
@@ -457,7 +457,6 @@ jobs:
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
 
-      # Revert to nightly after https://github.com/apache/opendal/issues/4161 addressed
       - name: Setup Rust Nightly
         run: |
           rustup toolchain install ${{ env.RUST_DOC_TOOLCHAIN }}

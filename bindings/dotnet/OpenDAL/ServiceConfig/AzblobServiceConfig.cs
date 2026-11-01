@@ -50,7 +50,7 @@ namespace OpenDAL.ServiceConfig
         /// </summary>
         public string? EncryptionAlgorithm { get; init; }
         /// <summary>
-        /// The encryption key of Azblob service backend.
+        /// The Base64-encoded AES-256 customer-provided encryption key. The key must decode to exactly 32 bytes. Building an operator returns `ConfigInvalid` for invalid Base64 or a different decoded length.
         /// </summary>
         public string? EncryptionKey { get; init; }
         /// <summary>

@@ -28,7 +28,8 @@ use super::backend::EtcdBuilder;
 #[non_exhaustive]
 pub struct EtcdConfig {
     /// network address of the Etcd services.
-    /// If use https, must set TLS options: `ca_path`, `cert_path`, `key_path`.
+    /// Use HTTPS endpoints for TLS. Set `ca_path` to trust a custom certificate authority.
+    /// Client authentication additionally requires both `cert_path` and `key_path`.
     /// e.g. "127.0.0.1:23790,127.0.0.1:23791,127.0.0.1:23792" or "http://127.0.0.1:23790,http://127.0.0.1:23791,http://127.0.0.1:23792" or "https://127.0.0.1:23790,https://127.0.0.1:23791,https://127.0.0.1:23792"
     ///
     /// default is "http://127.0.0.1:2379"
@@ -45,18 +46,30 @@ pub struct EtcdConfig {
     ///
     /// default is "/"
     pub root: Option<String>,
-    /// certificate authority file path
+    /// PEM certificate authority file used to verify the server.
+    /// Enables TLS independently of `cert_path` and `key_path`.
     ///
     /// default is None
     pub ca_path: Option<String>,
-    /// cert path
+    /// PEM client certificate file used for mutual TLS.
+    /// Must be configured together with `key_path`.
     ///
     /// default is None
     pub cert_path: Option<String>,
-    /// key path
+    /// PEM client private key file used for mutual TLS.
+    /// Must be configured together with `cert_path`.
     ///
     /// default is None
     pub key_path: Option<String>,
+    /// the maximum size in bytes of a gRPC response that the etcd client decodes.
+    ///
+    /// Set this to read values larger than the etcd client's own limit. The etcd
+    /// server must also allow responses of that size.
+    ///
+    /// Refer to [`etcd_client::KvClient::max_decoding_message_size`](https://docs.rs/etcd-client/latest/etcd_client/struct.KvClient.html#method.max_decoding_message_size)
+    ///
+    /// default is None, which keeps the etcd client default of 4 MiB
+    pub max_decoding_message_size: Option<usize>,
 }
 
 impl Debug for EtcdConfig {
@@ -68,6 +81,7 @@ impl Debug for EtcdConfig {
             .field("ca_path", &self.ca_path)
             .field("cert_path", &self.cert_path)
             .field("key_path", &self.key_path)
+            .field("max_decoding_message_size", &self.max_decoding_message_size)
             .finish_non_exhaustive()
     }
 }

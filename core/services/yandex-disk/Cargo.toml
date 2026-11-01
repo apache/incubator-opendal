@@ -32,7 +32,7 @@ version = { workspace = true }
 all-features = true
 
 [dependencies]
-opendal-core = { path = "../../core", version = "0.59.3", default-features = false }
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false }
 
 bytes = { workspace = true }
 http = { workspace = true }

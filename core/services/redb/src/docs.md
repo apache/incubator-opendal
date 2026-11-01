@@ -7,7 +7,7 @@ Depending on its configuration and the backing system, this service can expose:
 - [x] read
 - [x] write
 - [x] delete
-- [ ] list
+- [x] list
 - [ ] copy
 - [ ] rename
 - [ ] ~~presign~~

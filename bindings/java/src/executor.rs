@@ -112,10 +112,17 @@ impl Executor {
 pub extern "system" fn Java_org_apache_opendal_AsyncExecutor_makeTokioExecutor<'local>(
     mut env: EnvUnowned<'local>,
     _: JClass<'local>,
-    cores: usize,
+    cores: jint,
 ) -> jlong {
     env.with_env(|env| -> Result<jlong> {
-        let executor = make_tokio_executor(env, cores)?;
+        if cores <= 0 {
+            env.throw_new(
+                jni_str!("java/lang/IllegalArgumentException"),
+                jni_str!("cores must be positive"),
+            )?;
+            return Ok(0);
+        }
+        let executor = make_tokio_executor(env, cores as usize)?;
         Ok(Box::into_raw(Box::new(executor)) as jlong)
     })
     .resolve::<ThrowException>()

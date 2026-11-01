@@ -53,10 +53,30 @@ impl oio::StreamRead for GithubReader {
         let status = resp.status();
 
         let (rp, stream) = match status {
-            StatusCode::OK | StatusCode::PARTIAL_CONTENT => (
-                RpRead::new(parse_into_metadata(path, resp.headers())?),
-                resp.into_body(),
-            ),
+            StatusCode::OK | StatusCode::PARTIAL_CONTENT => {
+                let (part, mut body) = resp.into_parts();
+                let meta = parse_into_metadata(path, &part.headers)?;
+
+                // GitHub can ignore the Range header on authenticated requests
+                // and return the full content with 200, so slice the body
+                // client-side when the server did not honor the range.
+                if status == StatusCode::PARTIAL_CONTENT || range.is_full() {
+                    (
+                        RpRead::new(meta),
+                        Box::new(body) as Box<dyn oio::ReadStreamDyn>,
+                    )
+                } else {
+                    let bs = body.to_buffer().await?;
+                    let total_size = bs.len() as u64;
+                    let sliced = bs.slice(range.to_content_range(bs.len())?);
+                    let mut metadata = meta.into_builder();
+                    metadata.set_file(total_size);
+                    (
+                        RpRead::new(metadata.build()),
+                        Box::new(sliced) as Box<dyn oio::ReadStreamDyn>,
+                    )
+                }
+            }
             _ => {
                 let (part, mut body) = resp.into_parts();
                 let buf = body.to_buffer().await?;
@@ -67,6 +87,62 @@ impl oio::StreamRead for GithubReader {
             }
         };
 
-        Ok((rp, Box::new(stream) as Box<dyn oio::ReadStreamDyn>))
+        Ok((rp, stream))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use http::Request;
+    use opendal_core::raw::oio::{Read, ReadStream};
+
+    #[derive(Debug)]
+    struct FullBodyTransport;
+
+    impl HttpTransport for FullBodyTransport {
+        async fn fetch(&self, _req: Request<Buffer>) -> Result<Response<HttpBody>> {
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header("content-length", "10")
+                .header("content-type", "text/plain")
+                .header("etag", "\"fixture\"")
+                .body(HttpBody::new(
+                    futures::stream::iter([Ok(Buffer::from("0123456789"))]),
+                    Some(10),
+                ))
+                .expect("response must build"))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ignored_range_preserves_metadata() {
+        let service = GithubBuilder::default()
+            .owner("owner")
+            .repo("repo")
+            .token("test-token")
+            .build()
+            .expect("github service must build");
+        let ctx =
+            OperationContext::new().with_http_transport(HttpTransporter::new(FullBodyTransport));
+        let reader = service
+            .read(&ctx, "file.txt", OpRead::default())
+            .expect("reader must be created");
+
+        for (range, expected) in [
+            (BytesRange::new(2, Some(3)), b"234".as_slice()),
+            (BytesRange::suffix(3), b"789".as_slice()),
+        ] {
+            let (reply, mut stream) = reader.open(range).await.expect("range must open");
+            let metadata = reply.metadata().expect("read must return metadata");
+            assert_eq!(metadata.content_length(), 10);
+            assert_eq!(metadata.etag(), Some("\"fixture\""));
+            assert_eq!(metadata.content_type(), Some("text/plain"));
+            assert_eq!(
+                stream.read().await.expect("range must read").to_vec(),
+                expected
+            );
+            assert!(stream.read().await.expect("EOF must read").is_empty());
+        }
     }
 }

@@ -96,7 +96,7 @@ class AzblobConfig(TypedDict):
     encryption_algorithm: NotRequired[str]
     """The encryption algorithm of Azblob service backend."""
     encryption_key: NotRequired[str]
-    """The encryption key of Azblob service backend."""
+    """The Base64-encoded AES-256 customer-provided encryption key.  The key must decode to exactly 32 bytes. Building an operator returns `ConfigInvalid` for invalid Base64 or a different decoded length."""
     encryption_key_sha256: NotRequired[str]
     """The encryption key sha256 of Azblob service backend."""
     endpoint: NotRequired[str]
@@ -350,6 +350,8 @@ class GdriveConfig(TypedDict):
     """Client id for gdrive."""
     client_secret: NotRequired[str]
     """Client secret for gdrive."""
+    drive_id: NotRequired[str]
+    """Shared drive (formerly Team Drive) id for gdrive.  When set, gdrive resolves `root` inside this shared drive instead of the user's My Drive."""
     refresh_token: NotRequired[str]
     """Refresh token for gdrive."""
     root: NotRequired[str | os.PathLike[str]]
@@ -408,6 +410,8 @@ class HfConfig(TypedDict):
 
     scheme: Required[Literal["hf"]]
     """The service scheme; fixed to `"hf"`."""
+    disable_config_load: NotRequired[bool]
+    """Disable loading config from the environment.  When set, the service ignores `HF_ENDPOINT`, `HF_HUB_DISABLE_XET`, `HF_TOKEN`, `HF_TOKEN_PATH`, and the `token` file under `HF_HOME`, `$XDG_CACHE_HOME/huggingface` or `~/.cache/huggingface`."""
     download_mode: NotRequired[str]
     """Download mode. Either `xet` (default) or `http`.  When unset, the mode is resolved from the `HF_HUB_DISABLE_XET` environment variable: a non-empty value forces `http`, otherwise it defaults to `xet`. An explicit value here takes precedence.  See <https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfhubdisablexet>."""
     enable_resolve_cache: NotRequired[bool]

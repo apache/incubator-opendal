@@ -84,9 +84,12 @@ impl EtcdBuilder {
         self
     }
 
-    /// Set the certificate authority file path.
+    /// Set the PEM certificate authority file used to verify the server.
     ///
-    /// default is None
+    /// This enables TLS without requiring a client certificate or private key.
+    /// Use HTTPS endpoints when configuring TLS.
+    ///
+    /// No custom certificate authority is configured by default.
     pub fn ca_path(mut self, ca_path: &str) -> Self {
         if !ca_path.is_empty() {
             self.config.ca_path = Some(ca_path.to_string())
@@ -94,9 +97,12 @@ impl EtcdBuilder {
         self
     }
 
-    /// Set the certificate file path.
+    /// Set the PEM client certificate file used for mutual TLS.
     ///
-    /// default is None
+    /// Set this together with [`Self::key_path`]. Building an operator with
+    /// only one of these paths returns [`ErrorKind::ConfigInvalid`].
+    ///
+    /// No client certificate is configured by default.
     pub fn cert_path(mut self, cert_path: &str) -> Self {
         if !cert_path.is_empty() {
             self.config.cert_path = Some(cert_path.to_string())
@@ -104,13 +110,24 @@ impl EtcdBuilder {
         self
     }
 
-    /// Set the key file path.
+    /// Set the PEM client private key file used for mutual TLS.
     ///
-    /// default is None
+    /// Set this together with [`Self::cert_path`]. Building an operator with
+    /// only one of these paths returns [`ErrorKind::ConfigInvalid`].
+    ///
+    /// No client private key is configured by default.
     pub fn key_path(mut self, key_path: &str) -> Self {
         if !key_path.is_empty() {
             self.config.key_path = Some(key_path.to_string())
         }
+        self
+    }
+
+    /// Set the maximum size in bytes of a gRPC response that the etcd client decodes.
+    ///
+    /// default is None, which keeps the etcd client default of 4 MiB
+    pub fn max_decoding_message_size(mut self, size: usize) -> Self {
+        self.config.max_decoding_message_size = Some(size);
         self
     }
 }
@@ -129,17 +146,28 @@ impl Builder for EtcdBuilder {
 
         let mut options = ConnectOptions::new();
 
-        if self.config.ca_path.is_some()
-            && self.config.cert_path.is_some()
-            && self.config.key_path.is_some()
-        {
-            let ca = self.load_pem(self.config.ca_path.clone().unwrap().as_str())?;
-            let key = self.load_pem(self.config.key_path.clone().unwrap().as_str())?;
-            let cert = self.load_pem(self.config.cert_path.clone().unwrap().as_str())?;
+        if self.config.cert_path.is_some() != self.config.key_path.is_some() {
+            return Err(Error::new(
+                ErrorKind::ConfigInvalid,
+                "cert_path and key_path must be configured together",
+            )
+            .with_operation("Builder::build")
+            .with_context("service", ETCD_SCHEME));
+        }
 
-            let tls_options = TlsOptions::default()
-                .ca_certificate(Certificate::from_pem(ca))
-                .identity(Identity::from_pem(cert, key));
+        if self.config.ca_path.is_some() || self.config.cert_path.is_some() {
+            let mut tls_options = TlsOptions::default();
+            if let Some(path) = &self.config.ca_path {
+                let ca = self.load_pem(path)?;
+                tls_options = tls_options.ca_certificate(Certificate::from_pem(ca));
+            }
+            if let (Some(cert_path), Some(key_path)) =
+                (&self.config.cert_path, &self.config.key_path)
+            {
+                let cert = self.load_pem(cert_path)?;
+                let key = self.load_pem(key_path)?;
+                tls_options = tls_options.identity(Identity::from_pem(cert, key));
+            }
             options = options.with_tls(tls_options);
         }
 
@@ -158,7 +186,7 @@ impl Builder for EtcdBuilder {
                 .as_str(),
         );
 
-        let core = EtcdCore::new(endpoints, options);
+        let core = EtcdCore::new(endpoints, options, self.config.max_decoding_message_size);
         Ok(EtcdBackend::new(core, &root))
     }
 }
@@ -167,6 +195,31 @@ impl EtcdBuilder {
     fn load_pem(&self, path: &str) -> Result<String> {
         std::fs::read_to_string(path)
             .map_err(|err| Error::new(ErrorKind::Unexpected, "invalid file path").set_source(err))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn incomplete_client_identity_is_rejected() {
+        for ca_path in [None, Some("ca.pem")] {
+            for (cert_path, key_path) in
+                [(Some("client.pem"), None), (None, Some("client-key.pem"))]
+            {
+                let config = EtcdConfig {
+                    ca_path: ca_path.map(str::to_owned),
+                    cert_path: cert_path.map(str::to_owned),
+                    key_path: key_path.map(str::to_owned),
+                    ..Default::default()
+                };
+                let err = Operator::from_config(config).expect_err(
+                    "incomplete client identity must fail before reading certificate files",
+                );
+                assert_eq!(err.kind(), ErrorKind::ConfigInvalid);
+            }
+        }
     }
 }
 

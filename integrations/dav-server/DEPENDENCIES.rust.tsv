@@ -2,7 +2,7 @@ crate	Apache-2.0	Apache-2.0 WITH LLVM-exception	LGPL-2.1-or-later	MIT	MPL-2.0	Un
 allocator-api2@0.2.21	X			X				
 android_system_properties@0.1.6	X			X				
 anyhow@1.0.104	X			X				
-asyncband@0.7.2	X							
+asyncband@0.7.3	X							
 autocfg@1.5.1	X			X				
 base64@0.22.1	X			X				
 base64@0.23.1	X			X				
@@ -11,7 +11,7 @@ block-buffer@0.10.4	X			X
 block-buffer@0.12.1	X			X				
 bumpalo@3.20.3	X			X				
 bytes@1.12.1				X				
-cc@1.4.7	X			X				
+cc@1.8.0	X			X				
 cfg-if@1.0.5	X			X				
 chrono@0.4.45	X			X				
 const-oid@0.10.2	X			X				
@@ -20,15 +20,15 @@ cpufeatures@0.2.17	X			X
 crypto-common@0.1.7	X			X				
 crypto-common@0.2.2	X			X				
 dav-server@0.11.0	X							
-dav-server-opendalfs@0.7.9	X							
+dav-server-opendalfs@0.7.11	X							
 derive-where@1.7.0	X			X				
 digest@0.10.7	X			X				
 digest@0.11.3	X			X				
 displaydoc@0.2.7	X			X				
 dyn-clone@1.0.20	X			X				
-equivalent@1.0.2	X			X				
+equivalent@1.0.3	X			X				
 errno@0.3.14	X			X				
-find-msvc-tools@0.1.13	X			X				
+find-msvc-tools@0.1.14	X			X				
 foldhash@0.2.0								X
 form_urlencoded@1.2.2	X			X				
 futures@0.3.34	X			X				
@@ -43,7 +43,7 @@ futures-util@0.3.34	X			X
 generic-array@0.14.7				X				
 getrandom@0.4.3	X			X				
 hashbrown@0.16.1	X			X				
-headers@0.4.1				X				
+headers@0.4.2				X				
 headers-core@0.3.0				X				
 htmlescape@0.3.1	X			X	X			
 http@1.5.0	X			X				
@@ -63,13 +63,13 @@ icu_provider@2.3.1						X
 idna@1.1.0	X			X				
 idna_adapter@1.2.2	X			X				
 itoa@1.0.18	X			X				
-jiff@0.2.37				X			X	
+jiff@0.2.38				X			X	
 jiff-core@0.1.1				X			X	
-jiff-tzdb@0.1.8				X			X	
+jiff-tzdb@0.1.9				X			X	
 jiff-tzdb-platform@0.1.3				X			X	
 jobserver@0.1.35	X			X				
-js-sys@0.3.105	X			X				
-libc@0.2.189	X			X				
+js-sys@0.3.106	X			X				
+libc@0.2.191	X			X				
 linux-raw-sys@0.12.1	X	X		X				
 litemap@0.8.3						X		
 lock_api@0.4.14	X			X				
@@ -79,10 +79,10 @@ md-5@0.11.0	X			X
 memchr@2.8.3				X			X	
 mime@0.3.17	X			X				
 mime_guess@2.0.5				X				
-mio@1.2.3				X				
+mio@1.2.4				X				
 num-traits@0.2.19	X			X				
 once_cell@1.21.4	X			X				
-opendal-core@0.59.3	X							
+opendal-core@0.59.5	X							
 parking_lot@0.12.5	X			X				
 parking_lot_core@0.9.12	X			X				
 percent-encoding@2.3.2	X			X				
@@ -91,7 +91,7 @@ portable-atomic@1.15.0	X			X
 portable-atomic-util@0.2.8	X			X				
 potential_utf@0.1.6						X		
 proc-macro2@1.0.107	X			X				
-quick-xml@0.41.0				X				
+quick-xml@0.42.0				X				
 quote@1.0.47	X			X				
 r-efi@6.0.0	X		X	X				
 redox_syscall@0.5.18				X				
@@ -102,31 +102,31 @@ scopeguard@1.2.0	X			X
 serde@1.0.229	X			X				
 serde_core@1.0.229	X			X				
 serde_derive@1.0.229	X			X				
-serde_json@1.0.151	X			X				
+serde_json@1.0.154	X			X				
 sha1@0.10.7	X			X				
 shlex@2.0.1	X			X				
 slab@0.4.12				X				
-smallvec@1.16.1	X			X				
+smallvec@1.16.3	X			X				
 socket2@0.6.5	X			X				
 stable_deref_trait@1.2.1	X			X				
 syn@2.0.119	X			X				
-syn@3.0.6	X			X				
+syn@3.0.9	X			X				
 synstructure@0.14.0				X				
 tinystr@0.8.4						X		
-tokio@1.53.1				X				
+tokio@1.53.3				X				
 tokio-macros@2.7.2				X				
 typenum@1.20.1	X			X				
-unicase@2.9.0	X			X				
-unicode-ident@1.0.26	X			X		X		
+unicase@2.10.0	X			X				
+unicode-ident@1.0.27	X			X		X		
 url@2.5.8	X			X				
 utf8_iter@1.0.4	X			X				
-uuid@1.26.1	X			X				
+uuid@1.28.0	X			X				
 version_check@0.9.5	X			X				
 wasi@0.11.1+wasi-snapshot-preview1	X	X		X				
-wasm-bindgen@0.2.128	X			X				
-wasm-bindgen-macro@0.2.128	X			X				
-wasm-bindgen-macro-support@0.2.128	X			X				
-wasm-bindgen-shared@0.2.128	X			X				
+wasm-bindgen@0.2.129	X			X				
+wasm-bindgen-macro@0.2.129	X			X				
+wasm-bindgen-macro-support@0.2.129	X			X				
+wasm-bindgen-shared@0.2.129	X			X				
 web-time@1.1.0	X			X				
 windows@0.62.2	X			X				
 windows-collections@0.3.2	X			X				
@@ -145,7 +145,7 @@ xml@1.4.0				X
 xml-rs@1.0.0				X				
 xmltree@0.12.0				X				
 yoke@0.8.3						X		
-yoke-derive@0.8.3						X		
+yoke-derive@0.8.4						X		
 zerofrom@0.1.8						X		
 zerofrom-derive@0.1.8						X		
 zerotrie@0.2.5						X		

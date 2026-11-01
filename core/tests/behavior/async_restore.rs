@@ -28,7 +28,8 @@ pub fn tests(op: &Operator, tests: &mut Vec<Trial>) {
             test_restore_deleted_file,
             test_restore_repeated_delete,
             test_restore_live_file,
-            test_restore_not_found
+            test_restore_not_found,
+            test_restore_not_found_with_matching_prefix
         ));
     }
 
@@ -158,5 +159,24 @@ pub async fn test_restore_with_if_not_exists_conflict(op: Operator) -> Result<()
         .expect_err("conditional restore must not overwrite a live path");
     assert_eq!(err.kind(), ErrorKind::ConditionNotMatch);
     assert_eq!(op.read(&path).await?.to_bytes(), new_content);
+    Ok(())
+}
+
+/// A prefix match must not restore or otherwise change a different object.
+pub async fn test_restore_not_found_with_matching_prefix(op: Operator) -> Result<()> {
+    let (path, content, _) = TEST_FIXTURE.new_file(op.clone());
+    op.write(&path, content.clone()).await?;
+    op.delete(&path).await?;
+
+    let prefix = &path[..path.len() - 1];
+    let err = op
+        .restore(prefix)
+        .await
+        .expect_err("a matching prefix is not a recoverable object");
+    assert_eq!(err.kind(), ErrorKind::NotFound);
+    assert!(!op.exists(&path).await?);
+
+    op.restore(&path).await?;
+    assert_eq!(op.read(&path).await?.to_bytes(), content);
     Ok(())
 }

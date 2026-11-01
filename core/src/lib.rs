@@ -46,7 +46,12 @@ pub extern crate opendal_testkit as tests;
 pub fn install_default() {
     init_default_registry();
 
-    #[cfg(feature = "http-transport-reqwest")]
+    #[cfg(any(
+        feature = "http-transport-reqwest",
+        feature = "http-transport-reqwest-native-tls",
+        feature = "http-transport-reqwest-rustls",
+        feature = "http-transport-reqwest-rustls-no-provider"
+    ))]
     opendal_http_transport_reqwest::install_default();
 }
 

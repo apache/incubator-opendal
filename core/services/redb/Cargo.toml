@@ -32,7 +32,7 @@ version = { workspace = true }
 all-features = true
 
 [dependencies]
-opendal-core = { path = "../../core", version = "0.59.3", default-features = false }
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false }
 redb = { version = "4" }
 serde = { workspace = true, features = ["derive"] }
 

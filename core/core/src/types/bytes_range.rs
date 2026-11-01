@@ -27,7 +27,11 @@ use crate::*;
 
 /// BytesRange carries a range of content.
 ///
-/// BytesRange implements `ToString` which can be used as `Range` HTTP header directly.
+/// `Display` formats the range without the `bytes=` prefix.
+/// [`BytesRange::to_header`] builds the HTTP `Range` header value.
+///
+/// Bounded ranges with a zero size or an overflowing end render as an empty
+/// string. [`BytesRange::to_header`] also returns an empty string for them.
 ///
 /// `<unit>` should always be `bytes`.
 ///
@@ -139,17 +143,16 @@ impl BytesRange {
 
     /// Convert bytes range into Range header.
     ///
-    /// Returns an empty string for a range with no valid HTTP representation -- a zero size, or
-    /// an end that overflows -- which [`Display`] reports by failing. `format!` turns a
-    /// `Display` failure into a panic, and this runs while a request is being built.
+    /// Returns an empty string for a range with no valid HTTP representation --
+    /// a zero size, or an end that overflows -- which [`Display`] renders as
+    /// an empty string.
     pub fn to_header(&self) -> String {
-        use std::fmt::Write;
-
-        let mut header = String::from("bytes=");
-        if write!(header, "{self}").is_err() {
-            header.clear();
+        let range = self.to_string();
+        if range.is_empty() {
+            String::new()
+        } else {
+            format!("bytes={range}")
         }
-        header
     }
 
     /// Convert bytes range into rust range.
@@ -286,16 +289,18 @@ impl Display for BytesRange {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match *self {
             BytesRange::Range { offset, size: None } => write!(f, "{offset}-"),
-            // A zero-size range can't be represented as a valid HTTP Range.
-            BytesRange::Range { size: Some(0), .. } => Err(std::fmt::Error),
+            // A zero-size bounded range has no valid HTTP Range representation, and
+            // neither does a range whose end overflows u64. Display must stay
+            // total -- returning Err makes `format!` panic -- so these render
+            // as an empty string, which `to_header` maps to an empty header.
+            BytesRange::Range { size: Some(0), .. } => Ok(()),
             BytesRange::Range {
                 offset,
                 size: Some(size),
-            } => write!(
-                f,
-                "{offset}-{}",
-                offset.checked_add(size - 1).ok_or(std::fmt::Error)?
-            ),
+            } => match offset.checked_add(size - 1) {
+                Some(end) => write!(f, "{offset}-{end}"),
+                None => Ok(()),
+            },
             BytesRange::Suffix { size } => write!(f, "-{size}"),
         }
     }
@@ -383,13 +388,11 @@ mod tests {
 
     #[test]
     fn test_bytes_range_display_zero_size() {
-        // Zero-size at offset 0
-        let range = BytesRange::new(0, Some(0));
-        assert!(std::fmt::write(&mut String::new(), format_args!("{}", range)).is_err());
-
-        // Zero-size at nonzero offset
-        let range = BytesRange::new(5, Some(0));
-        assert!(std::fmt::write(&mut String::new(), format_args!("{}", range)).is_err());
+        // Zero-size ranges have no valid HTTP representation, so Display
+        // renders them as an empty string instead of failing: a Display
+        // failure makes `format!` panic.
+        assert_eq!(BytesRange::new(0, Some(0)).to_string(), "");
+        assert_eq!(BytesRange::new(5, Some(0)).to_string(), "");
     }
 
     #[test]
@@ -409,8 +412,8 @@ mod tests {
 
     #[test]
     fn test_bytes_range_to_header_is_empty_when_unrepresentable() {
-        // `Display` fails for these, and `format!` turns a `Display` failure into a panic --
-        // `to_header` is called while building a request, at more than forty service call sites.
+        // `Display` renders these as an empty string, and `to_header` maps
+        // that to an empty header.
         assert_eq!(BytesRange::new(0, Some(0)).to_header(), "");
         assert_eq!(BytesRange::new(5, Some(0)).to_header(), "");
         assert_eq!(BytesRange::new(u64::MAX, Some(2)).to_header(), "");
@@ -512,9 +515,9 @@ mod tests {
 
     #[test]
     fn test_bytes_range_display_overflow() {
-        // offset=u64::MAX, size=2 would overflow in Display (u64::MAX + 1)
-        let range = BytesRange::new(u64::MAX, Some(2));
-        assert!(std::fmt::write(&mut String::new(), format_args!("{}", range)).is_err());
+        // offset=u64::MAX, size=2 would overflow in Display (u64::MAX + 1),
+        // so it renders as an empty string instead of failing.
+        assert_eq!(BytesRange::new(u64::MAX, Some(2)).to_string(), "");
     }
 
     #[test]

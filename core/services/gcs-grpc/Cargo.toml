@@ -36,7 +36,7 @@ bytes = { workspace = true }
 futures = { workspace = true, features = ["async-await", "std"] }
 http = { workspace = true }
 log = { workspace = true }
-opendal-core = { path = "../../core", version = "0.59.3", default-features = false, features = [
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false, features = [
   "reqsign",
 ] }
 percent-encoding = "2"

@@ -563,10 +563,18 @@ pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
     let bs = body.to_bytes();
     let message = String::from_utf8_lossy(&bs).into_owned();
 
+    // pCloud returns a 5xx for a transient backend failure; retrying is the documented
+    // recovery, so mark it temporary rather than surfacing it as permanent.
+    let retryable = matches!(parts.status.as_u16(), 500 | 502 | 503 | 504);
+
     let mut err = Error::new(ErrorKind::Unexpected, message);
 
     err = err.with_context("service_operation", ctx.service_operation.0);
     err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
 
     err
 }

@@ -420,7 +420,7 @@ mod tests {
 
     #[cfg(unix)]
     #[tokio::test]
-    async fn test_delete_iter_rejects_absolute_path_outside_root() {
+    async fn test_delete_iter_normalizes_absolute_path_under_root() {
         use opendal_core::Operator;
 
         let root_dir = tempfile::TempDir::new().unwrap();
@@ -429,16 +429,61 @@ mod tests {
         let outside = outside_dir.path().join("outside.txt");
         std::fs::write(&outside, b"content").unwrap();
 
+        let inside = root_dir.path().join(outside.strip_prefix("/").unwrap());
+        std::fs::create_dir_all(inside.parent().unwrap()).unwrap();
+        std::fs::write(&inside, b"content").unwrap();
+
         let op =
             Operator::new(crate::Fs::default().root(root_dir.path().to_str().unwrap())).unwrap();
 
-        // `Deleter` takes the caller's key verbatim, so an absolute key reaches
-        // `root_join` without `normalize_path` having stripped the leading `/`.
-        let err = op
-            .delete_iter([outside.to_str().unwrap().to_string()])
+        op.delete_iter([outside.to_str().unwrap().to_string()])
             .await
-            .unwrap_err();
+            .unwrap();
+        assert!(!inside.exists());
+        assert_eq!(std::fs::read(&outside).unwrap(), b"content");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_list_includes_dangling_symlink() {
+        use opendal_core::Operator;
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        std::fs::write(root.join("real"), b"data").unwrap();
+        std::os::unix::fs::symlink("/nonexistent-target", root.join("linky")).unwrap();
+        std::os::unix::fs::symlink(root.join("real"), root.join("valid-link")).unwrap();
+
+        let op = Operator::new(crate::Fs::default().root(root.to_str().unwrap())).unwrap();
+        let entries = op.list("/").await.unwrap();
+        let modes: std::collections::HashMap<String, EntryMode> = entries
+            .iter()
+            .map(|e| (e.path().to_string(), e.metadata().mode()))
+            .collect();
+
+        assert_eq!(
+            modes.get("linky"),
+            Some(&EntryMode::Unknown),
+            "dangling symlink must be listed as Unknown: {modes:?}"
+        );
+        assert_eq!(modes.get("real"), Some(&EntryMode::FILE));
+    }
+
+    #[tokio::test]
+    async fn test_delete_iter_rejects_parent_path_outside_root() {
+        use opendal_core::Operator;
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let root = temp_dir.path().join("root");
+        std::fs::create_dir(&root).unwrap();
+
+        let outside = temp_dir.path().join("outside.txt");
+        std::fs::write(&outside, b"content").unwrap();
+
+        let op = Operator::new(crate::Fs::default().root(root.to_str().unwrap())).unwrap();
+        let err = op.delete_iter(["../outside.txt"]).await.unwrap_err();
         assert_eq!(err.kind(), ErrorKind::NotFound);
-        assert!(outside.exists());
+        assert_eq!(std::fs::read(&outside).unwrap(), b"content");
     }
 }

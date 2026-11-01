@@ -15,101 +15,48 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use jni::Env;
 use jni::EnvUnowned;
 use jni::objects::JByteArray;
 use jni::objects::JClass;
-use jni::objects::JObject;
-use jni::objects::JString;
-use jni::sys::jlong;
-use opendal::blocking;
 use opendal::blocking::StdBytesIterator;
 
-use crate::convert::jstring_to_string;
 use crate::error::ThrowException;
 
 /// # Safety
 ///
-/// This function should not be called before the Operator is ready.
+/// `iterator` must point to a live iterator, with no other calls in progress.
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_org_apache_opendal_OperatorInputStream_constructReader<
+pub unsafe extern "system" fn Java_org_apache_opendal_OperatorInputStream_disposeIterator<
     'local,
 >(
-    mut env: EnvUnowned<'local>,
-    _: JClass<'local>,
-    op: *mut blocking::Operator,
-    path: JString<'local>,
-    options: JObject<'local>,
-) -> jlong {
-    env.with_env(|env| {
-        let op_ref = unsafe { &mut *op };
-        intern_construct_reader(env, op_ref, path, options)
-    })
-    .resolve::<ThrowException>()
-}
-
-fn intern_construct_reader(
-    env: &mut Env,
-    op: &mut blocking::Operator,
-    path: JString,
-    options: JObject,
-) -> crate::Result<jlong> {
-    use crate::convert;
-    use crate::make_reader_options;
-
-    let path = jstring_to_string(env, &path)?;
-    let reader_options = make_reader_options(env, &options)?;
-
-    let offset = convert::read_int64_field(env, &options, "offset")?;
-    let length = convert::read_int64_field(env, &options, "length")?;
-    let range = convert::offset_length_to_range(offset, length)?;
-
-    let reader = op
-        .reader_options(&path, reader_options)?
-        .into_bytes_iterator(range)?;
-    Ok(Box::into_raw(Box::new(reader)) as jlong)
-}
-
-/// # Safety
-///
-/// This function should not be called before the Operator is ready.
-#[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_org_apache_opendal_OperatorInputStream_disposeReader<'local>(
     _: EnvUnowned<'local>,
     _: JClass<'local>,
-    reader: *mut StdBytesIterator,
+    iterator: *mut StdBytesIterator,
 ) {
     unsafe {
-        drop(Box::from_raw(reader));
+        drop(Box::from_raw(iterator));
     }
 }
 
 /// # Safety
 ///
-/// This function should not be called before the Operator is ready.
+/// `iterator` must point to a live iterator, with no other calls in progress.
 #[unsafe(no_mangle)]
 pub unsafe extern "system" fn Java_org_apache_opendal_OperatorInputStream_readNextBytes<'local>(
     mut env: EnvUnowned<'local>,
     _: JClass<'local>,
-    reader: *mut StdBytesIterator,
+    iterator: *mut StdBytesIterator,
 ) -> JByteArray<'local> {
-    env.with_env(|env| {
-        let reader_ref = unsafe { &mut *reader };
-        intern_read_next_bytes(env, reader_ref)
+    env.with_env(|env| -> crate::Result<_> {
+        let iterator = unsafe { &mut *iterator };
+        match iterator.next().transpose().map_err(|err| {
+            err.downcast::<opendal::Error>().unwrap_or_else(|err| {
+                opendal::Error::new(opendal::ErrorKind::Unexpected, err.to_string())
+            })
+        })? {
+            None => Ok(JByteArray::default()),
+            Some(content) => Ok(env.byte_array_from_slice(&content)?),
+        }
     })
     .resolve::<ThrowException>()
-}
-
-fn intern_read_next_bytes<'local>(
-    env: &mut Env<'local>,
-    reader: &mut StdBytesIterator,
-) -> crate::Result<JByteArray<'local>> {
-    match reader
-        .next()
-        .transpose()
-        .map_err(|err| opendal::Error::new(opendal::ErrorKind::Unexpected, err.to_string()))?
-    {
-        None => Ok(JByteArray::default()),
-        Some(content) => Ok(env.byte_array_from_slice(&content)?),
-    }
 }

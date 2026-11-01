@@ -1,7 +1,7 @@
 {
   "name": "opendal",
   "author": "Apache OpenDAL <dev@opendal.apache.org>",
-  "version": "0.49.11",
+  "version": "0.49.13",
   "license": "Apache-2.0",
   "main": "index.cjs",
   "module": "index.mjs",

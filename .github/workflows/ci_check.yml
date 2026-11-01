@@ -33,6 +33,17 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  hf-temp-repo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Test temporary HF repository cleanup
+        run: node --test .github/actions/hf-temp-repo/cleanup.test.js
+
   labels:
     runs-on: ubuntu-slim
     timeout-minutes: 5
@@ -58,8 +69,12 @@ jobs:
       FORCE_COLOR: 1
     steps:
       - uses: actions/checkout@v7
+      - name: Install Hawkeye
+        uses: taiki-e/install-action@v2
+        with:
+          tool: hawkeye@7.2.0
       - name: Check license headers
-        uses: korandoru/hawkeye@v6
+        run: hawkeye check
 
   # Add python format check later.
   code-format:

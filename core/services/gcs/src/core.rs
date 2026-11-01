@@ -177,6 +177,9 @@ impl GcsCore {
         );
 
         let mut url = QueryPairsWriter::new(&url).push("alt", "media");
+        if let Some(version) = args.version() {
+            url = url.push("generation", &gcs_percent_encode_path(version));
+        }
         if let Some(version) = args.if_version_match() {
             url = url.push("ifGenerationMatch", &gcs_percent_encode_path(version));
         }
@@ -218,6 +221,9 @@ impl GcsCore {
         let mut url = format!("{}/{}/{}", self.endpoint, self.bucket, p);
 
         let mut query_args = Vec::new();
+        if let Some(version) = args.version() {
+            query_args.push(format!("generation={}", percent_encode_path(version)))
+        }
         if let Some(override_content_disposition) = args.override_content_disposition() {
             query_args.push(format!(
                 "{}={}",
@@ -571,6 +577,9 @@ impl GcsCore {
         );
 
         let mut url = QueryPairsWriter::new(&url);
+        if let Some(version) = args.version() {
+            url = url.push("generation", &gcs_percent_encode_path(version));
+        }
         if let Some(version) = args.if_version_match() {
             url = url.push("ifGenerationMatch", &gcs_percent_encode_path(version));
         }
@@ -608,6 +617,9 @@ impl GcsCore {
         let mut url = format!("{}/{}/{}", self.endpoint, self.bucket, p);
 
         let mut query_args = Vec::new();
+        if let Some(version) = args.version() {
+            query_args.push(format!("generation={}", percent_encode_path(version)))
+        }
         if let Some(override_content_disposition) = args.override_content_disposition() {
             query_args.push(format!(
                 "{}={}",
@@ -718,6 +730,16 @@ impl GcsCore {
         ctx: &OperationContext,
         paths: &[(String, OpDelete)],
     ) -> Result<Response<Buffer>> {
+        let req = self.gcs_delete_objects_request(paths)?;
+
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
+    }
+
+    pub fn gcs_delete_objects_request(
+        &self,
+        paths: &[(String, OpDelete)],
+    ) -> Result<Request<Buffer>> {
         let uri = format!("{}/batch/storage/v1", self.endpoint);
 
         let mut multipart = Multipart::new();
@@ -733,10 +755,7 @@ impl GcsCore {
         let req = Request::post(uri)
             .extension(Operation::Delete)
             .extension(ServiceOperation("BatchDeleteObjects"));
-        let req = multipart.apply(req)?;
-
-        let req = self.sign(ctx, req).await?;
-        self.send(ctx, req).await
+        multipart.apply(req)
     }
 
     pub fn gcs_compose_object_request(
@@ -1542,6 +1561,174 @@ mod tests {
         let query = rewrite.uri().query().unwrap();
         assert!(query.contains("ifGenerationMatch=123"));
         assert_eq!(query.matches("ifGenerationMatch=").count(), 1);
+    }
+
+    #[test]
+    fn test_xml_requests_with_version() {
+        let core = test_core();
+
+        let read = core
+            .gcs_get_object_xml_request(
+                "object",
+                BytesRange::default(),
+                &read_args(options::ReadOptions {
+                    version: Some("123".to_owned()),
+                    override_content_type: Some("text/plain".to_string()),
+                    ..Default::default()
+                }),
+            )
+            .expect("read request must build");
+        assert_eq!(read.method(), http::Method::GET);
+        assert_eq!(
+            read.uri().to_string(),
+            "https://storage.googleapis.com/test-bucket/object?generation=123&response-content-type=text/plain"
+        );
+
+        let stat = core
+            .gcs_head_object_xml_request(
+                "object",
+                &options::StatOptions {
+                    version: Some("123".to_owned()),
+                    ..Default::default()
+                }
+                .into(),
+            )
+            .expect("stat request must build");
+        assert_eq!(stat.method(), http::Method::HEAD);
+        assert_eq!(
+            stat.uri().to_string(),
+            "https://storage.googleapis.com/test-bucket/object?generation=123"
+        );
+    }
+
+    #[test]
+    fn test_get_object_request_with_version() {
+        let core = test_core();
+
+        let req = core
+            .gcs_get_object_request(
+                "object",
+                BytesRange::default(),
+                &read_args(options::ReadOptions {
+                    version: Some("123".to_owned()),
+                    if_version_match: Some("456".to_owned()),
+                    ..Default::default()
+                }),
+            )
+            .expect("read request must build");
+        assert_eq!(req.method(), http::Method::GET);
+        assert_eq!(
+            req.uri().to_string(),
+            "https://storage.googleapis.com/storage/v1/b/test-bucket/o/object?alt=media&generation=123&ifGenerationMatch=456"
+        );
+    }
+
+    #[test]
+    fn test_rewrite_object_request_with_source_version() {
+        let core = test_core();
+
+        let req = core
+            .gcs_rewrite_object_request(
+                "source",
+                "target",
+                &copy_args(options::CopyOptions {
+                    source_version: Some("123".to_owned()),
+                    ..Default::default()
+                }),
+                None,
+                Some("token"),
+            )
+            .expect("rewrite request must build");
+        assert_eq!(req.method(), http::Method::POST);
+        assert_eq!(
+            req.uri().to_string(),
+            "https://storage.googleapis.com/storage/v1/b/test-bucket/o/source/rewriteTo/b/test-bucket/o/target?sourceGeneration=123&rewriteToken=token"
+        );
+    }
+
+    #[test]
+    fn test_head_object_request_with_version() {
+        let core = test_core();
+
+        let req = core
+            .gcs_head_object_request(
+                "object",
+                &options::StatOptions {
+                    version: Some("123".to_owned()),
+                    if_version_match: Some("456".to_owned()),
+                    ..Default::default()
+                }
+                .into(),
+            )
+            .expect("stat request must build");
+        assert_eq!(req.method(), http::Method::GET);
+        assert_eq!(
+            req.uri().to_string(),
+            "https://storage.googleapis.com/storage/v1/b/test-bucket/o/object?generation=123&ifGenerationMatch=456"
+        );
+    }
+
+    fn delete_args(options: options::DeleteOptions) -> OpDelete {
+        OpDelete::from_options(&Capability::default(), options).unwrap()
+    }
+
+    #[test]
+    fn test_delete_object_request_with_version() {
+        let core = test_core();
+
+        let req = core
+            .gcs_delete_object_request(
+                "object",
+                &delete_args(options::DeleteOptions {
+                    version: Some("123".to_owned()),
+                    ..Default::default()
+                }),
+            )
+            .expect("delete request must build");
+        assert_eq!(req.method(), http::Method::DELETE);
+        assert_eq!(
+            req.uri().to_string(),
+            "https://storage.googleapis.com/storage/v1/b/test-bucket/o/object?generation=123"
+        );
+
+        let req = core
+            .gcs_delete_object_request(
+                "object",
+                &delete_args(options::DeleteOptions {
+                    version: Some("123".to_owned()),
+                    if_version_match: Some("456".to_owned()),
+                    ..Default::default()
+                }),
+            )
+            .expect("delete request must build");
+        assert_eq!(
+            req.uri().query(),
+            Some("generation=123&ifGenerationMatch=456")
+        );
+    }
+
+    #[test]
+    fn test_delete_objects_request_with_version() {
+        let core = test_core();
+        let batch = vec![
+            (
+                "one".to_string(),
+                delete_args(options::DeleteOptions {
+                    version: Some("123".to_owned()),
+                    ..Default::default()
+                }),
+            ),
+            ("two".to_string(), OpDelete::new()),
+        ];
+
+        let req = core
+            .gcs_delete_objects_request(&batch)
+            .expect("batch delete request must build");
+        let body = String::from_utf8(req.body().to_bytes().to_vec()).unwrap();
+
+        assert!(body.contains("DELETE /storage/v1/b/test-bucket/o/one?generation=123 HTTP/1.1"));
+        assert!(body.contains("DELETE /storage/v1/b/test-bucket/o/two HTTP/1.1"));
+        assert_eq!(body.matches("generation=").count(), 1);
     }
 
     #[test]

@@ -29,6 +29,10 @@ namespace OpenDAL.ServiceConfig
     public sealed class HuggingfaceServiceConfig : IServiceConfig
     {
         /// <summary>
+        /// Disable loading config from the environment. When set, the service ignores `HF_ENDPOINT`, `HF_HUB_DISABLE_XET`, `HF_TOKEN`, `HF_TOKEN_PATH`, and the `token` file under `HF_HOME`, `$XDG_CACHE_HOME/huggingface` or `~/.cache/huggingface`.
+        /// </summary>
+        public bool? DisableConfigLoad { get; init; }
+        /// <summary>
         /// Download mode. Either `xet` (default) or `http`. When unset, the mode is resolved from the `HF_HUB_DISABLE_XET` environment variable: a non-empty value forces `http`, otherwise it defaults to `xet`. An explicit value here takes precedence. See &lt;https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfhubdisablexet&gt;.
         /// </summary>
         public string? DownloadMode { get; init; }
@@ -66,6 +70,10 @@ namespace OpenDAL.ServiceConfig
         public IReadOnlyDictionary<string, string> ToOptions()
         {
             var map = new Dictionary<string, string>();
+            if (DisableConfigLoad is not null)
+            {
+                map["disable_config_load"] = Utilities.ToOptionString(DisableConfigLoad);
+            }
             if (DownloadMode is not null)
             {
                 map["download_mode"] = Utilities.ToOptionString(DownloadMode);

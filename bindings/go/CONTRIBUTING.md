@@ -30,7 +30,7 @@ go test -bench .
 
 <details>
   <summary>
-  A benchmark between OpenDAL Go binding and aws-sdk-go on minio S3 compatible storage
+  A benchmark between OpenDAL Go binding and aws-sdk-go on Silo S3 compatible storage
   </summary>
 
 ```

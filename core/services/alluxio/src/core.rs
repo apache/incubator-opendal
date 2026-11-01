@@ -404,6 +404,31 @@ mod tests {
         assert_eq!(err.kind(), ErrorKind::Unsupported);
     }
 
+    #[test]
+    fn test_parse_error_marks_5xx_temporary() {
+        for status in [500u16, 502, 503, 504] {
+            let resp = Response::builder()
+                .status(StatusCode::from_u16(status).unwrap())
+                .body(Buffer::from(bytes::Bytes::from_static(
+                    br#"{"statusCode":"INTERNAL_SERVER_ERROR","message":"boom"}"#,
+                )))
+                .unwrap();
+
+            let err = parse_error(ErrorContext::new(ServiceOperation("Test")), resp);
+
+            assert!(err.is_temporary(), "{status} should be retryable");
+        }
+
+        let resp = Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(Buffer::from(bytes::Bytes::from_static(
+                br#"{"statusCode":"INVALID_ARGUMENT","message":"bad"}"#,
+            )))
+            .unwrap();
+        let err = parse_error(ErrorContext::new(ServiceOperation("Test")), resp);
+        assert!(!err.is_temporary(), "400 must not be retryable");
+    }
+
     /// Error response example is from https://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html
     #[test]
     fn test_parse_error() {
@@ -508,9 +533,11 @@ pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
     let (parts, body) = resp.into_parts();
     let bs = body.to_bytes();
 
-    let mut kind = match parts.status.as_u16() {
-        500 => ErrorKind::Unexpected,
-        _ => ErrorKind::Unexpected,
+    let (mut kind, retryable) = match parts.status.as_u16() {
+        // Alluxio reports a transient master or worker failure as a 5xx; retrying is the
+        // documented recovery, so mark it temporary rather than surfacing it as permanent.
+        500 | 502 | 503 | 504 => (ErrorKind::Unexpected, true),
+        _ => (ErrorKind::Unexpected, false),
     };
 
     let (message, alluxio_err) = serde_json::from_reader::<_, AlluxioError>(bs.clone().reader())
@@ -529,6 +556,10 @@ pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
 
     err = err.with_context("service_operation", ctx.service_operation.0);
     err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
 
     err
 }

@@ -168,26 +168,36 @@ Important consequences of the split:
 - Optional user-facing features are declared in `core/Cargo.toml` as `services-*` and `layers-*`, and usually map to optional `opendal-service-*` / `opendal-layer-*` dependencies.
 - The memory service is in `core/core/src/services/memory`; `services-memory` is a deprecated compatibility feature because memory is always enabled.
 
+Service and layer composition uses these boundaries:
+
+- `Builder::build(self)` returns a typed `Service`. `Operator::new(builder)` returns a ready-to-use `Operator` with the default layers applied.
+- `raw::Service` implements storage operations with concrete associated body types. `raw::ServiceDyn` is its object-safe adapter, and `raw::Servicer` is `Arc<dyn ServiceDyn>`.
+- `Service::info()` returns immutable `raw::ServiceInfo` identity (scheme, root, and name). `Service::capability()` reports the capabilities of the current service stack.
+- Each service operation receives `&OperationContext`. Services obtain the composed HTTP transport and executor from this context; operation-specific inputs stay in `Op*` arguments.
+- `Operator` stores a base service, a base context, and an ordered layer list. Adding a layer or replacing the base context replays all service hooks, then all context hooks, to produce consistent dispatch state.
+
 ## Service Implementation Pattern
 
 Most services follow this shape under `core/services/<name>/`:
 
 - `src/lib.rs`: crate docs, module declarations, public builder/config exports, and service registration function.
-- `src/backend.rs`: builder and `opendal_core::raw::Access` implementation.
+- `src/backend.rs`: builder and `opendal_core::raw::Service` implementation.
 - `src/config.rs`: serializable config and builder conversion.
 - `src/core.rs`: shared service client, request construction, and service-specific helpers.
 - `src/error.rs`: service-specific error parsing.
-- `src/reader.rs`, `src/writer.rs`, `src/lister.rs`, `src/deleter.rs`, `src/copier.rs`: operation implementations when the service needs them.
-- `src/docs.md`: service docs included into rustdoc.
+- `src/reader.rs`, `src/writer.rs`, `src/lister.rs`, `src/deleter.rs`, `src/copier.rs`, `src/composer.rs`: operation implementations when the service needs them.
+- `README.md`: service docs included into rustdoc by `src/lib.rs`.
+- `src/docs.md`: builder docs included into rustdoc by `src/backend.rs`.
 
 When adding or changing a service:
 
 1. Put implementation in `core/services/<service>/`.
-2. Implement `Builder` and `Access` using `opendal_core`.
+2. Implement `Builder` and `raw::Service` using `opendal_core`. Keep service identity in `ServiceInfo` and report supported behavior through `capability()`.
 3. Add or update the facade feature and optional dependency in `core/Cargo.toml`.
 4. Register the service in `core/src/lib.rs` when it should support URI/iterator construction.
 5. Add or update behavior-test setup under `.github/services/<service>/` when real backend testing is needed.
-6. Run focused clippy/tests first, then broaden validation based on the blast radius.
+6. Obtain runtime resources from the operation's `OperationContext` rather than caching them in the service constructed by the builder.
+7. Run focused clippy/tests first, then broaden validation based on the blast radius.
 
 ## Layer Implementation Pattern
 
@@ -196,9 +206,11 @@ Reusable layers live under `core/layers/<layer>/` as `opendal-layer-*` crates. C
 When adding or changing a public optional layer:
 
 1. Put reusable optional code in `core/layers/<layer>/`.
-2. Depend on `opendal-core` and implement `Layer` / `LayeredAccess` against `opendal_core::raw`.
+2. Depend on `opendal-core` and implement the object-safe `raw::Layer` trait. Use `apply_service(&self, inner: Servicer) -> Servicer` for operation wrappers and `apply_context(&self, service: Servicer, inner: OperationContext) -> OperationContext` for runtime resource wrappers; both hooks return their input unchanged by default.
 3. Add or update the corresponding `layers-*` feature and optional dependency in `core/Cargo.toml`.
 4. Re-export it from the facade when users should access it through `opendal::layers`.
+
+Operation wrappers implement `raw::Service`, store the inner `Servicer`, forward unchanged operations with their context, and report the wrapped stack's capabilities. Context hooks receive the final service stack. Resource wrappers should forward through the previous transport or executor when earlier layers must remain effective.
 
 ## Testing Expectations
 
@@ -220,8 +232,8 @@ When adding or changing a public optional layer:
 ## Important Notes
 
 - Minimum Rust version is 1.91, configured in `core/Cargo.toml` and checked by CI.
-- Use `opendal_core::raw::Access`, `Layer`, and `LayeredAccess` for internal implementations.
-- Use `opendal_core::raw::oio::{ReadStream, Write, List, Delete}` for operation bodies.
+- Use `opendal_core::raw::{Service, ServiceInfo, ServiceDyn, Servicer, Layer}` for internal service and layer boundaries, and `opendal_core::OperationContext` for runtime resources.
+- Use `opendal_core::raw::oio::{Read, Write, List, Delete, Copy, Compose}` for service operation bodies. `Read` opens range streams that implement `ReadStream`; type-erased handles use the corresponding `*Dyn` adapters.
 - Use `Operator` and `blocking::Operator` as the public API entry points.
 
 ## Security

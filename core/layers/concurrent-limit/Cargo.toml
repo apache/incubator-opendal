@@ -35,8 +35,8 @@ all-features = true
 asyncband = { workspace = true, features = ["semaphore"] }
 futures = { workspace = true }
 http = { workspace = true }
-opendal-core = { path = "../../core", version = "0.59.3", default-features = false }
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false }
 
 [dev-dependencies]
-opendal-core = { path = "../../core", version = "0.59.3" }
+opendal-core = { path = "../../core", version = "0.59.5" }
 tokio = { workspace = true, features = ["macros", "rt", "time"] }

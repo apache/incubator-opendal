@@ -34,13 +34,13 @@ all-features = true
 [dependencies]
 futures = { workspace = true }
 http = { workspace = true }
-opendal-core = { path = "../../core", version = "0.59.3", default-features = false }
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false }
 tracing = "0.1"
 
 [dev-dependencies]
 anyhow = "1.0"
 dotenvy = "0.15"
-opendal-core = { path = "../../core", version = "0.59.3" }
+opendal-core = { path = "../../core", version = "0.59.5" }
 opentelemetry = { version = "0.32.0", default-features = false, features = [
   "trace",
 ] }

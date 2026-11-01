@@ -15,16 +15,16 @@
 # specific language governing permissions and limitations
 # under the License.
 
-name: hdfs_default_on_minio_s3
-description: 'Behavior test for hdfs default on minio s3'
+name: hdfs_default_on_silo_s3
+description: 'Behavior test for hdfs default on Silo S3'
 
 runs:
   using: "composite"
   steps:
-    - name: Setup MinIO Server
+    - name: Setup Silo Server
       shell: bash
       working-directory: fixtures/s3
-      run: docker compose --file docker-compose-minio.yml up --quiet-pull --detach --wait
+      run: docker compose --file docker-compose-silo.yml up --quiet-pull --detach --wait
 
     - name: Setup test bucket
       shell: bash
@@ -49,7 +49,7 @@ runs:
         ./bin/hadoop credential create fs.s3a.secret.key -value minioadmin -provider localjceks://file/tmp/hdfs/s3.jceks
         popd
 
-        cp ${{ github.workspace }}/fixtures/hdfs/minio-s3-core-site.xml ${HADOOP_HOME}/etc/hadoop/core-site.xml
+        cp ${{ github.workspace }}/fixtures/hdfs/silo-s3-core-site.xml ${HADOOP_HOME}/etc/hadoop/core-site.xml
 
         cat << EOF >> $GITHUB_ENV
         OPENDAL_HDFS_NAME_NODE=s3a://test

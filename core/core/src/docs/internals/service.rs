@@ -47,6 +47,7 @@
 //! type Lister: oio::List;
 //! type Deleter: oio::Delete;
 //! type Copier: oio::Copy;
+//! type Composer: oio::Compose;
 //! ```
 //!
 //! A backend returns concrete body types so its implementation and typed

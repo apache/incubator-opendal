@@ -70,6 +70,21 @@ impl GdriveBuilder {
         self
     }
 
+    /// Set the shared drive (formerly Team Drive) id of GoogleDrive.
+    ///
+    /// When set, `root` resolves inside this shared drive instead of the
+    /// user's My Drive. The id appears at the end of the shared drive URL,
+    /// for example `https://drive.google.com/drive/folders/<drive_id>`.
+    pub fn drive_id(mut self, drive_id: &str) -> Self {
+        self.config.drive_id = if drive_id.is_empty() {
+            None
+        } else {
+            Some(drive_id.to_string())
+        };
+
+        self
+    }
+
     /// Access token is used for temporary access to the GoogleDrive API.
     ///
     /// You can get the access token from [GoogleDrive App Console](https://console.cloud.google.com/apis/credentials)
@@ -187,14 +202,16 @@ impl Builder for GdriveBuilder {
         };
 
         let signer = Arc::new(Mutex::new(signer));
+        let drive_id = self.config.drive_id.filter(|v| !v.is_empty());
 
         Ok(GdriveBackend {
             core: Arc::new(GdriveCore {
                 info: accessor_info.clone(),
                 capability,
                 root,
+                drive_id: drive_id.clone(),
                 signer: signer.clone(),
-                path_index: GdrivePathIndex::new(GdrivePathQuery::new(signer)),
+                path_index: GdrivePathIndex::new(GdrivePathQuery::new(signer, drive_id)),
                 recent_entries: Mutex::default(),
             }),
         })

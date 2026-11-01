@@ -18,7 +18,7 @@
 //! Validators for operation option payloads.
 
 use crate::error::OpenDALError;
-use crate::validators::{validate_checked_add_u64, validate_non_zero_usize};
+use crate::validators::{validate_checked_add_u64, validate_positive_integer};
 
 pub fn validate_read_range_end(
     offset: u64,
@@ -34,25 +34,25 @@ pub fn validate_read_range_end(
 }
 
 pub fn validate_read_concurrent(concurrent: usize) -> Result<(), OpenDALError> {
-    validate_non_zero_usize(concurrent, "read concurrent")
+    validate_positive_integer(concurrent, "read concurrent")
 }
 
 pub fn validate_read_chunk(chunk: usize) -> Result<(), OpenDALError> {
-    validate_non_zero_usize(chunk, "read chunk")
+    validate_positive_integer(chunk, "read chunk")
 }
 
 pub fn validate_read_gap(gap: usize) -> Result<(), OpenDALError> {
-    validate_non_zero_usize(gap, "read gap")
+    validate_positive_integer(gap, "read gap")
 }
 
 pub fn validate_write_concurrent(concurrent: usize) -> Result<(), OpenDALError> {
-    validate_non_zero_usize(concurrent, "write concurrent")
+    validate_positive_integer(concurrent, "write concurrent")
 }
 
 pub fn validate_write_chunk(chunk: usize) -> Result<(), OpenDALError> {
-    validate_non_zero_usize(chunk, "write chunk")
+    validate_positive_integer(chunk, "write chunk")
 }
 
 pub fn validate_list_limit(limit: usize) -> Result<(), OpenDALError> {
-    validate_non_zero_usize(limit, "list limit")
+    validate_positive_integer(limit, "list limit")
 }

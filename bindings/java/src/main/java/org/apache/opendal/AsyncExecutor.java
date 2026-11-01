@@ -28,6 +28,13 @@ package org.apache.opendal;
  * Completion callbacks that change it must restore it before returning.</p>
  */
 public class AsyncExecutor extends NativeObject {
+    /**
+     * Create a Tokio executor with the specified number of worker threads.
+     *
+     * @param cores the number of worker threads; must be positive
+     * @return the executor
+     * @throws IllegalArgumentException if {@code cores} is zero or negative
+     */
     public static AsyncExecutor createTokioExecutor(int cores) {
         return new AsyncExecutor(makeTokioExecutor(cores));
     }

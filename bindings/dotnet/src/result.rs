@@ -23,6 +23,7 @@ use crate::error::OpenDALError;
 use crate::metadata::{OpendalMetadata, metadata_release_fields};
 use crate::operator::operator_info_free;
 use crate::presign::presigned_request_free;
+use crate::utils::release_c_string;
 
 /// Free a boxed metadata payload together with its heap-allocated fields.
 ///
@@ -224,14 +225,9 @@ define_result!(
 );
 
 fn release_error_message(error: &mut OpenDALError) {
-    if error.message.is_null() {
-        return;
-    }
-
-    unsafe {
-        drop(std::ffi::CString::from_raw(error.message));
-    }
-    error.message = std::ptr::null_mut();
+    // SAFETY: `OpenDALError` only carries a null message or one built by
+    // `into_string_ptr`.
+    unsafe { release_c_string(&mut error.message) };
 }
 
 /// Release an error message allocated by this FFI layer.

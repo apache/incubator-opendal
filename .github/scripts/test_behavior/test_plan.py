@@ -19,7 +19,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from plan import group_cases_by_service, plan
+from plan import LANGUAGE_BINDING, group_cases_by_service, plan
 
 
 class BehaviorTestPlan(unittest.TestCase):
@@ -45,13 +45,39 @@ class BehaviorTestPlan(unittest.TestCase):
         # Should not contain s3
         self.assertFalse("s3" in cases)
 
-    def test_smb_runs_only_for_bindings_that_enable_it(self):
-        result = plan(["core/services/smb/src/lib.rs"])
-        self.assertEqual(result["core"][0]["cases"][0]["service"], "smb")
-        for language in ["c", "cpp"]:
-            self.assertEqual(result[f"binding_{language}"][0]["cases"][0]["service"], "smb")
-        for language in ["java", "python", "nodejs", "go", "dotnet", "ruby"]:
-            self.assertFalse(result["components"][f"binding_{language}"])
+    def test_github_fixture_is_core_only(self):
+        result = plan([
+            ".github/services/github/read_only/action.yml",
+            "core/services/fs/src/lib.rs",
+        ])
+        core = [case["service"] for target in result["core"] for case in target["cases"]]
+        self.assertIn("github", core)
+        for language in LANGUAGE_BINDING:
+            with self.subTest(language=language):
+                cases = [
+                    case["service"]
+                    for target in result[f"binding_{language}"]
+                    for case in target["cases"]
+                ]
+                self.assertIn("fs", cases)
+                self.assertNotIn("github", cases)
+
+    def test_smb_fixture_is_core_only(self):
+        result = plan([
+            ".github/services/smb/samba/action.yml",
+            "core/services/fs/src/lib.rs",
+        ])
+        core = [case["service"] for target in result["core"] for case in target["cases"]]
+        self.assertIn("smb", core)
+        for language in LANGUAGE_BINDING:
+            with self.subTest(language=language):
+                cases = [
+                    case["service"]
+                    for target in result[f"binding_{language}"]
+                    for case in target["cases"]
+                ]
+                self.assertIn("fs", cases)
+                self.assertNotIn("smb", cases)
 
     def test_core_services_hdfs_native_mapping(self):
         result = plan(["core/services/hdfs-native/src/lib.rs"])

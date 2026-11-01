@@ -1,3 +1,11 @@
+# v0.59.5
+
+- [Release notes](https://github.com/apache/opendal/releases/tag/v0.59.5)
+
+# v0.59.4
+
+- [Release notes](https://github.com/apache/opendal/releases/tag/v0.59.4)
+
 # v0.59.3
 
 - [Release notes](https://github.com/apache/opendal/releases/tag/v0.59.3)

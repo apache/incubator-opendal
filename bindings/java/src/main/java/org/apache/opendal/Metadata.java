@@ -20,6 +20,8 @@
 package org.apache.opendal;
 
 import java.time.Instant;
+import java.util.Collections;
+import java.util.Map;
 import lombok.Data;
 
 /**
@@ -91,6 +93,13 @@ public class Metadata {
      */
     public final String version;
 
+    /**
+     * User defined metadata of the entry.
+     * <p>
+     * Note: This map is empty when the service returns no user metadata.
+     */
+    public final Map<String, String> userMetadata;
+
     public Metadata(
             int mode,
             long contentLength,
@@ -101,6 +110,30 @@ public class Metadata {
             String etag,
             Instant lastModified,
             String version) {
+        this(
+                mode,
+                contentLength,
+                contentDisposition,
+                contentMd5,
+                contentType,
+                cacheControl,
+                etag,
+                lastModified,
+                version,
+                Collections.emptyMap());
+    }
+
+    public Metadata(
+            int mode,
+            long contentLength,
+            String contentDisposition,
+            String contentMd5,
+            String contentType,
+            String cacheControl,
+            String etag,
+            Instant lastModified,
+            String version,
+            Map<String, String> userMetadata) {
         this.mode = EntryMode.of(mode);
         this.contentLength = contentLength;
         this.contentDisposition = contentDisposition;
@@ -110,6 +143,7 @@ public class Metadata {
         this.etag = etag;
         this.lastModified = lastModified;
         this.version = version;
+        this.userMetadata = userMetadata;
     }
 
     public boolean isFile() {

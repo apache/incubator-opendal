@@ -36,5 +36,5 @@ bytes = { workspace = true }
 futures = { workspace = true }
 hdfs-native = { version = "0.14" }
 log = { workspace = true }
-opendal-core = { path = "../../core", version = "0.59.3", default-features = false }
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false }
 serde = { workspace = true, features = ["derive"] }

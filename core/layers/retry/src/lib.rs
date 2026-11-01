@@ -657,6 +657,12 @@ impl<R: oio::Read, I: RetryInterceptor> oio::ReadStream for RetryReadStream<R, I
                             range.advance(read);
                             read = 0;
 
+                            // Broke after the last byte: nothing is left to
+                            // fetch, and an empty range has no Range header.
+                            if range.size() == Some(0) {
+                                return ((None, range, read), Ok(Buffer::new()));
+                            }
+
                             match reader.open(range).await {
                                 Ok((_, stream)) => stream,
                                 Err(err) => return ((None, range, read), Err(err)),
@@ -1447,6 +1453,32 @@ mod tests {
         assert_eq!(content, "Hello, World!".as_bytes());
         // The error is retryable, we should request it 3 times.
         assert_eq!(*builder.attempt.lock().unwrap(), 5);
+        Ok(())
+    }
+
+    /// A stream that breaks after its last byte is at EOF, so the layer must end
+    /// the read instead of reopening the empty range left over. `test_retry_read`
+    /// covers the unbounded case, which has no size to stop on and still reopens.
+    #[tokio::test]
+    async fn test_retry_read_bounded_range_does_not_reopen_at_eof() -> Result<()> {
+        setup();
+
+        let builder = MockBuilder::default();
+        let op = Operator::new(builder.clone())?
+            .layer(LoggingLayer::default())
+            .layer(RetryLayer::default());
+
+        let r = op.reader("retryable_error").await?;
+        let mut content = Vec::new();
+        let size = r
+            .read_into(&mut content, 0..13)
+            .await
+            .expect("read must succeed");
+        assert_eq!(size, 13);
+        assert_eq!(content, "Hello, World!".as_bytes());
+        // Two retries, one full read, then the error at EOF. No reopen, so no
+        // fifth attempt.
+        assert_eq!(*builder.attempt.lock().unwrap(), 4);
         Ok(())
     }
 

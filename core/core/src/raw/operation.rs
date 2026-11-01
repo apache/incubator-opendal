@@ -20,8 +20,8 @@ use std::fmt::Formatter;
 
 /// Identifies the operation being performed.
 ///
-/// Most variants map to methods on the `Access` trait, although some names
-/// differ to improve readability.
+/// Most variants map to methods on the [`Service`][crate::raw::Service] trait,
+/// although some names differ to improve readability.
 ///
 /// An operation might have different meanings and costs depending on a
 /// storage service.

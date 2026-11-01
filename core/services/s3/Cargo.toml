@@ -38,7 +38,7 @@ crc-fast = "1.9.0"
 http = { workspace = true }
 log = { workspace = true }
 md-5 = "0.11.0"
-opendal-core = { path = "../../core", version = "0.59.3", default-features = false, features = [
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false, features = [
   "reqsign",
 ] }
 quick-xml = { workspace = true, features = ["serialize", "overlapped-lists"] }

@@ -46,14 +46,16 @@ env:
 jobs:
   fuzz:
     name: ${{ matrix.cases.service }} / ${{ matrix.cases.setup }} / ${{ matrix.target }}
-    runs-on: ubuntu-latest
+    # Fuzz targets link against libFuzzer from LLVM 14, which is not
+    # packaged on the default ubuntu-26.04 runner image.
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         target: ["fuzz_reader", "fuzz_writer"]
         cases:
           - { service: "memory", setup: "memory" }
           - { service: "fs", setup: "local_fs" }
-          - { service: "s3", setup: "0_minio_s3" }
+          - { service: "s3", setup: "0_silo_s3" }
           - { service: "azblob", setup: "azurite_azblob" }
     steps:
       - uses: actions/checkout@v7

@@ -38,11 +38,14 @@ use opendal_core::*;
 /// This layer uses the Generic Cell Rate Algorithm (GCRA) from
 /// [Governor](https://docs.rs/governor/latest/governor/index.html).
 /// Set `bandwidth` and `burst` to control the service's byte-flow rate.
+/// Reads with a bounded raw range acquire quota for the requested size before
+/// starting range I/O. Reads with an unbounded raw range are not throttled.
+/// Writes acquire quota for each buffer before sending it to the service.
 ///
 /// # Note
 ///
-/// When setting the ThrottleLayer, always consider the largest possible operation size as the burst size,
-/// as **the burst size should be larger than any possible byte length to allow it to pass through**.
+/// Set the burst size to at least the largest bounded read range or write buffer.
+/// A range or buffer larger than the burst fails with [`ErrorKind::RateLimited`].
 ///
 /// Read more about [Quota](https://docs.rs/governor/latest/governor/struct.Quota.html#examples)
 ///
@@ -104,6 +107,25 @@ impl ThrottleLayer {
 /// If want to add more observability in the future, replace the default NoOpMiddleware with other middleware types.
 /// Read more about [Middleware](https://docs.rs/governor/latest/governor/middleware/index.html)
 type SharedRateLimiter = Arc<RateLimiter<NotKeyed, InMemoryState, DefaultClock, NoOpMiddleware>>;
+
+async fn wait_for_quota(limiter: &SharedRateLimiter, len: u64) -> Result<()> {
+    let len = u32::try_from(len).map_err(|_| {
+        Error::new(
+            ErrorKind::RateLimited,
+            "request size exceeds throttle quota capacity",
+        )
+    })?;
+    let Some(len) = NonZeroU32::new(len) else {
+        return Ok(());
+    };
+
+    limiter.until_n_ready(len).await.map_err(|_| {
+        Error::new(
+            ErrorKind::RateLimited,
+            "burst size is smaller than the request size",
+        )
+    })
+}
 
 #[doc(hidden)]
 #[derive(Debug)]
@@ -231,6 +253,9 @@ impl<R: oio::ReadStream> oio::ReadStream for ThrottleWrapper<R> {
 
 impl<R: oio::Read> oio::Read for ThrottleWrapper<R> {
     async fn open(&self, range: BytesRange) -> Result<(RpRead, Box<dyn oio::ReadStreamDyn>)> {
+        if let Some(size) = range.size() {
+            wait_for_quota(&self.limiter, size).await?;
+        }
         let (rp, stream) = self.inner.open(range).await?;
         Ok((
             rp,
@@ -240,34 +265,16 @@ impl<R: oio::Read> oio::Read for ThrottleWrapper<R> {
     }
 
     async fn read(&self, range: BytesRange) -> Result<(RpRead, Buffer)> {
+        if let Some(size) = range.size() {
+            wait_for_quota(&self.limiter, size).await?;
+        }
         self.inner.read(range).await
     }
 }
 
 impl<R: oio::Write> oio::Write for ThrottleWrapper<R> {
     async fn write(&mut self, bs: Buffer) -> Result<()> {
-        let len = bs.len();
-        if len == 0 {
-            return self.inner.write(bs).await;
-        }
-
-        if len > u32::MAX as usize {
-            return Err(Error::new(
-                ErrorKind::RateLimited,
-                "request size exceeds throttle quota capacity",
-            ));
-        }
-
-        let buf_length =
-            NonZeroU32::new(len as u32).expect("len is non-zero so NonZeroU32 must exist");
-
-        self.limiter.until_n_ready(buf_length).await.map_err(|_| {
-            Error::new(
-                ErrorKind::RateLimited,
-                "burst size is smaller than the request size",
-            )
-        })?;
-
+        wait_for_quota(&self.limiter, bs.len() as u64).await?;
         self.inner.write(bs).await
     }
 
@@ -283,3 +290,6 @@ impl<R: oio::Write> oio::Write for ThrottleWrapper<R> {
         self.inner.abort().await
     }
 }
+
+#[cfg(test)]
+mod tests;

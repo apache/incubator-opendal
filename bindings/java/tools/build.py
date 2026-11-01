@@ -16,7 +16,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-
 from argparse import ArgumentDefaultsHelpFormatter, ArgumentParser
 from pathlib import Path
 import glob

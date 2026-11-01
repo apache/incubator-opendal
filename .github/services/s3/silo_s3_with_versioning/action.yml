@@ -15,16 +15,16 @@
 # specific language governing permissions and limitations
 # under the License.
 
-name: minio_s3_with_versioning
-description: 'Behavior test for Minio S3 with bucket versioning enabled'
+name: silo_s3_with_versioning
+description: 'Behavior test for Silo S3 with bucket versioning enabled'
 
 runs:
   using: "composite"
   steps:
-    - name: Setup MinIO Server
+    - name: Setup Silo Server
       shell: bash
       working-directory: fixtures/s3
-      run: docker compose -f docker-compose-minio.yml up -d --wait
+      run: docker compose -f docker-compose-silo.yml up -d --wait
     - name: Setup test bucket
       shell: bash
       env:

@@ -61,4 +61,5 @@ runs:
         OPENDAL_ETCD_CA_PATH=/tmp/etcd/ca.pem
         OPENDAL_ETCD_CERT_PATH=/tmp/etcd/client.pem
         OPENDAL_ETCD_KEY_PATH=/tmp/etcd/client-key.pem
+        OPENDAL_ETCD_MAX_DECODING_MESSAGE_SIZE=10485760
         EOF

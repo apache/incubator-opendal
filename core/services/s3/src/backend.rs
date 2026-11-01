@@ -494,6 +494,10 @@ impl S3Builder {
     }
 
     /// Replace the credential providers with a custom chain.
+    ///
+    /// Build the chain from [`opendal_core::reqsign_core`] and
+    /// [`crate::reqsign_aws_v4`] so that its types match the ones this service is
+    /// built with.
     pub fn credential_provider_chain(mut self, chain: ProvideCredentialChain<Credential>) -> Self {
         self.credential_providers = Some(chain);
         self
@@ -712,6 +716,7 @@ impl S3Builder {
     ///   - Cloudflare R2
     ///   - AWS S3
     ///   - Aliyun OSS
+    ///   - Neon Object Storage
     /// - Send a `HEAD` request to endpoint with bucket name to get `x-amz-bucket-region`.
     ///
     /// # Examples
@@ -777,6 +782,21 @@ impl S3Builder {
             if let Some(region) = v.strip_suffix(".aliyuncs.com") {
                 return Some(region.to_string());
             }
+        }
+
+        // If this bucket is Neon Object Storage, the region is part of the branch endpoint.
+        // Neon doesn't return `x-amz-bucket-region` for HeadBucket.
+        //
+        // - `br-xxx.storage.c-6.us-east-2.aws.neon.tech` => `us-east-2`
+        //
+        // Reference: <https://neon.com/docs/storage/s3-compatibility>
+        if let Some((_, region)) = endpoint
+            .strip_prefix("https://")
+            .and_then(|v| v.strip_suffix(".aws.neon.tech"))
+            .and_then(|v| v.split_once(".storage."))
+            .and_then(|(_, v)| v.split_once('.'))
+        {
+            return Some(region.to_string());
         }
 
         // Try to detect region by HeadBucket.
@@ -2260,6 +2280,12 @@ mod tests {
                 "https://abc.xxxxx.r2.cloudflarestorage.com",
                 "example",
                 Some("auto"),
+            ),
+            (
+                "neon",
+                "https://br-example-a1b2c3d4.storage.c-6.us-east-2.aws.neon.tech",
+                "example",
+                Some("us-east-2"),
             ),
             (
                 "invalid service",

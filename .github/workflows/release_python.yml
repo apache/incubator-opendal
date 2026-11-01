@@ -124,7 +124,7 @@ jobs:
           merge-multiple: true
           path: bindings/python/dist
       - name: Setup uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - name: Publish to TestPyPI
         if: ${{ startsWith(github.ref, 'refs/tags/') && contains(github.ref, '-') }}
         run: |

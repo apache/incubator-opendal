@@ -39,7 +39,7 @@
 //!   operators and layers.
 //! - A [`Layer`] wraps the service stack, the operation context, or both.
 //!
-//! Continue with [implementing a service][accessor] or
+//! Continue with [implementing a service][service] or
 //! [implementing a layer][layer].
 //!
 //! [`Operator`]: crate::Operator
@@ -48,5 +48,5 @@
 //! [`Servicer`]: crate::raw::Servicer
 //! [`Layer`]: crate::raw::Layer
 
-pub mod accessor;
 pub mod layer;
+pub mod service;

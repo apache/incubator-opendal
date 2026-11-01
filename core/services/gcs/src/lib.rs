@@ -33,6 +33,16 @@ mod writer;
 pub use backend::GcsBuilder as Gcs;
 pub use config::GcsConfig;
 
+/// Re-export of the [`reqsign_google`] crate that this service signs requests
+/// with.
+///
+/// [`Gcs::credential_provider`] and [`Gcs::credential_provider_chain`] take
+/// providers for [`reqsign_google::Credential`]. Implement providers against this
+/// re-export and [`opendal_core::reqsign_core`] rather than depending on the
+/// `reqsign` crates directly, so that the types always match the ones this
+/// service is built with.
+pub use reqsign_google;
+
 /// URI scheme used for service registration and scheme-driven construction.
 pub const GCS_SCHEME: &str = "gcs";
 

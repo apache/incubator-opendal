@@ -25,6 +25,7 @@ import org.apache.opendal.AsyncOperator;
 import org.apache.opendal.Operator;
 import org.apache.opendal.OperatorInfo;
 import org.apache.opendal.ServiceConfig;
+import org.apache.opendal.layer.CapabilityOverrideLayer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -69,6 +70,25 @@ public class OperatorInfoTest {
             assertThat(info.capability.writeCanAppend).isFalse();
             assertThat(info.capability.writeMultiMaxSize).isEqualTo(-1);
             assertThat(info.capability.writeMultiMinSize).isEqualTo(-1);
+        }
+    }
+
+    @Test
+    public void testStatVersionConditionCapabilities() {
+        final ServiceConfig.Memory memory =
+                ServiceConfig.Memory.builder().root("/opendal/").build();
+        try (final AsyncOperator op = AsyncOperator.of(memory);
+                final AsyncOperator matchOp = op.layer(new CapabilityOverrideLayer("stat_with_if_version_match=true"));
+                final AsyncOperator notMatchOp =
+                        op.layer(new CapabilityOverrideLayer("stat_with_if_version_not_match=true"))) {
+            assertThat(op.info.capability.statWithIfVersionMatch).isFalse();
+            assertThat(op.info.capability.statWithIfVersionNotMatch).isFalse();
+
+            assertThat(matchOp.info.capability.statWithIfVersionMatch).isTrue();
+            assertThat(matchOp.info.capability.statWithIfVersionNotMatch).isFalse();
+
+            assertThat(notMatchOp.info.capability.statWithIfVersionMatch).isFalse();
+            assertThat(notMatchOp.info.capability.statWithIfVersionNotMatch).isTrue();
         }
     }
 }

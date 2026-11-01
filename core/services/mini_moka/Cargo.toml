@@ -34,5 +34,5 @@ all-features = true
 [dependencies]
 log = { workspace = true }
 mini-moka = "0.10"
-opendal-core = { path = "../../core", version = "0.59.3", default-features = false }
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false }
 serde = { workspace = true, features = ["derive"] }

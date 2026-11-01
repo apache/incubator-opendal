@@ -34,7 +34,7 @@ all-features = true
 [dependencies]
 bytes = { workspace = true }
 http = { workspace = true }
-opendal-core = { path = "../../core", version = "0.59.3", default-features = false, features = [
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false, features = [
   "reqsign",
 ] }
 quick-xml = { workspace = true, features = ["serialize", "overlapped-lists"] }

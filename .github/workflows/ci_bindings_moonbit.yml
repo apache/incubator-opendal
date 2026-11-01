@@ -42,7 +42,7 @@ permissions:
   contents: read
 
 env:
-  MOONBIT_VERSION: 0.10.6+80dc50f24
+  MOONBIT_VERSION: 0.10.14+7d59c7ec9
 
 jobs:
   test:

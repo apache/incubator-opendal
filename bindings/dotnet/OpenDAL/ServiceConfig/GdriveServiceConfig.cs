@@ -41,6 +41,10 @@ namespace OpenDAL.ServiceConfig
         /// </summary>
         public string? ClientSecret { get; init; }
         /// <summary>
+        /// Shared drive (formerly Team Drive) id for gdrive. When set, gdrive resolves `root` inside this shared drive instead of the user's My Drive.
+        /// </summary>
+        public string? DriveId { get; init; }
+        /// <summary>
         /// Refresh token for gdrive.
         /// </summary>
         public string? RefreshToken { get; init; }
@@ -65,6 +69,10 @@ namespace OpenDAL.ServiceConfig
             if (ClientSecret is not null)
             {
                 map["client_secret"] = Utilities.ToOptionString(ClientSecret);
+            }
+            if (DriveId is not null)
+            {
+                map["drive_id"] = Utilities.ToOptionString(DriveId);
             }
             if (RefreshToken is not null)
             {

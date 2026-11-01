@@ -802,8 +802,9 @@ mod tests {
             info: info.clone(),
             capability: Capability::default(),
             root: "/".to_string(),
+            drive_id: None,
             signer: signer.clone(),
-            path_index: GdrivePathIndex::new(GdrivePathQuery::new(signer)),
+            path_index: GdrivePathIndex::new(GdrivePathQuery::new(signer, None)),
             recent_entries: Mutex::new(GdriveRecentState::default()),
         })
     }

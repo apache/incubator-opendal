@@ -22,10 +22,15 @@ package org.apache.opendal.test.behavior;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
+import java.util.Random;
 import java.util.UUID;
+import org.apache.commons.io.IOUtils;
 import org.apache.opendal.Capability;
 import org.apache.opendal.Metadata;
 import org.apache.opendal.OpenDALException;
+import org.apache.opendal.OperatorInputStream;
+import org.apache.opendal.OperatorReader;
+import org.apache.opendal.ReaderOptions;
 import org.apache.opendal.test.condition.OpenDALExceptionCondition;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -60,6 +65,28 @@ class BlockingWriteTest extends BehaviorTestBase {
         final byte[] actualContent = op().read(path);
         assertThat(actualContent).isEqualTo(content);
         op().delete(path);
+    }
+
+    @Test
+    public void testBlockingInputStreamWithReaderOptions() throws Exception {
+        final String path = UUID.randomUUID().toString();
+        final byte[] content = new byte[1024 * 1024 + 13];
+        new Random(8252).nextBytes(content);
+        op().write(path, content);
+        try {
+            final ReaderOptions options = ReaderOptions.builder()
+                    .concurrent(4)
+                    .chunk(256 * 1024L)
+                    .prefetch(2)
+                    .build();
+            try (final OperatorReader reader = op().createReader(path, options);
+                    final OperatorInputStream in = reader.createInputStream()) {
+                assertThat(IOUtils.toByteArray(in)).isEqualTo(content);
+                assertThat(in.read()).isEqualTo(-1);
+            }
+        } finally {
+            op().delete(path);
+        }
     }
 
     /**

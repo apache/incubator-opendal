@@ -15,17 +15,16 @@
 # specific language governing permissions and limitations
 # under the License.
 
-name: minio_s3_with_anonymous
-description: 'Behavior test for Minio S3 with anonymous access.'
+name: silo_s3
+description: 'Behavior test for Silo S3.'
 
 runs:
   using: "composite"
   steps:
-    - name: Setup MinIO Server
+    - name: Setup Silo Server
       shell: bash
       working-directory: fixtures/s3
-      run: |
-        docker compose -f docker-compose-minio.yml up -d --wait
+      run: docker compose -f docker-compose-silo.yml up -d --wait
     - name: Setup test bucket
       shell: bash
       env:
@@ -33,21 +32,16 @@ runs:
         AWS_SECRET_ACCESS_KEY: "minioadmin"
         AWS_EC2_METADATA_DISABLED: "true"
       run: |
-        set -e
         aws --endpoint-url http://127.0.0.1:9000/ s3 mb s3://test
 
-        # MinIO archived community client downloads, so dl.min.io now returns
-        # HTTP 410 for `mc`. Apply the same readwrite bucket policy that
-        # `mc anonymous set public` used to set.
-        aws --endpoint-url http://127.0.0.1:9000/ s3api put-bucket-policy --bucket test --policy '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"AWS":["*"]},"Action":["s3:GetBucketLocation","s3:ListBucket","s3:ListBucketMultipartUploads"],"Resource":["arn:aws:s3:::test"]},{"Effect":"Allow","Principal":{"AWS":["*"]},"Action":["s3:GetObject","s3:PutObject","s3:DeleteObject","s3:AbortMultipartUpload","s3:ListMultipartUploadParts"],"Resource":["arn:aws:s3:::test/*"]}]}'
     - name: Setup
       shell: bash
       run: |
         cat << EOF >> $GITHUB_ENV
         OPENDAL_S3_BUCKET=test
         OPENDAL_S3_ENDPOINT=http://127.0.0.1:9000
+        OPENDAL_S3_ACCESS_KEY_ID=minioadmin
+        OPENDAL_S3_SECRET_ACCESS_KEY=minioadmin
         OPENDAL_S3_REGION=us-east-1
-        OPENDAL_S3_ALLOW_ANONYMOUS=on
-        OPENDAL_S3_DISABLE_EC2_METADATA=on
         OPENDAL_TEST_CAPABILITY_OVERRIDES=stat_with_version=false,read_with_version=false,delete_with_version=false,list_with_versions=false,list_with_deleted=false,copy_with_source_version=false,restore=false,restore_with_version=false,restore_with_if_not_exists=false,write_can_append=false,copy_with_if_not_exists=false,copy_with_if_match=false,delete_with_if_match=false
         EOF

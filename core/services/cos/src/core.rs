@@ -365,7 +365,11 @@ impl CosCore {
         let source = build_abs_path(&self.root, from);
         let target = build_abs_path(&self.root, to);
 
-        let source = format!("/{}/{}", self.bucket, percent_encode_path(&source));
+        let mut source = format!("/{}/{}", self.bucket, percent_encode_path(&source));
+        if let Some(version) = args.source_version() {
+            source.push_str("?versionId=");
+            source.push_str(&percent_encode_path(version));
+        }
         let url = format!("{}/{}", self.endpoint, percent_encode_path(&target));
 
         let mut req = Request::put(&url)

@@ -135,6 +135,7 @@ impl Builder for HdfsNativeBuilder {
                     list: true,
 
                     rename: true,
+                    rename_with_if_not_exists: true,
 
                     shared: true,
 
@@ -234,9 +235,9 @@ impl Service for HdfsNativeBackend {
         _ctx: &OperationContext,
         from: &str,
         to: &str,
-        _args: OpRename,
+        args: OpRename,
     ) -> Result<RpRename> {
-        self.core.hdfs_rename(from, to).await?;
+        self.core.hdfs_rename(from, to, &args).await?;
         Ok(RpRename::default())
     }
 

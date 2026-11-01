@@ -279,15 +279,14 @@ def generate_language_binding_cases(
 ) -> list[dict[str, str]]:
     cases = unique_cases(cases)
 
-    # These bindings do not enable the new SMB service yet.
-    if language in ["java", "python", "nodejs", "go", "dotnet"]:
-        cases = [v for v in cases if v["service"] != "smb"]
-
     # Disable aliyun_drive case for every language.
     #
     # This is because aliyun_drive has a speed limit and tests may not be stable enough.
     # Bindings may be treated as parallel requests, so we need to disable it for all languages.
     cases = [v for v in cases if v["service"] != "aliyun_drive"]
+
+    # These fixtures target core services without enabling bindings.
+    cases = [v for v in cases if v["service"] not in ["github", "smb"]]
 
     # Remove invalid cases for java.
     if language == "java":

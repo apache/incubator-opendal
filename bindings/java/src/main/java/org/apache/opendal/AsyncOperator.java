@@ -257,17 +257,62 @@ public class AsyncOperator extends NativeObject {
     }
 
     public CompletableFuture<PresignedRequest> presignRead(String path, Duration duration) {
-        final long requestId = presignRead(nativeHandle, executorHandle, path, duration.toNanos());
+        return presignRead(path, duration, ReadOptions.builder().build());
+    }
+
+    /**
+     * Creates a presigned read request with the given options.
+     *
+     * <p>The service must support presigning this operation. Support for individual options
+     * depends on the service. Send the returned HTTP method and headers along with the URI.
+     *
+     * @param path the path of the object.
+     * @param duration how long the presigned request remains valid.
+     * @param options the read options to include in the presigned request.
+     * @return the presigned request.
+     */
+    public CompletableFuture<PresignedRequest> presignRead(String path, Duration duration, ReadOptions options) {
+        final long requestId = presignRead(nativeHandle, executorHandle, path, duration.toNanos(), options);
         return AsyncRegistry.take(requestId);
     }
 
     public CompletableFuture<PresignedRequest> presignWrite(String path, Duration duration) {
-        final long requestId = presignWrite(nativeHandle, executorHandle, path, duration.toNanos());
+        return presignWrite(path, duration, WriteOptions.builder().build());
+    }
+
+    /**
+     * Creates a presigned write request with the given options.
+     *
+     * <p>The service must support presigning this operation. Support for individual options
+     * depends on the service. Send the returned HTTP method and headers along with the URI.
+     *
+     * @param path the path of the object.
+     * @param duration how long the presigned request remains valid.
+     * @param options the write options to include in the presigned request.
+     * @return the presigned request.
+     */
+    public CompletableFuture<PresignedRequest> presignWrite(String path, Duration duration, WriteOptions options) {
+        final long requestId = presignWrite(nativeHandle, executorHandle, path, duration.toNanos(), options);
         return AsyncRegistry.take(requestId);
     }
 
     public CompletableFuture<PresignedRequest> presignStat(String path, Duration duration) {
-        final long requestId = presignStat(nativeHandle, executorHandle, path, duration.toNanos());
+        return presignStat(path, duration, StatOptions.builder().build());
+    }
+
+    /**
+     * Creates a presigned stat request with the given options.
+     *
+     * <p>The service must support presigning this operation. Support for individual options
+     * depends on the service. Send the returned HTTP method and headers along with the URI.
+     *
+     * @param path the path of the object.
+     * @param duration how long the presigned request remains valid.
+     * @param options the stat options to include in the presigned request.
+     * @return the presigned request.
+     */
+    public CompletableFuture<PresignedRequest> presignStat(String path, Duration duration, StatOptions options) {
+        final long requestId = presignStat(nativeHandle, executorHandle, path, duration.toNanos(), options);
         return AsyncRegistry.take(requestId);
     }
 
@@ -324,11 +369,14 @@ public class AsyncOperator extends NativeObject {
 
     private static native long stat(long nativeHandle, long executorHandle, String path, StatOptions options);
 
-    private static native long presignRead(long nativeHandle, long executorHandle, String path, long duration);
+    private static native long presignRead(
+            long nativeHandle, long executorHandle, String path, long duration, ReadOptions options);
 
-    private static native long presignWrite(long nativeHandle, long executorHandle, String path, long duration);
+    private static native long presignWrite(
+            long nativeHandle, long executorHandle, String path, long duration, WriteOptions options);
 
-    private static native long presignStat(long nativeHandle, long executorHandle, String path, long duration);
+    private static native long presignStat(
+            long nativeHandle, long executorHandle, String path, long duration, StatOptions options);
 
     private static native OperatorInfo makeOperatorInfo(long nativeHandle);
 

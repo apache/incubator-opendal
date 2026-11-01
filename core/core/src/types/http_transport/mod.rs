@@ -162,7 +162,17 @@ impl HttpTransport for HttpTransporter {
 #[cfg(feature = "reqsign")]
 impl reqsign_core::HttpSend for HttpTransporter {
     async fn http_send(&self, req: Request<Bytes>) -> reqsign_core::Result<Response<Bytes>> {
-        let req = req.map(Buffer::from);
+        let mut req = req.map(Buffer::from);
+        // reqsign parses credential responses (tokens, metadata) as plain
+        // bytes and never looks at `Content-Encoding`. A user transport may
+        // send `Accept-Encoding: gzip` by default without decoding the reply,
+        // so ask for an uncompressed body unless reqsign chose an encoding.
+        if !req.headers().contains_key(http::header::ACCEPT_ENCODING) {
+            req.headers_mut().insert(
+                http::header::ACCEPT_ENCODING,
+                http::HeaderValue::from_static("identity"),
+            );
+        }
         let resp = self.send(req).await.map_err(|err| {
             let retryable = err.is_temporary();
             reqsign_core::Error::unexpected("send request via OpenDAL HttpTransporter")
@@ -202,5 +212,70 @@ async fn fetch_with_default_transport(req: Request<Buffer>) -> Result<Response<H
             "advice",
             "call HttpTransporter::install_default before using HTTP services",
         )),
+    }
+}
+
+#[cfg(all(test, feature = "reqsign", not(target_arch = "wasm32")))]
+mod tests {
+    use std::sync::Mutex;
+
+    use http::header::ACCEPT_ENCODING;
+    use reqsign_core::HttpSend;
+
+    use super::*;
+
+    /// Records the `Accept-Encoding` header of each request it receives.
+    #[derive(Clone, Default)]
+    struct RecordingTransport {
+        accept_encoding: Arc<Mutex<Vec<Option<String>>>>,
+    }
+
+    impl HttpTransport for RecordingTransport {
+        async fn fetch(&self, req: Request<Buffer>) -> Result<Response<HttpBody>> {
+            let value = req
+                .headers()
+                .get(ACCEPT_ENCODING)
+                .map(|v| v.to_str().unwrap().to_string());
+            self.accept_encoding.lock().unwrap().push(value);
+
+            let body = Buffer::from("{}");
+            let size = body.len() as u64;
+            let stream = futures::stream::iter(vec![Ok(body)]);
+            Ok(Response::new(HttpBody::new(stream, Some(size))))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_http_send_requests_identity_encoding() {
+        let transport = RecordingTransport::default();
+        let transporter = HttpTransporter::new(transport.clone());
+
+        let req = Request::get("http://127.0.0.1/token")
+            .body(Bytes::new())
+            .unwrap();
+        let resp = transporter.http_send(req).await.unwrap();
+        assert_eq!(resp.body().as_ref(), b"{}");
+
+        assert_eq!(
+            *transport.accept_encoding.lock().unwrap(),
+            vec![Some("identity".to_string())]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_http_send_keeps_explicit_accept_encoding() {
+        let transport = RecordingTransport::default();
+        let transporter = HttpTransporter::new(transport.clone());
+
+        let req = Request::get("http://127.0.0.1/token")
+            .header(ACCEPT_ENCODING, "br")
+            .body(Bytes::new())
+            .unwrap();
+        transporter.http_send(req).await.unwrap();
+
+        assert_eq!(
+            *transport.accept_encoding.lock().unwrap(),
+            vec![Some("br".to_string())]
+        );
     }
 }

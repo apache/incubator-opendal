@@ -107,6 +107,7 @@ impl Deleter {
     /// options.
     pub async fn delete(&mut self, input: impl IntoDeleteInput) -> Result<()> {
         let (path, options) = input.into_delete_input();
+        let path = normalize_path(&path);
         let op = OpDelete::from_options(&self.capability, options)
             .map_err(|err| err.with_context("service", self.scheme))?;
         self.deleter.delete(&path, op).await?;
@@ -261,5 +262,17 @@ mod tests {
             "file_b should have been flushed by close, got: {:?}",
             *flushed
         );
+    }
+
+    #[tokio::test]
+    async fn test_delete_normalizes_path() {
+        let op = Operator::new(services::Memory::default()).unwrap();
+        op.write("dir/file", "data").await.unwrap();
+
+        let mut deleter = op.deleter().await.unwrap();
+        deleter.delete("/dir/file").await.unwrap();
+        deleter.close().await.unwrap();
+
+        assert!(!op.exists("dir/file").await.unwrap());
     }
 }

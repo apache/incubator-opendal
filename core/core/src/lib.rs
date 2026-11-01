@@ -34,6 +34,16 @@ pub mod layers;
 pub mod raw;
 pub mod services;
 
+/// Re-export of the [`reqsign_core`] crate that services sign requests with.
+///
+/// Service builders that accept credentials from the application take `reqsign`
+/// types in their signatures, such as `ProvideCredentialChain` in
+/// `opendal_service_s3::S3::credential_provider_chain`. Implement providers
+/// against this re-export rather than depending on `reqsign-core` directly, so
+/// that the types always match the ones the services are built with.
+#[cfg(feature = "reqsign")]
+pub use reqsign_core;
+
 #[cfg(test)]
 mod tests {
     use super::*;
