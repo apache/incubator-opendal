@@ -204,14 +204,15 @@ fn intern_read(
     options: JObject,
 ) -> Result<jlong> {
     // Prepare inputs before spawning
-    let id = request_id(env)?;
     let path_str = jstring_to_string(env, &path)?;
     let read_opts = make_read_options(env, &options)?;
 
     // Clone operator handle to move into the task
     let op_cloned = unsafe { &*op }.clone();
 
-    executor_or_default(env, executor)?.spawn(async move {
+    let executor = executor_or_default(env, executor)?;
+    let id = request_id(env)?;
+    executor.spawn(async move {
         let result = op_cloned.read_options(&path_str, read_opts).await;
         complete_future(id, move |env| {
             let buffer = result?;

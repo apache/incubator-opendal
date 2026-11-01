@@ -294,8 +294,57 @@ fn make_read_options<'a>(
     let offset = convert::read_int64_field(env, options, "offset")?;
     let length = convert::read_int64_field(env, options, "length")?;
 
+    let concurrent = convert::read_int_field(env, options, "concurrent")?;
+    let chunk = convert::read_int64_field(env, options, "chunk")?;
+    let content_length_hint = convert::read_int64_field(env, options, "contentLengthHint")?;
+
+    if concurrent <= 0 {
+        return Err(Error::new(ErrorKind::ConfigInvalid, "concurrent must be positive").into());
+    }
+    let concurrent = usize::try_from(concurrent)
+        .map_err(|_| Error::new(ErrorKind::ConfigInvalid, "concurrent is too large"))?;
+    let chunk = match chunk {
+        -1 => None,
+        value if value > 0 => Some(
+            usize::try_from(value)
+                .map_err(|_| Error::new(ErrorKind::ConfigInvalid, "chunk is too large"))?,
+        ),
+        _ => {
+            return Err(
+                Error::new(ErrorKind::ConfigInvalid, "chunk must be -1 or positive").into(),
+            );
+        }
+    };
+    let content_length_hint = match content_length_hint {
+        -1 => None,
+        value => Some(u64::try_from(value).map_err(|_| {
+            Error::new(
+                ErrorKind::ConfigInvalid,
+                "contentLengthHint must be -1 or non-negative",
+            )
+        })?),
+    };
+
     Ok(opendal::options::ReadOptions {
         range: convert::offset_length_to_range(offset, length)?.into(),
+        version: convert::read_string_field(env, options, "version")?,
+        if_match: convert::read_string_field(env, options, "ifMatch")?,
+        if_none_match: convert::read_string_field(env, options, "ifNoneMatch")?,
+        if_version_match: convert::read_string_field(env, options, "ifVersionMatch")?,
+        if_version_not_match: convert::read_string_field(env, options, "ifVersionNotMatch")?,
+        if_modified_since: convert::read_instant_field_to_timestamp(
+            env,
+            options,
+            "ifModifiedSince",
+        )?,
+        if_unmodified_since: convert::read_instant_field_to_timestamp(
+            env,
+            options,
+            "ifUnmodifiedSince",
+        )?,
+        concurrent,
+        chunk,
+        content_length_hint,
         override_content_type: convert::read_string_field(env, options, "overrideContentType")?,
         override_cache_control: convert::read_string_field(env, options, "overrideCacheControl")?,
         override_content_disposition: convert::read_string_field(

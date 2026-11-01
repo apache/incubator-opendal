@@ -34,6 +34,36 @@ String text = new String(data);
 byte[] data = op.read("path/to/file", 0, 1024);
 ```
 
+Pass `ReadOptions` to `op.read(path, options)` or
+`op.createInputStream(path, options)` to configure a single read. Async reads accept
+the same options:
+
+```java
+import org.apache.opendal.ReadOptions;
+
+ReadOptions options = ReadOptions.builder()
+        .offset(1024)
+        .length(4096)
+        .ifMatch("\"etag\"")
+        .chunk(2048)
+        .concurrent(2)
+        .build();
+byte[] data = op.read("path/to/file", options);
+```
+
+`ReadOptions` supports the version and condition fields described below for
+`ReaderOptions`, plus `contentLengthHint`, `concurrent`, and `chunk`.
+The default `concurrent` is 1 and must be positive. A positive `chunk` enables
+internal range requests; -1 keeps unchunked streaming. Zero and other negative
+chunk sizes are invalid, and chunk sizes must fit the native platform's
+unsigned pointer-sized integer. `contentLengthHint` is the known full object
+length, independent of the requested range. Its default of -1 means unknown;
+zero is valid for empty objects. A correct hint can avoid a metadata request;
+an incorrect hint can produce incomplete reads or errors. These controls are
+execution hints, not consistency conditions. Invalid numeric controls fail with
+`ConfigInvalid`. `prefetch` is available only on `ReaderOptions`, and neither
+Java options type exposes the multi-range `gap` control.
+
 For repeated reads from the same file, create an `OperatorReader`. It uses a
 Rust core reader and lets each call select an independent byte range:
 
