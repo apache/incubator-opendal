@@ -91,6 +91,7 @@ callback for OpenDAL's Rust log facade. The default `opendal_operator_new`
 constructor emits operation events through that callback. The explicit
 `opendal_operator_new_with_layers` constructor uses only the supplied layers.
 The callback may also receive other Rust log records from the same library.
+Successful registration enables all Rust log levels for this facade.
 
 The callback receives DEBUG=0 (including TRACE), INFO=1, WARN=2, or ERROR=3,
 a source file, a line number, and a message. File and message are borrowed,
