@@ -17,10 +17,11 @@
 
 # frozen_string_literal: true
 
-module OpenDAL
+module OpenDal
   class IO
     # Reads all lines from the stream into an array.
-    # Raises `EOFError` when the end of the file is reached.
+    # @raise [EOFError] when the end of the file is reached.
+    # @return [Array<String>]
     def readlines
       results = []
 
@@ -39,6 +40,7 @@ module OpenDAL
     end
 
     # Sets the file position to `new_position`.
+    # @param new_position [Integer]
     def pos=(new_position)
       seek(new_position, ::IO::SEEK_SET)
     end
@@ -46,6 +48,7 @@ module OpenDAL
     alias_method :pos, :tell
 
     # Checks if the stream is at the end of the file.
+    # @return [Boolean]
     def eof
       position = tell
       seek(0, ::IO::SEEK_END)
@@ -55,6 +58,7 @@ module OpenDAL
     alias_method :eof?, :eof
 
     # Returns the total length of the stream.
+    # @return [Integer]
     def length
       current_position = tell
       seek(0, ::IO::SEEK_END)

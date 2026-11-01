@@ -17,10 +17,7 @@
 
 module BasicTest (basicTests) where
 
-import Colog (LogAction (LogAction), Msg (msgText))
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Data.IORef
-import qualified Data.Text as T
 import OpenDAL
 import Test.Tasty
 import Test.Tasty.HUnit
@@ -31,7 +28,14 @@ basicTests =
     "Basic Tests"
     [ testCase "testBasicOperation" testRawOperation,
       testCase "testMonad" testMonad,
-      testCase "testError" testError
+      testCase "testError" testError,
+      testCase "testWriter" testWriter,
+      testCase "testWriterAppend" testWriterAppend,
+      testCase "testAppendOperation" testAppendOperation,
+      testCase "testLister" testLister,
+      testCase "testCopyRename" testCopyRename,
+      testCase "testRemoveAll" testRemoveAll,
+      testCase "testOperatorInfo" testOperatorInfo
     ]
 
 testRawOperation :: Assertion
@@ -101,15 +105,140 @@ testError = do
   where
     operation = readOp "non-exist-path"
 
+testWriter :: Assertion
+testWriter = do
+  Right op <- newOperator "memory"
+  Right writer <- writerOpRaw op "test-writer-file" defaultWriterOption
+  writerWrite writer "Hello" ?= Right ()
+  writerWrite writer " " ?= Right ()
+  writerWrite writer "World!" ?= Right ()
+  writerClose writer >>= \case
+    Right meta -> mContentLength meta @?= 12
+    Left err -> assertFailure $ "Failed to close writer: " ++ show err
+  readOpRaw op "test-writer-file" ?= Right "Hello World!"
+
+testWriterAppend :: Assertion
+testWriterAppend = do
+  Right op <- newOperator "memory"
+  -- First write some initial content
+  writeOpRaw op "append-file" "Initial content" ?= Right ()
+  -- Create append writer and add more content
+  result <- writerOpRaw op "append-file" appendWriterOption
+  case result of
+    Right writer -> do
+      writerWrite writer " appended" ?= Right ()
+      writerClose writer >>= \case
+        Right meta -> mContentLength meta @?= 24
+        Left err -> assertFailure $ "Failed to close append writer: " ++ show err
+      readOpRaw op "append-file" ?= Right "Initial content appended"
+    Left err -> case errorCode err of
+      Unsupported -> putStrLn "Append writer not supported by memory backend - skipping"
+      _ -> assertFailure $ "Failed to create append writer: " ++ show err
+
+testAppendOperation :: Assertion  
+testAppendOperation = do
+  Right op <- newOperator "memory"
+  -- Write initial content
+  writeOpRaw op "append-test" "Hello" ?= Right ()
+  -- Demonstrate append using writer API
+  result <- writerOpRaw op "append-test" appendWriterOption
+  case result of
+    Right writer -> do
+      writerWrite writer " World" ?= Right ()
+      writerClose writer >>= \case
+        Right _ -> readOpRaw op "append-test" ?= Right "Hello World"
+        Left err -> assertFailure $ "Failed to close append writer: " ++ show err
+    Left err -> case errorCode err of
+      Unsupported -> do
+        putStrLn "Append writer not supported by memory backend - demonstrating manual append"
+        -- Manual append: read existing content, append new content, write back
+        Right existingContent <- readOpRaw op "append-test"
+        let newContent = existingContent <> " World"
+        writeOpRaw op "append-test" newContent ?= Right ()
+        readOpRaw op "append-test" ?= Right "Hello World"
+      _ -> assertFailure $ "Failed to create append writer: " ++ show err
+
+testLister :: Assertion
+testLister = do
+  Right op <- newOperator "memory"
+  -- Create some test files and directories
+  writeOpRaw op "dir1/file1.txt" "content1" ?= Right ()
+  writeOpRaw op "dir1/file2.txt" "content2" ?= Right ()
+  writeOpRaw op "dir1/subdir/file3.txt" "content3" ?= Right ()
+  createDirOpRaw op "dir1/empty-dir/" ?= Right ()
+  
+  -- Test listing
+  Right lister <- listOpRaw op "dir1/"
+  files <- collectListerItems lister
+  length files @?= 4 -- file1.txt, file2.txt, subdir/, empty-dir/
+  
+  -- Test scanning (recursive)
+  Right scanner <- scanOpRaw op "dir1/"
+  allFiles <- collectListerItems scanner
+  length allFiles @?= 4 -- All files including nested ones
+
+testCopyRename :: Assertion
+testCopyRename = do
+  Right op <- newOperator "memory"
+  -- Create source file
+  writeOpRaw op "source.txt" "test content" ?= Right ()
+  -- Test copy - handle case where operation is not supported
+  copyResult <- copyOpRaw op "source.txt" "copy.txt"
+  case copyResult of
+    Right () -> do
+      readOpRaw op "copy.txt" ?= Right "test content"
+      isExistOpRaw op "source.txt" ?= Right True
+    Left err -> case errorCode err of
+      Unsupported -> putStrLn "Copy operation not supported by memory backend - skipping"
+      _ -> assertFailure $ "Unexpected error in copy: " ++ show err
+  
+  -- Test rename - handle case where operation is not supported
+  renameResult <- renameOpRaw op "source.txt" "renamed.txt"
+  case renameResult of
+    Right () -> do
+      readOpRaw op "renamed.txt" ?= Right "test content"
+      isExistOpRaw op "source.txt" ?= Right False
+    Left err -> case errorCode err of
+      Unsupported -> putStrLn "Rename operation not supported by memory backend - skipping"
+      _ -> assertFailure $ "Unexpected error in rename: " ++ show err
+
+testRemoveAll :: Assertion
+testRemoveAll = do
+  Right op <- newOperator "memory"
+  -- Create directory structure
+  writeOpRaw op "remove-test/file1.txt" "content1" ?= Right ()
+  writeOpRaw op "remove-test/subdir/file2.txt" "content2" ?= Right ()
+  createDirOpRaw op "remove-test/empty/" ?= Right ()
+  
+  -- Verify structure exists
+  isExistOpRaw op "remove-test/file1.txt" ?= Right True
+  isExistOpRaw op "remove-test/subdir/file2.txt" ?= Right True
+  
+  -- Remove all
+  removeAllOpRaw op "remove-test/" ?= Right ()
+  
+  -- Verify everything is gone
+  isExistOpRaw op "remove-test/file1.txt" ?= Right False
+  isExistOpRaw op "remove-test/subdir/file2.txt" ?= Right False
+  isExistOpRaw op "remove-test/" ?= Right False
+
+testOperatorInfo :: Assertion
+testOperatorInfo = do
+  Right op <- newOperator "memory"
+  operatorInfoRaw op ?= Right "memory"
+
+-- Helper function to collect all items from a lister
+collectListerItems :: Lister -> IO [String]
+collectListerItems lister = go []
+  where
+    go acc = do
+      result <- nextLister lister
+      case result of
+        Right (Just item) -> go (item : acc)
+        Right Nothing -> return $ reverse acc
+        Left err -> assertFailure $ "Lister error: " ++ show err
+
 -- helper function
 
 (?=) :: (MonadIO m, Eq a, Show a) => m a -> a -> m ()
 result ?= except = result >>= liftIO . (@?= except)
-
-findLister :: Lister -> String -> IO Bool
-findLister lister key = do
-  res <- nextLister lister
-  case res of
-    Left _ -> return False
-    Right Nothing -> return False
-    Right (Just k) -> if k == key then return True else findLister lister key

@@ -28,6 +28,7 @@ import java.util.UUID;
 import org.apache.opendal.Capability;
 import org.apache.opendal.Metadata;
 import org.apache.opendal.OpenDALException;
+import org.apache.opendal.ReadOptions;
 import org.apache.opendal.test.condition.OpenDALExceptionCondition;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -45,8 +46,8 @@ public class BlockingReadOnlyTest extends BehaviorTestBase {
 
     @BeforeAll
     public void precondition() {
-        final Capability capability = op().info.fullCapability;
-        assumeTrue(capability.read && !capability.write && capability.blocking);
+        final Capability capability = op().info.capability;
+        assumeTrue(capability.read && !capability.write);
     }
 
     /**
@@ -92,6 +93,127 @@ public class BlockingReadOnlyTest extends BehaviorTestBase {
         final byte[] content = op().read(NORMAL_FILE_NAME);
         assertEquals(FILE_LENGTH, content.length);
         assertEquals(FILE_SHA256_DIGEST, sha256Digest(content));
+    }
+
+    /**
+     * Read with offset and length should match.
+     */
+    @Test
+    public void testBlockingReadonlyReadWithOffsetAndLength() throws NoSuchAlgorithmException {
+        final byte[] content = op().read(NORMAL_FILE_NAME, 0, FILE_LENGTH);
+        assertEquals(FILE_LENGTH, content.length);
+        assertEquals(FILE_SHA256_DIGEST, sha256Digest(content));
+    }
+
+    /**
+     * Read with positive offset and length should match.
+     */
+    @Test
+    public void testBlockingReadonlyReadWithPositiveOffsetAndLength() {
+        final byte[] content = op().read(NORMAL_FILE_NAME, 100, 200);
+        assertEquals(200, content.length);
+    }
+
+    /**
+     * Read with offset and -1 length should match.
+     */
+    @Test
+    public void testBlockingReadonlyReadWithOffsetAndUnlimitedLength() {
+        final byte[] content = op().read(NORMAL_FILE_NAME, 100, -1);
+        assertEquals(FILE_LENGTH - 100, content.length);
+    }
+
+    /**
+     * Read with length larger than file length should throw error.
+     */
+    @Test
+    public void testBlockingReadonlyReadWithLengthLargerThanFileLength() {
+        assertThatThrownBy(() -> op().read(NORMAL_FILE_NAME, 100, FILE_LENGTH))
+                .is(OpenDALExceptionCondition.ofSync(OpenDALException.Code.Unexpected))
+                .hasMessageContaining("reader got too little data");
+    }
+
+    /**
+     * Read with invalid offset or length should throw error.
+     */
+    @Test
+    public void testBlockingReadonlyReadWithNegativeOffset() {
+        assertThatThrownBy(() -> op().read(NORMAL_FILE_NAME, -1, FILE_LENGTH))
+                .is(OpenDALExceptionCondition.ofSync(OpenDALException.Code.RangeNotSatisfied))
+                .hasMessageContaining("offset must be non-negative");
+        assertThatThrownBy(() -> op().read(NORMAL_FILE_NAME, 0, -2))
+                .is(OpenDALExceptionCondition.ofSync(OpenDALException.Code.RangeNotSatisfied))
+                .hasMessageContaining("length must be non-negative");
+    }
+
+    /**
+     * Read with options should match.
+     */
+    @Test
+    public void testBlockingReadonlyReadWithOptions() {
+        final byte[] content = op().read(NORMAL_FILE_NAME, ReadOptions.builder().build());
+        assertEquals(FILE_LENGTH, content.length);
+    }
+
+    /**
+     * Read with options of offset and length should match.
+     */
+    @Test
+    public void testBlockingReadonlyReadWithOptionsWithOffsetAndLength() {
+        final byte[] content = op().read(
+                        NORMAL_FILE_NAME,
+                        ReadOptions.builder().offset(0).length(FILE_LENGTH).build());
+        assertEquals(FILE_LENGTH, content.length);
+    }
+
+    /**
+     * Read with options of positive offset and length should match.
+     */
+    @Test
+    public void testBlockingReadonlyReadWithOptionsWithPositiveOffsetAndHalfLength() {
+        final byte[] content = op().read(
+                        NORMAL_FILE_NAME,
+                        ReadOptions.builder().offset(100).length(200).build());
+        assertEquals(200, content.length);
+    }
+
+    /**
+     * Read with options of offset and default length should match.
+     */
+    @Test
+    public void testBlockingReadonlyReadWithOptionsWithNegativeLength() {
+        final byte[] content =
+                op().read(NORMAL_FILE_NAME, ReadOptions.builder().offset(100).build());
+        assertEquals(FILE_LENGTH - 100, content.length);
+    }
+
+    /**
+     * Read with options of length larger than file length should throw error.
+     */
+    @Test
+    public void testBlockingReadonlyReadWithOptionsWithLengthLargerThanFileLength() {
+        assertThatThrownBy(() -> op().read(
+                                NORMAL_FILE_NAME,
+                                ReadOptions.builder().length(FILE_LENGTH + 1).build()))
+                .is(OpenDALExceptionCondition.ofSync(OpenDALException.Code.Unexpected))
+                .hasMessageContaining("reader got too little data");
+    }
+
+    /**
+     * Read with options of invalid offset or length should throw error.
+     */
+    @Test
+    public void testBlockingReadonlyReadWithOptionsWithInvalidOffsetOrLength() {
+        assertThatThrownBy(() -> op().read(
+                                NORMAL_FILE_NAME,
+                                ReadOptions.builder().offset(-1).build()))
+                .is(OpenDALExceptionCondition.ofSync(OpenDALException.Code.RangeNotSatisfied))
+                .hasMessageContaining("offset must be non-negative");
+        assertThatThrownBy(() -> op().read(
+                                NORMAL_FILE_NAME,
+                                ReadOptions.builder().length(-2).build()))
+                .is(OpenDALExceptionCondition.ofSync(OpenDALException.Code.RangeNotSatisfied))
+                .hasMessageContaining("length must be non-negative");
     }
 
     /**

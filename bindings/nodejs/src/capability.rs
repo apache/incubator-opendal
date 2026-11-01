@@ -54,10 +54,64 @@ impl Capability {
         self.0.stat_with_if_none_match
     }
 
+    /// If operator supports stat with if modified since.
+    #[napi(getter)]
+    pub fn stat_with_if_modified_since(&self) -> bool {
+        self.0.stat_with_if_modified_since
+    }
+
+    /// If operator supports stat with if unmodified since.
+    #[napi(getter)]
+    pub fn stat_with_if_unmodified_since(&self) -> bool {
+        self.0.stat_with_if_unmodified_since
+    }
+
+    /// If operator supports stat with versions.
+    #[napi(getter)]
+    pub fn stat_with_version(&self) -> bool {
+        self.0.stat_with_version
+    }
+
+    /// If operator supports stat with override content type.
+    #[napi(getter)]
+    pub fn stat_with_override_content_type(&self) -> bool {
+        self.0.stat_with_override_content_type
+    }
+
+    /// If operator supports stat with override cache control.
+    #[napi(getter)]
+    pub fn stat_with_override_cache_control(&self) -> bool {
+        self.0.stat_with_override_cache_control
+    }
+
+    /// If operator supports stat with override content disposition.
+    #[napi(getter)]
+    pub fn stat_with_override_content_disposition(&self) -> bool {
+        self.0.stat_with_override_content_disposition
+    }
+
     /// If operator supports read.
     #[napi(getter)]
     pub fn read(&self) -> bool {
         self.0.read
+    }
+
+    /// If operator supports read with version.
+    #[napi(getter)]
+    pub fn read_with_version(&self) -> bool {
+        self.0.read_with_version
+    }
+
+    /// If operator supports read with range.
+    #[napi(getter)]
+    pub fn read_with_if_modified_since(&self) -> bool {
+        self.0.read_with_if_modified_since
+    }
+
+    /// If operator supports read with if unmodified since.
+    #[napi(getter)]
+    pub fn read_with_if_unmodified_since(&self) -> bool {
+        self.0.read_with_if_unmodified_since
     }
 
     /// If operator supports read with if matched.
@@ -132,6 +186,36 @@ impl Capability {
         self.0.write_with_cache_control
     }
 
+    /// If operator supports write with content encoding.
+    #[napi(getter)]
+    pub fn write_with_content_encoding(&self) -> bool {
+        self.0.write_with_content_encoding
+    }
+
+    /// If operator supports write with user metadata.
+    #[napi(getter)]
+    pub fn write_with_user_metadata(&self) -> bool {
+        self.0.write_with_user_metadata
+    }
+
+    /// If operator supports write with if match.
+    #[napi(getter)]
+    pub fn write_with_if_match(&self) -> bool {
+        self.0.write_with_if_match
+    }
+
+    /// If operator supports write with if none match.
+    #[napi(getter)]
+    pub fn write_with_if_none_match(&self) -> bool {
+        self.0.write_with_if_none_match
+    }
+
+    /// If operator supports write with if not exists.
+    #[napi(getter)]
+    pub fn write_with_if_not_exists(&self) -> bool {
+        self.0.write_with_if_not_exists
+    }
+
     /// write_multi_max_size is the max size that services support in write_multi.
     ///
     /// For example, AWS S3 supports 5GiB as max in write_multi.
@@ -165,6 +249,12 @@ impl Capability {
     #[napi(getter)]
     pub fn delete(&self) -> bool {
         self.0.delete
+    }
+
+    /// If operator supports delete by version.
+    #[napi(getter)]
+    pub fn delete_with_version(&self) -> bool {
+        self.0.delete_with_version
     }
 
     /// If operator supports copy.
@@ -203,6 +293,18 @@ impl Capability {
         self.0.list_with_recursive
     }
 
+    /// If backend supports list with versions.
+    #[napi(getter)]
+    pub fn list_with_versions(&self) -> bool {
+        self.0.list_with_versions
+    }
+
+    /// If backend supports list with deleted.
+    #[napi(getter)]
+    pub fn list_with_deleted(&self) -> bool {
+        self.0.list_with_deleted
+    }
+
     /// If operator supports presign.
     #[napi(getter)]
     pub fn presign(&self) -> bool {
@@ -227,15 +329,15 @@ impl Capability {
         self.0.presign_write
     }
 
+    /// If operator supports presign delete.
+    #[napi(getter)]
+    pub fn presign_delete(&self) -> bool {
+        self.0.presign_delete
+    }
+
     /// If operator supports shared.
     #[napi(getter)]
     pub fn shared(&self) -> bool {
         self.0.shared
-    }
-
-    /// If operator supports blocking.
-    #[napi(getter)]
-    pub fn blocking(&self) -> bool {
-        self.0.blocking
     }
 }

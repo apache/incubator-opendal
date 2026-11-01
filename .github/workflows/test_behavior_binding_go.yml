@@ -1,0 +1,109 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: Behavior Test Binding Go
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: true
+        type: string
+      cases:
+        required: true
+        type: string
+
+concurrency:
+  group: binding_go-${{ inputs.os }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  # Prevent parallel cache building in `test` job by building cache in a separate job
+  go-cache:
+    runs-on: ${{ inputs.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: bindings/go/go.mod
+          # params must be in sync with `test` job
+          cache-dependency-path: |
+            bindings/go/go.sum
+            bindings/go/tests/behavior_tests/go.sum
+
+  test:
+    name: ${{ matrix.cases.service }} / ${{ matrix.cases.setup }}
+    needs: go-cache
+    runs-on: ${{ inputs.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        cases: ${{ fromJson(inputs.cases) }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          path: "opendal"
+      - uses: actions/checkout@v7
+        with:
+          repository: "apache/opendal-go-services"
+          path: "opendal-go-services"
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+        with:
+          need-nextest: true
+          need-protoc: true
+          need-rocksdb: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup 1Password Connect
+        shell: bash
+        run: |
+          echo "::add-mask::${{ secrets.OP_CONNECT_HOST }}"
+          echo "::add-mask::${{ secrets.OP_CONNECT_TOKEN }}"
+          echo "OP_CONNECT_HOST=${{ secrets.OP_CONNECT_HOST }}" >> "$GITHUB_ENV"
+          echo "OP_CONNECT_TOKEN=${{ secrets.OP_CONNECT_TOKEN }}" >> "$GITHUB_ENV"
+      - uses: actions/setup-go@v6
+        with:
+          # params must be in sync with `go-cache` job
+          go-version-file: bindings/go/go.mod
+          cache-dependency-path: |
+            bindings/go/go.sum
+            bindings/go/tests/behavior_tests/go.sum
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt install zstd
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install zstd libffi
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Setup Go Workspace
+        env:
+          SERVICE: ${{ matrix.cases.service }}
+        run: |
+          go work init
+          go work use ./opendal/bindings/go
+          go work use ./opendal/bindings/go/tests/behavior_tests
+      - name: Test Core
+        uses: ./.github/actions/test_behavior_binding_go
+        with:
+          setup: ${{ matrix.cases.setup }}
+          service: ${{ matrix.cases.service }}
+          feature: ${{ matrix.cases.feature }}

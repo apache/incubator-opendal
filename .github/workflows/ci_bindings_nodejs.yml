@@ -19,22 +19,32 @@ name: Bindings NodeJS CI
 
 env:
   DEBUG: napi:*
-  MACOSX_DEPLOYMENT_TARGET: '10.13'
+  MACOSX_DEPLOYMENT_TARGET: "10.13"
+  # refer to https://github.com/nodejs/corepack/issues/612#issuecomment-2631462297
+  #
+  # SHOULD remove after nodejs been upgraded.
+  COREPACK_INTEGRITY_KEYS: 0
 
 on:
   push:
     branches:
       - main
     tags:
-      - '*'
+      - "*"
+    paths: &paths
+      - "bindings/nodejs/**"
+      - "core/**"
+      - ".github/actions/setup/**"
+      - ".github/workflows/ci_bindings_nodejs.yml"
   pull_request:
     branches:
       - main
-    paths:
-      - "bindings/nodejs/**"
-      - "core/**"
-      - ".github/workflows/ci_bindings_nodejs.yml"
+    paths: *paths
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -46,23 +56,21 @@ jobs:
         working-directory: "bindings/nodejs"
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 8
+          run_install: false
 
       - name: Setup node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '18'
+          node-version: "20"
           cache: pnpm
           cache-dependency-path: "bindings/nodejs/pnpm-lock.yaml"
-
-      - name: Corepack
-        run: corepack enable
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -70,254 +78,21 @@ jobs:
       - name: Check format
         run: pnpm exec prettier --check .
 
+      # Useful for debugging
+      - name: Print Clippy version
+        run: cargo clippy --version
+
+      - name: Check Clippy
+        run: cargo clippy -- -D warnings
+
       - name: Build
         run: pnpm build
+
+      - name: Run getting-started example
+        run: node examples/getting-started.mjs
 
       - name: Check diff
         run: git diff --exit-code
 
       - name: Test
         run: cargo test --no-fail-fast
-
-  linux:
-    name: linux - ${{ matrix.settings.target }}
-    runs-on: ubuntu-latest
-    if: "startsWith(github.ref, 'refs/tags/')"
-    # Notes: this defaults only apply on run tasks.
-    defaults:
-      run:
-        working-directory: "bindings/nodejs"
-    env:
-      NAPI_FEATURES: services-all
-    strategy:
-      matrix:
-        settings:
-          - target: x86_64-unknown-linux-gnu
-            build: |
-              docker run \
-              -v .:/build \
-              -e NAPI_TARGET=x86_64-unknown-linux-gnu \
-              -w /build/bindings/nodejs \
-              ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian \
-              bash -c "corepack enable && pnpm build"
-              cd bindings/nodejs
-              # change owner to current user
-              sudo chown -R 1001:121 *.node
-          - target: aarch64-unknown-linux-gnu
-            build: |
-              docker run \
-              -v .:/build \
-              -e NAPI_TARGET=aarch64-unknown-linux-gnu \
-              -w /build/bindings/nodejs \
-              ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian-aarch64 \
-              bash -c "set -e &&
-              rustup target add aarch64-unknown-linux-gnu &&
-              corepack enable &&
-              pnpm build --target aarch64-unknown-linux-gnu &&
-              aarch64-unknown-linux-gnu-strip *.node"
-              cd bindings/nodejs
-              # change owner to current user
-              sudo chown -R 1001:121 *.node
-          - target: aarch64-unknown-linux-musl
-            build: |
-              docker run \
-              -v .:/build \
-              -e NAPI_TARGET=aarch64-unknown-linux-musl \
-              -w /build/bindings/nodejs \
-              ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine \
-              bash -c "set -e &&
-              rustup target add aarch64-unknown-linux-musl &&
-              corepack enable &&
-              pnpm build --target aarch64-unknown-linux-musl &&
-              /aarch64-linux-musl-cross/bin/aarch64-linux-musl-strip *.node"
-              cd bindings/nodejs
-              # change owner to current user
-              sudo chown -R 1001:121 *.node
-
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 8
-      - name: Setup node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          cache: pnpm
-          cache-dependency-path: "bindings/nodejs/pnpm-lock.yaml"
-      - name: Corepack
-        run: corepack enable
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Build
-        shell: bash
-        working-directory: .
-        run: ${{ matrix.settings.build }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: bindings-linux-${{ matrix.settings.target }}
-          path: bindings/nodejs/*.node
-
-  windows:
-    name: windows - ${{ matrix.settings.target }}
-    runs-on: windows-latest
-    if: "startsWith(github.ref, 'refs/tags/')"
-
-    # Windows built failed with services-all
-    # Wait for https://github.com/apache/opendal/issues/4761
-    # env:
-    #  NAPI_FEATURES: services-all
-
-    strategy:
-      matrix:
-        settings:
-          - target: x86_64-pc-windows-msvc
-            build: pnpm build
-          - target: aarch64-pc-windows-msvc
-            build: |
-              rustup target add aarch64-pc-windows-msvc;
-              NAPI_TARGET=aarch64-pc-windows-msvc pnpm build
-
-    # Notes: this defaults only apply on run tasks.
-    defaults:
-      run:
-        working-directory: "bindings/nodejs"
-
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 8
-      - name: Setup node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          cache: pnpm
-          cache-dependency-path: "bindings/nodejs/pnpm-lock.yaml"
-      - name: Corepack
-        run: corepack enable
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Build
-        shell: bash
-        run: ${{ matrix.settings.build }}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: bindings-windows-${{ matrix.settings.target }}
-          path: bindings/nodejs/*.node
-
-  macos:
-    name: macos - ${{ matrix.settings.target }}
-    runs-on: macos-latest
-    if: "startsWith(github.ref, 'refs/tags/')"
-    # Notes: this defaults only apply on run tasks.
-    defaults:
-      run:
-        working-directory: "bindings/nodejs"
-    env:
-      NAPI_FEATURES: services-all
-    strategy:
-      matrix:
-        settings:
-          - target: x86_64-apple-darwin
-            build: |
-              rustup target add x86_64-apple-darwin;
-              export NAPI_TARGET=x86_64-apple-darwin;
-
-              pnpm build
-              strip -x *.node
-          - target: aarch64-apple-darwin
-            build: |
-              sudo rm -Rf /Library/Developer/CommandLineTools/SDKs/*;
-              export CC=$(xcrun -f clang);
-              export CXX=$(xcrun -f clang++);
-              SYSROOT=$(xcrun --sdk macosx --show-sdk-path);
-              export CFLAGS="-isysroot $SYSROOT -isystem $SYSROOT";
-              rustup target add aarch64-apple-darwin;
-
-              export NAPI_TARGET=aarch64-apple-darwin;
-              pnpm build
-              strip -x *.node
-
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 8
-      - name: Setup node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          cache: pnpm
-          cache-dependency-path: "bindings/nodejs/pnpm-lock.yaml"
-      - name: Corepack
-        run: corepack enable
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Build
-        run: ${{ matrix.settings.build }}
-        shell: bash
-      - uses: actions/upload-artifact@v3
-        with:
-          name: bindings-macos-${{ matrix.settings.target }}
-          path: bindings/nodejs/*.node
-
-  release:
-    name: Release
-    runs-on: ubuntu-latest
-    needs: [ macos, linux, windows ]
-    permissions:
-      id-token: write
-
-    # Notes: this defaults only apply on run tasks.
-    defaults:
-      run:
-        working-directory: "bindings/nodejs"
-
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 8
-      - name: Setup node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "18"
-          cache: pnpm
-          cache-dependency-path: "bindings/nodejs/pnpm-lock.yaml"
-      - name: Corepack
-        run: corepack enable
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: bindings/nodejs/artifacts
-      - name: Move artifacts
-        run: pnpm exec napi artifacts
-
-      - name: List packages
-        run: ls -R ./npm
-        shell: bash
-
-      - name: Add LICENSE & NOTICE
-        # Set working directory to root to copy LICENSE & NOTICE
-        working-directory: .
-        run: cp LICENSE NOTICE ./bindings/nodejs
-
-      - name: Publish Dry Run
-        if: "startsWith(github.ref, 'refs/tags/') && contains(github.ref, '-')"
-        # Since this command will not exit with non-zero code when file missing,
-        # we need to check the output manually.
-        run: |
-          npm publish --access public --provenance --dry-run
-
-      - name: Publish
-        if: "startsWith(github.ref, 'refs/tags/') && !contains(github.ref, '-')"
-        run: |
-          echo "//registry.npmjs.org/:_authToken=$NPM_TOKEN" >> ~/.npmrc
-          npm publish --access public --provenance
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

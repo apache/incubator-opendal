@@ -19,4 +19,12 @@
 
 module Operator = Operator
 
+(* Re-export types from Opendal_core for convenience *)
 type operator = Opendal_core.Operator.operator
+type reader = Opendal_core.Operator.reader
+type writer = Opendal_core.Operator.writer
+type lister = Opendal_core.Operator.lister
+type metadata = Opendal_core.Operator.metadata
+type entry = Opendal_core.Operator.entry
+type operator_info = Opendal_core.Operator.operator_info
+type capability = Opendal_core.Operator.capability

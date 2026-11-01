@@ -36,7 +36,7 @@ jobs:
   check_docs:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
@@ -46,19 +46,30 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout java env
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
-          distribution: temurin
-          java-version: "11"
+          distribution: zulu
+          java-version: 25
+
+      - name: Add wasm target
+        run: rustup target add wasm32-unknown-unknown
 
       - name: Cargo doc
         working-directory: core
-        run: cargo doc --lib --no-deps --all-features
+        env:
+          RUSTDOCFLAGS: >-
+            -D rustdoc::broken_intra_doc_links
+            -D rustdoc::invalid_rust_codeblocks
+            -D rustdoc::bare_urls
+        run: |
+          cargo doc --workspace --lib --no-deps --all-features
+          cargo doc --package opendal-service-opfs --lib --no-deps --all-features \
+            --target wasm32-unknown-unknown
 
   check_clippy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
@@ -68,26 +79,37 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Checkout java env
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
-          distribution: temurin
-          java-version: "11"
+          distribution: zulu
+          java-version: 25
+
+      # Useful for debugging
+      - name: Print Clippy version
+        working-directory: core
+        run: cargo clippy --version
 
       - name: Cargo clippy
         working-directory: core
-        run: cargo clippy --all-targets --all-features -- -D warnings
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   check_msrv:
     runs-on: ubuntu-latest
     env:
-      # OpenDAL's MSRV is 1.75.
-      OPENDAL_MSRV: "1.75"
+      # OpenDAL's MSRV is 1.91.
+      OPENDAL_MSRV: "1.91"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Setup msrv of rust
         run: |
           rustup toolchain install ${OPENDAL_MSRV}
           rustup component add clippy --toolchain ${OPENDAL_MSRV}
+
+      # Useful for debugging
+      - name: Print Clippy version
+        working-directory: core
+        run: cargo +${OPENDAL_MSRV} clippy --version
+
       - name: Check
         working-directory: core
         run: cargo +${OPENDAL_MSRV} clippy -- -D warnings
@@ -101,28 +123,48 @@ jobs:
           - macos-latest
           - windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build
         working-directory: core
-        run: cargo build
+        run: cargo build --locked
+
+  run_examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Examples back the snippets shown in the website guide. Running them keeps
+      # the docs honest: a broken example fails CI instead of shipping bad docs.
+      - name: Run guide examples
+        working-directory: core
+        run: cargo run -p opendal-examples-getting-started
 
   build_all_features:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+
       - name: Checkout python env
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+
       - name: Checkout java env
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
-          distribution: temurin
-          java-version: "11"
+          distribution: zulu
+          java-version: 25
 
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
@@ -133,7 +175,7 @@ jobs:
 
       - name: Build
         working-directory: core
-        run: cargo build --all-features
+        run: cargo build --all-features --locked
 
   build_all_platforms:
     runs-on: ${{ matrix.os }}
@@ -143,17 +185,20 @@ jobs:
           - ubuntu-latest
           - macos-latest
           - windows-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+
       - name: Checkout python env
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+
       - name: Checkout java env
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
-          distribution: temurin
-          java-version: "11"
+          distribution: zulu
+          java-version: 25
 
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
@@ -185,7 +230,7 @@ jobs:
             # FIXME how to support HDFS services in other platforms?
             # services-hdfs
             services-http
-            services-huggingface
+            services-hf
             services-ipfs
             services-ipmfs
             services-memcached
@@ -207,47 +252,69 @@ jobs:
             # services-sftp
             services-sled
             services-swift
-            services-supabase
             services-tikv
             services-vercel-artifacts
             services-webdav
             services-webhdfs
           )
-          cargo build --features "${FEATURES[*]}"
+          cargo build --features "${FEATURES[*]}" --locked
 
   # We only support some services(see `available_services` below) for now.
   build_under_wasm:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build
         working-directory: core
         run: |
           FEATURES=(
             services-azblob
             services-gdrive
+            services-opfs
             services-s3
+            layers-metrics
           )
           rustup target add wasm32-unknown-unknown
-          cargo build --target wasm32-unknown-unknown --no-default-features --features="${FEATURES[*]}"
+          cargo build --target wasm32-unknown-unknown --no-default-features --features="${FEATURES[*]}" --locked
 
   unit:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
+      - name: cleanup
+        run: |
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/chromium \
+            /opt/microsoft \
+            /opt/google \
+            /usr/lib/firefox
+
+          sudo docker image prune --all --force
+          sudo docker builder prune -a
+
+      - uses: actions/checkout@v7
+
       - name: Checkout python env
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
+
       - name: Checkout java env
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
-          distribution: temurin
-          java-version: "11"
+          distribution: zulu
+          java-version: 25
 
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
@@ -261,8 +328,56 @@ jobs:
       - name: Test
         working-directory: core
         run: |
-          cargo nextest run --no-fail-fast --all-features
-          cargo test --doc --all-features
+          cargo nextest run --workspace --no-fail-fast --all-features
+        env:
+          # Add rocksdb and java lib path to LD_LIBRARY_PATH
+          LD_LIBRARY_PATH: /tmp/rocksdb/lib:${{ env.JAVA_HOME }}/lib/server:${{ env.LD_LIBRARY_PATH }}
+
+  doc-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: cleanup
+        run: |
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /opt/hostedtoolcache/CodeQL \
+            /usr/local/share/chromium \
+            /opt/microsoft \
+            /opt/google \
+            /usr/lib/firefox
+
+          sudo docker image prune --all --force
+          sudo docker builder prune -a
+
+      - uses: actions/checkout@v7
+
+      - name: Checkout python env
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+
+      - name: Checkout java env
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 25
+
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+        with:
+          need-protoc: true
+          need-rocksdb: true
+          need-foundationdb: true
+          need-nextest: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Test
+        working-directory: core
+        run: |
+          cargo test --workspace --doc --all-features
         env:
           # Add rocksdb and java lib path to LD_LIBRARY_PATH
           LD_LIBRARY_PATH: /tmp/rocksdb/lib:${{ env.JAVA_HOME }}/lib/server:${{ env.LD_LIBRARY_PATH }}

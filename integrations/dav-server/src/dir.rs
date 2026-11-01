@@ -20,12 +20,11 @@ use super::utils::*;
 use dav_server::fs::{DavDirEntry, DavMetaData, FsResult};
 use futures::StreamExt;
 use futures::{FutureExt, Stream};
-use opendal::raw::normalize_path;
-use opendal::Operator;
-use opendal::{Entry, Lister};
+use opendal_core::raw::normalize_path;
+use opendal_core::{Entry, Lister, Operator};
 use std::pin::Pin;
 use std::task::Poll::Ready;
-use std::task::{ready, Context, Poll};
+use std::task::{Context, Poll, ready};
 
 /// OpendalStream is a stream of `DavDirEntry` that is used to list the contents of a directory.
 pub struct OpendalStream {
@@ -84,7 +83,7 @@ impl DavDirEntry for OpendalDirEntry {
         self.dir_entry.name().as_bytes().to_vec()
     }
 
-    fn metadata(&self) -> dav_server::fs::FsFuture<Box<dyn DavMetaData>> {
+    fn metadata(&self) -> dav_server::fs::FsFuture<'_, Box<dyn DavMetaData>> {
         async move {
             self.op
                 .stat(self.dir_entry.path())

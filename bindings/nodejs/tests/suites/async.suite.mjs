@@ -114,5 +114,9 @@ export function run(op) {
         op.deleteSync(filename)
       }
     })
+
+    test.runIf(op.capability().list)('test check', async () => {
+      await op.check()
+    })
   })
 }

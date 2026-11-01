@@ -17,9 +17,10 @@
 
 use futures::Stream;
 use object_store::ObjectMeta;
-use opendal::{Entry, Metadata};
+use opendal::Metadata;
 use std::future::IntoFuture;
 
+use crate::timestamp_to_datetime;
 /// Conditionally add the `Send` marker trait for the wrapped type.
 /// Only take effect when the `send_wrapper` feature is enabled.
 #[cfg(not(feature = "send_wrapper"))]
@@ -42,6 +43,10 @@ pub fn format_object_store_error(err: opendal::Error, path: &str) -> object_stor
             path: path.to_string(),
             source: Box::new(err),
         },
+        ErrorKind::ConditionNotMatch => object_store::Error::Precondition {
+            path: path.to_string(),
+            source: Box::new(err),
+        },
         kind => object_store::Error::Generic {
             store: kind.into_static(),
             source: Box::new(err),
@@ -53,21 +58,14 @@ pub fn format_object_store_error(err: opendal::Error, path: &str) -> object_stor
 pub fn format_object_meta(path: &str, meta: &Metadata) -> ObjectMeta {
     ObjectMeta {
         location: path.into(),
-        last_modified: meta.last_modified().unwrap_or_default(),
-        size: meta.content_length() as usize,
+        last_modified: meta
+            .last_modified()
+            .and_then(timestamp_to_datetime)
+            .unwrap_or_default(),
+        size: meta.content_length(),
         e_tag: meta.etag().map(|x| x.to_string()),
         version: meta.version().map(|x| x.to_string()),
     }
-}
-
-/// Try to format `opendal::Entry` to `object_store::ObjectMeta`.
-pub async fn try_format_object_meta(
-    res: object_store::Result<Entry, opendal::Error>,
-) -> object_store::Result<ObjectMeta> {
-    let entry = res.map_err(|err| format_object_store_error(err, ""))?;
-    let meta = entry.metadata();
-
-    Ok(format_object_meta(entry.path(), meta))
 }
 
 /// Make given future `Send`.

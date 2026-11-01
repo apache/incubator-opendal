@@ -12,14 +12,14 @@ Take `fs` for example, we need to change to enable fuzz test on `fs` on `/tmp`.
 
 ```dotenv
 OPENDAL_TEST=fs
-OPENDAL_FS_ROOT=/path/to/dir
+OPENDAL_FS_ROOT=/path/to/dir/
 ```
 
 into
 
 ```dotenv
 OPENDAL_TEST=fs
-OPENDAL_FS_ROOT=/tmp
+OPENDAL_FS_ROOT=/tmp/
 ```
 
 

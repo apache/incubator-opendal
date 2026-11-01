@@ -23,7 +23,8 @@ use dav_server::fs::{DavFile, FsStream};
 use dav_server::fs::{DavFileSystem, ReadDirMeta};
 use futures::FutureExt;
 use futures::StreamExt;
-use opendal::Operator;
+use opendal_core::raw::normalize_path;
+use opendal_core::{ErrorKind, Operator};
 use std::path::Path;
 
 use super::dir::OpendalStream;
@@ -38,12 +39,12 @@ use super::utils::convert_error;
 /// use dav_server::davpath::DavPath;
 /// use dav_server::fs::DavFileSystem;
 /// use dav_server_opendalfs::OpendalFs;
-/// use opendal::services::Memory;
-/// use opendal::Operator;
+/// use opendal_core::services::Memory;
+/// use opendal_core::Operator;
 ///
 /// #[tokio::test]
 /// async fn test() -> Result<()> {
-///     let op = Operator::new(Memory::default())?.finish();
+///     let op = Operator::new(Memory::default())?;
 ///
 ///     let webdavfs = OpendalFs::new(op);
 ///
@@ -66,6 +67,27 @@ impl OpendalFs {
     pub fn new(op: Operator) -> Box<OpendalFs> {
         Box::new(OpendalFs { op })
     }
+
+    fn fs_path(&self, path: &DavPath) -> Result<String, FsError> {
+        String::from_utf8(path.as_bytes().to_vec())
+            .map(|path| normalize_path(path.as_str()))
+            .map_err(|_| FsError::GeneralFailure)
+    }
+
+    fn fs_dir_path(&self, path: &DavPath) -> Result<String, FsError> {
+        Ok(Self::into_dir_path(self.fs_path(path)?))
+    }
+
+    fn into_dir_path(mut path: String) -> String {
+        if !Self::is_dir_path(&path) {
+            path.push('/');
+        }
+        path
+    }
+
+    fn is_dir_path(path: &str) -> bool {
+        path.is_empty() || path.ends_with('/')
+    }
 }
 
 impl DavFileSystem for OpendalFs {
@@ -75,7 +97,8 @@ impl DavFileSystem for OpendalFs {
         options: dav_server::fs::OpenOptions,
     ) -> FsFuture<'a, Box<dyn DavFile>> {
         async move {
-            let file = OpendalFile::open(self.op.clone(), path.clone(), options).await?;
+            let path = self.fs_path(path)?;
+            let file = OpendalFile::open(self.op.clone(), path, options).await?;
             Ok(Box::new(file) as Box<dyn DavFile>)
         }
         .boxed()
@@ -87,7 +110,7 @@ impl DavFileSystem for OpendalFs {
         _meta: ReadDirMeta,
     ) -> FsFuture<'a, FsStream<Box<dyn DavDirEntry>>> {
         async move {
-            let path = path.as_url_string();
+            let path = self.fs_dir_path(path)?;
             self.op
                 .lister(path.as_str())
                 .await
@@ -99,27 +122,37 @@ impl DavFileSystem for OpendalFs {
 
     fn metadata<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, Box<dyn DavMetaData>> {
         async move {
-            let opendal_metadata = self.op.stat(path.as_url_string().as_str()).await;
-            match opendal_metadata {
-                Ok(metadata) => {
-                    let webdav_metadata = OpendalMetaData::new(metadata);
-                    Ok(Box::new(webdav_metadata) as Box<dyn DavMetaData>)
+            let path = self.fs_path(path)?;
+            let metadata = match self.op.stat(path.as_str()).await {
+                Ok(metadata) => metadata,
+                Err(e)
+                    if !Self::is_dir_path(&path)
+                        && matches!(e.kind(), ErrorKind::NotFound | ErrorKind::IsADirectory) =>
+                {
+                    let path = Self::into_dir_path(path);
+                    self.op.stat(path.as_str()).await.map_err(convert_error)?
                 }
-                Err(e) => Err(convert_error(e)),
-            }
+                Err(e) => return Err(convert_error(e)),
+            };
+
+            Ok(Box::new(OpendalMetaData::new(metadata)) as Box<dyn DavMetaData>)
         }
         .boxed()
     }
 
     fn create_dir<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, ()> {
         async move {
-            let path = path.as_url_string();
+            let path = self.fs_dir_path(path)?;
 
             // check if the parent path is exist.
             // During MKCOL processing, a server MUST make the Request-URI a member of its parent collection, unless the Request-URI is "/".  If no such ancestor exists, the method MUST fail.
             // refer to https://datatracker.ietf.org/doc/html/rfc2518#section-8.3.1
             let parent = Path::new(&path).parent().unwrap();
-            match self.op.exists(parent.to_str().unwrap()).await {
+            match self
+                .op
+                .exists(format!("{}/", parent.display()).as_str())
+                .await
+            {
                 Ok(exist) => {
                     if !exist && parent != Path::new("/") {
                         return Err(FsError::NotFound);
@@ -151,31 +184,71 @@ impl DavFileSystem for OpendalFs {
     }
 
     fn remove_dir<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, ()> {
-        self.remove_file(path)
+        async move {
+            let path = self.fs_dir_path(path)?;
+            self.op.delete(&path).await.map_err(convert_error)
+        }
+        .boxed()
     }
 
     fn remove_file<'a>(&'a self, path: &'a DavPath) -> FsFuture<'a, ()> {
         async move {
-            self.op
-                .delete(path.as_url_string().as_str())
-                .await
-                .map_err(convert_error)
+            let path = self.fs_path(path)?;
+            self.op.delete(&path).await.map_err(convert_error)
         }
         .boxed()
     }
 
     fn rename<'a>(&'a self, from: &'a DavPath, to: &'a DavPath) -> FsFuture<'a, ()> {
         async move {
-            let from_path = from
-                .as_rel_ospath()
-                .to_str()
-                .ok_or(FsError::GeneralFailure)?;
-            let to_path = to.as_rel_ospath().to_str().ok_or(FsError::GeneralFailure)?;
             if from.is_collection() {
-                let _ = self.remove_file(to).await;
+                let from_path = self.fs_dir_path(from)?;
+                let to_path = self.fs_dir_path(to)?;
+
+                if self
+                    .op
+                    .exists(to_path.as_str())
+                    .await
+                    .map_err(convert_error)?
+                {
+                    return Err(FsError::Exists);
+                }
+
+                let mut lister = self
+                    .op
+                    .lister_with(from_path.as_str())
+                    .limit(2)
+                    .await
+                    .map_err(convert_error)?;
+                let mut found = false;
+                while let Some(entry) = lister.next().await {
+                    let entry = entry.map_err(convert_error)?;
+                    if entry.path() == from_path {
+                        found = true;
+                    } else {
+                        // Only empty directory moves are supported.
+                        return Err(FsError::NotImplemented);
+                    }
+                }
+                if !found {
+                    return Err(FsError::NotFound);
+                }
+
+                self.op
+                    .create_dir(to_path.as_str())
+                    .await
+                    .map_err(convert_error)?;
+                return self
+                    .op
+                    .delete(from_path.as_str())
+                    .await
+                    .map_err(convert_error);
             }
+
+            let from_path = self.fs_path(from)?;
+            let to_path = self.fs_path(to)?;
             self.op
-                .rename(from_path, to_path)
+                .rename(from_path.as_str(), to_path.as_str())
                 .await
                 .map_err(convert_error)
         }
@@ -184,14 +257,12 @@ impl DavFileSystem for OpendalFs {
 
     fn copy<'a>(&'a self, from: &'a DavPath, to: &'a DavPath) -> FsFuture<'a, ()> {
         async move {
-            let from_path = from
-                .as_rel_ospath()
-                .to_str()
-                .ok_or(FsError::GeneralFailure)?;
-            let to_path = to.as_rel_ospath().to_str().ok_or(FsError::GeneralFailure)?;
+            let from_path = self.fs_path(from)?;
+            let to_path = self.fs_path(to)?;
             self.op
-                .copy(from_path, to_path)
+                .copy(from_path.as_str(), to_path.as_str())
                 .await
+                .map(|_| ())
                 .map_err(convert_error)
         }
         .boxed()

@@ -15,11 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
-version: '3.8'
-
 services:
   memcached:
-    image: bitnami/memcached
+    image: bitnamisecure/memcached
     environment:
       # memcache's max item size is 1MiB, But opendal's behavior tests
       # will produce larger file.

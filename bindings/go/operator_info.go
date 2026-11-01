@@ -1,21 +1,19 @@
-/*
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
 
 package opendal
 
@@ -24,7 +22,6 @@ import (
 	"unsafe"
 
 	"github.com/jupiterrider/ffi"
-	"golang.org/x/sys/unix"
 )
 
 // Info returns metadata about the Operator.
@@ -35,23 +32,14 @@ import (
 // Returns:
 //   - *OperatorInfo: A pointer to an OperatorInfo struct containing the Operator's metadata.
 func (op *Operator) Info() *OperatorInfo {
-	newInfo := getFFI[operatorInfoNew](op.ctx, symOperatorInfoNew)
-	inner := newInfo(op.inner)
-	getFullCap := getFFI[operatorInfoGetFullCapability](op.ctx, symOperatorInfoGetFullCapability)
-	getNativeCap := getFFI[operatorInfoGetNativeCapability](op.ctx, symOperatorInfoGetNativeCapability)
-	getScheme := getFFI[operatorInfoGetScheme](op.ctx, symOperatorInfoGetScheme)
-	getRoot := getFFI[operatorInfoGetRoot](op.ctx, symOperatorInfoGetRoot)
-	getName := getFFI[operatorInfoGetName](op.ctx, symOperatorInfoGetName)
-
-	free := getFFI[operatorInfoFree](op.ctx, symOperatorInfoFree)
-	defer free(inner)
+	inner := ffiOperatorInfoNew.symbol(op.ctx)(op.inner)
+	defer ffiOperatorInfoFree.symbol(op.ctx)(inner)
 
 	return &OperatorInfo{
-		scheme:    getScheme(inner),
-		root:      getRoot(inner),
-		name:      getName(inner),
-		fullCap:   &Capability{inner: getFullCap(inner)},
-		nativeCap: &Capability{inner: getNativeCap(inner)},
+		scheme:     ffiOperatorInfoGetScheme.symbol(op.ctx)(inner),
+		root:       ffiOperatorInfoGetRoot.symbol(op.ctx)(inner),
+		name:       ffiOperatorInfoGetName.symbol(op.ctx)(inner),
+		capability: &Capability{inner: ffiOperatorInfoGetCapability.symbol(op.ctx)(inner)},
 	}
 }
 
@@ -61,19 +49,14 @@ func (op *Operator) Info() *OperatorInfo {
 // and its capabilities, allowing users to query details about the
 // Operator they are working with.
 type OperatorInfo struct {
-	scheme    string
-	root      string
-	name      string
-	fullCap   *Capability
-	nativeCap *Capability
+	scheme     string
+	root       string
+	name       string
+	capability *Capability
 }
 
-func (i *OperatorInfo) GetFullCapability() *Capability {
-	return i.fullCap
-}
-
-func (i *OperatorInfo) GetNativeCapability() *Capability {
-	return i.nativeCap
+func (i *OperatorInfo) GetCapability() *Capability {
+	return i.capability
 }
 
 func (i *OperatorInfo) GetScheme() string {
@@ -109,24 +92,52 @@ func (c *Capability) Stat() bool {
 	return c.inner.stat == 1
 }
 
+func (c *Capability) StatWithIfMatch() bool {
+	return c.inner.statWithIfMatch == 1
+}
+
 func (c *Capability) StatWithIfmatch() bool {
-	return c.inner.statWithIfmatch == 1
+	return c.StatWithIfMatch()
 }
 
 func (c *Capability) StatWithIfNoneMatch() bool {
 	return c.inner.statWithIfNoneMatch == 1
 }
 
+func (c *Capability) StatWithIfModifiedSince() bool {
+	return c.inner.statWithIfModifiedSince == 1
+}
+
+func (c *Capability) StatWithIfUnmodifiedSince() bool {
+	return c.inner.statWithIfUnmodifiedSince == 1
+}
+
+func (c *Capability) StatWithOverrideCacheControl() bool {
+	return c.inner.statWithOverrideCacheControl == 1
+}
+
+func (c *Capability) StatWithOverrideContentDisposition() bool {
+	return c.inner.statWithOverrideContentDisposition == 1
+}
+
+func (c *Capability) StatWithOverrideContentType() bool {
+	return c.inner.statWithOverrideContentType == 1
+}
+
+func (c *Capability) StatWithVersion() bool {
+	return c.inner.statWithVersion == 1
+}
+
 func (c *Capability) Read() bool {
 	return c.inner.read == 1
 }
 
-func (c *Capability) ReadWithIfmatch() bool {
-	return c.inner.readWithIfmatch == 1
+func (c *Capability) ReadWithIfMatch() bool {
+	return c.inner.readWithIfMatch == 1
 }
 
-func (c *Capability) ReadWithIfMatchNone() bool {
-	return c.inner.readWithIfMatchNone == 1
+func (c *Capability) ReadWithIfNoneMatch() bool {
+	return c.inner.readWithIfNoneMatch == 1
 }
 
 func (c *Capability) ReadWithOverrideCacheControl() bool {
@@ -139,6 +150,18 @@ func (c *Capability) ReadWithOverrideContentDisposition() bool {
 
 func (c *Capability) ReadWithOverrideContentType() bool {
 	return c.inner.readWithOverrideContentType == 1
+}
+
+func (c *Capability) ReadWithIfModifiedSince() bool {
+	return c.inner.readWithIfModifiedSince == 1
+}
+
+func (c *Capability) ReadWithIfUnmodifiedSince() bool {
+	return c.inner.readWithIfUnmodifiedSince == 1
+}
+
+func (c *Capability) ReadWithVersion() bool {
+	return c.inner.readWithVersion == 1
 }
 
 func (c *Capability) Write() bool {
@@ -169,6 +192,26 @@ func (c *Capability) WriteWithCacheControl() bool {
 	return c.inner.writeWithCacheControl == 1
 }
 
+func (c *Capability) WriteWithContentEncoding() bool {
+	return c.inner.writeWithContentEncoding == 1
+}
+
+func (c *Capability) WriteWithIfMatch() bool {
+	return c.inner.writeWithIfMatch == 1
+}
+
+func (c *Capability) WriteWithIfNoneMatch() bool {
+	return c.inner.writeWithIfNoneMatch == 1
+}
+
+func (c *Capability) WriteWithIfNotExists() bool {
+	return c.inner.writeWithIfNotExists == 1
+}
+
+func (c *Capability) WriteWithUserMetadata() bool {
+	return c.inner.writeWithUserMetadata == 1
+}
+
 func (c *Capability) WriteMultiMaxSize() uint {
 	return c.inner.writeMultiMaxSize
 }
@@ -188,8 +231,40 @@ func (c *Capability) Delete() bool {
 	return c.inner.delete == 1
 }
 
+func (c *Capability) DeleteWithVersion() bool {
+	return c.inner.deleteWithVersion == 1
+}
+
+func (c *Capability) DeleteWithRecursive() bool {
+	return c.inner.deleteWithRecursive == 1
+}
+
 func (c *Capability) Copy() bool {
 	return c.inner.copy == 1
+}
+
+func (c *Capability) CopyWithIfNotExists() bool {
+	return c.inner.copyWithIfNotExists == 1
+}
+
+func (c *Capability) CopyWithIfMatch() bool {
+	return c.inner.copyWithIfMatch == 1
+}
+
+func (c *Capability) CopyWithSourceVersion() bool {
+	return c.inner.copyWithSourceVersion == 1
+}
+
+func (c *Capability) CopyCanMulti() bool {
+	return c.inner.copyCanMulti == 1
+}
+
+func (c *Capability) CopyMultiMaxSize() uint {
+	return c.inner.copyMultiMaxSize
+}
+
+func (c *Capability) CopyMultiMinSize() uint {
+	return c.inner.copyMultiMinSize
 }
 
 func (c *Capability) Rename() bool {
@@ -212,6 +287,14 @@ func (c *Capability) ListWithRecursive() bool {
 	return c.inner.listWithRecursive == 1
 }
 
+func (c *Capability) ListWithVersions() bool {
+	return c.inner.listWithVersions == 1
+}
+
+func (c *Capability) ListWithDeleted() bool {
+	return c.inner.listWithDeleted == 1
+}
+
 func (c *Capability) Presign() bool {
 	return c.inner.presign == 1
 }
@@ -228,23 +311,23 @@ func (c *Capability) PresignWrite() bool {
 	return c.inner.presignWrite == 1
 }
 
+func (c *Capability) PresignDelete() bool {
+	return c.inner.presignDelete == 1
+}
+
 func (c *Capability) Shared() bool {
 	return c.inner.shared == 1
 }
 
 func (c *Capability) Blocking() bool {
-	return c.inner.blocking == 1
+	return true
 }
 
-const symOperatorInfoNew = "opendal_operator_info_new"
-
-type operatorInfoNew func(op *opendalOperator) *opendalOperatorInfo
-
-var withOperatorInfoNew = withFFI(ffiOpts{
-	sym:    symOperatorInfoNew,
+var ffiOperatorInfoNew = newFFI(ffiOpts{
+	sym:    "opendal_operator_info_new",
 	rType:  &ffi.TypePointer,
 	aTypes: []*ffi.Type{&ffi.TypePointer},
-}, func(ctx context.Context, ffiCall func(rValue unsafe.Pointer, aValues ...unsafe.Pointer)) operatorInfoNew {
+}, func(ctx context.Context, ffiCall ffiCall) func(op *opendalOperator) *opendalOperatorInfo {
 	return func(op *opendalOperator) *opendalOperatorInfo {
 		var result *opendalOperatorInfo
 		ffiCall(
@@ -255,15 +338,11 @@ var withOperatorInfoNew = withFFI(ffiOpts{
 	}
 })
 
-const symOperatorInfoFree = "opendal_operator_info_free"
-
-type operatorInfoFree func(info *opendalOperatorInfo)
-
-var withOperatorInfoFree = withFFI(ffiOpts{
-	sym:    symOperatorInfoFree,
+var ffiOperatorInfoFree = newFFI(ffiOpts{
+	sym:    "opendal_operator_info_free",
 	rType:  &ffi.TypeVoid,
 	aTypes: []*ffi.Type{&ffi.TypePointer},
-}, func(ctx context.Context, ffiCall func(rValue unsafe.Pointer, aValues ...unsafe.Pointer)) operatorInfoFree {
+}, func(_ context.Context, ffiCall ffiCall) func(info *opendalOperatorInfo) {
 	return func(info *opendalOperatorInfo) {
 		ffiCall(
 			nil,
@@ -272,15 +351,11 @@ var withOperatorInfoFree = withFFI(ffiOpts{
 	}
 })
 
-const symOperatorInfoGetFullCapability = "opendal_operator_info_get_full_capability"
-
-type operatorInfoGetFullCapability func(info *opendalOperatorInfo) *opendalCapability
-
-var withOperatorInfoGetFullCapability = withFFI(ffiOpts{
-	sym:    symOperatorInfoGetFullCapability,
+var ffiOperatorInfoGetCapability = newFFI(ffiOpts{
+	sym:    "opendal_operator_info_get_capability",
 	rType:  &typeCapability,
 	aTypes: []*ffi.Type{&ffi.TypePointer},
-}, func(ctx context.Context, ffiCall func(rValue unsafe.Pointer, aValues ...unsafe.Pointer)) operatorInfoGetFullCapability {
+}, func(ctx context.Context, ffiCall ffiCall) func(info *opendalOperatorInfo) *opendalCapability {
 	return func(info *opendalOperatorInfo) *opendalCapability {
 		var cap opendalCapability
 		ffiCall(
@@ -291,78 +366,56 @@ var withOperatorInfoGetFullCapability = withFFI(ffiOpts{
 	}
 })
 
-const symOperatorInfoGetNativeCapability = "opendal_operator_info_get_native_capability"
+var ffiOperatorInfoGetScheme = func() *FFI[func(info *opendalOperatorInfo) string] {
+	_ = ffiStringFree
+	return newFFI(ffiOpts{
+		sym:    "opendal_operator_info_get_scheme",
+		rType:  &ffi.TypePointer,
+		aTypes: []*ffi.Type{&ffi.TypePointer},
+	}, func(ctx context.Context, ffiCall ffiCall) func(info *opendalOperatorInfo) string {
+		return func(info *opendalOperatorInfo) string {
+			var bytePtr *byte
+			ffiCall(
+				unsafe.Pointer(&bytePtr),
+				unsafe.Pointer(&info),
+			)
+			return copyCStringAndFree(bytePtr, ffiStringFree.symbol(ctx))
+		}
+	})
+}()
 
-type operatorInfoGetNativeCapability func(info *opendalOperatorInfo) *opendalCapability
+var ffiOperatorInfoGetRoot = func() *FFI[func(info *opendalOperatorInfo) string] {
+	_ = ffiStringFree
+	return newFFI(ffiOpts{
+		sym:    "opendal_operator_info_get_root",
+		rType:  &ffi.TypePointer,
+		aTypes: []*ffi.Type{&ffi.TypePointer},
+	}, func(ctx context.Context, ffiCall ffiCall) func(info *opendalOperatorInfo) string {
+		return func(info *opendalOperatorInfo) string {
+			var bytePtr *byte
+			ffiCall(
+				unsafe.Pointer(&bytePtr),
+				unsafe.Pointer(&info),
+			)
+			return copyCStringAndFree(bytePtr, ffiStringFree.symbol(ctx))
+		}
+	})
+}()
 
-var withOperatorInfoGetNativeCapability = withFFI(ffiOpts{
-	sym:    symOperatorInfoGetNativeCapability,
-	rType:  &typeCapability,
-	aTypes: []*ffi.Type{&ffi.TypePointer},
-}, func(ctx context.Context, ffiCall func(rValue unsafe.Pointer, aValues ...unsafe.Pointer)) operatorInfoGetNativeCapability {
-	return func(info *opendalOperatorInfo) *opendalCapability {
-		var cap opendalCapability
-		ffiCall(
-			unsafe.Pointer(&cap),
-			unsafe.Pointer(&info),
-		)
-		return &cap
-	}
-})
-
-const symOperatorInfoGetScheme = "opendal_operator_info_get_scheme"
-
-type operatorInfoGetScheme func(info *opendalOperatorInfo) string
-
-var withOperatorInfoGetScheme = withFFI(ffiOpts{
-	sym:    symOperatorInfoGetScheme,
-	rType:  &ffi.TypePointer,
-	aTypes: []*ffi.Type{&ffi.TypePointer},
-}, func(ctx context.Context, ffiCall func(rValue unsafe.Pointer, aValues ...unsafe.Pointer)) operatorInfoGetScheme {
-	return func(info *opendalOperatorInfo) string {
-		var bytePtr *byte
-		ffiCall(
-			unsafe.Pointer(&bytePtr),
-			unsafe.Pointer(&info),
-		)
-		return unix.BytePtrToString(bytePtr)
-	}
-})
-
-const symOperatorInfoGetRoot = "opendal_operator_info_get_root"
-
-type operatorInfoGetRoot func(info *opendalOperatorInfo) string
-
-var withOperatorInfoGetRoot = withFFI(ffiOpts{
-	sym:    symOperatorInfoGetRoot,
-	rType:  &ffi.TypePointer,
-	aTypes: []*ffi.Type{&ffi.TypePointer},
-}, func(ctx context.Context, ffiCall func(rValue unsafe.Pointer, aValues ...unsafe.Pointer)) operatorInfoGetRoot {
-	return func(info *opendalOperatorInfo) string {
-		var bytePtr *byte
-		ffiCall(
-			unsafe.Pointer(&bytePtr),
-			unsafe.Pointer(&info),
-		)
-		return unix.BytePtrToString(bytePtr)
-	}
-})
-
-const symOperatorInfoGetName = "opendal_operator_info_get_name"
-
-type operatorInfoGetName func(info *opendalOperatorInfo) string
-
-var withOperatorInfoGetName = withFFI(ffiOpts{
-	sym:    symOperatorInfoGetName,
-	rType:  &ffi.TypePointer,
-	aTypes: []*ffi.Type{&ffi.TypePointer},
-}, func(ctx context.Context, ffiCall func(rValue unsafe.Pointer, aValues ...unsafe.Pointer)) operatorInfoGetName {
-	return func(info *opendalOperatorInfo) string {
-		var bytePtr *byte
-		ffiCall(
-			unsafe.Pointer(&bytePtr),
-			unsafe.Pointer(&info),
-		)
-		return unix.BytePtrToString(bytePtr)
-	}
-})
+var ffiOperatorInfoGetName = func() *FFI[func(info *opendalOperatorInfo) string] {
+	_ = ffiStringFree
+	return newFFI(ffiOpts{
+		sym:    "opendal_operator_info_get_name",
+		rType:  &ffi.TypePointer,
+		aTypes: []*ffi.Type{&ffi.TypePointer},
+	}, func(ctx context.Context, ffiCall ffiCall) func(info *opendalOperatorInfo) string {
+		return func(info *opendalOperatorInfo) string {
+			var bytePtr *byte
+			ffiCall(
+				unsafe.Pointer(&bytePtr),
+				unsafe.Pointer(&info),
+			)
+			return copyCStringAndFree(bytePtr, ffiStringFree.symbol(ctx))
+		}
+	})
+}()

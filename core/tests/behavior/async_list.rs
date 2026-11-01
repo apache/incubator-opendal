@@ -19,15 +19,15 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 
 use anyhow::Result;
-use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use futures::TryStreamExt;
+use futures::stream::FuturesUnordered;
 use log::debug;
 
 use crate::*;
 
 pub fn tests(op: &Operator, tests: &mut Vec<Trial>) {
-    let cap = op.info().full_capability();
+    let cap = op.info().capability();
 
     if cap.read && cap.write && cap.list {
         tests.extend(async_trials!(
@@ -42,20 +42,32 @@ pub fn tests(op: &Operator, tests: &mut Vec<Trial>) {
             test_list_nested_dir,
             test_list_dir_with_file_path,
             test_list_with_start_after,
+            test_list_non_exist_dir_with_recursive,
             test_list_dir_with_recursive,
             test_list_dir_with_recursive_no_trailing_slash,
             test_list_file_with_recursive,
             test_list_root_with_recursive,
             test_remove_all,
-            test_list_files_with_version,
-            test_list_with_version_and_limit,
-            test_list_with_version_and_start_after
+            test_list_files_with_versions,
+            test_list_with_versions_and_limit,
+            test_list_with_versions_and_start_after,
+            test_list_files_with_deleted
         ))
     }
 
     if cap.read && !cap.write && cap.list {
         tests.extend(async_trials!(op, test_list_only))
     }
+}
+
+fn skip_cos_create_dir_list_check(_op: &Operator) -> bool {
+    #[cfg(feature = "services-cos")]
+    if _op.info().scheme() == services::COS_SCHEME {
+        // COS ListObjects is eventually consistent after PUT. See apache/opendal#7502.
+        return true;
+    }
+
+    false
 }
 
 /// Check should be OK.
@@ -69,18 +81,17 @@ pub async fn test_check(op: Operator) -> Result<()> {
 pub async fn test_list_dir(op: Operator) -> Result<()> {
     let parent = uuid::Uuid::new_v4().to_string();
     let path = format!("{parent}/{}", uuid::Uuid::new_v4());
-    debug!("Generate a random file: {}", &path);
-    let (content, size) = gen_bytes(op.info().full_capability());
+    debug!("Generate a random file: {}", path);
+    let (content, size) = gen_bytes(op.info().capability());
 
     op.write(&path, content).await.expect("write must succeed");
 
     let mut obs = op.lister(&format!("{parent}/")).await?;
     let mut found = false;
     while let Some(de) = obs.try_next().await? {
-        let meta = op.stat(de.path()).await?;
         if de.path() == path {
+            let meta = de.metadata();
             assert_eq!(meta.mode(), EntryMode::FILE);
-
             assert_eq!(meta.content_length(), size as u64);
 
             found = true
@@ -95,8 +106,8 @@ pub async fn test_list_dir(op: Operator) -> Result<()> {
 /// List prefix should return newly created file.
 pub async fn test_list_prefix(op: Operator) -> Result<()> {
     let path = uuid::Uuid::new_v4().to_string();
-    debug!("Generate a random file: {}", &path);
-    let (content, _) = gen_bytes(op.info().full_capability());
+    debug!("Generate a random file: {}", path);
+    let (content, _) = gen_bytes(op.info().capability());
 
     op.write(&path, content).await.expect("write must succeed");
 
@@ -111,9 +122,16 @@ pub async fn test_list_prefix(op: Operator) -> Result<()> {
 
 /// listing a directory, which contains more objects than a single page can take.
 pub async fn test_list_rich_dir(op: Operator) -> Result<()> {
+    if !op.info().capability().create_dir {
+        return Ok(());
+    }
+    if skip_cos_create_dir_list_check(&op) {
+        return Ok(());
+    }
     // Gdrive think that this test is an abuse of their service and redirect us
     // to an infinite loop. Let's ignore this test for gdrive.
-    if op.info().scheme() == Scheme::Gdrive {
+    #[cfg(feature = "services-gdrive")]
+    if op.info().scheme() == services::GDRIVE_SCHEME {
         return Ok(());
     }
 
@@ -137,12 +155,18 @@ pub async fn test_list_rich_dir(op: Operator) -> Result<()> {
 
     assert_eq!(actual, expected);
 
-    op.remove_all(parent).await?;
+    op.delete_with(parent).recursive(true).await?;
     Ok(())
 }
 
 /// List empty dir should return itself.
 pub async fn test_list_empty_dir(op: Operator) -> Result<()> {
+    if !op.info().capability().create_dir {
+        return Ok(());
+    }
+    if skip_cos_create_dir_list_check(&op) {
+        return Ok(());
+    }
     let dir = format!("{}/", uuid::Uuid::new_v4());
 
     op.create_dir(&dir).await.expect("write must succeed");
@@ -227,7 +251,7 @@ pub async fn test_list_non_exist_dir(op: Operator) -> Result<()> {
     while let Some(de) = obs.try_next().await? {
         objects.insert(de.path().to_string(), de);
     }
-    debug!("got objects: {:?}", objects);
+    debug!("got objects: {objects:?}");
 
     assert_eq!(objects.len(), 0, "dir should only return empty");
     Ok(())
@@ -235,6 +259,12 @@ pub async fn test_list_non_exist_dir(op: Operator) -> Result<()> {
 
 /// List dir should return correct sub dir.
 pub async fn test_list_sub_dir(op: Operator) -> Result<()> {
+    if !op.info().capability().create_dir {
+        return Ok(());
+    }
+    if skip_cos_create_dir_list_check(&op) {
+        return Ok(());
+    }
     let path = format!("{}/", uuid::Uuid::new_v4());
 
     op.create_dir(&path).await.expect("create must succeed");
@@ -254,8 +284,7 @@ pub async fn test_list_sub_dir(op: Operator) -> Result<()> {
     }
     assert!(
         found,
-        "dir should be found in list, but only got: {:?}",
-        entries
+        "dir should be found in list, but only got: {entries:?}"
     );
 
     op.delete(&path).await.expect("delete must succeed");
@@ -264,6 +293,12 @@ pub async fn test_list_sub_dir(op: Operator) -> Result<()> {
 
 /// List dir should also to list nested dir.
 pub async fn test_list_nested_dir(op: Operator) -> Result<()> {
+    if !op.info().capability().create_dir {
+        return Ok(());
+    }
+    if skip_cos_create_dir_list_check(&op) {
+        return Ok(());
+    }
     let parent = format!("{}/", uuid::Uuid::new_v4());
     op.create_dir(&parent)
         .await
@@ -308,7 +343,7 @@ pub async fn test_list_nested_dir(op: Operator) -> Result<()> {
     while let Some(de) = obs.try_next().await? {
         objects.insert(de.path().to_string(), de);
     }
-    debug!("got objects: {:?}", objects);
+    debug!("got objects: {objects:?}");
 
     assert_eq!(objects.len(), 3, "dir should only got 3 objects");
 
@@ -346,7 +381,7 @@ pub async fn test_list_dir_with_file_path(op: Operator) -> Result<()> {
     let parent = uuid::Uuid::new_v4().to_string();
     let file = format!("{parent}/{}", uuid::Uuid::new_v4());
 
-    let (content, _) = gen_bytes(op.info().full_capability());
+    let (content, _) = gen_bytes(op.info().capability());
     op.write(&file, content).await?;
 
     let obs = op.list(&parent).await?;
@@ -361,7 +396,7 @@ pub async fn test_list_dir_with_file_path(op: Operator) -> Result<()> {
 
 /// List with start after should start listing after the specified key
 pub async fn test_list_with_start_after(op: Operator) -> Result<()> {
-    if !op.info().full_capability().list_with_start_after {
+    if !op.info().capability().list_with_start_after {
         return Ok(());
     }
 
@@ -397,12 +432,33 @@ pub async fn test_list_with_start_after(op: Operator) -> Result<()> {
 
     assert_eq!(expected, actual);
 
-    op.remove_all(dir).await?;
+    op.delete_with(dir).recursive(true).await?;
 
     Ok(())
 }
 
+pub async fn test_list_non_exist_dir_with_recursive(op: Operator) -> Result<()> {
+    let dir = format!("{}/", uuid::Uuid::new_v4());
+
+    let mut obs = op.lister_with(&dir).recursive(true).await?;
+    let mut objects = HashMap::new();
+    while let Some(de) = obs.try_next().await? {
+        objects.insert(de.path().to_string(), de);
+    }
+    debug!("got objects: {objects:?}");
+
+    assert_eq!(objects.len(), 0, "dir should only return empty");
+    Ok(())
+}
+
 pub async fn test_list_root_with_recursive(op: Operator) -> Result<()> {
+    if !op.info().capability().create_dir {
+        return Ok(());
+    }
+    if skip_cos_create_dir_list_check(&op) {
+        return Ok(());
+    }
+
     op.create_dir("/").await?;
 
     let w = op.lister_with("").recursive(true).await?;
@@ -420,6 +476,12 @@ pub async fn test_list_root_with_recursive(op: Operator) -> Result<()> {
 
 // Walk top down should output as expected
 pub async fn test_list_dir_with_recursive(op: Operator) -> Result<()> {
+    if !op.info().capability().create_dir {
+        return Ok(());
+    }
+    if skip_cos_create_dir_list_check(&op) {
+        return Ok(());
+    }
     let parent = uuid::Uuid::new_v4().to_string();
 
     let paths = [
@@ -458,6 +520,12 @@ pub async fn test_list_dir_with_recursive(op: Operator) -> Result<()> {
 
 // same as test_list_dir_with_recursive except listing 'x' instead of 'x/'
 pub async fn test_list_dir_with_recursive_no_trailing_slash(op: Operator) -> Result<()> {
+    if !op.info().capability().create_dir {
+        return Ok(());
+    }
+    if skip_cos_create_dir_list_check(&op) {
+        return Ok(());
+    }
     let parent = uuid::Uuid::new_v4().to_string();
 
     let paths = [
@@ -527,6 +595,12 @@ pub async fn test_list_file_with_recursive(op: Operator) -> Result<()> {
 
 // Remove all should remove all in this path.
 pub async fn test_remove_all(op: Operator) -> Result<()> {
+    if !op.info().capability().create_dir {
+        return Ok(());
+    }
+    if skip_cos_create_dir_list_check(&op) {
+        return Ok(());
+    }
     let parent = uuid::Uuid::new_v4().to_string();
 
     let expected = [
@@ -540,7 +614,9 @@ pub async fn test_remove_all(op: Operator) -> Result<()> {
         }
     }
 
-    op.remove_all(&format!("{parent}/x/")).await?;
+    op.delete_with(&format!("{parent}/x/"))
+        .recursive(true)
+        .await?;
 
     for path in expected.iter() {
         if path.ends_with('/') {
@@ -575,18 +651,18 @@ pub async fn test_list_only(op: Operator) -> Result<()> {
     Ok(())
 }
 
-pub async fn test_list_files_with_version(op: Operator) -> Result<()> {
-    if !op.info().full_capability().list_with_version {
+pub async fn test_list_files_with_versions(op: Operator) -> Result<()> {
+    if !op.info().capability().list_with_versions {
         return Ok(());
     }
 
     let parent = TEST_FIXTURE.new_dir_path();
     let file_name = TEST_FIXTURE.new_file_path();
-    let file_path = format!("{}{}", parent, file_name);
+    let file_path = format!("{parent}{file_name}");
     op.write(file_path.as_str(), "1").await?;
     op.write(file_path.as_str(), "2").await?;
 
-    let mut ds = op.list_with(parent.as_str()).version(true).await?;
+    let mut ds = op.list_with(parent.as_str()).versions(true).await?;
     ds.retain(|de| de.path() != parent.as_str());
 
     assert_eq!(ds.len(), 2);
@@ -595,26 +671,57 @@ pub async fn test_list_files_with_version(op: Operator) -> Result<()> {
         assert_eq!(de.name(), file_name);
         let meta = de.metadata();
         assert_eq!(meta.mode(), EntryMode::FILE);
-
-        // just ensure they don't panic
-        let _ = meta.content_length();
-        let _ = meta.version();
-        let _ = meta.last_modified();
-        let _ = meta.etag();
-        let _ = meta.content_md5();
     }
 
     Ok(())
 }
 
-// listing a directory with version, which contains more object versions than a page can take
-pub async fn test_list_with_version_and_limit(op: Operator) -> Result<()> {
-    // Gdrive think that this test is an abuse of their service and redirect us
-    // to an infinite loop. Let's ignore this test for gdrive.
-    if op.info().scheme() == Scheme::Gdrive {
+pub async fn test_list_files_with_deleted(op: Operator) -> Result<()> {
+    if !op.info().capability().list_with_deleted {
         return Ok(());
     }
-    if !op.info().full_capability().list_with_version {
+
+    let parent = TEST_FIXTURE.new_dir_path();
+    let file_name = TEST_FIXTURE.new_file_path();
+    let file_path = format!("{parent}{file_name}");
+    op.write(file_path.as_str(), "1").await?;
+
+    // List with deleted should include self too.
+    let ds = op.list_with(&file_path).deleted(true).await?;
+    assert_eq!(
+        ds.len(),
+        1,
+        "list with deleted should contain current active file version"
+    );
+
+    op.write(file_path.as_str(), "2").await?;
+    op.delete(file_path.as_str()).await?;
+
+    // This file has been deleted, list with deleted should contain its versions and delete marker.
+    let mut ds = op.list_with(&file_path).deleted(true).await?;
+    ds.retain(|de| de.path() == file_path && de.metadata().is_deleted());
+
+    assert_eq!(
+        ds.len(),
+        1,
+        "deleted file should be found and only have one"
+    );
+
+    Ok(())
+}
+
+// listing a directory with version, which contains more object versions than a page can take
+pub async fn test_list_with_versions_and_limit(op: Operator) -> Result<()> {
+    // Gdrive think that this test is an abuse of their service and redirect us
+    // to an infinite loop. Let's ignore this test for gdrive.
+    #[cfg(feature = "services-gdrive")]
+    if op.info().scheme() == services::GDRIVE_SCHEME {
+        return Ok(());
+    }
+    if !op.info().capability().list_with_versions {
+        return Ok(());
+    }
+    if skip_cos_create_dir_list_check(&op) {
         return Ok(());
     }
 
@@ -629,11 +736,11 @@ pub async fn test_list_with_version_and_limit(op: Operator) -> Result<()> {
     }
     let mut expected: Vec<String> = expected
         .into_iter()
-        .flat_map(|v| std::iter::repeat(v).take(2))
+        .flat_map(|v| std::iter::repeat_n(v, 2))
         .collect();
     expected.push(parent.to_string());
 
-    let mut objects = op.lister_with(parent).version(true).limit(5).await?;
+    let mut objects = op.lister_with(parent).versions(true).limit(5).await?;
     let mut actual = vec![];
     while let Some(o) = objects.try_next().await? {
         let path = o.path().to_string();
@@ -644,12 +751,12 @@ pub async fn test_list_with_version_and_limit(op: Operator) -> Result<()> {
 
     assert_eq!(actual, expected);
 
-    op.remove_all(parent).await?;
+    op.delete_with(parent).recursive(true).await?;
     Ok(())
 }
 
-pub async fn test_list_with_version_and_start_after(op: Operator) -> Result<()> {
-    if !op.info().full_capability().list_with_version {
+pub async fn test_list_with_versions_and_start_after(op: Operator) -> Result<()> {
+    if !op.info().capability().list_with_versions {
         return Ok(());
     }
 
@@ -672,7 +779,7 @@ pub async fn test_list_with_version_and_start_after(op: Operator) -> Result<()> 
 
     let mut objects = op
         .lister_with(dir)
-        .version(true)
+        .versions(true)
         .start_after(&given[2])
         .await?;
     let mut actual = vec![];
@@ -684,14 +791,14 @@ pub async fn test_list_with_version_and_start_after(op: Operator) -> Result<()> 
     let expected: Vec<String> = given.into_iter().skip(3).collect();
     let mut expected: Vec<String> = expected
         .into_iter()
-        .flat_map(|v| std::iter::repeat(v).take(2))
+        .flat_map(|v| std::iter::repeat_n(v, 2))
         .collect();
 
     expected.sort_unstable();
     actual.sort_unstable();
     assert_eq!(expected, actual);
 
-    op.remove_all(dir).await?;
+    op.delete_with(dir).recursive(true).await?;
 
     Ok(())
 }

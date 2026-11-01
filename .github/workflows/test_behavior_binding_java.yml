@@ -27,16 +27,16 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: binding_java-${{ inputs.os }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
 jobs:
-  test:
-    name: ${{ matrix.cases.service }} / ${{ matrix.cases.setup }}
+  java-cache:
     runs-on: ${{ inputs.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        cases: ${{ fromJson(inputs.cases) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
         with:
@@ -45,15 +45,51 @@ jobs:
           need-rocksdb: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # TODO: 1password is only supported on linux
-      #
-      # Waiting for https://github.com/1Password/load-secrets-action/issues/46
-      - name: Setup 1Password Connect
-        if: runner.os == 'Linux'
-        uses: 1password/load-secrets-action/configure@v1
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
         with:
-          connect-host: ${{ secrets.OP_CONNECT_HOST }}
-          connect-token: ${{ secrets.OP_CONNECT_TOKEN }}
+          # params must be in sync with `test` job
+          distribution: zulu
+          java-version: 25
+          cache: 'maven'
+          cache-dependency-path: |
+            bindings/java/pom.xml
+
+  test:
+    name: ${{ matrix.cases.service }} / ${{ matrix.cases.setup }}
+    needs: java-cache
+    runs-on: ${{ inputs.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        cases: ${{ fromJson(inputs.cases) }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+        with:
+          need-nextest: true
+          need-protoc: true
+          need-rocksdb: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup 1Password Connect
+        shell: bash
+        run: |
+          echo "::add-mask::${{ secrets.OP_CONNECT_HOST }}"
+          echo "::add-mask::${{ secrets.OP_CONNECT_TOKEN }}"
+          echo "OP_CONNECT_HOST=${{ secrets.OP_CONNECT_HOST }}" >> "$GITHUB_ENV"
+          echo "OP_CONNECT_TOKEN=${{ secrets.OP_CONNECT_TOKEN }}" >> "$GITHUB_ENV"
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          # params must be in sync with `java-cache` job
+          distribution: zulu
+          java-version: 25
+          cache: 'maven'
+          cache-dependency-path: |
+            bindings/java/pom.xml
 
       - name: Test Core
         uses: ./.github/actions/test_behavior_binding_java

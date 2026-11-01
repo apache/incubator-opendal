@@ -1,13 +1,12 @@
 {
   "compilerOptions": {
     "target": "es2020",
-    "module": "commonjs",
-    "moduleResolution": "node",
+    "module": "NodeNext",
+    "moduleResolution": "nodenext",
     "forceConsistentCasingInFileNames": true,
     "strict": true,
     "esModuleInterop": true,
     "outDir": "theme/dist",
-
     "jsx": "react",
     "jsxFactory": "JSX.createElement",
     "jsxFragmentFactory": "JSX.Fragment"

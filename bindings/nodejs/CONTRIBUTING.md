@@ -6,6 +6,7 @@
     - [Bring your own toolbox](#bring-your-own-toolbox)
   - [Build](#build)
   - [Test](#test)
+  - [Docs](#docs)
 
 ## Setup
 
@@ -100,4 +101,25 @@ Taking 'service-memory' as an example, you can use the following command to run 
       Tests  6 passed | 2 skipped (8)
    Start at  01:42:07
    Duration  233ms (transform 25ms, setup 0ms, collect 56ms, tests 40ms, environment 0ms, prepare 52ms)
+```
+
+Services behavior tests read their config from env vars or a `.env` file. Copy
+[`.env.example`](/.env.example) to `$(pwd)/.env` and adjust the values, or export
+the vars directly. For example, to run the `fs` service tests against `/tmp`:
+
+```properties
+OPENDAL_TEST=fs
+OPENDAL_FS_ROOT=/tmp
+```
+
+## Docs
+
+To build the docs locally:
+
+```shell
+# Only needed once, unless you want to update the docs theme.
+pnpm run build:theme
+
+# Build the docs.
+pnpm run docs
 ```

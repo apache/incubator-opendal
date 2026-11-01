@@ -35,15 +35,15 @@ pub struct opendal_lister {
 }
 
 impl opendal_lister {
-    fn deref_mut(&mut self) -> &mut core::BlockingLister {
+    fn deref_mut(&mut self) -> &mut core::blocking::Lister {
         // Safety: the inner should never be null once constructed
         // The use-after-free is undefined behavior
-        unsafe { &mut *(self.inner as *mut core::BlockingLister) }
+        unsafe { &mut *(self.inner as *mut core::blocking::Lister) }
     }
 }
 
 impl opendal_lister {
-    pub(crate) fn new(lister: core::BlockingLister) -> Self {
+    pub(crate) fn new(lister: core::blocking::Lister) -> Self {
         Self {
             inner: Box::into_raw(Box::new(lister)) as _,
         }
@@ -84,9 +84,11 @@ impl opendal_lister {
     /// \brief Free the heap-allocated metadata used by opendal_lister
     #[no_mangle]
     pub unsafe extern "C" fn opendal_lister_free(ptr: *mut opendal_lister) {
-        if !ptr.is_null() {
-            drop(Box::from_raw((*ptr).inner as *mut core::BlockingLister));
-            drop(Box::from_raw(ptr));
+        unsafe {
+            if !ptr.is_null() {
+                drop(Box::from_raw((*ptr).inner as *mut core::blocking::Lister));
+                drop(Box::from_raw(ptr));
+            }
         }
     }
 }

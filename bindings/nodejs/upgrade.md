@@ -1,3 +1,11 @@
+# Upgrade to v0.48
+
+## Breaking change
+
+### Public API
+
+Now, nodejs binding `op.is_exist` changed to `op.exists` to align with nodejs API style.
+
 # Upgrade to v0.47
 
 ## Breaking change

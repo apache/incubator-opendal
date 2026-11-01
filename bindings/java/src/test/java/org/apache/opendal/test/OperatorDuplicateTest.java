@@ -28,6 +28,7 @@ import org.apache.opendal.Operator;
 import org.junit.jupiter.api.Test;
 
 public class OperatorDuplicateTest {
+
     @Test
     public void testDuplicateOperator() {
         final Map<String, String> conf = new HashMap<>();

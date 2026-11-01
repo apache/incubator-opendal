@@ -15,78 +15,92 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use criterion::Criterion;
-use opendal::raw::tests::init_test_service;
-use opendal::raw::tests::TEST_RUNTIME;
-use opendal::Operator;
-use rand::prelude::*;
+use divan::Bencher;
+use divan::counter::BytesCount;
+use opendal::tests::TEST_RUNTIME;
+use opendal::tests::init_test_service;
+use rand::rng;
 use size::Size;
 
 use super::utils::*;
 
-pub fn bench(c: &mut Criterion) {
-    if let Some(op) = init_test_service().unwrap() {
-        bench_write_once(c, op.info().scheme().into_static(), op.clone());
-        bench_write_with_concurrent(c, op.info().scheme().into_static(), op.clone());
-    }
+#[divan::bench(
+    args = [
+        Size::from_kib(4),
+        Size::from_kib(64),
+        Size::from_mib(1),
+        Size::from_mib(16),
+    ],
+    ignore = std::env::var("OPENDAL_TEST").is_err()
+)]
+fn whole(b: Bencher, size: Size) {
+    let op = init_test_service().unwrap().unwrap();
+    let path = uuid::Uuid::new_v4().to_string();
+    let _temp_data = TempData::existing(op.clone(), &path);
+
+    b.counter(BytesCount::from(size.bytes() as u64))
+        .with_inputs(|| {
+            let mut rng = rng();
+            gen_bytes(&mut rng, size.bytes() as usize)
+        })
+        .bench_values(|content| {
+            let op = op.clone();
+            let path = path.clone();
+            TEST_RUNTIME.block_on(async move {
+                let _ = op.write(&path, content).await.unwrap();
+            })
+        })
 }
 
-fn bench_write_once(c: &mut Criterion, name: &str, op: Operator) {
-    let mut group = c.benchmark_group(format!("service_{name}_write_once"));
+mod concurrent {
+    use super::*;
 
-    let mut rng = thread_rng();
+    /// Size of the data to be written.
+    const SIZE: usize = 64 * 1024 * 1024;
 
-    for size in [
-        Size::from_kibibytes(4),
-        Size::from_kibibytes(256),
-        Size::from_mebibytes(4),
-        Size::from_mebibytes(16),
-    ] {
-        let content = gen_bytes(&mut rng, size.bytes() as usize);
+    #[divan::bench(
+        ignore = std::env::var("OPENDAL_TEST").is_err()
+    )]
+    fn baseline(b: Bencher) {
+        let op = init_test_service().unwrap().unwrap();
         let path = uuid::Uuid::new_v4().to_string();
-        let temp_data = TempData::existing(op.clone(), &path);
+        let _temp_data = TempData::existing(op.clone(), &path);
+        let mut rng = rng();
+        let content = gen_bytes(&mut rng, SIZE);
 
-        group.throughput(criterion::Throughput::Bytes(size.bytes() as u64));
-        group.bench_with_input(
-            size.to_string(),
-            &(op.clone(), &path, content.clone()),
-            |b, (op, path, content)| {
-                b.to_async(&*TEST_RUNTIME).iter(|| async {
-                    op.write(path, content.clone()).await.unwrap();
-                })
-            },
-        );
-
-        std::mem::drop(temp_data);
+        b.counter(BytesCount::from(SIZE)).bench(|| {
+            let op = op.clone();
+            let path = path.clone();
+            let content = content.clone();
+            TEST_RUNTIME.block_on(async move {
+                let _ = op.write(&path, content).await.unwrap();
+            })
+        })
     }
 
-    group.finish()
-}
-
-fn bench_write_with_concurrent(c: &mut Criterion, name: &str, op: Operator) {
-    let mut group = c.benchmark_group(format!("service_{name}_write_with_concurrent"));
-
-    let mut rng = thread_rng();
-
-    for concurrent in [1, 2, 4, 8] {
-        let content = gen_bytes(&mut rng, 5 * 1024 * 1024);
+    #[divan::bench(
+        args = [1, 2, 4, 8],
+        ignore = std::env::var("OPENDAL_TEST").is_err()
+    )]
+    fn concurrent(b: Bencher, concurrent: usize) {
+        let op = init_test_service().unwrap().unwrap();
         let path = uuid::Uuid::new_v4().to_string();
+        let _temp_data = TempData::existing(op.clone(), &path);
+        let mut rng = rng();
+        let content = gen_bytes(&mut rng, SIZE);
 
-        group.throughput(criterion::Throughput::Bytes(16 * 5 * 1024 * 1024));
-        group.bench_with_input(
-            concurrent.to_string(),
-            &(op.clone(), &path, content.clone()),
-            |b, (op, path, content)| {
-                b.to_async(&*TEST_RUNTIME).iter(|| async {
-                    let mut w = op.writer_with(path).concurrent(concurrent).await.unwrap();
-                    for _ in 0..16 {
-                        w.write(content.clone()).await.unwrap();
-                    }
-                    w.close().await.unwrap();
-                })
-            },
-        );
+        b.counter(BytesCount::from(SIZE)).bench(|| {
+            let op = op.clone();
+            let path = path.clone();
+            let content = content.clone();
+            TEST_RUNTIME.block_on(async move {
+                let _ = op
+                    .write_with(&path, content)
+                    .chunk(8 * 1024 * 1024)
+                    .concurrent(concurrent)
+                    .await
+                    .unwrap();
+            })
+        })
     }
-
-    group.finish()
 }

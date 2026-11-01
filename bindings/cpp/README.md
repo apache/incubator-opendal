@@ -1,34 +1,32 @@
-# Apache OpenDAL™ CPP Binding (WIP)
+# Apache OpenDAL™ C++ Binding
 
-![](https://img.shields.io/badge/status-unreleased-red)
+[![status: unreleased](https://img.shields.io/badge/status-unreleased-red)](https://opendal.apache.org/docs/bindings/cpp)
 
-![](https://github.com/apache/opendal/assets/5351546/87bbf6e5-f19e-449a-b368-3e283016c887)
+A C++ binding for OpenDAL, providing access to S3, GCS, Azure Blob, HDFS, the
+local filesystem, and 50+ more services through one API.
 
-Documents: [![Documents](https://img.shields.io/badge/opendal-cpp-blue?logo=Apache&logoColor=red)](https://opendal.apache.org/docs/cpp/)
+> **Note**: This binding is experimental/WIP. Only Clang and AppleClang are
+> currently supported. The API may change without notice.
 
-## Example
+We release the OpenDAL C++ binding independently of the
+[`opendal` crate](https://crates.io/crates/opendal) (Rust core). For updates
+and compatibility, use the C++ binding version instead of the `opendal` crate
+version.
 
-```cpp
-#include "opendal.hpp"
-#include <vector>
+## Useful Links
 
-int main() {
-    auto op = opendal::Operator("memory");
-    std::vector<uint8_t> data = {1, 2, 3, 4, 5};
-    op.write("test", data);
-    auto result = op.read("test");  // result == data
-}
-```
+- **User guide**: [opendal.apache.org/docs/bindings/cpp](https://opendal.apache.org/docs/bindings/cpp)
+- **Services & configuration**: [opendal.apache.org/services](https://opendal.apache.org/services)
+- **Source**: [`bindings/cpp/`](https://github.com/apache/opendal/tree/main/bindings/cpp)
+- **Examples**: [`examples/cpp/`](https://github.com/apache/opendal/tree/main/examples/cpp)
 
-More examples can be found [here](../../examples/cpp).
+## Integration via CMake
 
-## Using
-
-### CMake
-
-You can use `FetchContent` to add OpenDAL to your project.
+### FetchContent
 
 ```cmake
+include(FetchContent)
+
 FetchContent_Declare(
   opendal-cpp
   GIT_REPOSITORY https://github.com/apache/opendal.git
@@ -36,71 +34,74 @@ FetchContent_Declare(
   SOURCE_SUBDIR  bindings/cpp
 )
 FetchContent_MakeAvailable(opendal-cpp)
+
+target_link_libraries(your_target opendal_cpp)
 ```
 
-Or you can download the source code and add it to your project.
+### Vendored source
 
 ```shell
-mkdir third_party
-cd third_party
+mkdir third_party && cd third_party
 git clone https://github.com/apache/opendal.git
-git checkout v0.40.0
+cd opendal && git checkout v0.40.0
 ```
 
 ```cmake
 add_subdirectory(third_party/opendal/bindings/cpp)
-```
-
-Now you can use OpenDAL in your project.
-
-```cmake
 target_link_libraries(your_target opendal_cpp)
 ```
 
-### Others
-
-Support for more package managers is coming soon!
-
-## Compiling
-
 ### Prerequisites
 
-- CMake >= 3.22
-- C++ compiler with C++17 support
+- CMake ≥ 3.22
+- Clang or AppleClang with C++17 support (C++20 required for async)
 
 ### Build
 
-```bash
-mkdir build
-cd build
-# Add -DOPENDAL_DEV=ON to make development environment for OpenDAL
-cmake ..
+```shell
+mkdir build && cd build
+cmake -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ ..
 make
 ```
 
-### Test
+### CMake options
 
-You should build the project with `OPENDAL_ENABLE_TESTING` option. Then run:
+| Option | Default | Description |
+|---|---|---|
+| `OPENDAL_DEV` | `OFF` | Enable all development options at once |
+| `OPENDAL_FEATURES` | `""` | Comma-separated list of services, e.g. `"opendal/services-s3"` |
+| `OPENDAL_ENABLE_ASYNC` | `OFF` | Enable async API (requires C++20) |
+| `OPENDAL_ENABLE_TESTING` | `OFF` | Build and enable tests |
+| `OPENDAL_ENABLE_DOCUMENTATION` | `OFF` | Build Doxygen docs |
+| `OPENDAL_ENABLE_ADDRESS_SANITIZER` | `OFF` | Enable address sanitizer |
 
-```bash
-make test
+## Example
+
+```cpp
+#include "opendal.hpp"
+#include <iostream>
+
+int main() {
+    // Construct an operator. The second argument is a config map.
+    opendal::Operator op("memory");
+
+    // Write, read, stat.
+    op.Write("hello.txt", "Hello, OpenDAL!");
+    std::string data = op.Read("hello.txt");
+    std::cout << data << "\n";
+
+    opendal::Metadata meta = op.Stat("hello.txt");
+    std::cout << "size=" << meta.ContentLength() << "\n";
+}
 ```
 
-### Docs
+See the [user guide](https://opendal.apache.org/docs/bindings/cpp) for more
+examples including streaming reads, directory listing, real backends, and the
+async API.
 
-You should build the project with `OPENDAL_ENABLE_DOCUMENTATION` option. Then run:
+## Contributing
 
-```bash
-make docs
-```
-
-### CMake Options
-
-- `OPENDAL_DEV`: Enable development environment for OpenDAL. It will enable most development options. With this option, you don't need to set other options. Default: `OFF`
-- `OPENDAL_ENABLE_ADDRESS_SANITIZER`: Enable address sanitizer. Default: `OFF`
-- `OPENDAL_ENABLE_DOCUMENTATION`: Enable documentation. Default: `OFF`
-- `OPENDAL_DOCS_ONLY`: Only build documentation. Default: `OFF`
-- `OPENDAL_ENABLE_TESTING`: Enable testing. Default: `OFF`
+See [CONTRIBUTING.md](../../CONTRIBUTING.md) at the repository root.
 
 ## License and Trademarks
 

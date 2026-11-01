@@ -25,6 +25,8 @@ data RawOperator
 
 data RawLister
 
+data RawWriter
+
 data FFIResult a = FFIResult
   { ffiCode :: CUInt,
     dataPtr :: Ptr a,
@@ -162,3 +164,18 @@ foreign import ccall "blocking_scan" c_blocking_scan :: Ptr RawOperator -> CStri
 foreign import ccall "lister_next" c_lister_next :: Ptr RawLister -> Ptr (FFIResult CString) -> IO ()
 
 foreign import ccall "&free_lister" c_free_lister :: FunPtr (Ptr RawLister -> IO ())
+
+
+foreign import ccall "operator_info" c_operator_info :: Ptr RawOperator -> Ptr (FFIResult CString) -> IO ()
+
+foreign import ccall "blocking_writer" c_blocking_writer :: Ptr RawOperator -> CString -> Ptr (FFIResult (Ptr RawWriter)) -> IO ()
+
+foreign import ccall "blocking_writer_append" c_blocking_writer_append :: Ptr RawOperator -> CString -> Ptr (FFIResult (Ptr RawWriter)) -> IO ()
+
+foreign import ccall "writer_write" c_writer_write :: Ptr RawWriter -> Ptr CChar -> CSize -> Ptr (FFIResult ()) -> IO ()
+
+foreign import ccall "writer_close" c_writer_close :: Ptr RawWriter -> Ptr (FFIResult FFIMetadata) -> IO ()
+
+foreign import ccall "&free_writer" c_free_writer :: FunPtr (Ptr RawWriter -> IO ())
+
+foreign import ccall "blocking_remove_all" c_blocking_remove_all :: Ptr RawOperator -> CString -> Ptr (FFIResult ()) -> IO ()

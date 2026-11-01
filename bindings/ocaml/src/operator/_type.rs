@@ -20,12 +20,20 @@
 use super::*;
 
 #[ocaml::sig]
-pub struct Operator(pub(crate) od::BlockingOperator);
+pub struct Operator(pub(crate) od::blocking::Operator);
 ocaml::custom!(Operator);
 
 #[ocaml::sig]
-pub struct Reader(pub(crate) od::BlockingReader);
+pub struct Reader(pub(crate) od::blocking::Reader);
 ocaml::custom!(Reader);
+
+#[ocaml::sig]
+pub struct Writer(pub(crate) od::blocking::Writer);
+ocaml::custom!(Writer);
+
+#[ocaml::sig]
+pub struct Lister(pub(crate) od::blocking::Lister);
+ocaml::custom!(Lister);
 
 #[ocaml::sig]
 pub struct Metadata(pub(crate) od::Metadata);
@@ -34,3 +42,16 @@ ocaml::custom!(Metadata);
 #[ocaml::sig]
 pub struct Entry(pub(crate) od::Entry);
 ocaml::custom!(Entry);
+
+#[ocaml::sig]
+pub struct OperatorInfo(pub(crate) od::OperatorInfo);
+ocaml::custom!(OperatorInfo);
+
+#[ocaml::sig]
+pub struct Capability(pub(crate) od::Capability);
+ocaml::custom!(Capability);
+
+#[ocaml::sig]
+#[allow(dead_code)]
+pub struct PresignedRequest(pub(crate) od::raw::PresignedRequest);
+ocaml::custom!(PresignedRequest);

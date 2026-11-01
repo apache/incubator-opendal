@@ -23,14 +23,16 @@ on:
       - main
     tags:
       - "*"
-  pull_request:
-    branches:
-      - main
-    paths:
+    paths: &paths
       - "core/**"
       - "bindings/c/**"
       - "bindings/zig/**"
+      - ".github/actions/setup/**"
       - ".github/workflows/ci_bindings_zig.yml"
+  pull_request:
+    branches:
+      - main
+    paths: *paths
   workflow_dispatch:
 
 concurrency:
@@ -44,13 +46,31 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: korandoru/setup-zig@v1
-        with:
-          zig-version: 0.13.0
+      - uses: actions/checkout@v7
+      - name: Setup Zig
+        shell: bash
+        run: |
+          ZIG_VERSION=0.14.0
+          case "${RUNNER_OS}-${RUNNER_ARCH}" in
+            Linux-X64) ZIG_TARGET=linux-x86_64 ;;
+            *)
+              echo "unsupported host for Zig: ${RUNNER_OS}-${RUNNER_ARCH}" >&2
+              exit 1
+              ;;
+          esac
+          ZIG_HOME="${RUNNER_TOOL_CACHE}/zig/${ZIG_VERSION}"
+          mkdir -p "${ZIG_HOME}"
+          curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/zig-${ZIG_TARGET}-${ZIG_VERSION}.tar.xz" \
+            | tar -xJ --strip-components=1 -C "${ZIG_HOME}"
+          echo "${ZIG_HOME}" >> "${GITHUB_PATH}"
 
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
+
+      - name: Install C build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config uuid-dev
 
       - name: Build Zig binding
         working-directory: bindings/zig
@@ -66,3 +86,7 @@ jobs:
       - name: Run tests
         working-directory: bindings/zig
         run: zig build test --summary all
+
+      - name: Run getting-started example
+        working-directory: bindings/zig
+        run: zig build run-example

@@ -32,6 +32,8 @@ module OpenDAL
     OperatorConfig (..),
     Operator,
     Lister,
+    Writer,
+    WriterOption (..),
     OpenDALError (..),
     ErrorCode (..),
     EntryMode (..),
@@ -43,8 +45,17 @@ module OpenDAL
     runOp,
     newOperator,
 
+    -- * Writer Option Functions
+    defaultWriterOption,
+    appendWriterOption,
+
     -- * Lister APIs
     nextLister,
+
+    -- * Writer APIs
+    writerOpRaw,
+    writerWrite,
+    writerClose,
 
     -- * Operator Raw APIs
     -- $raw-operations
@@ -58,6 +69,8 @@ module OpenDAL
     statOpRaw,
     listOpRaw,
     scanOpRaw,
+    operatorInfoRaw,
+    removeAllOpRaw,
   )
 where
 
@@ -120,6 +133,16 @@ newtype Operator = Operator (ForeignPtr RawOperator)
 -- Users can construct Lister by `listOp` or `scanOp`.
 newtype Lister = Lister (ForeignPtr RawLister)
 
+-- | `Writer` is designed to write bytes into given path.
+newtype Writer = Writer (ForeignPtr RawWriter)
+
+-- | Options for creating a Writer.
+data WriterOption = WriterOption
+  { -- | Whether to append to the file instead of overwriting it.
+    woAppend :: Bool
+  }
+  deriving (Eq, Show)
+
 -- | Represents the possible error codes that can be returned by OpenDAL.
 data ErrorCode
   = -- | An error occurred in the FFI layer.
@@ -144,6 +167,12 @@ data ErrorCode
     RateLimited
   | -- | The given file paths are same.
     IsSameFile
+  | -- | The operation conflicts with the current or transitional state of the resource.
+    Conflict
+  | -- | A condition supplied through the OpenDAL operation evaluated to false.
+    ConditionNotMatch
+  | -- | The requested content range cannot be satisfied.
+    RangeNotSatisfied
   deriving (Eq, Show)
 
 -- | Represents an error that can occur when using OpenDAL.
@@ -210,18 +239,21 @@ class (Monad m) => MonadOperation m where
   -- | Delete given path.
   deleteOp :: String -> m ()
 
-  -- | Get given path’s metadata without cache directly.
+  -- | Get given path's metadata without cache directly.
   statOp :: String -> m Metadata
 
   -- | List current dir path.
   -- This function will create a new handle to list entries.
-  -- An error will be returned if path doesn’t end with /.
+  -- An error will be returned if path doesn't end with /.
   listOp :: String -> m Lister
 
   -- | List dir in flat way.
   -- Also, this function can be used to list a prefix.
-  -- An error will be returned if given path doesn’t end with /.
+  -- An error will be returned if given path doesn't end with /.
   scanOp :: String -> m Lister
+
+  -- | Remove all files and directories recursively.
+  removeAllOp :: String -> m ()
 
 instance (MonadIO m) => MonadOperation (OperatorT m) where
   readOp path = do
@@ -264,6 +296,10 @@ instance (MonadIO m) => MonadOperation (OperatorT m) where
     op <- ask
     result <- liftIO $ scanOpRaw op path
     either throwError return result
+  removeAllOp path = do
+    op <- ask
+    result <- liftIO $ removeAllOpRaw op path
+    either throwError return result
 
 -- helper functions
 
@@ -282,6 +318,9 @@ parseErrorCode 8 = NotADirectory
 parseErrorCode 9 = AlreadyExists
 parseErrorCode 10 = RateLimited
 parseErrorCode 11 = IsSameFile
+parseErrorCode 12 = Conflict
+parseErrorCode 13 = ConditionNotMatch
+parseErrorCode 14 = RangeNotSatisfied
 parseErrorCode _ = FFIError
 
 parseEntryMode :: Int -> EntryMode
@@ -295,6 +334,12 @@ parseCString value = do
   value' <- peekCString value
   free value
   return $ Just value'
+
+parseString :: CString -> IO String
+parseString value = do
+  value' <- peekCString value
+  free value
+  return value'
 
 parseTime :: String -> Maybe UTCTime
 parseTime time = zonedTimeToUTC <$> parseTimeM True defaultTimeLocale "%Y-%m-%dT%H:%M:%S%Q%z" time
@@ -322,6 +367,14 @@ parseFFIMetadata (FFIMetadata mode cacheControl contentDisposition contentLength
       }
 
 -- Exported functions
+
+-- | Default WriterOption for writing (overwriting).
+defaultWriterOption :: WriterOption
+defaultWriterOption = WriterOption {woAppend = False}
+
+-- | WriterOption for appending to a file.
+appendWriterOption :: WriterOption
+appendWriterOption = WriterOption {woAppend = True}
 
 -- |  Runner for 'OperatorT' monad.
 -- This function will run given 'OperatorT' monad with given 'Operator'.
@@ -489,7 +542,7 @@ deleteOpRaw (Operator op) path = withForeignPtr op $ \opptr ->
           errMsg <- peekCString (errorMessage ffiResult)
           return $ Left $ OpenDALError code errMsg
 
--- | Get given path’s metadata without cache directly.
+-- | Get given path's metadata without cache directly.
 statOpRaw :: Operator -> String -> IO (Either OpenDALError Metadata)
 statOpRaw (Operator op) path = withForeignPtr op $ \opptr ->
   withCString path $ \cPath ->
@@ -508,7 +561,7 @@ statOpRaw (Operator op) path = withForeignPtr op $ \opptr ->
 
 -- | List current dir path.
 -- This function will create a new handle to list entries.
--- An error will be returned if path doesn’t end with /.
+-- An error will be returned if path doesn't end with /.
 listOpRaw :: Operator -> String -> IO (Either OpenDALError Lister)
 listOpRaw (Operator op) path = withForeignPtr op $ \opptr ->
   withCString path $ \cPath ->
@@ -527,7 +580,7 @@ listOpRaw (Operator op) path = withForeignPtr op $ \opptr ->
 
 -- | List dir in flat way.
 -- Also, this function can be used to list a prefix.
--- An error will be returned if given path doesn’t end with /.
+-- An error will be returned if given path doesn't end with /.
 scanOpRaw :: Operator -> String -> IO (Either OpenDALError Lister)
 scanOpRaw (Operator op) path = withForeignPtr op $ \opptr ->
   withCString path $ \cPath ->
@@ -544,6 +597,21 @@ scanOpRaw (Operator op) path = withForeignPtr op $ \opptr ->
           errMsg <- peekCString (errorMessage ffiResult)
           return $ Left $ OpenDALError code errMsg
 
+-- | Get operator info (scheme).
+operatorInfoRaw :: Operator -> IO (Either OpenDALError String)
+operatorInfoRaw (Operator op) = withForeignPtr op $ \opptr ->
+  alloca $ \ffiResultPtr -> do
+    c_operator_info opptr ffiResultPtr
+    ffiResult <- peek ffiResultPtr
+    if ffiCode ffiResult == 0
+      then do
+        val <- peek $ dataPtr ffiResult
+        Right <$> parseString val
+      else do
+        let code = parseErrorCode $ fromIntegral $ ffiCode ffiResult
+        errMsg <- peekCString (errorMessage ffiResult)
+        return $ Left $ OpenDALError code errMsg
+
 -- | Get next entry path from `Lister`.
 nextLister :: Lister -> IO (Either OpenDALError (Maybe String))
 nextLister (Lister lister) = withForeignPtr lister $ \listerptr ->
@@ -558,3 +626,69 @@ nextLister (Lister lister) = withForeignPtr lister $ \listerptr ->
         let code = parseErrorCode $ fromIntegral $ ffiCode ffiResult
         errMsg <- peekCString (errorMessage ffiResult)
         return $ Left $ OpenDALError code errMsg
+
+
+-- | Writes bytes into given writer.
+writerWrite :: Writer -> ByteString -> IO (Either OpenDALError ())
+writerWrite (Writer writer) byte = withForeignPtr writer $ \writerptr ->
+  BS.useAsCStringLen byte $ \(cByte, len) ->
+    alloca $ \ffiResultPtr -> do
+      c_writer_write writerptr cByte (fromIntegral len) ffiResultPtr
+      ffiResult <- peek ffiResultPtr
+      if ffiCode ffiResult == 0
+        then return $ Right ()
+        else do
+          let code = parseErrorCode $ fromIntegral $ ffiCode ffiResult
+          errMsg <- peekCString (errorMessage ffiResult)
+          return $ Left $ OpenDALError code errMsg
+
+-- | Closes given writer.
+writerClose :: Writer -> IO (Either OpenDALError Metadata)
+writerClose (Writer writer) = withForeignPtr writer $ \writerptr ->
+  alloca $ \ffiResultPtr -> do
+    c_writer_close writerptr ffiResultPtr
+    ffiResult <- peek ffiResultPtr
+    if ffiCode ffiResult == 0
+      then do
+        ffimatadata <- peek $ dataPtr ffiResult
+        metadata <- parseFFIMetadata ffimatadata
+        return $ Right metadata
+      else do
+        let code = parseErrorCode $ fromIntegral $ ffiCode ffiResult
+        errMsg <- peekCString (errorMessage ffiResult)
+        return $ Left $ OpenDALError code errMsg
+
+-- | Create a new writer for given path with specified options.
+writerOpRaw :: Operator -> String -> WriterOption -> IO (Either OpenDALError Writer)
+writerOpRaw (Operator op) path writerOption = withForeignPtr op $ \opptr ->
+  withCString path $ \cPath ->
+    alloca $ \ffiResultPtr -> do
+      if woAppend writerOption
+        then c_blocking_writer_append opptr cPath ffiResultPtr
+        else c_blocking_writer opptr cPath ffiResultPtr
+      ffiResult <- peek ffiResultPtr
+      if ffiCode ffiResult == 0
+        then do
+          ffiwriter <- peek $ dataPtr ffiResult
+          writer <- Writer <$> newForeignPtr c_free_writer ffiwriter
+          return $ Right writer
+        else do
+          let code = parseErrorCode $ fromIntegral $ ffiCode ffiResult
+          errMsg <- peekCString (errorMessage ffiResult)
+          return $ Left $ OpenDALError code errMsg
+
+
+
+-- | Remove all files and directories recursively.
+removeAllOpRaw :: Operator -> String -> IO (Either OpenDALError ())
+removeAllOpRaw (Operator op) path = withForeignPtr op $ \opptr ->
+  withCString path $ \cPath ->
+    alloca $ \ffiResultPtr -> do
+      c_blocking_remove_all opptr cPath ffiResultPtr
+      ffiResult <- peek ffiResultPtr
+      if ffiCode ffiResult == 0
+        then return $ Right ()
+        else do
+          let code = parseErrorCode $ fromIntegral $ ffiCode ffiResult
+          errMsg <- peekCString (errorMessage ffiResult)
+          return $ Left $ OpenDALError code errMsg

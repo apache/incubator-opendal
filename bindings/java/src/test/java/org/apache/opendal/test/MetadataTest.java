@@ -23,12 +23,11 @@ import static org.apache.opendal.test.behavior.BehaviorTestBase.generateBytes;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 import org.apache.opendal.AsyncOperator;
 import org.apache.opendal.Metadata;
 import org.apache.opendal.Operator;
+import org.apache.opendal.ServiceConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -38,10 +37,10 @@ public class MetadataTest {
 
     @Test
     public void testAsyncMetadata() {
-        final Map<String, String> conf = new HashMap<>();
-        conf.put("root", tempDir.toString());
+        final ServiceConfig.Fs fs =
+                ServiceConfig.Fs.builder().root(tempDir.toString()).build();
 
-        try (final AsyncOperator op = AsyncOperator.of("fs", conf)) {
+        try (final AsyncOperator op = AsyncOperator.of(fs)) {
             final String dir = UUID.randomUUID() + "/";
             op.createDir(dir).join();
             final Metadata dirMetadata = op.stat(dir).join();
@@ -61,6 +60,7 @@ public class MetadataTest {
             assertThat(metadata.contentType).isNull();
             assertThat(metadata.etag).isNull();
             assertThat(metadata.version).isNull();
+            assertThat(metadata.userMetadata).isEmpty();
 
             op.delete(dir).join();
             op.delete(path).join();
@@ -69,10 +69,10 @@ public class MetadataTest {
 
     @Test
     public void testBlockingMetadata() {
-        final Map<String, String> conf = new HashMap<>();
-        conf.put("root", tempDir.toString());
+        final ServiceConfig.Fs fs =
+                ServiceConfig.Fs.builder().root(tempDir.toString()).build();
 
-        try (final Operator op = Operator.of("fs", conf)) {
+        try (final Operator op = Operator.of(fs)) {
             final String dir = UUID.randomUUID() + "/";
             op.createDir(dir);
             final Metadata dirMetadata = op.stat(dir);
@@ -92,6 +92,7 @@ public class MetadataTest {
             assertThat(metadata.contentType).isNull();
             assertThat(metadata.etag).isNull();
             assertThat(metadata.version).isNull();
+            assertThat(metadata.userMetadata).isEmpty();
 
             op.delete(dir);
             op.delete(path);

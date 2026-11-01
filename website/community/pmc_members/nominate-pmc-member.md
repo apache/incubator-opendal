@@ -25,11 +25,11 @@ Hi, All OpenDAL PMC members.
   
 I would like to nominate ${candidate_name} (GitHub id: ${candidate_github_id}) as a candidate for the OpenDAL PMC member. Since becoming an OpenDAL committer, ${candidate_name} has made significant contributions to various modules of the project.
 
-${candidate_name}'s great contributions could be found:
+${candidate_name}'s great contributions can be found:
 
-- Github Account: https://github.com/${candidate_github_id}
-- Github Pull Requests: https://github.com/apache/opendal/pulls?q=is%3Apr+author%3A${candidate_github_id}+is%3Aclosed
-- Github Issues: https://github.com/apache/opendal/issues?q=is%3Aopen+mentions%3A${candidate_github_id}
+- GitHub Account: https://github.com/${candidate_github_id}
+- GitHub Pull Requests: https://github.com/apache/opendal/pulls?q=is%3Apr+author%3A${candidate_github_id}
+- GitHub Issues: https://github.com/apache/opendal/issues?q=is%3Aissue+involves%3A${candidate_github_id}
 
 Please make your valuable evaluation on whether we could invite ${candidate_name} as a
 PMC member:
@@ -74,24 +74,6 @@ Then I'm going to invite ${candidate_name} to join us.
 Thanks for everyone's support!
 
 ${your_name}
-```
-
-## Send NOTICE to Board after VOTE PASSED
-
-The nominating PMC member should send a message to the Board <board@apache.org> with a reference to the vote result in the following form:
-
-Title:
-
-```
-[NOTICE] ${candidate_name} for Apache OpenDAL PMC
-```
-
-Content:
-
-```
-${candidate_name} has been voted as a new member of the Apache OpenDAL PMC. the vote thread is at: 
-
-https://lists.apache.org/thread/yg2gz2tof3cvbrgp1wxzk6mf9o858h7t
 ```
 
 ## Send invitation to the candidate

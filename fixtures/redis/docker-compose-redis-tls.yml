@@ -15,11 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
-version: '3.8'
-
 services:
   redis:
-    image: docker.io/bitnami/redis:7.0
+    image: docker.io/bitnamilegacy/redis:7.4.3-debian-12-r0
     ports:
       - '6379:6379'
     environment:

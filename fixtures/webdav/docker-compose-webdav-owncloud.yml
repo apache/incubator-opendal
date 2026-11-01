@@ -15,11 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
-version: '3.8'
-
 services:
   owncloud:
-    image: owncloud/server
+    image: owncloud/server:10.16.0
     ports:
       - "8080:8080"
     environment:

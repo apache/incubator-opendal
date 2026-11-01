@@ -6,14 +6,42 @@ open! Bigarray
 
 type operator
 type reader
+type writer
+type lister
 type metadata
 type entry
+type operator_info
+type capability
+type presigned_request
+
+(* file: capability.rs *)
+
+external capability_stat: capability -> bool  = "capability_stat"
+external capability_read: capability -> bool  = "capability_read"
+external capability_write: capability -> bool  = "capability_write"
+external capability_create_dir: capability -> bool  = "capability_create_dir"
+external capability_delete: capability -> bool  = "capability_delete"
+external capability_copy: capability -> bool  = "capability_copy"
+external capability_rename: capability -> bool  = "capability_rename"
+external capability_list: capability -> bool  = "capability_list"
+external capability_list_with_limit: capability -> bool  = "capability_list_with_limit"
+external capability_list_with_start_after: capability -> bool  = "capability_list_with_start_after"
+external capability_list_with_recursive: capability -> bool  = "capability_list_with_recursive"
+external capability_presign: capability -> bool  = "capability_presign"
+external capability_presign_read: capability -> bool  = "capability_presign_read"
+external capability_presign_stat: capability -> bool  = "capability_presign_stat"
+external capability_presign_write: capability -> bool  = "capability_presign_write"
+external capability_shared: capability -> bool  = "capability_shared"
 
 (* file: entry.rs *)
 
 external entry_path: entry -> string  = "entry_path"
 external entry_name: entry -> string  = "entry_name"
 external entry_metadata: entry -> metadata  = "entry_metadata"
+
+(* file: lister.rs *)
+
+external lister_next: lister -> (entry option, string) Result.t  = "lister_next"
 
 (* file: metadata.rs *)
 
@@ -30,18 +58,34 @@ external metadata_last_modified: metadata -> int64 option  = "metadata_last_modi
 
 external operator: string -> (string * string) list -> (operator, string) Result.t  = "operator"
 external blocking_list: operator -> string -> (entry array, string) Result.t  = "blocking_list"
+external blocking_lister: operator -> string -> (lister, string) Result.t  = "blocking_lister"
 external blocking_stat: operator -> string -> (metadata, string) Result.t  = "blocking_stat"
 external blocking_is_exist: operator -> string -> (bool, string) Result.t  = "blocking_is_exist"
 external blocking_create_dir: operator -> string -> (bool, string) Result.t  = "blocking_create_dir"
 external blocking_read: operator -> string -> (char array, string) Result.t  = "blocking_read"
 external blocking_reader: operator -> string -> (reader, string) Result.t  = "blocking_reader"
 external blocking_write: operator -> string -> bytes -> (unit, string) Result.t  = "blocking_write"
+external blocking_writer: operator -> string -> (writer, string) Result.t  = "blocking_writer"
 external blocking_copy: operator -> string -> string -> (unit, string) Result.t  = "blocking_copy"
 external blocking_rename: operator -> string -> string -> (unit, string) Result.t  = "blocking_rename"
 external blocking_delete: operator -> string -> (unit, string) Result.t  = "blocking_delete"
 external blocking_remove: operator -> string array -> (unit, string) Result.t  = "blocking_remove"
 external blocking_remove_all: operator -> string -> (unit, string) Result.t  = "blocking_remove_all"
+external blocking_check: operator -> (unit, string) Result.t  = "blocking_check"
+external operator_info: operator -> operator_info  = "operator_info"
+external operator_info_capability: operator_info -> capability  = "operator_info_capability"
+
+(* file: operator_info.rs *)
+
+external operator_info_name: operator_info -> string  = "operator_info_name"
+external operator_info_scheme: operator_info -> string  = "operator_info_scheme"
+external operator_info_root: operator_info -> string  = "operator_info_root"
 
 (* file: reader.rs *)
 
 external reader_pread: reader -> bytes -> int64 -> (int, string) Result.t  = "reader_pread"
+
+(* file: writer.rs *)
+
+external writer_write: writer -> bytes -> (unit, string) Result.t  = "writer_write"
+external writer_close: writer -> (metadata, string) Result.t  = "writer_close"

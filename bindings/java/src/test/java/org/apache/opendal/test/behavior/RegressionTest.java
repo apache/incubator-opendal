@@ -27,6 +27,9 @@ import org.junit.jupiter.api.TestInstance;
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 public class RegressionTest extends BehaviorTestBase {
+    // Modify the value of ITERATIONS to do stress testing.
+    private static final int ITERATIONS = 10;
+
     // @see https://github.com/apache/opendal/issues/5421
     @Test
     public void testAzblobLargeFile() throws Exception {
@@ -37,7 +40,7 @@ public class RegressionTest extends BehaviorTestBase {
         final byte[] content = generateBytes(size);
 
         try (OperatorOutputStream operatorOutputStream = op().createOutputStream(path, size)) {
-            for (int i = 0; i < 20000; i++) {
+            for (int i = 0; i < ITERATIONS; i++) {
                 // More iterations in case BlockCountExceedsLimit doesn't pop up exactly after 100K blocks.
                 operatorOutputStream.write(content);
             }

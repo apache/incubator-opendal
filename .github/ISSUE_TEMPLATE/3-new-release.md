@@ -14,10 +14,6 @@ This issue is used to track tasks of the opendal ${opendal_version} release.
 
 ### Build Release
 
-#### Release List
-
-<!-- Generate release list by `./scripts/version.py`, please adapt with the actual needs. -->
-
 #### GitHub Side
 
 - [ ] Bump version in project
@@ -28,6 +24,8 @@ This issue is used to track tasks of the opendal ${opendal_version} release.
   - [ ] nodejs
 - [ ] Update docs
 - [ ] Generate dependencies list
+- [ ] Check Rust crates.io publish plan
+- [ ] Reserve and audit Rust crate names at the release manager's chosen time
 - [ ] Push release candidate tag to GitHub
 
 #### ASF Side
@@ -45,6 +43,7 @@ This issue is used to track tasks of the opendal ${opendal_version} release.
 - [ ] Push the release git tag
 - [ ] Publish artifacts to SVN RELEASE branch
 - [ ] Release Maven artifacts
+- [ ] Check Rust crates.io artifacts
 - [ ] Send the announcement
 
 For details of each step, please refer to: https://opendal.apache.org/community/release/

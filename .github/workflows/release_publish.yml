@@ -1,0 +1,85 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: Publish approved release
+run-name: Publish ${{ inputs.rc }}
+
+on:
+  workflow_call:
+    inputs:
+      rc:
+        required: true
+        type: string
+    secrets:
+      GPG_SECRET_KEY:
+        required: true
+      NEXUS_STAGE_DEPLOYER_USER:
+        required: true
+      NEXUS_STAGE_DEPLOYER_PW:
+        required: true
+  workflow_dispatch:
+    inputs:
+      rc:
+        description: Approved release candidate, for example 0.59.3-rc.1
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    # Serialize writes with weekly notices and ATR synchronization, including retries.
+    concurrency:
+      group: release-lifecycle-mutations
+      cancel-in-progress: false
+    if: github.repository == 'apache/opendal' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: write
+      discussions: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: ./.github/actions/setup
+        with:
+          need-deny: true
+      - name: Resume approved publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RC: ${{ inputs.rc }}
+          GPG_SECRET_KEY: ${{ secrets.GPG_SECRET_KEY }}
+          SOURCE_SIGNING_FINGERPRINT: ${{ vars.SOURCE_SIGNING_FINGERPRINT }}
+          NEXUS_USER: ${{ secrets.NEXUS_STAGE_DEPLOYER_USER }}
+          NEXUS_PASSWORD: ${{ secrets.NEXUS_STAGE_DEPLOYER_PW }}
+        run: python3 scripts/release_lifecycle.py publish --rc "$RC"
+      - name: Report publication failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RC: ${{ inputs.rc }}
+        run: >-
+          python3 scripts/release_lifecycle.py notify --rc "$RC"
+          --status "Publication needs attention. Inspect the latest failed run in the publication links below and rerun the failed jobs before resuming."

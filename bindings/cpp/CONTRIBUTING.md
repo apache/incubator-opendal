@@ -1,5 +1,7 @@
 # Contributing
 
+> **Note**: This C++ binding follows the [Google C++ Style Guide](https://google.github.io/styleguide/cppguide.html) for consistent and maintainable code.
+
 - [Contributing](#contributing)
   - [Setup](#setup)
     - [Using a dev container environment](#using-a-dev-container-environment)
@@ -31,8 +33,6 @@ To build OpenDAL C++ binding, the following is all you need:
 - To format the code, you need to install **clang-format**
 
 - **GTest(Google Test)**. It is used to run the tests. You do NOT need to build it manually.
-
-- **Boost**. It is one dependency of this library. You do NOT need to build it manually.
 
 - **Doxygen**. It is used to generate the documentation. To see how to build, check [here](https://www.doxygen.nl/manual/install.html).
 

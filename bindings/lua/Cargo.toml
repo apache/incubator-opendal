@@ -18,14 +18,13 @@
 [package]
 name = "opendal-lua"
 publish = false
-version = "0.1.12"
 
 authors = ["Apache OpenDAL <dev@opendal.apache.org>"]
-edition = "2021"
+edition = "2024"
 homepage = "https://opendal.apache.org/"
 license = "Apache-2.0"
 repository = "https://github.com/apache/opendal"
-rust-version = "1.75"
+rust-version = "1.91"
 
 [features]
 default = ["mlua/lua52"]
@@ -35,12 +34,13 @@ lua52 = ["mlua", "mlua/lua52"]
 crate-type = ["cdylib"]
 
 [dependencies]
-mlua = { version = "0.9", features = [
+mlua = { version = "0.11", features = [
   "module",
   "macros",
 ], default-features = false, optional = true }
 # this crate won't be published, we always use the local version
 opendal = { version = ">=0", path = "../../core", features = [
+  "blocking",
   # These are default features before v0.46. TODO: change to optional features
   "services-azblob",
   "services-azdls",
@@ -58,3 +58,4 @@ opendal = { version = ">=0", path = "../../core", features = [
   "services-webhdfs",
   "services-azfile",
 ] }
+tokio = { version = "1.28.1", features = ["full"] }

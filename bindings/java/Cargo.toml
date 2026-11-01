@@ -20,24 +20,37 @@ name = "opendal-java"
 publish = false
 
 authors = ["Apache OpenDAL <dev@opendal.apache.org>"]
-edition = "2021"
+edition = "2024"
 homepage = "https://opendal.apache.org/"
 license = "Apache-2.0"
 repository = "https://github.com/apache/opendal"
-rust-version = "1.75"
-version = "0.47.6"
+rust-version = "1.91"
 
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["cdylib", "staticlib"]
 doc = false
 
-[features]
-default = [
+[dependencies]
+jni = { version = "0.22.4" }
+# opendal-java won't be published to crates.io, we always use the local version
+opendal = { version = ">=0", path = "../../core", default-features = false, features = [
+  "blocking",
+  "http-transport-reqwest",
+  "executors-tokio",
+
+  # enabled layers
+  "layers-concurrent-limit",
+  "layers-logging",
+  "layers-retry",
+  "layers-timeout",
+
+  # enabled services
   "services-azblob",
   "services-azdls",
   "services-cos",
   "services-fs",
   "services-gcs",
+  "services-gcs-grpc",
   "services-ghac",
   "services-http",
   "services-ipmfs",
@@ -45,15 +58,11 @@ default = [
   "services-obs",
   "services-oss",
   "services-s3",
+  "services-tos",
   "services-webdav",
   "services-webhdfs",
-]
-
-services-all = [
-  "default",
   "services-aliyun-drive",
   "services-cacache",
-  "services-chainsafe",
   "services-dashmap",
   "services-dropbox",
   "services-etcd",
@@ -64,7 +73,8 @@ services-all = [
   "services-gdrive",
   # FIXME how to support HDFS services in bindings?
   # "services-hdfs",
-  "services-huggingface",
+  # "services-hdfs-native",
+  "services-hf",
   "services-ipfs",
   "services-memcached",
   "services-mini-moka",
@@ -79,93 +89,26 @@ services-all = [
   # FIXME: rocksdb will lead to "cannot allocate memory in static TLS block" while linking.
   # "services-rocksdb",
   "services-sled",
-  "services-supabase",
   "services-tikv",
   "services-vercel-artifacts",
   "services-mongodb",
   "services-gridfs",
   "services-sqlite",
   "services-azfile",
-  "services-libsql",
   "services-swift",
   "services-alluxio",
+  "services-goosefs",
   "services-b2",
   "services-seafile",
   "services-upyun",
   "services-yandex-disk",
-]
-
-# Default services provided by opendal.
-services-aliyun-drive = ["opendal/services-aliyun-drive"]
-services-azblob = ["opendal/services-azblob"]
-services-azdls = ["opendal/services-azdls"]
-services-chainsafe = ["opendal/services-chainsafe"]
-services-cos = ["opendal/services-cos"]
-services-fs = ["opendal/services-fs"]
-services-gcs = ["opendal/services-gcs"]
-services-ghac = ["opendal/services-ghac"]
-services-http = ["opendal/services-http"]
-services-ipmfs = ["opendal/services-ipmfs"]
-services-memory = ["opendal/services-memory"]
-services-obs = ["opendal/services-obs"]
-services-oss = ["opendal/services-oss"]
-services-s3 = ["opendal/services-s3"]
-services-webdav = ["opendal/services-webdav"]
-services-webhdfs = ["opendal/services-webhdfs"]
-
-# Optional services provided by opendal.
-services-alluxio = ["opendal/services-alluxio"]
-services-azfile = ["opendal/services-azfile"]
-services-b2 = ["opendal/services-b2"]
-services-cacache = ["opendal/services-cacache"]
-services-dashmap = ["opendal/services-dashmap"]
-services-dropbox = ["opendal/services-dropbox"]
-services-etcd = ["opendal/services-etcd"]
-services-foundationdb = ["opendal/services-foundationdb"]
-services-ftp = ["opendal/services-ftp"]
-services-gdrive = ["opendal/services-gdrive"]
-services-gridfs = ["opendal/services-gridfs"]
-services-hdfs = ["opendal/services-hdfs"]
-services-huggingface = ["opendal/services-huggingface"]
-services-ipfs = ["opendal/services-ipfs"]
-services-koofr = ["opendal/services-koofr"]
-services-libsql = ["opendal/services-libsql"]
-services-memcached = ["opendal/services-memcached"]
-services-mini-moka = ["opendal/services-mini-moka"]
-services-moka = ["opendal/services-moka"]
-services-mongodb = ["opendal/services-mongodb"]
-services-monoiofs = ["opendal/services-monoiofs"]
-services-mysql = ["opendal/services-mysql"]
-services-onedrive = ["opendal/services-onedrive"]
-services-persy = ["opendal/services-persy"]
-services-postgresql = ["opendal/services-postgresql"]
-services-redb = ["opendal/services-redb"]
-services-redis = ["opendal/services-redis"]
-services-rocksdb = ["opendal/services-rocksdb"]
-services-seafile = ["opendal/services-seafile"]
-services-sftp = ["opendal/services-sftp"]
-services-sled = ["opendal/services-sled"]
-services-sqlite = ["opendal/services-sqlite"]
-services-supabase = ["opendal/services-supabase"]
-services-swift = ["opendal/services-swift"]
-services-tikv = ["opendal/services-tikv"]
-services-upyun = ["opendal/services-upyun"]
-services-vercel-artifacts = ["opendal/services-vercel-artifacts"]
-services-yandex-disk = ["opendal/services-yandex-disk"]
-
-[dependencies]
-anyhow = "1.0.71"
-jni = "0.21.1"
-once_cell = "1.19.0"
-# this crate won't be published, we always use the local version
-opendal = { version = ">=0", path = "../../core", features = [
-  "layers-blocking",
 ] }
-tokio = { version = "1.28.1", features = ["full"] }
+tokio = { version = "1.49.0", features = ["full"] }
 
 # This is not optimal. See also the Cargo issue:
 # https://github.com/rust-lang/cargo/issues/1197#issuecomment-1641086954
 [target.'cfg(unix)'.dependencies.opendal]
+default-features = false
 features = [
   # Depend on "openssh" which depends on "tokio-pipe" that is unavailable on Windows.
   "services-sftp",

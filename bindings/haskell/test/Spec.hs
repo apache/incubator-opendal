@@ -16,6 +16,9 @@
 -- under the License.
 
 import BasicTest
+import WriterTest
+import ErrorTest
+import PerformanceTest
 import Test.Tasty
 import Test.Tasty.Ingredients.Basic (consoleTestReporter)
 
@@ -25,6 +28,8 @@ main =
     [consoleTestReporter]
     $ testGroup
       "All Tests"
-      [ basicTests
-      -- Add other test groups here as needed
+      [ basicTests,
+        writerTests,
+        errorTests,
+        performanceTests
       ]

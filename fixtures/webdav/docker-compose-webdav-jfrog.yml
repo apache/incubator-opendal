@@ -15,8 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-version: '3.8'
-
 services:
   jfrog:
     image: releases-docker.jfrog.io/jfrog/artifactory-oss:latest

@@ -18,19 +18,19 @@
 name: Bindings PHP CI
 
 on:
-  # Disable PHP build until https://github.com/apache/opendal/issues/3055 addressed
-  #
-  #  push:
-  #    branches:
-  #      - main
-  #    tags:
-  #      - '*'
-  #  pull_request:
-  #    branches:
-  #      - main
-  #    paths:
-  #      - "bindings/php/**"
-  #      - ".github/workflows/bindings_php.yml"
+  push:
+    branches:
+      - main
+    tags:
+      - '*'
+    paths: &paths
+      - "bindings/php/**"
+      - ".github/actions/setup/**"
+      - ".github/workflows/ci_bindings_php.yml"
+  pull_request:
+    branches:
+      - main
+    paths: *paths
   workflow_dispatch:
 
 concurrency:
@@ -47,11 +47,11 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        php: [8.1, 8.2]
+        php: [8.2, 8.4]
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -64,11 +64,21 @@ jobs:
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
 
+      # Useful for debugging
+      - name: Print Clippy version
+        working-directory: "bindings/php"
+        run: cargo clippy --version
+
+      - name: Clippy Check
+        working-directory: "bindings/php"
+        run: cargo clippy -- -D warnings
+
       - name: Build opendal-php extension
         working-directory: "bindings/php"
         run: cargo build
 
       - name: Enable opendal-php extension in php.ini
+        working-directory: "bindings/php"
         run: |
           # 1. Find the extension_dir
           extension_dir=$(php -r "echo ini_get('extension_dir');")
@@ -81,6 +91,10 @@ jobs:
 
       - name: Check PHP Extensions
         run: php -m
+
+      - name: Run getting-started example
+        working-directory: "bindings/php"
+        run: php examples/getting-started.php
 
       - name: Install Composer dependencies
         working-directory: "bindings/php"

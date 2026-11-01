@@ -15,11 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
-version: '3.8'
-
 services:
   redis-node-0:
-    image: docker.io/bitnami/redis-cluster:7.0
+    image: docker.io/bitnamilegacy/redis-cluster:7.4.3-debian-12-r0
     networks:
       redis_cluster:
         ipv4_address: 172.30.0.2
@@ -37,7 +35,7 @@ services:
       - ./ssl:/etc/redis/ssl/
 
   redis-node-1:
-    image: docker.io/bitnami/redis-cluster:7.0
+    image: docker.io/bitnamilegacy/redis-cluster:7.4.3-debian-12-r0
     networks:
       redis_cluster:
         ipv4_address: 172.30.0.3
@@ -55,7 +53,7 @@ services:
       - ./ssl:/etc/redis/ssl/
 
   redis-node-2:
-    image: docker.io/bitnami/redis-cluster:7.0
+    image: docker.io/bitnamilegacy/redis-cluster:7.4.3-debian-12-r0
     networks:
       redis_cluster:
         ipv4_address: 172.30.0.4
@@ -73,7 +71,7 @@ services:
       - ./ssl:/etc/redis/ssl/
 
   redis-node-3:
-    image: docker.io/bitnami/redis-cluster:7.0
+    image: docker.io/bitnamilegacy/redis-cluster:7.4.3-debian-12-r0
     networks:
       redis_cluster:
         ipv4_address: 172.30.0.5
@@ -91,7 +89,7 @@ services:
       - ./ssl:/etc/redis/ssl/
 
   redis-node-4:
-    image: docker.io/bitnami/redis-cluster:7.0
+    image: docker.io/bitnamilegacy/redis-cluster:7.4.3-debian-12-r0
     networks:
       redis_cluster:
         ipv4_address: 172.30.0.6
@@ -109,7 +107,7 @@ services:
       - ./ssl:/etc/redis/ssl/
 
   redis-node-5:
-    image: docker.io/bitnami/redis-cluster:7.0
+    image: docker.io/bitnamilegacy/redis-cluster:7.4.3-debian-12-r0
     networks:
       redis_cluster:
         ipv4_address: 172.30.0.7

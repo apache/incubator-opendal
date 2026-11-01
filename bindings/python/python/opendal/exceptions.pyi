@@ -15,57 +15,17 @@
 # specific language governing permissions and limitations
 # under the License.
 
-class Error(Exception):
-    """Base class for exceptions in this module."""
-
-    pass
-
-class Unexpected(Error):
-    """Unexpected errors"""
-
-    pass
-
-class Unsupported(Error):
-    """Unsupported operation"""
-
-    pass
-
-class ConfigInvalid(Error):
-    """Config is invalid"""
-
-    pass
-
-class NotFound(Error):
-    """Not found"""
-
-    pass
-
-class PermissionDenied(Error):
-    """Permission denied"""
-
-    pass
-
-class IsADirectory(Error):
-    """Is a directory"""
-
-    pass
-
-class NotADirectory(Error):
-    """Not a directory"""
-
-    pass
-
-class AlreadyExists(Error):
-    """Already exists"""
-
-    pass
-
-class IsSameFile(Error):
-    """Is same file"""
-
-    pass
-
-class ConditionNotMatch(Error):
-    """Condition not match"""
-
-    pass
+class Error(Exception): ...
+class Unexpected(Exception): ...
+class Unsupported(Exception): ...
+class ConfigInvalid(Exception): ...
+class NotFound(Exception): ...
+class PermissionDenied(Exception): ...
+class IsADirectory(Exception): ...
+class NotADirectory(Exception): ...
+class AlreadyExists(Exception): ...
+class IsSameFile(Exception): ...
+class ConditionNotMatch(Exception): ...
+class RateLimited(Exception): ...
+class RangeNotSatisfied(Exception): ...
+class Conflict(Exception): ...

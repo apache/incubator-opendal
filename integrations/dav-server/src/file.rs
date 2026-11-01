@@ -19,13 +19,12 @@ use std::fmt::{Debug, Formatter};
 use std::io::SeekFrom;
 
 use bytes::{Buf, Bytes, BytesMut};
-use dav_server::davpath::DavPath;
 use dav_server::fs::{DavFile, OpenOptions};
 use dav_server::fs::{DavMetaData, FsResult};
 use dav_server::fs::{FsError, FsFuture};
 use futures::FutureExt;
 use futures::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
-use opendal::{FuturesAsyncReader, FuturesAsyncWriter, Operator};
+use opendal_core::{FuturesAsyncReader, FuturesAsyncWriter, Operator};
 
 use super::metadata::OpendalMetaData;
 use super::utils::*;
@@ -33,7 +32,7 @@ use super::utils::*;
 /// OpendalFile is a `DavFile` implementation for opendal.
 pub struct OpendalFile {
     op: Operator,
-    path: DavPath,
+    path: String,
     state: State,
     buf: BytesMut,
 }
@@ -60,10 +59,10 @@ enum State {
 
 impl OpendalFile {
     /// Create a new opendal file.
-    pub async fn open(op: Operator, path: DavPath, options: OpenOptions) -> FsResult<Self> {
+    pub async fn open(op: Operator, path: String, options: OpenOptions) -> FsResult<Self> {
         let state = if options.read {
             let r = op
-                .reader(path.as_url_string().as_str())
+                .reader(&path)
                 .await
                 .map_err(convert_error)?
                 .into_futures_async_read(..)
@@ -72,8 +71,9 @@ impl OpendalFile {
             State::Read(r)
         } else if options.write {
             let w = op
-                .writer_with(path.as_url_string().as_str())
+                .writer_with(&path)
                 .append(options.append)
+                .if_not_exists(options.create_new)
                 .await
                 .map_err(convert_error)?
                 .into_futures_async_write();
@@ -92,10 +92,10 @@ impl OpendalFile {
 }
 
 impl DavFile for OpendalFile {
-    fn metadata(&mut self) -> FsFuture<Box<dyn DavMetaData>> {
+    fn metadata(&mut self) -> FsFuture<'_, Box<dyn DavMetaData>> {
         async move {
             self.op
-                .stat(self.path.as_url_string().as_str())
+                .stat(&self.path)
                 .await
                 .map(|opendal_metadata| {
                     Box::new(OpendalMetaData::new(opendal_metadata)) as Box<dyn DavMetaData>
@@ -105,7 +105,7 @@ impl DavFile for OpendalFile {
         .boxed()
     }
 
-    fn write_buf(&mut self, mut buf: Box<dyn Buf + Send>) -> FsFuture<()> {
+    fn write_buf(&mut self, mut buf: Box<dyn Buf + Send>) -> FsFuture<'_, ()> {
         async move {
             let State::Write(w) = &mut self.state else {
                 return Err(FsError::GeneralFailure);
@@ -119,7 +119,7 @@ impl DavFile for OpendalFile {
         .boxed()
     }
 
-    fn write_bytes(&mut self, buf: Bytes) -> FsFuture<()> {
+    fn write_bytes(&mut self, buf: Bytes) -> FsFuture<'_, ()> {
         async move {
             let State::Write(w) = &mut self.state else {
                 return Err(FsError::GeneralFailure);
@@ -130,7 +130,7 @@ impl DavFile for OpendalFile {
         .boxed()
     }
 
-    fn read_bytes(&mut self, count: usize) -> FsFuture<Bytes> {
+    fn read_bytes(&mut self, count: usize) -> FsFuture<'_, Bytes> {
         async move {
             let State::Read(r) = &mut self.state else {
                 return Err(FsError::GeneralFailure);
@@ -146,7 +146,7 @@ impl DavFile for OpendalFile {
         .boxed()
     }
 
-    fn seek(&mut self, pos: SeekFrom) -> FsFuture<u64> {
+    fn seek(&mut self, pos: SeekFrom) -> FsFuture<'_, u64> {
         async move {
             let State::Read(r) = &mut self.state else {
                 return Err(FsError::GeneralFailure);
@@ -157,7 +157,7 @@ impl DavFile for OpendalFile {
         .boxed()
     }
 
-    fn flush(&mut self) -> FsFuture<()> {
+    fn flush(&mut self) -> FsFuture<'_, ()> {
         async move {
             let State::Write(w) = &mut self.state else {
                 return Err(FsError::GeneralFailure);

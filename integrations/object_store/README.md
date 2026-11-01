@@ -21,13 +21,21 @@ This crate can help you to access 30 more storage services with the same object_
 
 ## Examples
 
+`opendal_store_opendal` depends on the `opendal` crate. Please make sure to always use the latest versions of both.
+
+latest `object_store_opendal` ![Crate](https://img.shields.io/crates/v/object_store_opendal.svg)
+
+latest `opendal` ![Crate](https://img.shields.io/crates/v/opendal.svg)
+
+### 1. using `object_store` API to access S3 
+
 Add the following dependencies to your `Cargo.toml` with correct version:
 
 ```toml
 [dependencies]
-object_store = "0.11.0"
-object_store_opendal = "0.47.0"
-opendal = { version = "0.49.0", features = ["services-s3"] }
+object_store = "0.14.1"
+object_store_opendal =  "xxx"   # see the latest version above
+opendal = { version = "xxx", features = ["services-s3"] }  # see the latest version above
 ```
 
 Build `OpendalStore` via `opendal::Operator`:
@@ -37,7 +45,7 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use object_store::path::Path;
-use object_store::ObjectStore;
+use object_store::ObjectStoreExt;
 use object_store_opendal::OpendalStore;
 use opendal::services::S3;
 use opendal::{Builder, Operator};
@@ -56,7 +64,7 @@ async fn main() {
     ).unwrap();
 
     // Create a new operator
-    let operator = Operator::new(builder).unwrap().finish();
+    let operator = Operator::new(builder).unwrap();
 
     // Create a new object store
     let object_store = Arc::new(OpendalStore::new(operator));
@@ -76,6 +84,29 @@ async fn main() {
 
     assert_eq!(content, bytes);
 }
+```
+
+### Tune vectored reads
+
+`OpendalStore` coalesces ranges separated by up to 1 MiB by default, matching
+`object_store::OBJECT_STORE_COALESCE_DEFAULT`. Workloads that need to limit
+over-fetching can configure the gap when constructing the store:
+
+```rust
+let object_store = OpendalStore::new(operator).with_get_ranges_gap(0);
+```
+
+A gap of `0` disables merging ranges separated by bytes. Overlapping or adjacent
+ranges are still merged without over-fetching. Set an intermediate value to trade
+fewer backend requests for additional bytes read. A gap of `0` can be useful for
+HDFS scans that are sensitive to retaining large coalesced backing buffers.
+
+## WASM support
+
+To build with `wasm32-unknown-unknown` target, you need to enable the `send_wrapper` feature:
+
+```sh
+cargo build --target wasm32-unknown-unknown --features send_wrapper
 ```
 
 ## Branding

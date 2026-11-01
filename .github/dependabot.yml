@@ -17,62 +17,248 @@
 
 version: 2
 updates:
+  # GitHub Actions - semiannually updates with groups
   - package-ecosystem: "github-actions"
     directory: "/"
-    open-pull-requests-limit: 1
+    open-pull-requests-limit: 2
+    # GitHub Actions have a steady update interval. Update semiannually to reduce update PRs.
     schedule:
-      interval: "monthly"
+      interval: "semiannually"
+    groups:
+      github-actions:
+        patterns:
+          - "actions/*"
+      third-party-actions:
+        patterns:
+          - "*"
 
+  # Core dependencies - semiannual updates with groups
   - package-ecosystem: "cargo"
     directory: "/core"
-    open-pull-requests-limit: 1
+    open-pull-requests-limit: 4
+    # Update core dependencies semiannually because core dependencies are somewhat stable.
+    #
+    # Developers can update dependencies via dependabot manually by:
+    # 1. Go to Dependabot page https://github.com/apache/opendal/network/updates
+    # 2. Choose a project by "Recent update jobs"
+    # 3. Click "Check for updates"
     schedule:
-      interval: "monthly"
+      interval: "semiannually"
+    groups:
+      # HTTP, TLS, serialization and utilities
+      http-serialization-utils:
+        patterns:
+          - "backon"
+          - "base64"
+          - "bytes"
+          - "chrono"
+          - "http*"
+          - "percent-encoding"
+          - "prometheus*"
+          - "quick-xml"
+          - "reqwest"
+          - "reqsign"
+          - "rustls*"
+          - "serde*"
+          - "uuid"
+      # Async runtime and runtime tools
+      async-runtime:
+        patterns:
+          - "tokio*"
+          - "async-*"
+          - "futures*"
+          - "sqlx"
+      # Logs, errors and checksums
+      logs-errors-checksums:
+        patterns:
+          - "anyhow"
+          - "*error*"
+          - "log"
+          - "crc32c"
+          - "sha*"
+          - "md-5"
+          - "metrics"
+          - "tracing"
+      others:
+        patterns:
+          - "*"
+        exclude-patterns:
+          # Please upgrade to new APIs when updating "rand"
+          - "rand"
+          - "getrandom"
 
+  # Other cargo dependencies - integrations, examples
   - package-ecosystem: "cargo"
-    directory: "/bin/oay"
-    open-pull-requests-limit: 1
+    directories:
+      - "/integrations/**"
+      - "/dev/**"
+      - "/examples/**"
+    open-pull-requests-limit: 5
     schedule:
-      interval: "monthly"
+      interval: "quarterly"
+    cooldown:
+      semver-patch-days: 90
+      include:
+        - "*"
 
+  # Dart binding
   - package-ecosystem: "cargo"
-    directory: "/bin/ofs"
+    directory: "/bindings/dart/rust"
     open-pull-requests-limit: 1
     schedule:
-      interval: "monthly"
+      interval: "quarterly"
+    cooldown:
+      semver-patch-days: 90
+      include:
+        - "*"
 
-  - package-ecosystem: "cargo"
-    directory: "/bin/oli"
-    open-pull-requests-limit: 1
-    schedule:
-      interval: "monthly"
-
-  - package-ecosystem: "cargo"
-    directory: "/integrations/dav-server"
-    open-pull-requests-limit: 1
-    schedule:
-      interval: "monthly"
-
-  - package-ecosystem: "cargo"
-    directory: "/integrations/object_store"
-    open-pull-requests-limit: 1
-    schedule:
-      interval: "monthly"
-
+  # Java binding
   - package-ecosystem: "cargo"
     directory: "/bindings/java"
     open-pull-requests-limit: 1
     schedule:
-      interval: "monthly"
+      interval: "quarterly"
+    cooldown:
+      semver-patch-days: 90
+      include:
+        - "*"
 
+  # Node.js binding
   - package-ecosystem: "cargo"
     directory: "/bindings/nodejs"
+    open-pull-requests-limit: 2
+    schedule:
+      interval: "quarterly"
+    groups:
+      napi:
+        patterns:
+          - "napi"
+          - "napi-derive"
+      others:
+        patterns:
+          - "*"
+    cooldown:
+      semver-patch-days: 90
+      include:
+        - "*"
+
+  # PHP binding
+  - package-ecosystem: "composer"
+    directory: "/bindings/php"
     open-pull-requests-limit: 1
     schedule:
-      interval: "monthly"
+      interval: "quarterly"
+    cooldown:
+      semver-patch-days: 90
+      include:
+        - "*"
+
+  # Python binding
+  - package-ecosystem: "uv"
+    directory: "/bindings/python"
+    open-pull-requests-limit: 3
+    schedule:
+      interval: "quarterly"
+    groups:
+      # Update to keep sync with core dependency
+      core-sync:
+        patterns:
+          - "anyhow"
+          - "bytes"
+          - "chrono"
+          - "tokio*"
+          - "futures*"
+      pyo3:
+        patterns:
+          - "pyo3*"
+      others:
+        patterns:
+          - "*"
+    cooldown:
+      semver-patch-days: 90
+      include:
+        - "*"
 
   - package-ecosystem: "cargo"
     directory: "/bindings/python"
     open-pull-requests-limit: 1
     schedule:
+      interval: "quarterly"
+    cooldown:
+      semver-patch-days: 90
+      include:
+        - "*"
+
+  # Ruby binding
+  - package-ecosystem: "bundler"
+    directory: "/bindings/ruby"
+    open-pull-requests-limit: 1
+    schedule:
+      interval: "quarterly"
+    cooldown:
+      semver-patch-days: 90
+      include:
+        - "*"
+
+  - package-ecosystem: "cargo"
+    directory: "/bindings/ruby"
+    open-pull-requests-limit: 1
+    schedule:
+      interval: "quarterly"
+    cooldown:
+      semver-patch-days: 90
+      include:
+        - "*"
+
+  # Swift binding
+  - package-ecosystem: "swift"
+    directory: "/bindings/swift"
+    open-pull-requests-limit: 1
+    schedule:
+      interval: "quarterly"
+    cooldown:
+      semver-patch-days: 90
+      include:
+        - "*"
+
+  # Go binding
+  - package-ecosystem: "gomod"
+    directory: "/bindings/go"
+    open-pull-requests-limit: 1
+    schedule:
+      interval: "quarterly"
+    cooldown:
+      semver-patch-days: 90
+      include:
+        - "*"
+
+  # Go binding behavior tests
+  - package-ecosystem: "gomod"
+    directory: "/bindings/go/tests/behavior_tests"
+    open-pull-requests-limit: 1
+    schedule:
+      interval: "quarterly"
+    cooldown:
+      semver-patch-days: 90
+      include:
+        - "*"
+
+  # Website npm dependencies
+  - package-ecosystem: "npm"
+    directory: "/website"
+    open-pull-requests-limit: 1
+    schedule:
       interval: "monthly"
+    groups:
+      docusaur:
+        patterns:
+          - "@docusaurus/core"
+          - "@docusaurus/plugin-client-redirects"
+          - "@docusaurus/preset-classic"
+      others:
+        patterns:
+          - "*"
+    cooldown:
+      semver-patch-days: 90
+      include:
+        - "*"

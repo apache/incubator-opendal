@@ -20,12 +20,11 @@ name = "opendal-nodejs"
 publish = false
 
 authors = ["Apache OpenDAL <dev@opendal.apache.org>"]
-edition = "2021"
+edition = "2024"
 homepage = "https://opendal.apache.org/"
 license = "Apache-2.0"
 repository = "https://github.com/apache/opendal"
-rust-version = "1.75"
-version = "0.47.8"
+rust-version = "1.91"
 
 [features]
 default = [
@@ -51,7 +50,6 @@ services-all = [
   "services-alluxio",
   "services-azfile",
   "services-cacache",
-  "services-chainsafe",
   "services-dashmap",
   "services-dropbox",
   # FIXME this service need protoc
@@ -59,10 +57,13 @@ services-all = [
   # FIXME this requires a preinstalled fdb library
   # "services-foundationdb",
   # "services-ftp",
+  "services-gcs-grpc",
   "services-gdrive",
+  "services-goosefs",
   # FIXME how to support HDFS services in bindings?
   # "services-hdfs",
-  "services-huggingface",
+  # "services-hdfs-native",
+  "services-hf",
   "services-ipfs",
   "services-memcached",
   "services-mini-moka",
@@ -76,16 +77,14 @@ services-all = [
   # FIXME how to support rocksdb services in bindings?
   # "services-rocksdb",
   "services-sled",
-  "services-supabase",
   "services-swift",
+  "services-tos",
   # FIXME this service need protoc
   # "services-tikv",
   "services-vercel-artifacts",
   "services-mongodb",
   "services-gridfs",
   "services-sqlite",
-  "services-libsql",
-  "services-alluxio",
   "services-b2",
   "services-seafile",
   "services-upyun",
@@ -97,10 +96,10 @@ services-all = [
 services-aliyun-drive = ["opendal/services-aliyun-drive"]
 services-azblob = ["opendal/services-azblob"]
 services-azdls = ["opendal/services-azdls"]
-services-chainsafe = ["opendal/services-chainsafe"]
 services-cos = ["opendal/services-cos"]
 services-fs = ["opendal/services-fs"]
 services-gcs = ["opendal/services-gcs"]
+services-gcs-grpc = ["opendal/services-gcs-grpc"]
 services-ghac = ["opendal/services-ghac"]
 services-http = ["opendal/services-http"]
 services-ipmfs = ["opendal/services-ipmfs"]
@@ -116,18 +115,21 @@ services-alluxio = ["opendal/services-alluxio"]
 services-azfile = ["opendal/services-azfile"]
 services-b2 = ["opendal/services-b2"]
 services-cacache = ["opendal/services-cacache"]
+services-compfs = ["opendal/services-compfs"]
 services-dashmap = ["opendal/services-dashmap"]
 services-dropbox = ["opendal/services-dropbox"]
 services-etcd = ["opendal/services-etcd"]
 services-foundationdb = ["opendal/services-foundationdb"]
 services-ftp = ["opendal/services-ftp"]
 services-gdrive = ["opendal/services-gdrive"]
+services-goosefs = ["opendal/services-goosefs"]
 services-gridfs = ["opendal/services-gridfs"]
 services-hdfs = ["opendal/services-hdfs"]
-services-huggingface = ["opendal/services-huggingface"]
+services-hdfs-native = ["opendal/services-hdfs-native"]
+services-hf = ["opendal/services-hf"]
+services-huggingface = ["services-hf"]
 services-ipfs = ["opendal/services-ipfs"]
 services-koofr = ["opendal/services-koofr"]
-services-libsql = ["opendal/services-libsql"]
 services-memcached = ["opendal/services-memcached"]
 services-mini-moka = ["opendal/services-mini-moka"]
 services-moka = ["opendal/services-moka"]
@@ -144,9 +146,9 @@ services-seafile = ["opendal/services-seafile"]
 services-sftp = ["opendal/services-sftp"]
 services-sled = ["opendal/services-sled"]
 services-sqlite = ["opendal/services-sqlite"]
-services-supabase = ["opendal/services-supabase"]
 services-swift = ["opendal/services-swift"]
 services-tikv = ["opendal/services-tikv"]
+services-tos = ["opendal/services-tos"]
 services-upyun = ["opendal/services-upyun"]
 services-vercel-artifacts = ["opendal/services-vercel-artifacts"]
 services-yandex-disk = ["opendal/services-yandex-disk"]
@@ -157,14 +159,15 @@ doc = false
 
 [dependencies]
 futures = "0.3.28"
-napi = { version = "2.11.3", default-features = false, features = [
+napi = { version = "3.2.2", default-features = false, features = [
   "napi6",
   "async",
 ] }
-napi-derive = "2.14.6"
+napi-derive = "3.2.2"
 # this crate won't be published, we always use the local version
 opendal = { version = ">=0", path = "../../core", features = [
-  "layers-blocking",
+  "blocking",
+  "layers-throttle",
 ] }
 tokio = "1"
 

@@ -30,6 +30,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import org.apache.opendal.Capability;
 import org.apache.opendal.Entry;
+import org.apache.opendal.ListOptions;
 import org.apache.opendal.Metadata;
 import org.apache.opendal.OpenDALException;
 import org.apache.opendal.test.condition.OpenDALExceptionCondition;
@@ -43,7 +44,7 @@ class AsyncListTest extends BehaviorTestBase {
 
     @BeforeAll
     public void precondition() {
-        final Capability capability = asyncOp().info.fullCapability;
+        final Capability capability = asyncOp().info.capability;
         assumeTrue(capability.read && capability.write && capability.list && capability.createDir);
     }
 
@@ -223,5 +224,110 @@ class AsyncListTest extends BehaviorTestBase {
         }
 
         asyncOp().removeAll(parent + "/").join();
+    }
+
+    @Test
+    public void testListRecursive() {
+        final String dir = String.format("%s/%s/", UUID.randomUUID(), UUID.randomUUID());
+        final String fileName = UUID.randomUUID().toString();
+        final String filePath = String.format("%s%s", dir, fileName);
+        final String dirName = String.format("%s/", UUID.randomUUID());
+        final String dirPath = String.format("%s%s", dir, dirName);
+        final String content = "test_list_nested_dir";
+        final String nestedFile = String.format("%s%s", dirPath, UUID.randomUUID());
+
+        asyncOp().createDir(dir).join();
+        asyncOp().write(filePath, content).join();
+        asyncOp().createDir(dirPath).join();
+        asyncOp().write(nestedFile, content).join();
+
+        final List<Entry> entries = asyncOp()
+                .list(dir, ListOptions.builder().recursive(true).build())
+                .join();
+        assertThat(entries).hasSize(4);
+
+        final List<Entry> noRecursiveEntries = asyncOp()
+                .list(dir, ListOptions.builder().recursive(false).build())
+                .join();
+        assertThat(noRecursiveEntries).hasSize(3);
+    }
+
+    @Test
+    void testListWithLimitCollectsAllPages() {
+        assumeTrue(asyncOp().info.capability.listWithLimit);
+
+        String dir = String.format("%s/", UUID.randomUUID());
+        asyncOp().createDir(dir).join();
+        for (int i = 0; i < 5; i++) {
+            String file = dir + "file-" + i;
+            asyncOp().write(file, "data").join();
+        }
+
+        ListOptions options = ListOptions.builder().limit(3).build();
+        List<Entry> entries = asyncOp().list(dir, options).join();
+        assertThat(entries.size()).isEqualTo(6);
+
+        asyncOp().removeAll(dir).join();
+    }
+
+    @Test
+    void testListWithStartAfter() {
+        assumeTrue(asyncOp().info.capability.listWithStartAfter);
+
+        String dir = String.format("%s/", UUID.randomUUID());
+        asyncOp().createDir(dir).join();
+
+        List<String> filesToCreate = Lists.newArrayList();
+        for (int i = 0; i < 5; i++) {
+            String file = dir + "file-" + i;
+            asyncOp().write(file, "data").join();
+            filesToCreate.add(file);
+        }
+
+        ListOptions options =
+                ListOptions.builder().startAfter(filesToCreate.get(2)).build();
+        List<Entry> entries = asyncOp().list(dir, options).join();
+        List<String> actual = entries.stream().map(Entry::getPath).sorted().collect(Collectors.toList());
+
+        assertThat(actual).containsAnyElementsOf(filesToCreate.subList(3, 5));
+        asyncOp().removeAll(dir).join();
+    }
+
+    @Test
+    void testListWithVersions() {
+        assumeTrue(asyncOp().info.capability.listWithVersions);
+
+        String dir = String.format("%s/", UUID.randomUUID());
+        String path = dir + "versioned-file";
+
+        asyncOp().createDir(dir).join();
+        asyncOp().write(path, "data-1").join();
+        asyncOp().write(path, "data-2").join();
+
+        ListOptions options = ListOptions.builder().versions(true).build();
+        List<Entry> entries = asyncOp().list(dir, options).join();
+
+        assertThat(entries).isNotEmpty();
+        asyncOp().removeAll(dir).join();
+    }
+
+    @Test
+    void testListWithDeleted() {
+        assumeTrue(asyncOp().info.capability.listWithDeleted);
+
+        String dir = String.format("%s/", UUID.randomUUID());
+        String path = dir + "file";
+        asyncOp().createDir(dir).join();
+
+        asyncOp().write(path, "data").join();
+        asyncOp().delete(path).join();
+
+        ListOptions options = ListOptions.builder().deleted(true).build();
+        List<Entry> entries = asyncOp().list(dir, options).join();
+
+        List<String> actual = entries.stream().map(Entry::getPath).sorted().collect(Collectors.toList());
+        assertThat(actual).contains(path);
+
+        asyncOp().removeAll(dir).join();
     }
 }

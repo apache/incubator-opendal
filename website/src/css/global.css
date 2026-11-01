@@ -1,0 +1,142 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+/* ==========================================================================
+   OpenDAL Global CSS
+   --------------------------------------------------------------------------
+   `variables.css` defines the `--odl-*` CSS variables and maps them onto
+   Docusaurus/Infima. This file applies those variables to global elements,
+   motifs, and shared layout helpers.
+   ========================================================================== */
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  background-color: var(--odl-bg);
+  color: var(--odl-fg);
+  font-feature-settings:
+    "cv05" 1,
+    "ss01" 1;
+}
+
+#__docusaurus,
+.main-wrapper,
+[class*="docsWrapper"],
+[class*="docRoot"],
+[class*="docMainContainer"],
+[class*="docItemWrapper"] {
+  background: var(--odl-bg);
+}
+
+h1,
+h2,
+h3,
+h4 {
+  letter-spacing: var(--odl-tracking-tight);
+}
+
+::selection {
+  background: var(--odl-selection);
+}
+
+:focus-visible {
+  outline: 2px solid var(--odl-accent);
+  outline-offset: 2px;
+  border-radius: var(--odl-radius-xs);
+}
+
+/* Tabs/Prism code surfaces align to the system. */
+.theme-code-block,
+pre[class*="language-"] {
+  border: 1px solid var(--odl-code-border);
+  border-radius: var(--odl-radius-md);
+}
+
+/* The signature OpenDAL bar: a sharp solid rectangle used as a structural marker. */
+.odl-bar {
+  display: inline-block;
+  width: 2.25rem;
+  height: 0.5rem;
+  background: var(--odl-bar);
+  border-radius: 0;
+}
+
+/* Eyebrow / kicker label: monospace, uppercase, led by a small accent bar. */
+.odl-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--odl-space-3);
+  font-family: var(--odl-font-mono);
+  font-size: var(--odl-text-xs);
+  font-weight: 500;
+  letter-spacing: var(--odl-tracking-label);
+  text-transform: uppercase;
+  color: var(--odl-fg-muted);
+}
+
+.odl-eyebrow::before {
+  content: "";
+  width: 1.5rem;
+  height: 0.5rem;
+  background: var(--odl-accent);
+  flex: none;
+}
+
+.odl-container {
+  width: 100%;
+  max-width: var(--odl-container);
+  margin-inline: auto;
+  padding-inline: var(--odl-gutter);
+}
+
+@media (max-width: 996px) {
+  html,
+  body {
+    max-width: 100%;
+    overflow-x: clip;
+  }
+}
+
+/* Faint blueprint grid: engineering texture for select surfaces. */
+.odl-grid-bg {
+  background-image:
+    linear-gradient(var(--odl-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--odl-grid-line) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+.odl-tabular {
+  font-family: var(--odl-font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

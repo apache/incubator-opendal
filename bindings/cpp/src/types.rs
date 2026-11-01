@@ -27,11 +27,12 @@ impl From<od::Metadata> for ffi::Metadata {
         let content_disposition = meta.content_disposition().map(ToOwned::to_owned).into();
         let content_md5 = meta.content_md5().map(ToOwned::to_owned).into();
         let content_type = meta.content_type().map(ToOwned::to_owned).into();
+        let content_encoding = meta.content_encoding().map(ToOwned::to_owned).into();
         let etag = meta.etag().map(ToOwned::to_owned).into();
-        let last_modified = meta
-            .last_modified()
-            .map(|time| time.to_rfc3339_opts(chrono::SecondsFormat::Nanos, false))
-            .into();
+        let last_modified = meta.last_modified().map(|time| time.to_string()).into();
+        let version = meta.version().map(ToOwned::to_owned).into();
+        let is_current = meta.is_current().into();
+        let is_deleted = meta.is_deleted();
 
         Self {
             mode,
@@ -40,8 +41,12 @@ impl From<od::Metadata> for ffi::Metadata {
             content_disposition,
             content_md5,
             content_type,
+            content_encoding,
             etag,
             last_modified,
+            version,
+            is_current,
+            is_deleted,
         }
     }
 }
@@ -73,6 +78,21 @@ impl From<Option<String>> for ffi::OptionalString {
             None => Self {
                 has_value: false,
                 value: String::default(),
+            },
+        }
+    }
+}
+
+impl From<Option<bool>> for ffi::OptionalBool {
+    fn from(b: Option<bool>) -> Self {
+        match b {
+            Some(b) => Self {
+                has_value: true,
+                value: b,
+            },
+            None => Self {
+                has_value: false,
+                value: false,
             },
         }
     }

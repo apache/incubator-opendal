@@ -1,0 +1,76 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+site_name: Apache OpenDAL™
+
+repo_url: https://github.com/apache/opendal
+
+theme:
+  name: material
+  features:
+    - content.code.copy
+
+plugins:
+  - search
+  - mkdocstrings:
+      enable_inventory: true
+      handlers:
+        python:
+          paths: [python]
+          options:
+            docstring_style: numpy
+
+nav:
+  - Overview: index.md
+  - Examples:
+      - Basic: examples/basic.md
+      - Pandas: examples/pandas.md
+      - Polars: examples/polars.md
+  - API Reference:
+      - AsyncFile: api/async_file.md
+      - AsyncOperator: api/async_operator.md
+      - Capability: api/capability.md
+      - Config: api/config.md
+      - Exceptions: api/exceptions.md
+      - File: api/file.md
+      - Layers: api/layers.md
+      - Operator: api/operator.md
+      - Types: api/types.md
+
+markdown_extensions:
+  - pymdownx.highlight:
+      linenums: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.details
+  - pymdownx.snippets:
+      restrict_base_path: false
+  - admonition
+  - tables
+  - toc:
+      permalink: "#"
+  - attr_list
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+copyright: 'Licensed under the <a href="http://www.apache.org/licenses/LICENSE-2.0" target="_blank">Apache License, Version 2.0</a>.<br>Apache OpenDAL, OpenDAL, and Apache are either registered trademarks or trademarks of the Apache Software Foundation.'
+
+watch:
+  - python

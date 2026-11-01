@@ -23,13 +23,16 @@ on:
       - main
     tags:
       - '*'
+    paths: &paths
+      - "bindings/cpp/**"
+      - "core/**"
+      - ".github/actions/setup/**"
+      - ".github/workflows/ci_bindings_cpp.yml"
+      - "examples/cpp/**"
   pull_request:
     branches:
       - main
-    paths:
-      - "bindings/cpp/**"
-      - "core/**"
-      - ".github/workflows/ci_bindings_cpp.yml"
+    paths: *paths
   workflow_dispatch:
 
 concurrency:
@@ -42,22 +45,32 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-24.04
+
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install ninja-build valgrind doxygen
+          sudo apt-get install -y ninja-build valgrind doxygen
 
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
+
+      # Useful for debugging
+      - name: Print Clippy version
+        working-directory: "bindings/cpp"
+        run: cargo clippy --version
+
+      - name: Clippy Check
+        working-directory: "bindings/cpp"
+        run: cargo clippy -- -D warnings
 
       - name: Build Cpp binding && Run tests
         working-directory: "bindings/cpp"
         run: |
           mkdir build
           cd build
-          cmake -GNinja -DOPENDAL_DEV=ON ..
+          cmake -GNinja -DOPENDAL_DEV=ON -DFEATURES=opendal/services-memory ..
           ninja
           ./opendal_cpp_test
 
@@ -66,7 +79,7 @@ jobs:
         run: |
           mkdir build-valgrind
           cd build-valgrind
-          cmake -GNinja -DOPENDAL_ENABLE_TESTING=ON ..
+          cmake -GNinja -DOPENDAL_ENABLE_TESTING=ON -DFEATURES=opendal/services-memory ..
           ninja
           valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --verbose ./opendal_cpp_test
 
@@ -75,6 +88,27 @@ jobs:
         run: |
           mkdir build-async
           cd build-async
-          cmake -GNinja -DOPENDAL_DEV=ON -DOPENDAL_ENABLE_ASYNC=ON -DCMAKE_CXX_COMPILER=clang++-18 ..
+          cmake -GNinja -DOPENDAL_DEV=ON -DOPENDAL_ENABLE_ASYNC=ON -DFEATURES=opendal/services-memory -DCMAKE_CXX_COMPILER=clang++-18 ..
           ninja
           ./opendal_cpp_test
+
+      - name: test async with valgrind
+        working-directory: "bindings/cpp"
+        run: |
+          mkdir build-valgrind-async
+          cd build-valgrind-async
+          cmake -GNinja -DOPENDAL_ENABLE_ASYNC=ON -DFEATURES=opendal/services-memory -DOPENDAL_ENABLE_TESTING=ON -DCMAKE_CXX_COMPILER=clang++-18 ..
+          ninja
+          valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --verbose ./opendal_cpp_test
+
+      - name: Build Cpp examples
+        working-directory: "examples/cpp"
+        run: |
+          mkdir build
+          cd build
+          cmake -GNinja ..
+          ninja
+
+      - name: Run getting-started example
+        working-directory: "examples/cpp/build"
+        run: ./getting-started

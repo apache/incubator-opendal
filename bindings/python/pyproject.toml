@@ -25,36 +25,53 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: CPython",
 ]
 description = "Apache OpenDAL™ Python Binding"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = [
+  "LICENSE",
+  "LICENSE-libgcc.txt",
+  "LICENSE-MPL-2.0.txt",
+  "NOTICE",
+]
 name = "opendal"
 readme = "README.md"
 requires-python = ">=3.10"
 
 dynamic = ['version']
 
-[project.optional-dependencies]
-benchmark = [
-  "gevent",
-  "greenify",
-  "greenlet",
-  "boto3",
-  "pydantic",
-  "boto3-stubs[essential]",
-]
-docs = ["pdoc"]
-lint = ["ruff"]
-test = ["pytest", "python-dotenv", "pytest-asyncio"]
-
 [project.urls]
-Documentation = "https://opendal.apache.org/docs/python/opendal.html"
+Documentation = "https://opendal.apache.org/docs/python/index.html"
 Homepage = "https://opendal.apache.org/"
 Repository = "https://github.com/apache/opendal"
+
+[dependency-groups]
+benchmark = [
+  "boto3>=1.37.9",
+  "boto3-stubs[essential]>=1.37.9",
+  "pydantic>=2.10.6",
+]
+dev = ["maturin>=1.8.2"]
+docs = ["zensical>=0.0.11", "mkdocstrings-python", "nbconvert"]
+lint = ["ruff>=0.9.10", "ty>=0.0.51"]
+test = [
+  "pytest>=8.3.5",
+  "pytest-asyncio>=0.25.3",
+  "python-dotenv>=1.0.1",
+  "pydantic-settings>=2.8.1",
+]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
 module-name = "opendal._opendal"
 python-source = "python"
-strip = true
 
-[tool.ruff.lint]
-ignore = ["F403", "F405"]
+[tool.ty.src]
+include = ["python/opendal"]
+
+[tool.uv]
+cache-keys = [
+  { file = "pyproject.toml" },
+  { file = "Cargo.toml" },
+  { file = "src/**/*.rs" },
+  { file = "../../core/**/*.rs" },
+]
+package = false

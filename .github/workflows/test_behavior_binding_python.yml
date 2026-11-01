@@ -27,16 +27,17 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: binding_python-${{ inputs.os }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
 jobs:
-  test:
-    name: ${{ matrix.cases.service }} / ${{ matrix.cases.setup }}
+  # Prevent parallel cache building in `test` job by building cache in a separate job
+  python-cache:
     runs-on: ${{ inputs.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        cases: ${{ fromJson(inputs.cases) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+    
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
         with:
@@ -45,27 +46,58 @@ jobs:
           need-rocksdb: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # TODO: 1password is only supported on linux
-      #
-      # Waiting for https://github.com/1Password/load-secrets-action/issues/46
-      - name: Setup 1Password Connect
-        if: runner.os == 'Linux'
-        uses: 1password/load-secrets-action/configure@v1
+      - name: Setup uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
-          connect-host: ${{ secrets.OP_CONNECT_HOST }}
-          connect-token: ${{ secrets.OP_CONNECT_TOKEN }}
+          # params must be in sync with `test` job
+          working-directory: bindings/python
 
-      - uses: actions/setup-python@v5
+  test:
+    name: ${{ matrix.cases.service }} / ${{ matrix.cases.setup }}
+    needs: python-cache
+    runs-on: ${{ inputs.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        cases: ${{ fromJson(inputs.cases) }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
         with:
-          python-version: '3.11'
+          need-nextest: true
+          need-protoc: true
+          need-rocksdb: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup 1Password Connect
+        shell: bash
+        run: |
+          echo "::add-mask::${{ secrets.OP_CONNECT_HOST }}"
+          echo "::add-mask::${{ secrets.OP_CONNECT_TOKEN }}"
+          echo "OP_CONNECT_HOST=${{ secrets.OP_CONNECT_HOST }}" >> "$GITHUB_ENV"
+          echo "OP_CONNECT_TOKEN=${{ secrets.OP_CONNECT_TOKEN }}" >> "$GITHUB_ENV"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          # params must be in sync with `python-cache` job
+          working-directory: bindings/python
+
+      - name: Setup Java for HDFS build
+        if: matrix.cases.feature == 'services-hdfs'
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 11
+
       - name: Build with maturin
         shell: bash
         working-directory: "bindings/python"
         run: |
-          python -m venv venv
-          source venv/bin/activate
-          pip install maturin[patchelf]
-          maturin develop -E test -F ${{ matrix.cases.feature }}
+          uv venv --python=python3.10
+          uv sync --all-groups --all-extras
+          uv run -- maturin develop -F ${{ matrix.cases.feature }}
 
       - name: Test Core
         uses: ./.github/actions/test_behavior_binding_python

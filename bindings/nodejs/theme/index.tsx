@@ -17,34 +17,25 @@
  * under the License.
  */
 
-import { DefaultTheme, PageEvent, Reflection, Options, DefaultThemeRenderContext, Application, JSX } from 'typedoc'
+import React from 'react'
+import { DefaultTheme, PageEvent, Reflection, DefaultThemeRenderContext, Application, JSX } from 'typedoc'
 
-export class FooterWithASFCopyright extends DefaultThemeRenderContext {
-  constructor(theme: DefaultTheme, page: PageEvent<Reflection>, options: Options) {
-    super(theme, page, options)
-
-    this.footer = () => {
-      return (
-        <>
-          <div class="tsd-generator">
-            <p>
-              Copyright © 2022-{new Date().getFullYear()}, The Apache Software Foundation. Apache OpenDAL, OpenDAL, and
-              Apache are either registered trademarks or trademarks of the Apache Software Foundation.
-            </p>
-          </div>
-        </>
-      ) as unknown as JSX.Element
-    }
+class FooterWithASFCopyright extends DefaultThemeRenderContext {
+  override footer = () => {
+    return (
+      <footer>
+        <p>
+          Copyright © 2022-{new Date().getFullYear()}, The Apache Software Foundation. Apache OpenDAL, OpenDAL, and
+          Apache are either registered trademarks or trademarks of the Apache Software Foundation.
+        </p>
+      </footer>
+    ) as unknown as JSX.Element
   }
 }
 
-export class FooterOverrideTheme extends DefaultTheme {
-  private _contextCache?: FooterWithASFCopyright
-
-  override getRenderContext(pageEvent: PageEvent<Reflection>): FooterWithASFCopyright {
-    this._contextCache ||= new FooterWithASFCopyright(this, pageEvent, this.application.options)
-
-    return this._contextCache
+class FooterOverrideTheme extends DefaultTheme {
+  getRenderContext(pageEvent: PageEvent<Reflection>): DefaultThemeRenderContext {
+    return new FooterWithASFCopyright(this.router, this, pageEvent, this.application.options)
   }
 }
 

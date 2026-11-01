@@ -1,0 +1,229 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: Release NodeJS Binding
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+  pull_request:
+    # branches:
+    #   - main
+    paths:
+      - ".github/workflows/release_nodejs.yml"
+  workflow_dispatch:
+    inputs:
+      nodejs-publish-dry-run:
+        description: "Trigger nodejs publish dry run"
+        required: true
+        type: boolean
+        default: false
+      nodejs-publish:
+        description: "Trigger nodejs publish"
+        required: true
+        type: boolean
+        default: false
+
+env:
+  DEBUG: napi:*
+  MACOSX_DEPLOYMENT_TARGET: "10.13"
+  # refer to https://github.com/nodejs/corepack/issues/612#issuecomment-2631462297
+  #
+  # SHOULD remove after nodejs been upgraded.
+  COREPACK_INTEGRITY_KEYS: 0
+
+jobs:
+  build:
+    name: stable - ${{ matrix.settings.target }} - node@24
+    runs-on: ${{ matrix.settings.host }}
+    defaults:
+      run:
+        working-directory: "bindings/nodejs"
+    strategy:
+      fail-fast: false
+      matrix:
+        settings:
+          - os: linux
+            host: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian
+            features: services-all
+            build: pnpm build:ci && pnpm build:header
+          - os: linux
+            host: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
+            features: services-all
+            zig: true
+            build: pnpm build:ci -x && pnpm build:header
+          - os: linux
+            host: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-debian-aarch64
+            features: services-all
+            zig: true
+            build: pnpm build:ci -x && pnpm build:header
+          - os: linux
+            host: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            docker: ghcr.io/napi-rs/napi-rs/nodejs-rust:lts-alpine
+            features: services-all
+            zig: true
+            build: pnpm build:ci -x && pnpm build:header
+          - os: windows
+            host: windows-latest
+            target: x86_64-pc-windows-msvc
+            build: pnpm build
+          - os: windows
+            host: windows-latest
+            target: aarch64-pc-windows-msvc
+            build: pnpm build
+          - os: macos
+            host: macos-latest
+            target: x86_64-apple-darwin
+            features: services-all
+            build: pnpm build
+          - os: macos
+            host: macos-latest
+            target: aarch64-apple-darwin
+            features: services-all
+            build: pnpm build
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 8
+          run_install: false
+      - name: Setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: "bindings/nodejs/pnpm-lock.yaml"
+      - name: Install
+        shell: bash
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add ${{ matrix.settings.target }}
+      - name: Setup Zig
+        if: ${{ matrix.settings.zig }}
+        shell: bash
+        run: |
+          ZIG_VERSION=0.14.0
+          case "${RUNNER_OS}-${RUNNER_ARCH}" in
+            Linux-X64) ZIG_TARGET=linux-x86_64 ;;
+            *)
+              echo "unsupported host for Zig: ${RUNNER_OS}-${RUNNER_ARCH}" >&2
+              exit 1
+              ;;
+          esac
+          ZIG_HOME="${RUNNER_TOOL_CACHE}/zig/${ZIG_VERSION}"
+          mkdir -p "${ZIG_HOME}"
+          curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/zig-${ZIG_TARGET}-${ZIG_VERSION}.tar.xz" \
+            | tar -xJ --strip-components=1 -C "${ZIG_HOME}"
+          echo "${ZIG_HOME}" >> "${GITHUB_PATH}"
+      - name: Install cargo-zigbuild
+        uses: taiki-e/install-action@v2
+        if: ${{ matrix.settings.zig }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          tool: cargo-zigbuild
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Set Build ENV
+        shell: bash
+        run: |
+          if [[ -n "${{ matrix.settings.features }}" ]]; then
+            echo "NAPI_FEATURES=${{ matrix.settings.features }}" >> "${GITHUB_ENV}"
+          fi
+          echo "NAPI_TARGET=${{ matrix.settings.target }}" >> "${GITHUB_ENV}"
+      - name: Build
+        shell: bash
+        run: ${{ matrix.settings.build }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bindings-${{ matrix.settings.os }}-${{ matrix.settings.target }}
+          path: bindings/nodejs/*.node
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs:
+      - build
+    permissions:
+      id-token: write
+      contents: write
+    environment: release
+
+    defaults:
+      run:
+        working-directory: "bindings/nodejs"
+
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 8
+          run_install: false
+      - name: Setup node
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: "bindings/nodejs/pnpm-lock.yaml"
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: bindings/nodejs/artifacts
+      - name: Move artifacts
+        run: pnpm exec napi artifacts
+
+      - name: List packages
+        run: ls -R ./npm
+        shell: bash
+
+      - name: Update npm
+        # Trusted publishing requires npm CLI version 11.5.1 or later.
+        run: npm install -g npm@12
+
+      - name: Add license metadata
+        # Set working directory to root to copy repository-level files.
+        working-directory: .
+        run: |
+          cp LICENSE NOTICE ./bindings/nodejs
+          for package_dir in ./bindings/nodejs/npm/*; do
+            cp ./bindings/nodejs/README.md "$package_dir/README.md"
+            cp LICENSE NOTICE ./bindings/nodejs/LICENSE-MPL-2.0.txt "$package_dir/"
+          done
+
+      - name: Publish Dry Run
+        if: (github.event_name == 'workflow_dispatch' && inputs.nodejs-publish-dry-run) || (startsWith(github.ref, 'refs/tags/') && contains(github.ref, '-'))
+        run: npm publish --access public --dry-run
+
+      - name: Publish
+        if: (github.event_name == 'workflow_dispatch' && inputs.nodejs-publish) || (startsWith(github.ref, 'refs/tags/') && !contains(github.ref, '-'))
+        # No --provenance flag needed - it's automatic with trusted publishers
+        # https://docs.npmjs.com/trusted-publishers#automatic-provenance-generation
+        run: npm publish --access public
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

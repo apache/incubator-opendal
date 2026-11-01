@@ -25,6 +25,9 @@ if (NOT CMAKE_BUILD_TYPE)
 endif()
 
 option(TEST_ENABLE_ASAN "Enable AddressSanitizer for tests" OFF)
+set(FEATURES "" CACHE STRING "opendal features")
+
+set(CARGO_FEATURES_FLAG "--features=${FEATURES}")
 
 # force the compiler to support these standards
 set(CMAKE_C_STANDARD 11)
@@ -59,7 +62,7 @@ message(NOTICE "-- OpenDAL C shared lib: ${OPENDAL_SHARED_LIB}")
 
 # custom target for cargo build
 add_custom_target(cargo_build
-    COMMAND sh -c "cargo build ${CARGO_BUILD_TYPE}"
+    COMMAND sh -c "cargo build ${CARGO_BUILD_TYPE} ${CARGO_FEATURES_FLAG}"
     BYPRODUCTS  ${OPENDAL_STATIC_LIB} ${OPENDAL_SHARED_LIB}
     WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}
 )
@@ -83,10 +86,22 @@ target_link_libraries(basic opendal_c_shared)
 add_executable(error_handle examples/error_handle.c)
 target_link_libraries(error_handle opendal_c_shared)
 
+add_executable(getting_started examples/getting-started.c)
+target_link_libraries(getting_started opendal_c_shared)
+
 # test targets
-file(GLOB TEST_SRCS tests/*.cpp)
-add_executable(tests ${TEST_SRCS})
-target_link_libraries(tests opendal_c_shared gtest_main)
+set(GTEST_SRCS
+    tests/bdd.cpp
+    tests/error_msg.cpp
+    tests/list.cpp
+    tests/opinfo.cpp
+    tests/reader.cpp
+)
+add_executable(tests ${GTEST_SRCS})
+target_link_libraries(tests PRIVATE opendal_c_shared gtest_main)
+if(UNIX AND NOT APPLE)
+    target_link_libraries(tests PRIVATE uuid)
+endif()
 if (TEST_ENABLE_ASAN)
     target_compile_options(tests PRIVATE -fsanitize=address)
     target_link_options(tests PRIVATE -fsanitize=address)

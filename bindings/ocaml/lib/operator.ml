@@ -17,24 +17,43 @@
    under the License.
 *)
 
+(** Core operator functions *)
 let new_operator = Opendal_core.Operator.operator
+
 let list = Opendal_core.Operator.blocking_list
+let lister = Opendal_core.Operator.blocking_lister
 let stat = Opendal_core.Operator.blocking_stat
 let is_exist = Opendal_core.Operator.blocking_is_exist
 let create_dir = Opendal_core.Operator.blocking_create_dir
 let read = Opendal_core.Operator.blocking_read
 let reader = Opendal_core.Operator.blocking_reader
 let write = Opendal_core.Operator.blocking_write
+let writer = Opendal_core.Operator.blocking_writer
 let copy = Opendal_core.Operator.blocking_copy
 let rename = Opendal_core.Operator.blocking_rename
 let delete = Opendal_core.Operator.blocking_delete
 let remove = Opendal_core.Operator.blocking_remove
 let remove_all = Opendal_core.Operator.blocking_remove_all
+let check = Opendal_core.Operator.blocking_check
+let info = Opendal_core.Operator.operator_info
 
+(** Reader module for reading data *)
 module Reader = struct
   let pread = Opendal_core.Operator.reader_pread
 end
 
+(** Writer module for writing data *)
+module Writer = struct
+  let write = Opendal_core.Operator.writer_write
+  let close = Opendal_core.Operator.writer_close
+end
+
+(** Lister module for streaming directory listings *)
+module Lister = struct
+  let next = Opendal_core.Operator.lister_next
+end
+
+(** Metadata module for file/directory information *)
 module Metadata = struct
   let is_file = Opendal_core.Operator.metadata_is_file
   let is_dir = Opendal_core.Operator.metadata_is_dir
@@ -46,8 +65,40 @@ module Metadata = struct
   let last_modified = Opendal_core.Operator.metadata_last_modified
 end
 
+(** Entry module for directory entry information *)
 module Entry = struct
   let path = Opendal_core.Operator.entry_path
   let name = Opendal_core.Operator.entry_name
   let metadata = Opendal_core.Operator.entry_metadata
+end
+
+(** OperatorInfo module for operator information *)
+module OperatorInfo = struct
+  let name = Opendal_core.Operator.operator_info_name
+  let scheme = Opendal_core.Operator.operator_info_scheme
+  let root = Opendal_core.Operator.operator_info_root
+  let capability = Opendal_core.Operator.operator_info_capability
+end
+
+(** Capability module for checking supported operations *)
+module Capability = struct
+  let stat = Opendal_core.Operator.capability_stat
+  let read = Opendal_core.Operator.capability_read
+  let write = Opendal_core.Operator.capability_write
+  let create_dir = Opendal_core.Operator.capability_create_dir
+  let delete = Opendal_core.Operator.capability_delete
+  let copy = Opendal_core.Operator.capability_copy
+  let rename = Opendal_core.Operator.capability_rename
+  let list = Opendal_core.Operator.capability_list
+  let list_with_limit = Opendal_core.Operator.capability_list_with_limit
+
+  let list_with_start_after =
+    Opendal_core.Operator.capability_list_with_start_after
+
+  let list_with_recursive = Opendal_core.Operator.capability_list_with_recursive
+  let presign = Opendal_core.Operator.capability_presign
+  let presign_read = Opendal_core.Operator.capability_presign_read
+  let presign_stat = Opendal_core.Operator.capability_presign_stat
+  let presign_write = Opendal_core.Operator.capability_presign_write
+  let shared = Opendal_core.Operator.capability_shared
 end

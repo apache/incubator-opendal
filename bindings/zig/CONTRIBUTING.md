@@ -21,11 +21,11 @@ The fastest way is:
 
 To build OpenDAL Zig binding locally, you need:
 
-- [Zig](https://ziglang.org/download) 0.11.0 or higher
+- [Zig](https://ziglang.org/download) 0.14.0 or higher
 
 > **Note**:
 >
-> 0.11.0 is not released yet. You can use master instead before the official 0.11.0 released.
+> 0.14.0 is not released yet. You can use master instead before the official 0.14.0 released.
 
 ## Build
 
@@ -45,13 +45,42 @@ zig build libopendal_c
 To build and run the tests.
 
 ```shell
-zig build test -fsummary
+zig build test --summary all
 ```
 
 ```text
-Build Summary: 3/3 steps succeeded; 1/1 tests passed
+Opendal BDD test (0.83ms)
+Semantic Analyzer (0.01ms)
+
+2 of 2 tests passed
+
+Slowest 2 tests: 
+  0.01ms	Semantic Analyzer
+  0.83ms	Opendal BDD test
+Error Tests (0.01ms)
+Semantic Analyzer (0.00ms)
+operator basic operations (0.83ms)
+operator advanced operations (0.19ms)
+sync operations (0.08ms)
+
+5 of 5 tests passed
+
+Slowest 5 tests: 
+  0.00ms	Semantic Analyzer
+  0.01ms	Error Tests
+  0.08ms	sync operations
+  0.19ms	operator advanced operations
+  0.83ms	operator basic operations
+Build Summary: 9/9 steps succeeded
 test success
-└─ run test 1 passed 960us MaxRSS:3M
-   └─ zig test Debug native success 982ms MaxRSS:164M
++- run make success 12s MaxRSS:519M
+|  +- libopendal_c_cmake success
+|     +- run cmake success 99ms MaxRSS:14M
++- run test success 3ms MaxRSS:15M
+|  +- zig test Debug native success 31s MaxRSS:289M
+|     +- translate-c success 25ms MaxRSS:53M
++- run bdd_test success 2ms MaxRSS:14M
+   +- zig test bdd_test Debug native success 31s MaxRSS:265M
+      +- translate-c (reused)
 ```
 

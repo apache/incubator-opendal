@@ -1,0 +1,52 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: memcached_with_unix
+description: 'Behavior test for memcached with unix socket'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup memcached server with Unix socket
+      shell: bash
+      working-directory: fixtures/memcached
+      run: |
+        # Create directory for the socket
+        sudo mkdir -p /tmp/memcached
+        sudo chmod 777 /tmp/memcached
+        docker compose -f docker-compose-memcached-unix.yml up -d --wait
+    - name: Wait for socket
+      shell: bash
+      run: |
+        # Wait for the socket file to be created
+        for i in {1..30}; do
+          if [ -S /tmp/memcached/memcached.sock ]; then
+            echo "Socket is ready"
+            break
+          fi
+          echo "Waiting for socket... ($i/30)"
+          sleep 1
+        done
+        # Verify socket exists
+        ls -la /tmp/memcached/
+    - name: Setup
+      shell: bash
+      run: |
+        cat << EOF >> $GITHUB_ENV
+        OPENDAL_MEMCACHED_ENDPOINT=unix:///tmp/memcached/memcached.sock
+        OPENDAL_MEMCACHED_ROOT=/
+        EOF

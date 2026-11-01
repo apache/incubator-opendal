@@ -78,7 +78,7 @@ def main():
     # Print content of target for debugging.
     print(f"Content of {target}:")
     print_directory_contents(target)
-    print(f"Content of index:")
+    print("Content of index:")
     print_index_contents(target)
 
 

@@ -4,6 +4,6 @@
 
 Refer to [DEPENDENCIES.rust.tsv](DEPENDENCIES.rust.tsv) for the full list.
 
-## Ocaml Part Dependencies
+## OCaml Part Dependencies
 
 No extra runtime dependencies.

@@ -30,7 +30,9 @@ export function generateFixedBytes(size) {
 }
 
 export function loadTestSchemeFromEnv() {
-  return process.env.OPENDAL_TEST
+  const scheme = process.env.OPENDAL_TEST
+  // Normalize scheme by replacing underscores with hyphens
+  return scheme ? scheme.replace(/_/g, '-') : scheme
 }
 
 export function checkRandomRootEnabled() {
@@ -44,7 +46,9 @@ export function generateRandomRoot(baseRoot) {
 export function loadConfigFromEnv(scheme) {
   if (!scheme) return {}
 
-  const prefix = `opendal_${scheme}_`
+  // Convert scheme to underscore format for environment variable prefix
+  const schemeKey = scheme.replace(/-/g, '_')
+  const prefix = `opendal_${schemeKey}_`
 
   return Object.fromEntries(
     Object.entries(process.env)

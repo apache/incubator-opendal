@@ -19,7 +19,6 @@
 
 import { randomUUID } from 'node:crypto'
 import { test } from 'vitest'
-import { WriteStream, ReadStream } from '../../index.js'
 import { generateFixedBytes } from '../utils.mjs'
 import { Readable } from 'node:stream'
 
@@ -110,6 +109,10 @@ export function run(op) {
       if (op.capability().delete) {
         op.deleteSync(filename)
       }
+    })
+
+    test.runIf(op.capability().list)('blocking check', () => {
+      op.checkSync()
     })
   })
 }

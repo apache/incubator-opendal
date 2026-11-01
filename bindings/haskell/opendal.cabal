@@ -17,7 +17,7 @@ cabal-version:      3.0
 -- under the License.
 
 name:               opendal
-version:            0.44.14.0
+version:            0.1.0
 license:            Apache-2.0
 synopsis:           Apache OpenDAL™ Haskell Binding
 description:
@@ -71,11 +71,17 @@ library
     hs-source-dirs:   haskell-src
     extra-bundled-libraries: opendal_hs
 
+executable getting-started
+    import:           base
+    main-is:          GettingStarted.hs
+    hs-source-dirs:   examples
+    build-depends:    opendal
+
 test-suite opendal-test
     import:           base
     type:             exitcode-stdio-1.0
     main-is:          Spec.hs
-    other-modules:    BasicTest
+    other-modules:    BasicTest, WriterTest, ErrorTest, PerformanceTest
     hs-source-dirs:   test
     build-depends:
         opendal,

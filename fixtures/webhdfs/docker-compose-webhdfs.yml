@@ -15,8 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-version: '3.8'
-
 services:
   namenode:
     image: bde2020/hadoop-namenode:2.0.0-hadoop3.1.3-java8

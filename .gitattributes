@@ -9,6 +9,7 @@ integrations export-ignore
 bindings/c export-ignore
 bindings/cpp export-ignore
 bindings/d export-ignore
+bindings/dart export-ignore
 bindings/dotnet export-ignore
 bindings/go export-ignore
 bindings/haskell export-ignore

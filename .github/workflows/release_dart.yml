@@ -1,0 +1,135 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# This workflow is used for publish all rust based packages
+
+name: Release Dart Binding
+
+on:
+  push:
+    tags:
+      - "*"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/release_dart.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            target_suffix: x86_64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            target_suffix: aarch64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            target_suffix: win_x86_64
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            target_suffix: macos_aarch64
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            bindings/dart/rust/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}-${{ matrix.target }} # Include target in cache key
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+
+      - name: Install cross
+        run: cargo install cross --git https://github.com/cross-rs/cross --force
+
+      - name: Build on native linux
+        if: runner.os == 'Linux' && matrix.target == 'x86_64-unknown-linux-gnu'
+        env:
+          CC_x86_64_unknown_linux_gnu: gcc
+        run: |
+          cd bindings/dart/rust
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Build on cross linux
+        if: runner.os == 'Linux' && matrix.target != 'x86_64-unknown-linux-gnu'
+        # Run from the repository root so cross mounts the changelog symlink target.
+        run: |
+          cross build --release --manifest-path bindings/dart/rust/Cargo.toml --target ${{ matrix.target }}
+
+      - name: Build not on linux
+        if: runner.os != 'Linux'
+        run: |
+          cd bindings/dart/rust
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Upload build artifact (per platform)
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.target }}
+          path: bindings/dart/rust/target/${{ matrix.target }}/release/*opendal*
+
+  combine-artifacts:
+      needs: build
+      runs-on: ubuntu-latest
+      steps:
+        - name: Checkout code
+          uses: actions/checkout@v7
+        - name: create release dir
+          run: |
+            cd bindings/dart/rust
+            mkdir -p target/release/
+
+        - name: Download all artifacts
+          uses: actions/download-artifact@v8
+          with:
+            path: artifacts
+
+        - name: Move artifacts to release
+          run: |
+            cp -av ./artifacts/* bindings/dart/rust/target/release/
+            find . -name "*.a" -print -delete
+            find . -name "*.d" -print -delete
+            find . -name "*.pdb" -print -delete
+            find . -name "*.exp" -print -delete
+            find . -name "*.lib" -print -delete
+        - name: Show Result
+          run: |
+            cd bindings/dart/rust
+            ls -R .
+        - name: Upload combined build artifacts
+          uses: actions/upload-artifact@v7
+          with:
+              name: combined-release
+              path: bindings/dart/rust/target/release/
+# todo: add pub step

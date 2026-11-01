@@ -15,11 +15,9 @@
 # specific language governing permissions and limitations
 # under the License.
 
-version: '3.8'
-
 services:
   redis-node-0:
-    image: docker.io/bitnami/redis-cluster:7.0
+    image: docker.io/bitnamilegacy/redis-cluster:7.4.3-debian-12-r0
     ports:
       - '6380:6379'
     environment:
@@ -27,7 +25,7 @@ services:
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
 
   redis-node-1:
-    image: docker.io/bitnami/redis-cluster:7.0
+    image: docker.io/bitnamilegacy/redis-cluster:7.4.3-debian-12-r0
     ports:
       - '6381:6379'
     environment:
@@ -35,7 +33,7 @@ services:
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
 
   redis-node-2:
-    image: docker.io/bitnami/redis-cluster:7.0
+    image: docker.io/bitnamilegacy/redis-cluster:7.4.3-debian-12-r0
     ports:
       - '6382:6379'
     environment:
@@ -43,7 +41,7 @@ services:
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
 
   redis-node-3:
-    image: docker.io/bitnami/redis-cluster:7.0
+    image: docker.io/bitnamilegacy/redis-cluster:7.4.3-debian-12-r0
     ports:
       - '6383:6379'
     environment:
@@ -51,7 +49,7 @@ services:
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
 
   redis-node-4:
-    image: docker.io/bitnami/redis-cluster:7.0
+    image: docker.io/bitnamilegacy/redis-cluster:7.4.3-debian-12-r0
     ports:
       - '6384:6379'
     environment:
@@ -59,7 +57,7 @@ services:
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
 
   redis-node-5:
-    image: docker.io/bitnami/redis-cluster:7.0
+    image: docker.io/bitnamilegacy/redis-cluster:7.4.3-debian-12-r0
     ports:
       - '6385:6379'
     depends_on:
@@ -73,3 +71,8 @@ services:
       - 'REDIS_CLUSTER_REPLICAS=1'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
       - 'REDIS_CLUSTER_CREATOR=yes'
+    healthcheck:
+      test: ['CMD-SHELL', "redis-cli cluster info | grep -q 'cluster_state:ok'"]
+      interval: 1s
+      timeout: 3s
+      retries: 30

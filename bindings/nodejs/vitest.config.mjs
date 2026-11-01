@@ -28,7 +28,14 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     dir: 'tests',
-    reporters: 'basic',
     testTimeout: 300 * 1000,
+    reporters: [
+      [
+        'default',
+        {
+          summary: false,
+        },
+      ],
+    ],
   },
 })

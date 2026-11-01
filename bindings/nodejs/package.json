@@ -1,26 +1,29 @@
 {
   "name": "opendal",
   "author": "Apache OpenDAL <dev@opendal.apache.org>",
-  "version": "0.47.8",
+  "version": "0.49.13",
   "license": "Apache-2.0",
-  "main": "index.js",
+  "main": "index.cjs",
+  "module": "index.mjs",
   "types": "index.d.ts",
-  "description": "Apache OpenDAL: Access data freely",
-  "repository": "git@github.com/apache/opendal.git",
+  "description": "Apache OpenDAL: One Layer, All Storage.",
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/apache/opendal.git"
+  },
   "napi": {
-    "name": "opendal",
-    "package": {
-      "name": "@opendal/lib"
-    },
-    "triples": {
-      "defaults": true,
-      "additional": [
-        "aarch64-apple-darwin",
-        "aarch64-unknown-linux-gnu",
-        "aarch64-unknown-linux-musl",
-        "aarch64-pc-windows-msvc"
-      ]
-    }
+    "binaryName": "opendal",
+    "packageName": "@opendal/lib",
+    "targets": [
+      "x86_64-apple-darwin",
+      "x86_64-pc-windows-msvc",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl",
+      "aarch64-apple-darwin",
+      "aarch64-pc-windows-msvc",
+      "aarch64-unknown-linux-gnu",
+      "aarch64-unknown-linux-musl"
+    ]
   },
   "keywords": [
     "api",
@@ -40,44 +43,60 @@
   ],
   "files": [
     "index.d.ts",
-    "index.js",
+    "index.cjs",
+    "index.mjs",
     "generated.d.ts",
     "generated.js",
     "LICENSE",
+    "LICENSE-MPL-2.0.txt",
     "NOTICE"
   ],
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./index.d.ts",
+        "default": "./index.mjs"
+      },
+      "require": {
+        "types": "./index.d.ts",
+        "default": "./index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.468.0",
-    "@napi-rs/cli": "^2.18.3",
+    "@napi-rs/cli": "^3.1.3",
     "@swc-node/register": "^1.6.2",
     "@swc/core": "^1.3.38",
-    "@types/node": "^18.14.5",
+    "@types/node": "^20.19.41",
     "@types/react": "^18.2.48",
     "benny": "^3.7.1",
     "dotenv": "^16.0.3",
     "prettier": "^2.8.4",
-    "typedoc": "^0.25",
+    "typedoc": "^0.28",
     "typescript": "^5.0.2",
-    "vitest": "^1.6.0"
+    "vitest": "^4.1.6"
   },
   "engines": {
     "node": ">= 10"
   },
   "scripts": {
-    "build": "napi build --platform --features \"${NAPI_FEATURES:-}\" --target \"${NAPI_TARGET:-}\" --release --js generated.js --dts generated.d.ts && node ./scripts/header.js",
-    "build:debug": "napi build --platform --features \"${NAPI_FEATURES:-}\" --target \"${NAPI_TARGET:-}\" --js generated.js --dts generated.d.ts && node ./scripts/header.js",
+    "build": "napi build --platform --features \"${NAPI_FEATURES:-}\" --target \"${NAPI_TARGET:-}\" --release --js generated.js --dts generated.d.ts && node ./scripts/header.mjs",
+    "build:debug": "napi build --platform --features \"${NAPI_FEATURES:-}\" --target \"${NAPI_TARGET:-}\" --js generated.js --dts generated.d.ts && node ./scripts/header.mjs",
     "build:theme": "tsc -p ./tsconfig.theme.json",
+    "build:ci": "napi build --platform --features \"${NAPI_FEATURES:-}\" --target \"${NAPI_TARGET:-}\" --release  --js generated.js --dts generated.d.ts",
+    "build:header": "node ./scripts/header.mjs",
     "docs": "typedoc",
     "format": "prettier --write .",
     "test": "vitest",
     "bench": "node -r dotenv/config ./benchmark/node.js dotenv_config_path=./.env",
-    "bench:deno": "deno bench ./benchmark/deno.ts --reload=npm:opendal --allow-read --allow-ffi --allow-net --allow-env",
-    "prepublishOnly": "napi prepublish -t npm"
+    "prepublishOnly": "napi prepublish -t npm --no-gh-release"
   },
   "prettier": {
     "overrides": [
       {
-        "files": "./**/*.{js,ts,mjs,jsx,tsx}",
+        "files": "./**/*.{js,cjs,ts,mjs,jsx,tsx}",
         "options": {
           "arrowParens": "always",
           "parser": "typescript",

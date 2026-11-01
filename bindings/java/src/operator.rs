@@ -15,136 +15,170 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use jni::Env;
+use jni::EnvUnowned;
+use jni::jni_str;
 use jni::objects::JByteArray;
 use jni::objects::JClass;
 use jni::objects::JObject;
+use jni::objects::JObjectArray;
 use jni::objects::JString;
-use jni::sys::jbyteArray;
 use jni::sys::jlong;
-use jni::sys::jobject;
-use jni::sys::jobjectArray;
 use jni::sys::jsize;
-use jni::JNIEnv;
-use opendal::BlockingOperator;
+use opendal::blocking;
 
-use crate::convert::jstring_to_string;
-use crate::make_entry;
-use crate::make_metadata;
 use crate::Result;
+use crate::convert::{bytes_to_jbytearray, jstring_to_string};
+use crate::error::ThrowException;
+use crate::make_metadata;
+use crate::{make_entry, make_list_options, make_stat_options, make_write_options};
 
 /// # Safety
 ///
 /// This function should not be called before the Operator is ready.
-#[no_mangle]
-pub unsafe extern "system" fn Java_org_apache_opendal_Operator_disposeInternal(
-    _: JNIEnv,
-    _: JObject,
-    op: *mut BlockingOperator,
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_org_apache_opendal_Operator_disposeInternal<'local>(
+    _: EnvUnowned<'local>,
+    _: JObject<'local>,
+    op: *mut blocking::Operator,
 ) {
-    drop(Box::from_raw(op));
+    unsafe {
+        drop(Box::from_raw(op));
+    }
 }
 
 /// # Safety
 ///
 /// This function should not be called before the Operator is ready.
-#[no_mangle]
-pub unsafe extern "system" fn Java_org_apache_opendal_Operator_duplicate(
-    _: JNIEnv,
-    _: JObject,
-    op: *mut BlockingOperator,
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_org_apache_opendal_Operator_duplicate<'local>(
+    _: EnvUnowned<'local>,
+    _: JObject<'local>,
+    op: *mut blocking::Operator,
 ) -> jlong {
-    let op = &mut *op;
+    let op = unsafe { &mut *op };
     Box::into_raw(Box::new(op.clone())) as jlong
 }
 
 /// # Safety
 ///
 /// This function should not be called before the Operator is ready.
-#[no_mangle]
-pub unsafe extern "system" fn Java_org_apache_opendal_Operator_read(
-    mut env: JNIEnv,
-    _: JClass,
-    op: *mut BlockingOperator,
-    path: JString,
-) -> jbyteArray {
-    intern_read(&mut env, &mut *op, path).unwrap_or_else(|e| {
-        e.throw(&mut env);
-        JByteArray::default().into_raw()
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_org_apache_opendal_Operator_read<'local>(
+    mut env: EnvUnowned<'local>,
+    _: JClass<'local>,
+    op: *mut blocking::Operator,
+    path: JString<'local>,
+    read_options: JObject<'local>,
+) -> JByteArray<'local> {
+    env.with_env(|env| {
+        let op_ref = unsafe { &mut *op };
+        intern_read(env, op_ref, path, read_options)
     })
+    .resolve::<ThrowException>()
 }
 
-fn intern_read(env: &mut JNIEnv, op: &mut BlockingOperator, path: JString) -> Result<jbyteArray> {
+fn intern_read<'local>(
+    env: &mut Env<'local>,
+    op: &mut blocking::Operator,
+    path: JString<'local>,
+    options: JObject<'local>,
+) -> Result<JByteArray<'local>> {
+    use crate::make_read_options;
+
     let path = jstring_to_string(env, &path)?;
-    let content = op.read(&path)?.to_bytes();
-    let result = env.byte_array_from_slice(&content)?;
-    Ok(result.into_raw())
+    let options = make_read_options(env, &options)?;
+    let content = op.read_options(&path, options)?;
+
+    bytes_to_jbytearray(env, content.to_bytes())
 }
 
 /// # Safety
 ///
 /// This function should not be called before the Operator is ready.
-#[no_mangle]
-pub unsafe extern "system" fn Java_org_apache_opendal_Operator_write(
-    mut env: JNIEnv,
-    _: JClass,
-    op: *mut BlockingOperator,
-    path: JString,
-    content: JByteArray,
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_org_apache_opendal_Operator_write<'local>(
+    mut env: EnvUnowned<'local>,
+    _: JClass<'local>,
+    op: *mut blocking::Operator,
+    path: JString<'local>,
+    content: JByteArray<'local>,
+    write_options: JObject<'local>,
 ) {
-    intern_write(&mut env, &mut *op, path, content).unwrap_or_else(|e| {
-        e.throw(&mut env);
+    env.with_env(|env| {
+        let op_ref = unsafe { &mut *op };
+        intern_write(env, op_ref, path, content, write_options)
     })
+    .resolve::<ThrowException>()
 }
 
-fn intern_write(
-    env: &mut JNIEnv,
-    op: &mut BlockingOperator,
-    path: JString,
-    content: JByteArray,
+fn intern_write<'local>(
+    env: &mut Env<'local>,
+    op: &mut blocking::Operator,
+    path: JString<'local>,
+    content: JByteArray<'local>,
+    options: JObject<'local>,
 ) -> Result<()> {
     let path = jstring_to_string(env, &path)?;
     let content = env.convert_byte_array(content)?;
-    Ok(op.write(&path, content)?)
+    let write_opts = make_write_options(env, &options)?;
+
+    let _ = op.write_options(&path, content, write_opts)?;
+    Ok(())
 }
 
 /// # Safety
 ///
 /// This function should not be called before the Operator is ready.
-#[no_mangle]
-pub unsafe extern "system" fn Java_org_apache_opendal_Operator_stat(
-    mut env: JNIEnv,
-    _: JClass,
-    op: *mut BlockingOperator,
-    path: JString,
-) -> jobject {
-    intern_stat(&mut env, &mut *op, path).unwrap_or_else(|e| {
-        e.throw(&mut env);
-        JObject::default().into_raw()
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_org_apache_opendal_Operator_stat<'local>(
+    mut env: EnvUnowned<'local>,
+    _: JClass<'local>,
+    op: *mut blocking::Operator,
+    path: JString<'local>,
+    stat_options: JObject<'local>,
+) -> JObject<'local> {
+    env.with_env(|env| {
+        let op_ref = unsafe { &mut *op };
+        intern_stat(env, op_ref, path, stat_options)
     })
+    .resolve::<ThrowException>()
 }
 
-fn intern_stat(env: &mut JNIEnv, op: &mut BlockingOperator, path: JString) -> Result<jobject> {
+fn intern_stat<'local>(
+    env: &mut Env<'local>,
+    op: &mut blocking::Operator,
+    path: JString<'local>,
+    options: JObject<'local>,
+) -> Result<JObject<'local>> {
     let path = jstring_to_string(env, &path)?;
-    let metadata = op.stat(&path)?;
-    Ok(make_metadata(env, metadata)?.into_raw())
+    let stat_opts = make_stat_options(env, &options)?;
+    let metadata = op.stat_options(&path, stat_opts)?;
+    make_metadata(env, metadata)
 }
 
 /// # Safety
 ///
 /// This function should not be called before the Operator is ready.
-#[no_mangle]
-pub unsafe extern "system" fn Java_org_apache_opendal_Operator_delete(
-    mut env: JNIEnv,
-    _: JClass,
-    op: *mut BlockingOperator,
-    path: JString,
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_org_apache_opendal_Operator_delete<'local>(
+    mut env: EnvUnowned<'local>,
+    _: JClass<'local>,
+    op: *mut blocking::Operator,
+    path: JString<'local>,
 ) {
-    intern_delete(&mut env, &mut *op, path).unwrap_or_else(|e| {
-        e.throw(&mut env);
+    env.with_env(|env| {
+        let op_ref = unsafe { &mut *op };
+        intern_delete(env, op_ref, path)
     })
+    .resolve::<ThrowException>()
 }
 
-fn intern_delete(env: &mut JNIEnv, op: &mut BlockingOperator, path: JString) -> Result<()> {
+fn intern_delete<'local>(
+    env: &mut Env<'local>,
+    op: &mut blocking::Operator,
+    path: JString<'local>,
+) -> Result<()> {
     let path = jstring_to_string(env, &path)?;
     Ok(op.delete(&path)?)
 }
@@ -152,19 +186,25 @@ fn intern_delete(env: &mut JNIEnv, op: &mut BlockingOperator, path: JString) -> 
 /// # Safety
 ///
 /// This function should not be called before the Operator is ready.
-#[no_mangle]
-pub unsafe extern "system" fn Java_org_apache_opendal_Operator_createDir(
-    mut env: JNIEnv,
-    _: JClass,
-    op: *mut BlockingOperator,
-    path: JString,
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_org_apache_opendal_Operator_createDir<'local>(
+    mut env: EnvUnowned<'local>,
+    _: JClass<'local>,
+    op: *mut blocking::Operator,
+    path: JString<'local>,
 ) {
-    intern_create_dir(&mut env, &mut *op, path).unwrap_or_else(|e| {
-        e.throw(&mut env);
+    env.with_env(|env| {
+        let op_ref = unsafe { &mut *op };
+        intern_create_dir(env, op_ref, path)
     })
+    .resolve::<ThrowException>()
 }
 
-fn intern_create_dir(env: &mut JNIEnv, op: &mut BlockingOperator, path: JString) -> Result<()> {
+fn intern_create_dir<'local>(
+    env: &mut Env<'local>,
+    op: &mut blocking::Operator,
+    path: JString<'local>,
+) -> Result<()> {
     let path = jstring_to_string(env, &path)?;
     Ok(op.create_dir(&path)?)
 }
@@ -172,52 +212,57 @@ fn intern_create_dir(env: &mut JNIEnv, op: &mut BlockingOperator, path: JString)
 /// # Safety
 ///
 /// This function should not be called before the Operator is ready.
-#[no_mangle]
-pub unsafe extern "system" fn Java_org_apache_opendal_Operator_copy(
-    mut env: JNIEnv,
-    _: JClass,
-    op: *mut BlockingOperator,
-    source_path: JString,
-    target_path: JString,
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_org_apache_opendal_Operator_copy<'local>(
+    mut env: EnvUnowned<'local>,
+    _: JClass<'local>,
+    op: *mut blocking::Operator,
+    source_path: JString<'local>,
+    target_path: JString<'local>,
 ) {
-    intern_copy(&mut env, &mut *op, source_path, target_path).unwrap_or_else(|e| {
-        e.throw(&mut env);
+    env.with_env(|env| {
+        let op_ref = unsafe { &mut *op };
+        intern_copy(env, op_ref, source_path, target_path)
     })
+    .resolve::<ThrowException>()
 }
 
-fn intern_copy(
-    env: &mut JNIEnv,
-    op: &mut BlockingOperator,
-    source_path: JString,
-    target_path: JString,
+fn intern_copy<'local>(
+    env: &mut Env<'local>,
+    op: &mut blocking::Operator,
+    source_path: JString<'local>,
+    target_path: JString<'local>,
 ) -> Result<()> {
     let source_path = jstring_to_string(env, &source_path)?;
     let target_path = jstring_to_string(env, &target_path)?;
 
-    Ok(op.copy(&source_path, &target_path)?)
+    op.copy(&source_path, &target_path)?;
+    Ok(())
 }
 
 /// # Safety
 ///
 /// This function should not be called before the Operator is ready.
-#[no_mangle]
-pub unsafe extern "system" fn Java_org_apache_opendal_Operator_rename(
-    mut env: JNIEnv,
-    _: JClass,
-    op: *mut BlockingOperator,
-    source_path: JString,
-    target_path: JString,
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_org_apache_opendal_Operator_rename<'local>(
+    mut env: EnvUnowned<'local>,
+    _: JClass<'local>,
+    op: *mut blocking::Operator,
+    source_path: JString<'local>,
+    target_path: JString<'local>,
 ) {
-    intern_rename(&mut env, &mut *op, source_path, target_path).unwrap_or_else(|e| {
-        e.throw(&mut env);
+    env.with_env(|env| {
+        let op_ref = unsafe { &mut *op };
+        intern_rename(env, op_ref, source_path, target_path)
     })
+    .resolve::<ThrowException>()
 }
 
-fn intern_rename(
-    env: &mut JNIEnv,
-    op: &mut BlockingOperator,
-    source_path: JString,
-    target_path: JString,
+fn intern_rename<'local>(
+    env: &mut Env<'local>,
+    op: &mut blocking::Operator,
+    source_path: JString<'local>,
+    target_path: JString<'local>,
 ) -> Result<()> {
     let source_path = jstring_to_string(env, &source_path)?;
     let target_path = jstring_to_string(env, &target_path)?;
@@ -228,54 +273,75 @@ fn intern_rename(
 /// # Safety
 ///
 /// This function should not be called before the Operator is ready.
-#[no_mangle]
-pub unsafe extern "system" fn Java_org_apache_opendal_Operator_removeAll(
-    mut env: JNIEnv,
-    _: JClass,
-    op: *mut BlockingOperator,
-    path: JString,
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_org_apache_opendal_Operator_removeAll<'local>(
+    mut env: EnvUnowned<'local>,
+    _: JClass<'local>,
+    op: *mut blocking::Operator,
+    path: JString<'local>,
 ) {
-    intern_remove_all(&mut env, &mut *op, path).unwrap_or_else(|e| {
-        e.throw(&mut env);
+    env.with_env(|env| {
+        let op_ref = unsafe { &mut *op };
+        intern_remove_all(env, op_ref, path)
     })
+    .resolve::<ThrowException>()
 }
 
-fn intern_remove_all(env: &mut JNIEnv, op: &mut BlockingOperator, path: JString) -> Result<()> {
+fn intern_remove_all<'local>(
+    env: &mut Env<'local>,
+    op: &mut blocking::Operator,
+    path: JString<'local>,
+) -> Result<()> {
+    use opendal::options::DeleteOptions;
     let path = jstring_to_string(env, &path)?;
 
-    Ok(op.remove_all(&path)?)
+    Ok(op.delete_options(
+        &path,
+        DeleteOptions {
+            recursive: true,
+            ..Default::default()
+        },
+    )?)
 }
 
 /// # Safety
 ///
 /// This function should not be called before the Operator is ready.
-#[no_mangle]
-pub unsafe extern "system" fn Java_org_apache_opendal_Operator_list(
-    mut env: JNIEnv,
-    _: JClass,
-    op: *mut BlockingOperator,
-    path: JString,
-) -> jobjectArray {
-    intern_list(&mut env, &mut *op, path).unwrap_or_else(|e| {
-        e.throw(&mut env);
-        JObject::default().into_raw()
+#[unsafe(no_mangle)]
+pub unsafe extern "system" fn Java_org_apache_opendal_Operator_list<'local>(
+    mut env: EnvUnowned<'local>,
+    _: JClass<'local>,
+    op: *mut blocking::Operator,
+    path: JString<'local>,
+    options: JObject<'local>,
+) -> JObjectArray<'local> {
+    env.with_env(|env| {
+        let op_ref = unsafe { &mut *op };
+        intern_list(env, op_ref, path, options)
     })
+    .resolve::<ThrowException>()
 }
 
-fn intern_list(env: &mut JNIEnv, op: &mut BlockingOperator, path: JString) -> Result<jobjectArray> {
+fn intern_list<'local>(
+    env: &mut Env<'local>,
+    op: &mut blocking::Operator,
+    path: JString<'local>,
+    options: JObject<'local>,
+) -> Result<JObjectArray<'local>> {
     let path = jstring_to_string(env, &path)?;
-    let obs = op.list(&path)?;
+    let list_opts = make_list_options(env, &options)?;
+    let entries = op.list_options(&path, list_opts)?;
 
     let jarray = env.new_object_array(
-        obs.len() as jsize,
-        "org/apache/opendal/Entry",
+        entries.len() as jsize,
+        jni_str!("org/apache/opendal/Entry"),
         JObject::null(),
     )?;
 
-    for (idx, entry) in obs.iter().enumerate() {
-        let entry = make_entry(env, entry.to_owned())?;
-        env.set_object_array_element(&jarray, idx as jsize, entry)?;
+    for (idx, entry) in entries.into_iter().enumerate() {
+        let entry = make_entry(env, entry)?;
+        jarray.set_element(env, idx, &entry)?;
     }
 
-    Ok(jarray.into_raw())
+    Ok(jarray)
 }

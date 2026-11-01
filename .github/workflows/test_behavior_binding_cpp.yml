@@ -1,0 +1,92 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: Behavior Test Binding C++
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: true
+        type: string
+      cases:
+        required: true
+        type: string
+
+concurrency:
+  group: binding_cpp-${{ inputs.os }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: ${{ matrix.cases.service }} / ${{ matrix.cases.setup }}
+    runs-on: ${{ inputs.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        cases: ${{ fromJson(inputs.cases) }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+        with:
+          need-nextest: true
+          need-protoc: true
+          need-rocksdb: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup 1Password Connect
+        shell: bash
+        run: |
+          echo "::add-mask::${{ secrets.OP_CONNECT_HOST }}"
+          echo "::add-mask::${{ secrets.OP_CONNECT_TOKEN }}"
+          echo "OP_CONNECT_HOST=${{ secrets.OP_CONNECT_HOST }}" >> "$GITHUB_ENV"
+          echo "OP_CONNECT_TOKEN=${{ secrets.OP_CONNECT_TOKEN }}" >> "$GITHUB_ENV"
+
+      - name: Install dependencies (Ubuntu)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            cmake \
+            libboost-dev \
+            libboost-date-time-dev \
+            libboost-iostreams-dev \
+            clang \
+            libc++-dev \
+            libc++abi-dev \
+            doxygen
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake boost llvm doxygen
+
+      - name: Install dependencies (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          choco install cmake llvm doxygen.install
+          # Add LLVM to PATH for this job
+          echo "C:\Program Files\LLVM\bin" >> $GITHUB_PATH
+
+      - name: Test Core
+        uses: ./.github/actions/test_behavior_binding_cpp
+        with:
+          setup: ${{ matrix.cases.setup }}
+          service: ${{ matrix.cases.service }}
+          feature: ${{ matrix.cases.feature }}

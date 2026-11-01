@@ -22,5 +22,13 @@
 #include "rust/cxx.h"
 #include "rust/cxx_async.h"
 
-CXXASYNC_DEFINE_FUTURE(rust::Vec<uint8_t>, opendal, ffi, async, RustFutureRead);
-CXXASYNC_DEFINE_FUTURE(void, opendal, ffi, async, RustFutureWrite);
+CXXASYNC_DEFINE_FUTURE(rust::Vec<uint8_t>, opendal, ffi, async_op,
+                       RustFutureRead);
+CXXASYNC_DEFINE_FUTURE(void, opendal, ffi, async_op, RustFutureWrite);
+CXXASYNC_DEFINE_FUTURE(rust::Vec<rust::String>, opendal, ffi, async_op,
+                       RustFutureList);
+CXXASYNC_DEFINE_FUTURE(bool, opendal, ffi, async_op, RustFutureBool);
+CXXASYNC_DEFINE_FUTURE(size_t, opendal, ffi, async_op, RustFutureReaderId);
+CXXASYNC_DEFINE_FUTURE(size_t, opendal, ffi, async_op, RustFutureListerId);
+CXXASYNC_DEFINE_FUTURE(rust::String, opendal, ffi, async_op,
+                       RustFutureEntryOption);

@@ -1,0 +1,231 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: Append mailing-list thread link to new Discussion
+
+on:
+  discussion:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      discussion_url:
+        description: 'Discussion URL to backfill mailing list link'
+        required: true
+
+permissions:
+  discussions: write
+  contents: read
+
+jobs:
+  link-thread:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Append thread URL
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { execFile } = require('node:child_process');
+            const { promisify } = require('node:util');
+
+            const execFileAsync = promisify(execFile);
+
+            let owner = context.repo.owner;
+            let repo = context.repo.repo;
+
+            const manualUrl = context.payload.inputs && context.payload.inputs.discussion_url
+              ? context.payload.inputs.discussion_url.trim()
+              : '';
+
+            let discussion = context.payload.discussion || null;
+            let number = discussion ? discussion.number : null;
+
+            let discussionRepoMismatch = false;
+
+            if (manualUrl) {
+              const match = manualUrl.match(/github\.com\/([^/]+)\/([^/]+)\/discussions\/(\d+)/i);
+              if (!match) {
+                core.setFailed(`Invalid discussion URL: ${manualUrl}`);
+                return;
+              }
+              owner = match[1];
+              repo = match[2];
+              number = Number(match[3]);
+              if (!number || Number.isNaN(number)) {
+                core.setFailed(`Invalid discussion number in URL: ${manualUrl}`);
+                return;
+              }
+              discussionRepoMismatch =
+                owner.toLowerCase() !== context.repo.owner.toLowerCase() ||
+                repo.toLowerCase() !== context.repo.repo.toLowerCase();
+            }
+
+            if (!discussion && !manualUrl) {
+              core.setFailed('Discussion payload missing and no discussion_url input provided');
+              return;
+            }
+
+            async function loadDiscussion() {
+              const query = `
+                query ($owner: String!, $repo: String!, $number: Int!) {
+                  repository(owner: $owner, name: $repo) {
+                    discussion(number: $number) {
+                      id
+                      number
+                      title
+                      body
+                      comments(first: 100) {
+                        nodes {
+                          body
+                        }
+                      }
+                    }
+                  }
+                }
+              `;
+              const result = await github.graphql(query, { owner, repo, number });
+              const current = result.repository && result.repository.discussion;
+              if (!current) {
+                throw new Error(`Discussion not found: ${owner}/${repo}#${number}`);
+              }
+              return current;
+            }
+
+            const currentDiscussion = await loadDiscussion();
+            const title = currentDiscussion.title || discussion?.title || '';
+
+            function normalizeSubject(value) {
+              return (value || '')
+                .trim()
+                .replace(/^(re:\s*)+/i, '')
+                .toLowerCase();
+            }
+
+            async function runAsfml(args) {
+              const { stdout } = await execFileAsync('npx', ['--yes', 'asfml', ...args], {
+                maxBuffer: 1024 * 1024,
+              });
+              return stdout;
+            }
+
+            async function locateThreadUrl() {
+              const normalizedTitle = normalizeSubject(title);
+              if (!normalizedTitle) {
+                core.info('Discussion title missing, cannot query mailing list');
+                return null;
+              }
+
+              const stdout = await runAsfml([
+                'search',
+                'dev@opendal.apache.org',
+                title,
+                '--since',
+                '7d',
+                '--limit',
+                '20',
+                '--format',
+                'json',
+              ]);
+              const emails = JSON.parse(stdout);
+              if (!Array.isArray(emails) || !emails.length) {
+                return null;
+              }
+
+              const candidate =
+                emails.find(email => normalizeSubject(email.subject) === normalizedTitle) ||
+                emails[0];
+              const mid = candidate.mid || candidate.id;
+              if (!mid) {
+                return null;
+              }
+
+              try {
+                const rootStdout = await runAsfml(['read', mid, '--root', '--format', 'json']);
+                const root = JSON.parse(rootStdout);
+                const tid = root.mid || root.id || mid;
+                if (tid) {
+                  core.info('Found thread via asfml search');
+                  return `https://lists.apache.org/thread/${tid}`;
+                }
+              } catch (error) {
+                core.info(`Unable to resolve root email via asfml: ${error.message}`);
+              }
+
+              core.info('Found candidate email via asfml search');
+              return `https://lists.apache.org/thread/${mid}`;
+            }
+
+            const deadline = Date.now() + 15 * 60 * 1000;
+            const delays = [5, 10, 20, 30, 45, 60, 90, 120];
+            let attempt = 0;
+            let threadUrl = null;
+
+            while (Date.now() < deadline && !threadUrl) {
+              attempt += 1;
+              try {
+                threadUrl = await locateThreadUrl();
+              } catch (error) {
+                core.info(`Search failed: ${error.message}`);
+              }
+              if (threadUrl) {
+                break;
+              }
+              const wait = delays[Math.min(attempt - 1, delays.length - 1)];
+              core.info(`Thread not found yet, retrying in ${wait}s...`);
+              await new Promise(resolve => setTimeout(resolve, wait * 1000));
+            }
+
+            if (!threadUrl) {
+              core.setFailed('Timeout: thread not found yet');
+              return;
+            }
+
+            if (discussionRepoMismatch) {
+              core.warning(
+                `Discussion repository ${owner}/${repo} does not match workflow repository ` +
+                `${context.repo.owner}/${context.repo.repo}. Skipping comment.`
+              );
+              core.info(`Computed thread URL: ${threadUrl}`);
+              return;
+            }
+
+            const body = currentDiscussion.body || '';
+            if (body.includes(threadUrl)) {
+              core.info('Thread URL already present');
+              return;
+            }
+
+            const comments = currentDiscussion.comments?.nodes || [];
+            if (comments.some(comment => (comment.body || '').includes(threadUrl))) {
+              core.info('Thread URL already present in comments');
+              return;
+            }
+
+            const mutation = `
+              mutation ($discussionId: ID!, $body: String!) {
+                addDiscussionComment(input: { discussionId: $discussionId, body: $body }) {
+                  comment {
+                    url
+                  }
+                }
+              }
+            `;
+            const result = await github.graphql(mutation, {
+              discussionId: currentDiscussion.id,
+              body: `**Mailing list thread:** ${threadUrl}`,
+            });
+
+            core.info(`Commented ${threadUrl}: ${result.addDiscussionComment.comment.url}`);

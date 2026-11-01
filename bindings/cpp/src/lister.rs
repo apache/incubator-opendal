@@ -20,7 +20,7 @@ use opendal as od;
 
 use super::ffi;
 
-pub struct Lister(pub od::BlockingLister);
+pub struct Lister(pub od::blocking::Lister);
 
 impl Lister {
     pub fn next(&mut self) -> Result<ffi::OptionalEntry> {

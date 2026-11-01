@@ -1,0 +1,522 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+/* ===== Shared building blocks ============================================ */
+.section {
+  padding-block: clamp(3.5rem, 2rem + 7vw, 7rem);
+  border-top: 1px solid var(--odl-border);
+}
+.sectionSubtle {
+  background: var(--odl-bg-subtle);
+}
+
+.sectionHead {
+  max-width: 46rem;
+  margin-bottom: var(--odl-space-7);
+}
+.sectionTitle {
+  font-size: var(--odl-text-2xl);
+  line-height: var(--odl-leading-snug);
+  font-weight: 650;
+  color: var(--odl-fg-strong);
+  margin: var(--odl-space-4) 0 0;
+}
+.sectionLede {
+  font-size: var(--odl-text-md);
+  line-height: var(--odl-leading-normal);
+  color: var(--odl-fg-muted);
+  margin: var(--odl-space-3) 0 0;
+  max-width: 40rem;
+}
+.termItalic {
+  font-style: italic;
+}
+
+/* Buttons --------------------------------------------------------------- */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--odl-space-2);
+  height: 2.875rem;
+  padding-inline: var(--odl-space-5);
+  border-radius: var(--odl-radius-md);
+  border: 1px solid transparent;
+  font-size: var(--odl-text-sm);
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--odl-dur) var(--odl-ease),
+    border-color var(--odl-dur) var(--odl-ease),
+    color var(--odl-dur) var(--odl-ease), transform var(--odl-dur-fast)
+      var(--odl-ease);
+}
+.btn:hover {
+  text-decoration: none;
+}
+.btn:active {
+  transform: translateY(1px);
+}
+.btnPrimary {
+  background: var(--odl-action-bg);
+  color: var(--odl-action-fg);
+}
+.btnPrimary:hover {
+  background: var(--odl-action-bg-hover);
+  color: var(--odl-action-fg);
+}
+.btnSecondary {
+  background: var(--odl-surface);
+  color: var(--odl-fg-strong);
+  border-color: var(--odl-border-strong);
+}
+.btnSecondary:hover {
+  color: var(--odl-fg-strong);
+  border-color: var(--odl-fg-strong);
+  background: var(--odl-surface-2);
+}
+.btnArrow {
+  transition: transform var(--odl-dur) var(--odl-ease-out);
+}
+.btn:hover .btnArrow {
+  transform: translateX(3px);
+}
+
+/* ===== Hero ============================================================== */
+.hero {
+  position: relative;
+  overflow: visible;
+  background: var(--odl-bg);
+  padding-top: clamp(1.75rem, 1rem + 2.4vw, 3rem);
+  padding-bottom: clamp(3rem, 2rem + 5vw, 5.5rem);
+}
+.heroGrid {
+  position: absolute;
+  inset: 0;
+  -webkit-mask-image: radial-gradient(
+    120% 90% at 70% 0%,
+    #000 0%,
+    transparent 72%
+  );
+  mask-image: radial-gradient(120% 90% at 70% 0%, #000 0%, transparent 72%);
+  pointer-events: none;
+}
+.heroInner {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  gap: clamp(2rem, 1rem + 4vw, 4.5rem);
+  align-items: start;
+}
+.heroTitle {
+  font-size: var(--odl-text-display);
+  line-height: var(--odl-leading-tight);
+  font-weight: 700;
+  letter-spacing: var(--odl-tracking-tight);
+  color: var(--odl-fg-strong);
+  margin: var(--odl-space-5) 0 0;
+}
+.heroTitleAccent {
+  color: var(--odl-accent);
+}
+.heroLede {
+  font-size: var(--odl-text-md);
+  line-height: var(--odl-leading-normal);
+  color: var(--odl-fg-muted);
+  margin: var(--odl-space-5) 0 0;
+  max-width: 34rem;
+}
+.heroActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--odl-space-3);
+  margin-top: var(--odl-space-6);
+}
+.heroStats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--odl-space-4);
+  margin-top: var(--odl-space-8);
+  border-top: 1px solid var(--odl-border);
+  padding-top: var(--odl-space-5);
+}
+.heroStat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.heroStatValue {
+  font-family: var(--odl-font-mono);
+  font-size: var(--odl-text-xl);
+  font-weight: 600;
+  color: var(--odl-fg-strong);
+  font-variant-numeric: tabular-nums;
+}
+.heroStatLabel {
+  font-size: var(--odl-text-xs);
+  color: var(--odl-fg-subtle);
+}
+.heroAside {
+  padding-top: var(--odl-space-5);
+}
+
+/* ===== Used-by wall ===================================================== */
+.logoWall {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(12.5rem, 1fr));
+  gap: var(--odl-space-3);
+}
+.logoWallItem {
+  display: flex;
+}
+.logoItem {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--odl-space-3);
+  padding: var(--odl-space-4);
+  background: var(--odl-surface);
+  border: 1px solid var(--odl-border);
+  border-radius: var(--odl-radius-md);
+  text-decoration: none;
+  filter: grayscale(1);
+  opacity: 0.72;
+  transition: opacity var(--odl-dur) var(--odl-ease),
+    filter var(--odl-dur) var(--odl-ease),
+    background-color var(--odl-dur) var(--odl-ease);
+}
+.logoItem:hover {
+  background: var(--odl-surface-2);
+  filter: grayscale(0);
+  opacity: 1;
+  text-decoration: none;
+}
+.logoMark {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  border-radius: var(--odl-radius-sm);
+  flex: none;
+}
+.logoName {
+  font-family: var(--odl-font-mono);
+  font-size: var(--odl-text-sm);
+  font-weight: 500;
+  color: var(--odl-fg-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.actionLogo {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--odl-space-4);
+  border: 1px dashed var(--odl-border);
+  border-radius: var(--odl-radius-md);
+  font-family: var(--odl-font-mono);
+  font-size: var(--odl-text-xs);
+  letter-spacing: 0.04em;
+  color: var(--odl-fg-subtle);
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color var(--odl-dur) var(--odl-ease),
+    border-color var(--odl-dur) var(--odl-ease);
+}
+.actionLogo:hover {
+  color: var(--odl-accent);
+  border-color: var(--odl-accent);
+  text-decoration: none;
+}
+
+/* ===== Value props ====================================================== */
+.valueGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1px;
+  background: var(--odl-border);
+  border: 1px solid var(--odl-border);
+  border-radius: var(--odl-radius-lg);
+  overflow: hidden;
+}
+.valueCard {
+  background: var(--odl-surface);
+  padding: clamp(1.5rem, 1rem + 2vw, 2.5rem);
+  display: flex;
+  flex-direction: column;
+  gap: var(--odl-space-3);
+}
+.valueIndex {
+  font-family: var(--odl-font-mono);
+  font-size: var(--odl-text-xs);
+  font-weight: 500;
+  letter-spacing: var(--odl-tracking-label);
+  color: var(--odl-accent);
+}
+.valueCardTitle {
+  font-size: var(--odl-text-lg);
+  font-weight: 650;
+  color: var(--odl-fg-strong);
+  margin: 0;
+  letter-spacing: var(--odl-tracking-tight);
+}
+.valueCardBody {
+  font-size: var(--odl-text-base);
+  line-height: var(--odl-leading-normal);
+  color: var(--odl-fg-muted);
+  margin: 0;
+}
+
+/* ===== Services ========================================================= */
+.serviceGroups {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--odl-border);
+  border: 1px solid var(--odl-border);
+  border-radius: var(--odl-radius-lg);
+  overflow: hidden;
+}
+.serviceGroup {
+  background: var(--odl-surface);
+  padding: clamp(1.25rem, 1rem + 1vw, 1.75rem);
+}
+.serviceGroupTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--odl-space-3);
+  font-family: var(--odl-font-mono);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  letter-spacing: var(--odl-tracking-label);
+  text-transform: uppercase;
+  color: var(--odl-fg-subtle);
+  margin-bottom: var(--odl-space-4);
+}
+.serviceGroupTitle::before {
+  content: "";
+  width: 0.875rem;
+  height: 0.375rem;
+  background: var(--odl-accent);
+  flex: none;
+}
+.serviceChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--odl-space-2);
+}
+.serviceChip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--odl-space-2);
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--odl-border);
+  border-radius: var(--odl-radius-sm);
+  background: var(--odl-bg);
+  font-family: var(--odl-font-mono);
+  font-size: var(--odl-text-xs);
+  color: var(--odl-fg);
+  text-decoration: none;
+  transition: border-color var(--odl-dur) var(--odl-ease),
+    background-color var(--odl-dur) var(--odl-ease);
+}
+.serviceChip:hover {
+  border-color: var(--odl-accent);
+  background: var(--odl-surface-2);
+  color: var(--odl-fg);
+  text-decoration: none;
+}
+.serviceChipIcon {
+  width: 15px;
+  height: 15px;
+  object-fit: contain;
+}
+.servicesFoot {
+  margin-top: var(--odl-space-6);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: var(--odl-space-3);
+}
+
+/* ===== Bindings ========================================================= */
+.bindingGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(118px, 1fr));
+  gap: 1px;
+  background: var(--odl-border);
+  border: 1px solid var(--odl-border);
+  border-radius: var(--odl-radius-lg);
+  overflow: hidden;
+}
+.bindingCard {
+  background: var(--odl-surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--odl-space-3);
+  padding: var(--odl-space-5) var(--odl-space-3);
+  text-decoration: none;
+  transition: background-color var(--odl-dur) var(--odl-ease);
+}
+.bindingCard:hover {
+  background: var(--odl-surface-2);
+  text-decoration: none;
+}
+.bindingIcon {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+}
+.bindingName {
+  font-family: var(--odl-font-mono);
+  font-size: var(--odl-text-xs);
+  color: var(--odl-fg-muted);
+  transition: color var(--odl-dur) var(--odl-ease);
+}
+.bindingCard:hover .bindingName {
+  color: var(--odl-fg);
+}
+
+/* ===== Final CTA ======================================================== */
+.finalCta {
+  background: var(--odl-surface);
+  border: 1px solid var(--odl-border);
+  border-radius: var(--odl-radius-lg);
+  box-shadow: var(--odl-shadow-sm);
+  padding: clamp(2.5rem, 1.5rem + 5vw, 5rem);
+  text-align: center;
+}
+.finalCtaInner {
+  position: relative;
+}
+.finalCtaTitle {
+  font-size: clamp(2rem, 1.3rem + 3vw, 3.25rem);
+  font-weight: 700;
+  letter-spacing: var(--odl-tracking-tight);
+  margin: var(--odl-space-4) 0 0;
+  color: var(--odl-fg-strong);
+}
+.finalCtaLede {
+  font-size: var(--odl-text-md);
+  color: var(--odl-fg-muted);
+  margin: var(--odl-space-4) auto 0;
+  max-width: 34rem;
+}
+.finalCtaActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--odl-space-3);
+  justify-content: center;
+  margin-top: var(--odl-space-6);
+}
+.finalEyebrow {
+  justify-content: center;
+}
+.finalCenter {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ===== Reveal-on-scroll — pure CSS, progressive enhancement ============= */
+/* Content is never hidden without support: browsers lacking scroll-driven
+   animations (or users who prefer reduced motion) simply see it immediately. */
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .reveal {
+      animation: odlReveal linear both;
+      animation-timeline: view();
+      animation-range: entry 2% cover 18%;
+    }
+  }
+}
+@keyframes odlReveal {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ===== Responsive ======================================================= */
+@media (max-width: 996px) {
+  .heroInner {
+    grid-template-columns: 1fr;
+  }
+  .serviceGroups {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .heroAside {
+    order: 2;
+    padding-top: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .heroGrid {
+    -webkit-mask-image: linear-gradient(
+      180deg,
+      #000 0%,
+      #000 calc(100% - 5rem),
+      transparent 100%
+    );
+    mask-image: linear-gradient(
+      180deg,
+      #000 0%,
+      #000 calc(100% - 5rem),
+      transparent 100%
+    );
+  }
+  .valueGrid,
+  .serviceGroups {
+    grid-template-columns: 1fr;
+  }
+  .section {
+    padding-block: 3.25rem;
+  }
+  .sectionHead {
+    margin-bottom: var(--odl-space-5);
+  }
+  .heroStats {
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--odl-space-5) var(--odl-space-4);
+  }
+  .heroActions .btn {
+    flex: 1 1 12rem;
+    min-width: 0;
+  }
+  .finalCtaActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .finalCtaActions .btn {
+    width: 100%;
+  }
+}

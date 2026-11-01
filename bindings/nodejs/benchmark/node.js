@@ -17,7 +17,7 @@
  * under the License.
  */
 
-const { Operator } = require('../index.js')
+const { Operator } = require('../index.cjs')
 const { S3Client, PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3')
 const { suite, add, cycle, complete } = require('benny')
 const crypto = require('node:crypto')

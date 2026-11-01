@@ -34,11 +34,19 @@ For Windows:
 Set-ExecutionPolicy Bypass -Scope Process -Force;[System.Net.ServicePointManager]::SecurityProtocol = [System.Net.ServicePointManager]::SecurityProtocol -bor 3072; try { Invoke-Command -ScriptBlock ([ScriptBlock]::Create((Invoke-WebRequest https://www.haskell.org/ghcup/sh/bootstrap-haskell.ps1 -UseBasicParsing))) -ArgumentList $true } catch { Write-Error $_ }
 ```
 
+Setup ghc version to 9.4.8
+
+```shell
+ghcup install ghc 9.4.8 --set
+ghcup install cabal --set
+cabal update
+```
+
 To verify that everything is working properly, run `ghc -V` and `cabal -V`:
 
 ```shell
 > ghc -V
-The Glorious Glasgow Haskell Compilation System, version 9.2.8
+The Glorious Glasgow Haskell Compilation System, version 9.4.8
 > cabal -V
 cabal-install version 3.6.2.0
 compiled using version 3.6.2.0 of the Cabal library

@@ -17,6 +17,7 @@
 
 use pyo3::create_exception;
 use pyo3::exceptions::PyException;
+use pyo3::exceptions::PyIOError;
 
 use crate::*;
 
@@ -26,49 +27,102 @@ create_exception!(
     PyException,
     "OpenDAL Base Exception"
 );
-create_exception!(opendal.exceptions, Unexpected, Error, "Unexpected errors");
+create_exception!(
+    opendal.exceptions,
+    Unexpected,
+    PyException,
+    "Unexpected errors"
+);
 create_exception!(
     opendal.exceptions,
     Unsupported,
-    Error,
+    PyException,
     "Unsupported operation"
 );
 create_exception!(
     opendal.exceptions,
     ConfigInvalid,
-    Error,
+    PyException,
     "Config is invalid"
 );
-create_exception!(opendal.exceptions, NotFound, Error, "Not found");
+create_exception!(opendal.exceptions, NotFound, PyException, "Not found");
 create_exception!(
     opendal.exceptions,
     PermissionDenied,
-    Error,
+    PyException,
     "Permission denied"
 );
-create_exception!(opendal.exceptions, IsADirectory, Error, "Is a directory");
-create_exception!(opendal.exceptions, NotADirectory, Error, "Not a directory");
-create_exception!(opendal.exceptions, AlreadyExists, Error, "Already exists");
-create_exception!(opendal.exceptions, IsSameFile, Error, "Is same file");
+create_exception!(
+    opendal.exceptions,
+    IsADirectory,
+    PyException,
+    "Is a directory"
+);
+create_exception!(
+    opendal.exceptions,
+    NotADirectory,
+    PyException,
+    "Not a directory"
+);
+create_exception!(
+    opendal.exceptions,
+    AlreadyExists,
+    PyException,
+    "Already exists"
+);
+create_exception!(opendal.exceptions, IsSameFile, PyException, "Is same file");
 create_exception!(
     opendal.exceptions,
     ConditionNotMatch,
-    Error,
+    PyException,
     "Condition not match"
 );
+create_exception!(opendal.exceptions, RateLimited, PyException, "Rate limited");
+create_exception!(
+    opendal.exceptions,
+    RangeNotSatisfied,
+    PyException,
+    "Range not satisfied"
+);
+create_exception!(
+    opendal.exceptions,
+    Conflict,
+    PyException,
+    "Operation conflicts with the current resource state"
+);
+
+fn format_pyerr_impl(err: &ocore::Error) -> PyErr {
+    let e = format!("{err:?}");
+    match err.kind() {
+        ocore::ErrorKind::Unexpected => Unexpected::new_err(e),
+        ocore::ErrorKind::Unsupported => Unsupported::new_err(e),
+        ocore::ErrorKind::ConfigInvalid => ConfigInvalid::new_err(e),
+        ocore::ErrorKind::NotFound => NotFound::new_err(e),
+        ocore::ErrorKind::PermissionDenied => PermissionDenied::new_err(e),
+        ocore::ErrorKind::IsADirectory => IsADirectory::new_err(e),
+        ocore::ErrorKind::NotADirectory => NotADirectory::new_err(e),
+        ocore::ErrorKind::AlreadyExists => AlreadyExists::new_err(e),
+        ocore::ErrorKind::IsSameFile => IsSameFile::new_err(e),
+        ocore::ErrorKind::ConditionNotMatch => ConditionNotMatch::new_err(e),
+        ocore::ErrorKind::RateLimited => RateLimited::new_err(e),
+        ocore::ErrorKind::RangeNotSatisfied => RangeNotSatisfied::new_err(e),
+        ocore::ErrorKind::Conflict => Conflict::new_err(e),
+        _ => Unexpected::new_err(e),
+    }
+}
 
 pub fn format_pyerr(err: ocore::Error) -> PyErr {
-    match err.kind() {
-        ocore::ErrorKind::Unexpected => Unexpected::new_err(err.to_string()),
-        ocore::ErrorKind::Unsupported => Unsupported::new_err(err.to_string()),
-        ocore::ErrorKind::ConfigInvalid => ConfigInvalid::new_err(err.to_string()),
-        ocore::ErrorKind::NotFound => NotFound::new_err(err.to_string()),
-        ocore::ErrorKind::PermissionDenied => PermissionDenied::new_err(err.to_string()),
-        ocore::ErrorKind::IsADirectory => IsADirectory::new_err(err.to_string()),
-        ocore::ErrorKind::NotADirectory => NotADirectory::new_err(err.to_string()),
-        ocore::ErrorKind::AlreadyExists => AlreadyExists::new_err(err.to_string()),
-        ocore::ErrorKind::IsSameFile => IsSameFile::new_err(err.to_string()),
-        ocore::ErrorKind::ConditionNotMatch => ConditionNotMatch::new_err(err.to_string()),
-        _ => Unexpected::new_err(err.to_string()),
+    format_pyerr_impl(&err)
+}
+
+/// Format a std::io::Error into a PyErr, checking if it wraps an OpenDAL error
+pub fn format_pyerr_from_io_error(err: std::io::Error) -> PyErr {
+    // Check if this io::Error wraps an OpenDAL error
+    if let Some(opendal_err) = err.get_ref().and_then(|e| e.downcast_ref::<ocore::Error>()) {
+        // If it does, format it as an OpenDAL error to preserve the error type
+        format_pyerr_impl(opendal_err)
+    } else {
+        // Otherwise, format it as a regular IO error
+        PyIOError::new_err(err.to_string())
     }
 }

@@ -24,37 +24,20 @@ edition = "2021"
 homepage = "https://opendal.apache.org/"
 license = "Apache-2.0"
 repository = "https://github.com/apache/opendal"
-rust-version = "1.75"
-version = "0.45.2"
+rust-version = "1.91"
 
 [lib]
 crate-type = ["cdylib", "staticlib"]
 doc = false
 
 [build-dependencies]
-cbindgen = "0.26.0"
+cbindgen = "0.29.0"
 
 [dependencies]
 bytes = "1.4.0"
-once_cell = "1.17.1"
 # this crate won't be published, we always use the local version
-opendal = { version = ">=0", path = "../../core", features = [
-  "layers-blocking",
-  # These are default features before v0.46. TODO: change to optional features #4313
-  "services-azblob",
-  "services-azdls",
-  "services-cos",
-  "services-fs",
-  "services-gcs",
-  "services-ghac",
-  "services-http",
-  "services-ipmfs",
-  "services-memory",
-  "services-obs",
-  "services-oss",
-  "services-s3",
-  "services-webdav",
-  "services-webhdfs",
-  "services-azfile",
-] }
+opendal = { version = ">=0", path = "../../core", features = ["blocking"] }
 tokio = { version = "1.27", features = ["fs", "macros", "rt-multi-thread"] }
+
+[features]
+default = []

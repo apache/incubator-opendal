@@ -1,0 +1,152 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: Compose source candidate on ATR
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate:
+        description: Full SHA of the reviewed source commit on the selected branch
+        type: string
+        required: true
+      rc:
+        description: Candidate version, for example 0.59.2-rc.1
+        type: string
+        required: true
+
+  workflow_call:
+    inputs:
+      candidate:
+        type: string
+        required: true
+      rc:
+        type: string
+        required: true
+    secrets:
+      GPG_SECRET_KEY:
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: source-release-compose
+  cancel-in-progress: false
+
+jobs:
+  source_bundle:
+    if: github.repository == 'apache/opendal'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      artifact-id: ${{ steps.bundle.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Validate reviewed candidate identity
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          RC: ${{ inputs.rc }}
+        run: |
+          python3 - <<'PYTHON'
+          import os, re, subprocess
+          assert re.fullmatch(r"[0-9a-f]{40}", os.environ["CANDIDATE"]), "full candidate SHA required"
+          assert re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+-rc\.[1-9][0-9]*", os.environ["RC"]), "RC version required"
+          if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" and os.environ["GITHUB_WORKFLOW"] == "Compose source candidate on ATR":
+              subprocess.run(["git", "merge-base", "--is-ancestor", os.environ["CANDIDATE"], os.environ["GITHUB_SHA"]], check=True)
+          subprocess.run(["git", "cat-file", "-e", os.environ["CANDIDATE"] + "^{commit}"], check=True)
+          PYTHON
+      - uses: ./.github/actions/setup
+      - name: Prepare unsigned candidate without signing credentials
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+        run: python3 scripts/verify_source_reproducibility.py --revision "$CANDIDATE" --output "$RUNNER_TEMP/source-bundle"
+      - uses: actions/upload-artifact@v7
+        id: bundle
+        with:
+          name: source-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/source-bundle/*.tar.gz
+            ${{ runner.temp }}/source-bundle/*.sha512
+            ${{ runner.temp }}/source-bundle/report.json
+          if-no-files-found: error
+
+  source_sign:
+    needs: source_bundle
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      artifact-id: ${{ steps.signed.outputs.artifact-id }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.source_bundle.outputs.artifact-id }}
+          path: ${{ runner.temp }}/source-bundle
+          merge-multiple: true
+      - name: Sign the exact source bundle
+        env:
+          CANDIDATE: ${{ inputs.candidate }}
+          RC: ${{ inputs.rc }}
+          SOURCE_SIGNING_FINGERPRINT: ${{ vars.SOURCE_SIGNING_FINGERPRINT }}
+          SOURCE_SIGNING_KEY: ${{ secrets.GPG_SECRET_KEY }}
+          SOURCE_SIGNING_PASSPHRASE: ""
+        run: python3 scripts/sign_source_release.py "$RUNNER_TEMP/source-bundle" "$CANDIDATE" "$RC" "$RUNNER_TEMP/signed-source"
+      - uses: actions/upload-artifact@v7
+        id: signed
+        with:
+          name: signed-source-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/signed-source/
+          if-no-files-found: error
+
+  source_compose:
+    needs: source_sign
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.source_sign.outputs.artifact-id }}
+          path: ${{ runner.temp }}/signed-source
+          merge-multiple: true
+      - name: Upload candidate to ATR compose
+        uses: apache/tooling-actions/upload-to-atr@fa721a0b176d713807b574da721b96545b587eea
+        with:
+          project: opendal
+          version: ${{ inputs.rc }}
+          src: ${{ runner.temp }}/signed-source
+      - name: Record staging handoff
+        run: |
+          echo 'Candidate uploaded to ATR compose. Inspect ATR checks and independently rebuild the downloaded files before starting a vote. This workflow does not vote or finish a release.' >> "$GITHUB_STEP_SUMMARY"

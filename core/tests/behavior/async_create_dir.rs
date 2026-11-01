@@ -20,7 +20,7 @@ use anyhow::Result;
 use crate::*;
 
 pub fn tests(op: &Operator, tests: &mut Vec<Trial>) {
-    let cap = op.info().full_capability();
+    let cap = op.info().capability();
 
     if cap.create_dir && cap.stat {
         tests.extend(async_trials!(op, test_create_dir, test_create_dir_existing))

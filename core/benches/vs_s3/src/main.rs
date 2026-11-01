@@ -21,19 +21,16 @@ use aws_config::BehaviorVersion;
 use aws_config::Region;
 use aws_credential_types::Credentials;
 use criterion::Criterion;
-use opendal::raw::tests::TEST_RUNTIME;
-use opendal::services;
 use opendal::Operator;
+use opendal::services;
+use opendal::tests::TEST_RUNTIME;
 use rand::prelude::*;
+use rand::rng;
 use tokio::io::AsyncReadExt;
 
 fn main() {
     let _ = dotenvy::dotenv();
-    let _ = tracing_subscriber::fmt()
-        .pretty()
-        .with_test_writer()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .try_init();
+    let _ = logforth::starter_log::stderr().try_apply();
 
     let endpoint = env::var("OPENDAL_S3_ENDPOINT").unwrap();
     let access_key = env::var("OPENDAL_S3_ACCESS_KEY_ID").unwrap();
@@ -48,7 +45,7 @@ fn main() {
         .secret_access_key(&secret_key)
         .bucket(&bucket)
         .region(&region);
-    let op = Operator::new(cfg).unwrap().finish();
+    let op = Operator::new(cfg).unwrap();
 
     // Init AWS S3 SDK.
     let mut config_loader = aws_config::defaults(BehaviorVersion::latest());
@@ -69,7 +66,7 @@ fn bench_read(c: &mut Criterion, op: Operator, s3_client: aws_sdk_s3::Client, bu
     let mut group = c.benchmark_group("read");
     group.throughput(criterion::Throughput::Bytes(16 * 1024 * 1024));
 
-    TEST_RUNTIME.block_on(prepare(op.clone()));
+    TEST_RUNTIME.block_on(prepare(&op));
 
     group.bench_function("opendal_s3_reader", |b| {
         b.to_async(&*TEST_RUNTIME).iter(|| async {
@@ -118,10 +115,10 @@ fn bench_read(c: &mut Criterion, op: Operator, s3_client: aws_sdk_s3::Client, bu
     group.finish()
 }
 
-async fn prepare(op: Operator) {
-    let mut rng = thread_rng();
+async fn prepare(op: &Operator) {
+    let mut rng = rng();
     let mut content = vec![0; 16 * 1024 * 1024];
     rng.fill_bytes(&mut content);
 
-    op.write("file", content.clone()).await.unwrap();
+    op.write("file", content).await.unwrap();
 }

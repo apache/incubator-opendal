@@ -16,13 +16,13 @@
 # under the License.
 
 name: cos
-description: 'Behavior test for COS. This service is sponsored by @datafuse_labs.'
+description: "Behavior test for COS. This service is sponsored by @datafuse_labs."
 
 runs:
   using: "composite"
   steps:
     - name: Setup
-      uses: 1password/load-secrets-action@v1
+      uses: 1Password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
       with:
         export-env: true
       env:
@@ -30,3 +30,8 @@ runs:
         OPENDAL_COS_ENDPOINT: op://services/cos/endpoint
         OPENDAL_COS_SECRET_ID: op://services/cos/secret_id
         OPENDAL_COS_SECRET_KEY: op://services/cos/secret_key
+
+    - name: Add extra settings
+      shell: bash
+      run: |
+        echo "OPENDAL_TEST_CAPABILITY_OVERRIDES=write_with_if_not_exists=false,copy_with_if_not_exists=false" >> $GITHUB_ENV

@@ -23,14 +23,16 @@ on:
       - main
     tags:
       - '*'
-  pull_request:
-    branches:
-      - main
-    paths:
+    paths: &paths
       - "core/**"
       - "bindings/c/**"
       - "bindings/go/**"
       - ".github/workflows/ci_bindings_go.yml"
+      - ".github/scripts/test_go_binding/matrix.yaml"
+  pull_request:
+    branches:
+      - main
+    paths: *paths
   workflow_dispatch:
 
 concurrency:
@@ -46,105 +48,30 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
         with:
-          go-version: stable
-      - uses: golangci/golangci-lint-action@v6
+          go-version-file: bindings/go/go.mod
+          cache-dependency-path: bindings/go/go.sum
+      - uses: golangci/golangci-lint-action@v9
         with:
-          version: "v1.60"
+          version: "v2.12.2"
           working-directory: bindings/go
-  matrix:
-    needs: [ lint ]
+
+  run_examples:
     runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v4
-      - id: set-matrix
-        name: Setup Matrix
-        run: |
-          MATRIX=$(yq -o=json -I=0 "." .github/scripts/test_go_binding/matrix.yaml | sed 's/ //g')
-          echo "Matrix:"
-          echo "$MATRIX" | jq .
-          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
-  test:
-    needs: [ matrix ]
-    runs-on: ${{ matrix.build.os }}
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJson(needs.matrix.outputs.matrix) }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
         with:
-            repository: "apache/opendal-go-services"
-            path: "tools"
-      - name: Setup Rust toolchain
-        uses: ./.github/actions/setup
-      - name: Setup Target
-        env:
-          TARGET: ${{ matrix.build.target }}
-        run: rustup target add $TARGET
-      - uses: actions/setup-go@v5
-        with:
-          go-version: stable
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.10"
-      - name: Setup Service
-        env:
-          OPENDAL_FEATURES: "layers-blocking,services-${{ matrix.service }}"
-        run: |
-          python -m pip install toml
-          python tools/.github/scripts/setup_features.py
-      - name: Install dependencies (Linux)
-        if: ${{ matrix.build.os == 'ubuntu-latest' }}
-        run: sudo apt install zstd
-      - name: Install dependencies (macOS)
-        if: ${{ matrix.build.os == 'macos-latest' }}
-        run: brew install zstd libffi
-      - name: Build C Binding
-        working-directory: bindings/c
-        env:
-          VERSION: "latest"
-          SERVICE: ${{ matrix.service }}
-          TARGET: ${{ matrix.build.target }}
-          CC: ${{ matrix.build.cc }}
-          OS: ${{ matrix.build.os }}
-        run: |
-          cargo build --target $TARGET  --release
-          DIR=$GITHUB_WORKSPACE/libopendal_c_${VERSION}_${SERVICE}_$TARGET
-          mkdir $DIR
-          if [ ${OS} == 'ubuntu-latest' ]; then
-            SO=so
-          else
-            SO=dylib
-          fi
-          zstd -19 ./target/$TARGET/release/libopendal_c.$SO -o $DIR/libopendal_c.$TARGET.$SO.zst
-      - name: Build Go Artifact
-        working-directory: tools/internal/generate
-        env:
-          MATRIX: '{"build": [${{ toJson(matrix.build) }}], "service": ["${{ matrix.service }}"]}'
-          VERSION: "latest"
-        run: |
-          go run generate.go
-      - name: Setup Go Workspace
-        env:
-          SERVICE: ${{ matrix.service }}
-        working-directory: bindings/go/tests
-        run: |
-          go work init
-          go work use ..
-          go work use ./behavior_tests
-          go work use $GITHUB_WORKSPACE/$(echo $SERVICE | sed 's/-/_/g')
-      - name: Run tests
-        env:
-          OPENDAL_TEST: ${{ matrix.service }}
-          OPENDAL_FS_ROOT: "/tmp/opendal/"
-        working-directory: bindings/go/tests/behavior_tests
-        run: |
-          if [ ${{ matrix.build.os }} == 'macos-latest' ]; then
-            export DYLD_FALLBACK_LIBRARY_PATH=$DYLD_FALLBACK_LIBRARY_PATH:/opt/homebrew/opt/libffi/lib
-          fi
-          CGO_ENABLE=0 go test -v -run TestBehavior
+          go-version-file: bindings/go/go.mod
+          cache-dependency-path: bindings/go/examples/guide/go.sum
+      # The example backs the snippet shown in the website guide. We compile it
+      # against the in-repo binding so a breaking API change fails CI here. It is
+      # not executed: running needs a locally built libopendal_c matching HEAD,
+      # because the published memory service module ships a prebuilt lib that can
+      # lag core's C ABI. Runtime is covered by the Go behavior tests, which
+      # build the C library locally.
+      - name: Build guide example
+        working-directory: bindings/go/examples/guide
+        run: go build ./...

@@ -21,58 +21,74 @@ package org.apache.opendal.test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.Map;
 import org.apache.opendal.AsyncOperator;
 import org.apache.opendal.Operator;
 import org.apache.opendal.OperatorInfo;
+import org.apache.opendal.ServiceConfig;
+import org.apache.opendal.layer.CapabilityOverrideLayer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 public class OperatorInfoTest {
+
     @TempDir
     private static Path tempDir;
 
     @Test
     public void testBlockingOperatorInfo() {
-        final Map<String, String> conf = new HashMap<>();
-        conf.put("root", tempDir.toString());
+        final ServiceConfig.Fs fs =
+                ServiceConfig.Fs.builder().root(tempDir.toString()).build();
 
-        try (final Operator op = Operator.of("fs", conf)) {
+        try (final Operator op = Operator.of(fs)) {
             final OperatorInfo info = op.info;
             assertThat(info).isNotNull();
             assertThat(info.scheme).isEqualTo("fs");
 
-            assertThat(info.fullCapability).isNotNull();
-            assertThat(info.fullCapability.read).isTrue();
-            assertThat(info.fullCapability.write).isTrue();
-            assertThat(info.fullCapability.delete).isTrue();
-            assertThat(info.fullCapability.writeCanAppend).isTrue();
-            assertThat(info.fullCapability.writeMultiMaxSize).isEqualTo(-1);
-            assertThat(info.fullCapability.writeMultiMinSize).isEqualTo(-1);
-
-            assertThat(info.nativeCapability).isNotNull();
+            assertThat(info.capability).isNotNull();
+            assertThat(info.capability.read).isTrue();
+            assertThat(info.capability.write).isTrue();
+            assertThat(info.capability.delete).isTrue();
+            assertThat(info.capability.writeCanAppend).isTrue();
+            assertThat(info.capability.writeMultiMaxSize).isEqualTo(-1);
+            assertThat(info.capability.writeMultiMinSize).isEqualTo(-1);
         }
     }
 
     @Test
     public void testOperatorInfo() {
-        final Map<String, String> conf = new HashMap<>();
-        conf.put("root", "/opendal/");
-        try (final AsyncOperator op = AsyncOperator.of("memory", conf)) {
+        final ServiceConfig.Memory memory =
+                ServiceConfig.Memory.builder().root("/opendal/").build();
+        try (final AsyncOperator op = AsyncOperator.of(memory)) {
             final OperatorInfo info = op.info;
             assertThat(info).isNotNull();
             assertThat(info.scheme).isEqualTo("memory");
 
-            assertThat(info.fullCapability).isNotNull();
-            assertThat(info.fullCapability.read).isTrue();
-            assertThat(info.fullCapability.write).isTrue();
-            assertThat(info.fullCapability.delete).isTrue();
-            assertThat(info.fullCapability.writeCanAppend).isFalse();
-            assertThat(info.fullCapability.writeMultiMaxSize).isEqualTo(-1);
-            assertThat(info.fullCapability.writeMultiMinSize).isEqualTo(-1);
+            assertThat(info.capability).isNotNull();
+            assertThat(info.capability.read).isTrue();
+            assertThat(info.capability.write).isTrue();
+            assertThat(info.capability.delete).isTrue();
+            assertThat(info.capability.writeCanAppend).isFalse();
+            assertThat(info.capability.writeMultiMaxSize).isEqualTo(-1);
+            assertThat(info.capability.writeMultiMinSize).isEqualTo(-1);
+        }
+    }
 
-            assertThat(info.nativeCapability).isNotNull();
+    @Test
+    public void testStatVersionConditionCapabilities() {
+        final ServiceConfig.Memory memory =
+                ServiceConfig.Memory.builder().root("/opendal/").build();
+        try (final AsyncOperator op = AsyncOperator.of(memory);
+                final AsyncOperator matchOp = op.layer(new CapabilityOverrideLayer("stat_with_if_version_match=true"));
+                final AsyncOperator notMatchOp =
+                        op.layer(new CapabilityOverrideLayer("stat_with_if_version_not_match=true"))) {
+            assertThat(op.info.capability.statWithIfVersionMatch).isFalse();
+            assertThat(op.info.capability.statWithIfVersionNotMatch).isFalse();
+
+            assertThat(matchOp.info.capability.statWithIfVersionMatch).isTrue();
+            assertThat(matchOp.info.capability.statWithIfVersionNotMatch).isFalse();
+
+            assertThat(notMatchOp.info.capability.statWithIfVersionMatch).isFalse();
+            assertThat(notMatchOp.info.capability.statWithIfVersionNotMatch).isTrue();
         }
     }
 }

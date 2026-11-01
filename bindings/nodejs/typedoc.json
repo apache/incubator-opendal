@@ -10,6 +10,7 @@
   "githubPages": false,
   "plugin": ["./theme/dist/index.js"],
   "theme": "opendal",
+  "projectDocuments": ["./CONTRIBUTING.md", "./upgrade.md"],
   "navigationLinks": {
     "Homepage": "https://opendal.apache.org/",
     "GitHub": "https://github.com/apache/opendal/tree/main/bindings/nodejs"

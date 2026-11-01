@@ -16,11 +16,10 @@
 // under the License.
 
 mod read;
-mod utils;
 mod write;
 
-use criterion::criterion_group;
-use criterion::criterion_main;
+mod utils;
 
-criterion_group!(benches, read::bench, write::bench);
-criterion_main!(benches);
+fn main() {
+    divan::main();
+}

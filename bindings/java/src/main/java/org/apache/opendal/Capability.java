@@ -23,6 +23,7 @@ import lombok.Data;
 
 @Data
 public class Capability {
+
     /**
      * If operator supports stat.
      */
@@ -37,6 +38,31 @@ public class Capability {
      * If operator supports stat with if none match.
      */
     public final boolean statWithIfNoneMatch;
+
+    /**
+     * If operator supports stat with if version match.
+     */
+    public final boolean statWithIfVersionMatch;
+
+    /**
+     * If operator supports stat with if version not match.
+     */
+    public final boolean statWithIfVersionNotMatch;
+
+    /**
+     * If operator supports stat with if modified since.
+     */
+    public final boolean statWithIfModifiedSince;
+
+    /**
+     * If operator supports stat with if unmodified since.
+     */
+    public final boolean statWithIfUnmodifiedSince;
+
+    /**
+     * If operator supports stat with versions.
+     */
+    public final boolean statWithVersion;
 
     /**
      * If operator supports read.
@@ -99,6 +125,27 @@ public class Capability {
     public final boolean writeWithCacheControl;
 
     /**
+     * If operator supports write with if match.
+     */
+    public final boolean writeWithIfMatch;
+
+    /**
+     * If operator supports write with if none match.
+     *
+     */
+    public final boolean writeWithIfNoneMatch;
+
+    /**
+     * If operator supports write with if not exists.
+     */
+    public final boolean writeWithIfNotExists;
+
+    /**
+     * If operator supports write with user metadata.
+     */
+    public final boolean writeWithUserMetadata;
+
+    /**
      * write_multi_max_size is the max size that services support in write_multi.
      * For example, AWS S3 supports 5GiB as max in write_multi.
      */
@@ -151,6 +198,16 @@ public class Capability {
     public final boolean listWithRecursive;
 
     /**
+     * If backend support list with versions.
+     */
+    public final boolean listWithVersions;
+
+    /**
+     * If backend support list with deleted.
+     */
+    public final boolean listWithDeleted;
+
+    /**
      * If operator supports presign.
      */
     public final boolean presign;
@@ -175,15 +232,15 @@ public class Capability {
      */
     public final boolean shared;
 
-    /**
-     * If operator supports blocking.
-     */
-    public final boolean blocking;
-
     public Capability(
             boolean stat,
             boolean statWithIfMatch,
             boolean statWithIfNoneMatch,
+            boolean statWithIfVersionMatch,
+            boolean statWithIfVersionNotMatch,
+            boolean statWithIfModifiedSince,
+            boolean statWithIfUnmodifiedSince,
+            boolean statWithVersion,
             boolean read,
             boolean readWithIfMatch,
             boolean readWithIfNoneMatch,
@@ -196,6 +253,10 @@ public class Capability {
             boolean writeWithContentType,
             boolean writeWithContentDisposition,
             boolean writeWithCacheControl,
+            boolean writeWithIfMatch,
+            boolean writeWithIfNoneMatch,
+            boolean writeWithIfNotExists,
+            boolean writeWithUserMetadata,
             long writeMultiMaxSize,
             long writeMultiMinSize,
             boolean createDir,
@@ -206,15 +267,21 @@ public class Capability {
             boolean listWithLimit,
             boolean listWithStartAfter,
             boolean listWithRecursive,
+            boolean listWithVersions,
+            boolean listWithDeleted,
             boolean presign,
             boolean presignRead,
             boolean presignStat,
             boolean presignWrite,
-            boolean blocking,
             boolean shared) {
         this.stat = stat;
         this.statWithIfMatch = statWithIfMatch;
         this.statWithIfNoneMatch = statWithIfNoneMatch;
+        this.statWithIfVersionMatch = statWithIfVersionMatch;
+        this.statWithIfVersionNotMatch = statWithIfVersionNotMatch;
+        this.statWithIfModifiedSince = statWithIfModifiedSince;
+        this.statWithIfUnmodifiedSince = statWithIfUnmodifiedSince;
+        this.statWithVersion = statWithVersion;
         this.read = read;
         this.readWithIfMatch = readWithIfMatch;
         this.readWithIfNoneMatch = readWithIfNoneMatch;
@@ -227,6 +294,10 @@ public class Capability {
         this.writeWithContentType = writeWithContentType;
         this.writeWithContentDisposition = writeWithContentDisposition;
         this.writeWithCacheControl = writeWithCacheControl;
+        this.writeWithIfMatch = writeWithIfMatch;
+        this.writeWithIfNoneMatch = writeWithIfNoneMatch;
+        this.writeWithIfNotExists = writeWithIfNotExists;
+        this.writeWithUserMetadata = writeWithUserMetadata;
         this.writeMultiMaxSize = writeMultiMaxSize;
         this.writeMultiMinSize = writeMultiMinSize;
         this.createDir = createDir;
@@ -237,11 +308,12 @@ public class Capability {
         this.listWithLimit = listWithLimit;
         this.listWithStartAfter = listWithStartAfter;
         this.listWithRecursive = listWithRecursive;
+        this.listWithVersions = listWithVersions;
+        this.listWithDeleted = listWithDeleted;
         this.presign = presign;
         this.presignRead = presignRead;
         this.presignStat = presignStat;
         this.presignWrite = presignWrite;
-        this.blocking = blocking;
         this.shared = shared;
     }
 }

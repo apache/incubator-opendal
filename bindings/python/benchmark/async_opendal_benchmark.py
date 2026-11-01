@@ -18,7 +18,7 @@
 import asyncio
 import timeit
 
-from pydantic import BaseSettings
+from pydantic_settings import BaseSettings
 
 import opendal
 
@@ -49,15 +49,11 @@ async def opendal_write():
         region=SETTINGS.aws_region,
         endpoint=SETTINGS.aws_endpoint,
     )
-    tasks = []
-    for case in TEST_CASE:
-        tasks.append(
-            op.write(
-                f"/benchmark/opendal_write/{case['name']}",
-                case["data"],
-            )
-        )
-    await asyncio.gather(*tasks)
+    tasks = [
+        op.write(f"/benchmark/opendal_write/{case['name']}", case["data"])
+        for case in TEST_CASE
+    ]
+    _ = await asyncio.gather(*tasks)
 
 
 async def opendal_read():
@@ -67,10 +63,8 @@ async def opendal_read():
         region=SETTINGS.aws_region,
         endpoint=SETTINGS.aws_endpoint,
     )
-    tasks = []
-    for case in TEST_CASE:
-        tasks.append(op.read(f"/benchmark/opendal_write/{case['name']}"))
-    await asyncio.gather(*tasks)
+    tasks = [op.read(f"/benchmark/opendal_write/{case['name']}") for case in TEST_CASE]
+    _ = await asyncio.gather(*tasks)
 
 
 def read_run():
@@ -82,8 +76,8 @@ def write_run():
 
 
 def opendal_benchmark():
-    print(f"OpenDAL S3 Client async write: {timeit.timeit(write_run, number=1)}")
-    print(f"OpenDAL S3 Client async read: {timeit.timeit(read_run, number=1)}")
+    print(f"OpenDAL S3 Client async write: {timeit.timeit(write_run, number=3)}")
+    print(f"OpenDAL S3 Client async read: {timeit.timeit(read_run, number=3)}")
 
 
 if __name__ == "__main__":

@@ -25,11 +25,12 @@ async fn example(op: Operator) -> Result<()> {
 
     // Read data from s3.
     let bs = op.read("test.txt").await?;
+
     println!("read: {}", String::from_utf8(bs.to_vec()).unwrap());
 
     // Fetch metadata of s3.
     let meta = op.stat("test.txt").await?;
-    println!("stat: {:?}", meta);
+    println!("stat: {meta:?}");
 
     // Delete data from s3.
     op.delete("test.txt").await?;
@@ -42,7 +43,7 @@ async fn example(op: Operator) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    use opendal::raw::tests::init_test_service;
+    use opendal::tests::init_test_service;
     let op = init_test_service()?.expect("OPENDAL_TEST must be set");
 
     println!("service {:?} has been initialized", op.info());

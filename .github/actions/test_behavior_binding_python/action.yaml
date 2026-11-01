@@ -42,8 +42,7 @@ runs:
             shell: bash
             working-directory: bindings/python
             run: |
-              source venv/bin/activate
-              pytest -v tests
+              uv run pytest -v tests
             env:
               OPENDAL_TEST: ${{ inputs.service }}
         EOF

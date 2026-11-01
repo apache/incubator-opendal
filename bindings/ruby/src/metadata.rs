@@ -15,15 +15,22 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use magnus::class;
-use magnus::method;
-use magnus::prelude::*;
+#![allow(
+    rustdoc::broken_intra_doc_links,
+    reason = "YARD's syntax for documentation"
+)]
+#![allow(rustdoc::invalid_html_tags, reason = "YARD's syntax for documentation")]
+#![allow(rustdoc::bare_urls, reason = "YARD's syntax for documentation")]
+
 use magnus::Error;
 use magnus::RModule;
+use magnus::method;
 
 use crate::*;
 
-#[magnus::wrap(class = "OpenDAL::Metadata", free_immediately, size)]
+/// @yard
+/// Metadata about an object.
+#[magnus::wrap(class = "OpenDal::Metadata", free_immediately, size)]
 pub struct Metadata(ocore::Metadata);
 
 impl Metadata {
@@ -33,44 +40,63 @@ impl Metadata {
 }
 
 impl Metadata {
+    /// @yard
+    /// @def mode
+    /// The entry mode of this Metadata.
+    /// @return [String] one of `File`, `Directory`, `Unknown`.
+    ///    `Unknown` means OpenDAL doesn't have actions to the entry.
+    pub fn mode(&self) -> &str {
+        match self.0.mode() {
+            ocore::EntryMode::FILE => "File",
+            ocore::EntryMode::DIR => "Directory",
+            ocore::EntryMode::Unknown => "Unknown",
+        }
+    }
+
+    /// @yard
+    /// @def content_disposition
     /// Content-Disposition of this object
+    /// @return [String, nil]
     pub fn content_disposition(&self) -> Option<&str> {
         self.0.content_disposition()
     }
 
+    /// @yard
+    /// @def content_length
     /// Content length of this entry.
+    /// @return [Integer]
     pub fn content_length(&self) -> u64 {
         self.0.content_length()
     }
 
+    /// @yard
+    /// @def content_md5
     /// Content MD5 of this entry.
+    /// @return [String, nil]
     pub fn content_md5(&self) -> Option<&str> {
         self.0.content_md5()
     }
 
+    /// @yard
+    /// @def content_type
     /// Content Type of this entry.
+    /// @return [String, nil]
     pub fn content_type(&self) -> Option<&str> {
         self.0.content_type()
     }
 
+    /// @yard
+    /// @def etag
     /// ETag of this entry.
+    /// @return [String, nil]
     pub fn etag(&self) -> Option<&str> {
         self.0.etag()
     }
-
-    /// Returns `True` if this is a file.
-    pub fn is_file(&self) -> bool {
-        self.0.is_file()
-    }
-
-    /// Returns `True` if this is a directory.
-    pub fn is_dir(&self) -> bool {
-        self.0.is_dir()
-    }
 }
 
-pub fn include(gem_module: &RModule) -> Result<(), Error> {
-    let class = gem_module.define_class("Metadata", class::object())?;
+pub fn include(ruby: &Ruby, gem_module: &RModule) -> Result<(), Error> {
+    let class = gem_module.define_class("Metadata", ruby.class_object())?;
+    class.define_method("mode", method!(Metadata::mode, 0))?;
     class.define_method(
         "content_disposition",
         method!(Metadata::content_disposition, 0),
@@ -79,8 +105,6 @@ pub fn include(gem_module: &RModule) -> Result<(), Error> {
     class.define_method("content_md5", method!(Metadata::content_md5, 0))?;
     class.define_method("content_type", method!(Metadata::content_type, 0))?;
     class.define_method("etag", method!(Metadata::etag, 0))?;
-    class.define_method("file?", method!(Metadata::is_file, 0))?;
-    class.define_method("dir?", method!(Metadata::is_dir, 0))?;
 
     Ok(())
 }

@@ -21,10 +21,9 @@ package org.apache.opendal.test;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.Map;
 import org.apache.opendal.Metadata;
 import org.apache.opendal.Operator;
+import org.apache.opendal.ServiceConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -39,10 +38,10 @@ public class OperatorUtf8DecodeTest {
      */
     @Test
     public void testWriteFileWithNonAsciiName() {
-        final Map<String, String> conf = new HashMap<>();
-        conf.put("root", tempDir.toString());
+        final ServiceConfig.Fs fs =
+                ServiceConfig.Fs.builder().root(tempDir.toString()).build();
 
-        try (final Operator op = Operator.of("fs", conf)) {
+        try (final Operator op = Operator.of(fs)) {
             final String path = "❌😱中文.test";
             final byte[] content = "❌😱中文".getBytes();
             op.write(path, content);

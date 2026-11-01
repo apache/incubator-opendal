@@ -22,7 +22,7 @@ runs:
   using: "composite"
   steps:
     - name: Setup
-      uses: 1password/load-secrets-action@v1
+      uses: 1Password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
       with:
         export-env: true
       env:
@@ -32,3 +32,8 @@ runs:
         OPENDAL_S3_ACCESS_KEY_ID: op://services/s3/access_key_id
         OPENDAL_S3_SECRET_ACCESS_KEY: op://services/s3/secret_access_key
         OPENDAL_S3_REGION: op://services/s3/region
+
+    - name: Add capability overrides
+      shell: bash
+      run: |
+        echo "OPENDAL_TEST_CAPABILITY_OVERRIDES=stat_with_version=false,read_with_version=false,delete_with_version=false,list_with_versions=false,list_with_deleted=false,copy_with_source_version=false,restore=false,restore_with_version=false,restore_with_if_not_exists=false,write_can_append=false" >> $GITHUB_ENV

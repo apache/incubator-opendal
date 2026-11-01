@@ -1,85 +1,147 @@
 # Contributing
 
-- [Contributing](#contributing)
-  - [Setup](#setup)
-    - [Using a dev container environment](#using-a-dev-container-environment)
-    - [Bring your own toolbox](#bring-your-own-toolbox)
-  - [Prepare](#prepare)
-  - [Build](#build)
-  - [Test](#test)
-  - [Docs](#docs)
+First off, thank you for considering contributing to Apache OpenDAL! Your help is
+greatly appreciated. This guide will provide you with all the information you need to
+get started.
 
-## Setup
+---
 
-Building `python` bindings requires some extra setup.
+## Prerequisites
 
-For small or first-time contributions, we recommend the dev container method. Prefer to do it yourself? That's fine too!
+Before you begin, please ensure you have the following tools installed:
 
-### Using a dev container environment
+- **Git**: For version control. Setup instructions [here](https://git-scm.com/book/en/v2/Getting-Started-Installing-Git).
+- **uv**: To manage the python dependencies and environment. See Installation instructions [here](https://docs.astral.sh/uv/getting-started/installation/).
+- **cargo**: To manage the rust dependencies and environment. See Installation instructions [here](https://doc.rust-lang.org/cargo/getting-started/installation.html).
+- **taplo**: Simple checker and formatter for TOML files. See Installation instructions [here](https://taplo.tamasfe.dev/cli/installation/cargo.html).
+- **hawkeye**: Simple license header checker and formatter. See Installation instructions [here](https://github.com/fast/hawkeye#installation).
+- **Just**: A command runner used to simplify our development workflow. See Installation instructions [here](https://just.systems/man/en/packages.html).
 
-OpenDAL provides a pre-configured [dev container](https://containers.dev/) that could be used in [GitHub Codespaces](https://github.com/features/codespaces), [VSCode](https://code.visualstudio.com/), [JetBrains](https://www.jetbrains.com/remote-development/gateway/), [JupyterLab](https://jupyterlab.readthedocs.io/en/stable/). Please pick up your favourite runtime environment.
+---
 
-The fastest way is:
+## Getting Started: Setup
 
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/apache/opendal?quickstart=1&machine=standardLinux32gb)
+All development commands are managed through a `justfile`. Setting up your environment
+is as simple as running one command.
 
-### Bring your own toolbox
+1. **Clone the repository:**
 
-The `python` binding requires `Python` to be built. We recommend using the latest stable version for development.
+   ```shell
+   git clone git@github.com:apache/opendal.git
+   cd opendal/bindings/python
+   ```
 
-Most operating systems and distributions already have Python installed. If not, please install Python and its development tools first.
+2. **Set up the virtual environment and install dependencies:**
+   ```shell
+   just setup
+   ```
+   This command will create a Python virtual environment in the `.venv` directory and
+   install all necessary development and runtime dependencies using `uv`.
 
-For Ubuntu and Debian:
+---
 
-```shell
-sudo apt install -y python3-dev python3-pip python3-venv
-```
+## Development Workflow
 
-## Prepare
+The `justfile` provides recipes for common development tasks. You can see all available
+commands by running `just --list`.
 
-All operations were performed within a Python virtual environment (venv) to prevent conflicts with the system's Python environment or other project venvs.
+### Building the Project
 
-OpenDAL specify the `requires-python` in `pyproject.toml` as `>= 3.7`. You can use `python -m venv venv` to setup virtualenv to start development.
+You can build a development or release version of the library.
 
-After `venv` has been prepared, you can activate it by `source venv/bin/activate`.
+- **Install for development:** This builds the package and installs it in the current
+  virtual environment, allowing you to immediately use it for testing.
 
-To simplify our work, we will utilize the tool [`maturin`](https://github.com/PyO3/maturin). Kindly install it beforehand.
+  ```shell
+  just install-dev
+  ```
 
-```shell
-pip install 'maturin[patchelf]'
-```
+- **Build a distributable wheel:** If you need to create a wheel file for distribution.
+  ```shell
+  # Build a development wheel
+  just build-dev
 
-## Build
+  # Build an optimized release wheel
+  just build-release
+  ```
+  The built wheel will be located in the `dist/` directory.
 
-To build python binding only:
+### Running Tests
 
-```shell
-maturin build
-```
-
-To build and install python binding directly in the current virtualenv:
-
-```shell
-maturin develop
-```
-
-Note: `maturin develop` will be faster, but doesn't support all the features. In most development cases, we recommend using `maturin develop`.
-
-## Test
-
-OpenDAL adopts `pytest` for behavior tests:
-
-```shell
-maturin develop -E test
-# To run `test_write.py` and use `fs` operator
-OPENDAL_TEST=fs OPENDAL_FS_ROOT=/tmp pytest -vk test_write
-```
-
-## Docs
-
-Build API docs:
+We use `pytest` for testing. The `test` recipe runs all tests within the virtual
+environment.
 
 ```shell
-maturin develop -E docs
-pdoc opendal
+# Run all tests
+just test
+
+# Pass arguments directly to pytest
+# For example, run tests for the 'fs' operator matching 'test_write'
+OPENDAL_TEST=fs OPENDAL_FS_ROOT=/tmp just test -vk test_write
 ```
+
+### Code Quality: Formatting & Linting
+
+We use `ruff` for Python linting/formatting and `cargo fmt`/`clippy` for Rust. `just`
+makes it easy to ensure your code meets our quality standards.
+
+- **Format all code:**
+
+  ```shell
+  just fmt
+  ```
+
+- **Check for linting errors:**
+
+  ```shell
+  just lint
+  ```
+
+- **Automatically fix what can be fixed:**
+
+  ```shell
+  just fix
+  ```
+
+> **Important\!** Before committing your changes, please run the pre-commit checks to
+> ensure everything is formatted and linted correctly.
+>
+> ```shell
+> just pre-commit
+> ```
+
+### Building Documentation
+
+The documentation is built with [Zensical](https://zensical.org/), which reads the
+existing `mkdocs.yml`. The example notebooks under `docs/examples/` are converted to
+Markdown with `nbconvert` before the site is built; the generated `.md` files are not
+tracked by Git.
+
+```shell
+# Build the docs into site/
+just docs-build
+
+# Serve the docs locally with live reload
+just docs-serve
+```
+
+Building the project also builds the docs:
+
+```shell
+just build-dev
+```
+
+### Cleaning the Workspace
+
+If you need to start fresh, the `clean` command will remove all build artifacts, caches,
+and the virtual environment.
+
+```shell
+just clean
+```
+
+This command removes the `.venv`, build artifacts, and Python cache files.
+
+---
+
+Thank you again for your contribution\!

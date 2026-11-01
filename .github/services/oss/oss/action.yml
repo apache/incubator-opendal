@@ -22,7 +22,7 @@ runs:
   using: "composite"
   steps:
     - name: Setup
-      uses: 1password/load-secrets-action@v1
+      uses: 1Password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
       with:
         export-env: true
       env:
@@ -30,3 +30,8 @@ runs:
         OPENDAL_OSS_ENDPOINT: op://services/oss/endpoint
         OPENDAL_OSS_ACCESS_KEY_ID: op://services/oss/access_key_id
         OPENDAL_OSS_ACCESS_KEY_SECRET: op://services/oss/access_key_secret
+
+    - name: Add extra settings
+      shell: bash
+      run: |
+        echo "OPENDAL_TEST_CAPABILITY_OVERRIDES=stat_with_version=false,read_with_version=false,delete_with_version=false,list_with_versions=false,list_with_deleted=false" >> $GITHUB_ENV

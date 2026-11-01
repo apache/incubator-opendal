@@ -5,7 +5,8 @@
 - `cargo check` to analyze the current package and report errors.
 - `cargo build` to compile the current package.
 - `cargo clippy` to catch common mistakes and improve code.
-- `cargo test` to run unit tests.
+- `cargo test --features tests` to run unit tests.
+- `cargo test` to run unit tests include doc tests.
 - `cargo bench` to run benchmark tests.
 
 Useful tips:
@@ -21,7 +22,13 @@ We have unit tests and behavior tests.
 
 Unit tests are placed under `src/tests`, organized by mod.
 
-To run all unit tests:
+To run unit tests:
+
+```shell
+cargo test --features tests
+```
+
+To run unit tests include doc tests:
 
 ```shell
 cargo test

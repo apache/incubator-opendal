@@ -24,6 +24,12 @@ on:
   pull_request:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: "Upstream PR number (for mirrored runs)"
+        required: false
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -36,7 +42,7 @@ jobs:
       plan: ${{ steps.plan.outputs.plan }}
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           # fetch depth set to 0 to make sure we have correct diff result.
           fetch-depth: 0
@@ -58,12 +64,21 @@ jobs:
             fi
           elif [ "$event_name" == "pull_request" ]; then
             pr_head_repo_fork="${{ github.event.pull_request.head.repo.fork }}"
-            if [ "$pr_head_repo_fork" != "true" ]; then
+            # Only expose secrets for main repo and non-dependabot runs to mitigate security risks
+            if [ "$pr_head_repo_fork" != "true" ] && [ "${{ github.actor }}" != "dependabot[bot]" ]; then
               has_secrets="true"
             fi
 
             files_changed=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
             echo "Files changed:"
+            echo "$files_changed"
+          elif [ "$event_name" == "workflow_dispatch" ]; then
+            # Mirror runs are explicitly triggered by maintainers; allow secrets.
+            has_secrets="true"
+            # Compare against main to infer affected components.
+            git fetch --no-tags --prune --depth=1 origin main
+            files_changed=$(git diff --name-only origin/main HEAD)
+            echo "Files changed (main..HEAD):"
             echo "$files_changed"
           fi
 
@@ -118,6 +133,20 @@ jobs:
     with:
       os: ${{ matrix.os }}
       cases: ${{ toJson(matrix.cases) }}
+  
+  test_binding_ruby:
+    name: binding_ruby / ${{ matrix.os }}
+    needs: [ plan ]
+    if: fromJson(needs.plan.outputs.plan).components.binding_ruby
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.plan.outputs.plan).binding_ruby }}
+    uses: ./.github/workflows/test_behavior_binding_ruby.yml
+    with:
+      os: ${{ matrix.os }}
+      cases: ${{ toJson(matrix.cases) }}
 
   test_binding_nodejs:
     name: binding_nodejs / ${{ matrix.os }}
@@ -132,16 +161,74 @@ jobs:
     with:
       os: ${{ matrix.os }}
       cases: ${{ toJson(matrix.cases) }}
-  
-  test_bin_ofs:
-    name: bin_ofs / ${{ matrix.os }}
-    needs: [plan]
-    if: fromJson(needs.plan.outputs.plan).components.bin_ofs
+
+  test_binding_go:
+    name: binding_go / ${{ matrix.os }}
+    needs: [ plan ]
+    if: fromJson(needs.plan.outputs.plan).components.binding_go
     secrets: inherit
     strategy:
+      fail-fast: false
       matrix:
-        include: ${{ fromJson(needs.plan.outputs.plan).bin_ofs }}
-    uses: ./.github/workflows/test_behavior_bin_ofs.yml
+        include: ${{ fromJson(needs.plan.outputs.plan).binding_go }}
+    uses: ./.github/workflows/test_behavior_binding_go.yml
+    with:
+      os: ${{ matrix.os }}
+      cases: ${{ toJson(matrix.cases) }}
+
+  test_binding_c:
+    name: binding_c / ${{ matrix.os }}
+    needs: [ plan ]
+    if: fromJson(needs.plan.outputs.plan).components.binding_c
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.plan.outputs.plan).binding_c }}
+    uses: ./.github/workflows/test_behavior_binding_c.yml
+    with:
+      os: ${{ matrix.os }}
+      cases: ${{ toJson(matrix.cases) }}
+
+  test_binding_cpp:
+    name: binding_cpp / ${{ matrix.os }}
+    needs: [ plan ]
+    if: fromJson(needs.plan.outputs.plan).components.binding_cpp
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.plan.outputs.plan).binding_cpp }}
+    uses: ./.github/workflows/test_behavior_binding_cpp.yml
+    with:
+      os: ${{ matrix.os }}
+      cases: ${{ toJson(matrix.cases) }}
+
+  test_binding_dotnet:
+    name: binding_dotnet / ${{ matrix.os }}
+    needs: [ plan ]
+    if: fromJson(needs.plan.outputs.plan).components.binding_dotnet
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.plan.outputs.plan).binding_dotnet }}
+    uses: ./.github/workflows/test_behavior_binding_dotnet.yml
+    with:
+      os: ${{ matrix.os }}
+      cases: ${{ toJson(matrix.cases) }}
+
+
+  test_integration_object_store:
+    name: integration_object_store / ${{ matrix.os }}
+    needs: [ plan ]
+    if: fromJson(needs.plan.outputs.plan).components.integration_object_store
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.plan.outputs.plan).integration_object_store }}
+    uses: ./.github/workflows/test_behavior_integration_object_store.yml
     with:
       os: ${{ matrix.os }}
       cases: ${{ toJson(matrix.cases) }}

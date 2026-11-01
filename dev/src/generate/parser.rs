@@ -15,40 +15,45 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use anyhow::Result;
-use anyhow::{anyhow, Context};
-use log::debug;
-use std::collections::HashMap;
+use anyhow::{Context, anyhow};
+use anyhow::{Result, bail};
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::fs::read_dir;
 use std::str::FromStr;
-use std::{fs, vec};
 use syn::{
     Expr, ExprLit, Field, GenericArgument, Item, Lit, LitStr, Meta, PathArguments, Type, TypePath,
+    UseTree,
 };
 
-#[derive(Debug, Clone)]
-pub struct Services(HashMap<String, Service>);
+pub type Services = HashMap<String, Service>;
 
-impl IntoIterator for Services {
-    type Item = (String, Service);
-    type IntoIter = vec::IntoIter<(String, Service)>;
+pub fn sorted_services(services: Services, test: fn(&str) -> bool) -> Services {
+    let mut srvs = Services::new();
+    for (k, srv) in services.into_iter() {
+        if !test(k.as_str()) {
+            continue;
+        }
 
-    fn into_iter(self) -> Self::IntoIter {
-        let mut v = Vec::from_iter(self.0);
-        v.sort();
-        v.into_iter()
+        // Sort configs by name (lexicographically)
+        let mut sorted = srv.config;
+        sorted.sort_by(|a, b| a.name.cmp(&b.name));
+
+        srvs.insert(k, Service { config: sorted });
     }
+    srvs
 }
 
 /// Service represents a service supported by opendal core, like `s3` and `fs`
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct Service {
     /// All configurations for this service.
     pub config: Vec<Config>,
 }
 
 /// Config represents a configuration item for a service.
-#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct Config {
     /// The name of this config, for example, `access_key_id` and `secret_access_key`
     pub name: String,
@@ -62,15 +67,23 @@ pub struct Config {
     ///
     /// All white spaces and extra new lines will be trimmed.
     pub comments: String,
+    /// The group this config belongs to, parsed from a `@group <name>` doc
+    /// marker. Used to organize the configuration reference by topic instead of
+    /// a flat list. `None` means the field is ungrouped.
+    pub group: Option<String>,
+    /// The default value, parsed from a `@default <value>` doc marker.
+    pub default_value: Option<String>,
+    /// An example value, parsed from a `@example <value>` doc marker.
+    pub example: Option<String>,
 }
 
-#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Copy, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub enum ConfigType {
     /// Mapping to rust's `bool`
     Bool,
     /// Mapping to rust's `String`
     String,
-    /// Mapping to rust's `Duration`
+    /// Mapping to rust's `Duration` and `SignedDuration`
     Duration,
 
     /// Mapping to rust's `usize`
@@ -88,16 +101,19 @@ pub enum ConfigType {
     ///
     /// Please note, all vec in config are `,` separated string.
     Vec,
+
+    /// Mapping to rust's `HashMap`
+    HashMap,
 }
 
 impl FromStr for ConfigType {
     type Err = anyhow::Error;
 
     fn from_str(s: &str) -> Result<Self> {
-        let ct = match s {
+        Ok(match s {
             "bool" => ConfigType::Bool,
             "String" => ConfigType::String,
-            "Duration" => ConfigType::Duration,
+            "Duration" | "SignedDuration" => ConfigType::Duration,
 
             "usize" => ConfigType::Usize,
             "u64" => ConfigType::U64,
@@ -106,10 +122,10 @@ impl FromStr for ConfigType {
             "u16" => ConfigType::U16,
 
             "Vec" => ConfigType::Vec,
-            v => return Err(anyhow!("unsupported config type {v:?}")),
-        };
+            "HashMap" => ConfigType::HashMap,
 
-        Ok(ct)
+            v => bail!("unsupported config type {v}"),
+        })
     }
 }
 
@@ -135,15 +151,47 @@ impl FromStr for ConfigType {
 /// ```
 ///
 /// - since = "0.52.0"
-#[derive(Debug, Default, Clone, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Default, Clone, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct AttrDeprecated {
-    /// The since of this deprecated field.
+    /// The `since` of this deprecated field.
     pub since: String,
-    /// The note for this deprecated field.
+    /// The `note` for this deprecated field.
     pub note: String,
 }
 
+/// Structured markers extracted from a field's doc comment, e.g. `@group`,
+/// `@default` and `@example`.
+#[derive(Debug, Default, Clone, Eq, PartialEq)]
+struct DocMarkers {
+    group: Option<String>,
+    default_value: Option<String>,
+    example: Option<String>,
+}
+
 /// List and parse given path to a `Services` struct.
+fn collect_custom_type_names(items: &[Item]) -> HashSet<String> {
+    fn extract_name(tree: &UseTree) -> Option<String> {
+        match tree {
+            UseTree::Name(name) => Some(name.ident.to_string()),
+            UseTree::Path(path) => {
+                let ident = path.tree.as_ref();
+                extract_name(ident)
+            }
+            _ => None,
+        }
+    }
+
+    let mut names = HashSet::new();
+    for item in items {
+        if let Item::Use(item_use) = item
+            && let Some(name) = extract_name(&item_use.tree)
+        {
+            names.insert(name);
+        }
+    }
+    names
+}
+
 pub fn parse(path: &str) -> Result<Services> {
     let mut map = HashMap::default();
 
@@ -153,6 +201,15 @@ pub fn parse(path: &str) -> Result<Services> {
             continue;
         }
         let path = dir.path().join("config.rs");
+        // Try the old layout (config.rs directly) first, then the new layout (src/config.rs)
+        let path = if path.exists() {
+            path
+        } else {
+            dir.path().join("src/config.rs")
+        };
+        if !path.exists() {
+            continue;
+        }
         let content = fs::read_to_string(&path)?;
         let parser = ServiceParser {
             service: dir.file_name().to_string_lossy().to_string(),
@@ -163,7 +220,7 @@ pub fn parse(path: &str) -> Result<Services> {
         map.insert(parser.service, service);
     }
 
-    Ok(Services(map))
+    Ok(map)
 }
 
 /// ServiceParser is used to parse a service config file.
@@ -197,7 +254,7 @@ pub struct ServiceParser {
 impl ServiceParser {
     /// Parse the content of this service.
     fn parse(&self) -> Result<Service> {
-        debug!("service {} parse started", self.service);
+        log::debug!("service {} parse started", self.service);
 
         let ast = syn::parse_file(&self.content)?;
 
@@ -205,27 +262,29 @@ impl ServiceParser {
             .items
             .iter()
             .find_map(|v| {
-                if let Item::Struct(v) = v {
-                    if v.ident.to_string().contains("Config") {
-                        return Some(v.clone());
-                    }
+                if let Item::Struct(v) = v
+                    && v.ident.to_string().contains("Config")
+                {
+                    return Some(v.clone());
                 }
                 None
             })
             .ok_or_else(|| anyhow!("there is no Config in {}", &self.path))?;
 
+        let custom_types = collect_custom_type_names(&ast.items);
+
         let mut config = Vec::with_capacity(config_struct.fields.len());
         for field in config_struct.fields {
-            let field = Self::parse_field(field)?;
+            let field = Self::parse_field(field, &custom_types)?;
             config.push(field);
         }
 
-        debug!("service {} parse finished", self.service);
+        log::debug!("service {} parse finished", self.service);
         Ok(Service { config })
     }
 
     /// TODO: Add comment parse support.
-    fn parse_field(field: Field) -> Result<Config> {
+    fn parse_field(field: Field, custom_types: &HashSet<String>) -> Result<Config> {
         let name = field
             .ident
             .clone()
@@ -233,6 +292,7 @@ impl ServiceParser {
 
         let deprecated = Self::parse_attr_deprecated(&field)?;
         let comments = Self::parse_attr_comments(&field)?;
+        let markers = Self::parse_attr_markers(&field);
 
         let (cfg_type, optional) = match &field.ty {
             Type::Path(TypePath { path, .. }) => {
@@ -263,7 +323,11 @@ impl ServiceParser {
                     segment.ident.to_string()
                 };
 
-                let typ = type_name.as_str().parse()?;
+                let typ = match type_name.as_str().parse::<ConfigType>() {
+                    Ok(t) => t,
+                    Err(_) if custom_types.contains(&type_name) => ConfigType::String,
+                    Err(_) => bail!("unsupported config type {type_name}"),
+                };
                 let optional = optional || typ == ConfigType::Bool;
 
                 (typ, optional)
@@ -277,31 +341,89 @@ impl ServiceParser {
             optional,
             deprecated,
             comments,
+            group: markers.group,
+            default_value: markers.default_value,
+            example: markers.example,
         })
     }
 
-    /// Parse the comments attr from the field.
-    ///
-    /// This comment may have multiple lines.
-    fn parse_attr_comments(field: &Field) -> Result<String> {
-        Ok(field
+    /// Collect the doc comment of a field as a list of trimmed lines.
+    fn doc_lines(field: &Field) -> Vec<String> {
+        field
             .attrs
             .iter()
             .filter(|attr| attr.path().is_ident("doc"))
             .filter_map(|attr| {
-                if let Meta::NameValue(meta) = &attr.meta {
-                    if let Expr::Lit(ExprLit {
+                if let Meta::NameValue(meta) = &attr.meta
+                    && let Expr::Lit(ExprLit {
                         lit: Lit::Str(s), ..
                     }) = &meta.value
-                    {
-                        return Some(s.value().trim().to_string());
-                    }
+                {
+                    return Some(s.value().trim().to_string());
                 }
 
                 None
             })
-            .collect::<Vec<_>>()
-            .join("\n"))
+            .collect()
+    }
+
+    /// Recognize a structured doc marker line such as `@group Credentials` or
+    /// `@default /`. Returns `(key, value)` only for keys we understand, so any
+    /// other `@`-prefixed line stays part of the human-facing comment.
+    ///
+    /// Markers may be wrapped in an HTML comment — `<!-- @group Credentials -->`
+    /// — so they stay machine-readable here while rendering invisibly in
+    /// rustdoc (CommonMark passes HTML comments through undisplayed).
+    fn parse_marker(line: &str) -> Option<(&'static str, String)> {
+        let line = line.trim();
+        let inner = line
+            .strip_prefix("<!--")
+            .and_then(|l| l.strip_suffix("-->"))
+            .map(str::trim)
+            .unwrap_or(line);
+        let rest = inner.strip_prefix('@')?;
+        let (key, value) = rest.split_once(char::is_whitespace)?;
+        let value = value.trim().to_string();
+        match key {
+            "group" => Some(("group", value)),
+            "default" => Some(("default", value)),
+            "example" => Some(("example", value)),
+            _ => None,
+        }
+    }
+
+    /// Parse the comments attr from the field, with structured `@`-markers
+    /// stripped out so they don't leak into the human-facing description.
+    ///
+    /// This comment may have multiple lines.
+    fn parse_attr_comments(field: &Field) -> Result<String> {
+        let mut lines: Vec<String> = Self::doc_lines(field)
+            .into_iter()
+            .filter(|line| Self::parse_marker(line).is_none())
+            .collect();
+
+        // Drop blank lines left dangling at the end once markers are removed.
+        while lines.last().is_some_and(|l| l.is_empty()) {
+            lines.pop();
+        }
+
+        Ok(lines.join("\n").trim().to_string())
+    }
+
+    /// Parse the structured `@`-markers from a field's doc comment.
+    fn parse_attr_markers(field: &Field) -> DocMarkers {
+        let mut markers = DocMarkers::default();
+        for line in Self::doc_lines(field) {
+            if let Some((key, value)) = Self::parse_marker(&line) {
+                match key {
+                    "group" => markers.group = Some(value),
+                    "default" => markers.default_value = Some(value),
+                    "example" => markers.example = Some(value),
+                    _ => {}
+                }
+            }
+        }
+        markers
     }
 
     /// Parse the deprecated attr from the field.
@@ -359,8 +481,8 @@ impl ServiceParser {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::workspace_dir;
     use pretty_assertions::assert_eq;
-    use std::path::PathBuf;
     use syn::ItemStruct;
 
     #[test]
@@ -374,6 +496,9 @@ mod tests {
                     optional: true,
                     deprecated: None,
                     comments: "".to_string(),
+                    group: None,
+                    default_value: None,
+                    example: None,
                 },
             ),
             (
@@ -384,6 +509,22 @@ mod tests {
                     optional: false,
                     deprecated: None,
                     comments: "".to_string(),
+                    group: None,
+                    default_value: None,
+                    example: None,
+                },
+            ),
+            (
+                "default_ttl: Option<SignedDuration>",
+                Config {
+                    name: "default_ttl".to_string(),
+                    value: ConfigType::Duration,
+                    optional: true,
+                    deprecated: None,
+                    comments: "".to_string(),
+                    group: None,
+                    default_value: None,
+                    example: None,
                 },
             ),
         ];
@@ -391,8 +532,11 @@ mod tests {
         for (input, expected) in cases {
             let input = format!("struct Test {{ {input} }}");
             let x: ItemStruct = syn::parse_str(&input).unwrap();
-            let actual =
-                ServiceParser::parse_field(x.fields.iter().next().unwrap().clone()).unwrap();
+            let actual = ServiceParser::parse_field(
+                x.fields.iter().next().unwrap().clone(),
+                &HashSet::new(),
+            )
+            .unwrap();
             assert_eq!(actual, expected);
         }
     }
@@ -659,6 +803,9 @@ For example, R2 could return `Internal Error` while batch delete 1000 files.
 
 Please tune this value based on services' document."
                     .to_string(),
+                group: None,
+                default_value: None,
+                example: None,
             },
         );
         assert_eq!(
@@ -671,15 +818,43 @@ Please tune this value based on services' document."
                 comments: r"Disable write with if match so that opendal will not send write request with if match headers.
 
 For example, Ceph RADOS S3 doesn't support write with if match.".to_string(),
+                group: None,
+                default_value: None,
+                example: None,
             },
         );
     }
 
     #[test]
+    fn test_parse_field_markers() {
+        let input = r#"
+            struct Test {
+                /// bucket name of this backend.
+                ///
+                /// required.
+                ///
+                /// <!-- @group General -->
+                /// <!-- @default my-bucket -->
+                /// @example example-bucket
+                pub bucket: String
+            }
+        "#;
+        let x: ItemStruct = syn::parse_str(input).unwrap();
+        let actual =
+            ServiceParser::parse_field(x.fields.iter().next().unwrap().clone(), &HashSet::new())
+                .unwrap();
+
+        // Markers are extracted as structured fields and stripped from comments.
+        assert_eq!(actual.group.as_deref(), Some("General"));
+        assert_eq!(actual.default_value.as_deref(), Some("my-bucket"));
+        assert_eq!(actual.example.as_deref(), Some("example-bucket"));
+        assert_eq!(actual.comments, "bucket name of this backend.\n\nrequired.");
+    }
+
+    #[test]
     fn test_parse() {
-        let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let path = manifest_dir
-            .join("../core/src/services")
+        let path = workspace_dir()
+            .join("core/core/src/services")
             .canonicalize()
             .unwrap();
 

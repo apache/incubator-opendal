@@ -16,7 +16,7 @@
 // under the License.
 
 use std::collections::HashMap;
-use std::str::FromStr;
+use std::sync::LazyLock;
 
 use ::opendal as od;
 use ext_php_rs::binary::Binary;
@@ -26,37 +26,58 @@ use ext_php_rs::flags::DataType;
 use ext_php_rs::prelude::*;
 use ext_php_rs::types::Zval;
 
-#[php_class(name = "OpenDAL\\Operator")]
-pub struct Operator(od::BlockingOperator);
+static RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .unwrap()
+});
 
-#[php_impl(rename_methods = "none")]
+#[php_class]
+#[php(name = "OpenDAL\\Operator")]
+pub struct Operator(od::blocking::Operator);
+
+#[php_impl]
+#[php(change_method_case = "none")]
 impl Operator {
-    pub fn __construct(scheme_str: String, config: HashMap<String, String>) -> PhpResult<Self> {
-        let scheme = od::Scheme::from_str(&scheme_str).map_err(format_php_err)?;
+    pub fn __construct(scheme: String, config: HashMap<String, String>) -> PhpResult<Self> {
         let op = od::Operator::via_iter(scheme, config).map_err(format_php_err)?;
 
-        Ok(Operator(op.blocking()))
+        let handle = RUNTIME.handle();
+        let _enter = handle.enter();
+        let op = od::blocking::Operator::new(op).map_err(format_php_err)?;
+
+        Ok(Operator(op))
     }
 
     /// Write string into given path.
     pub fn write(&self, path: &str, content: String) -> PhpResult<()> {
-        self.0.write(path, content).map_err(format_php_err)
+        self.0
+            .write(path, content)
+            .map(|_| ())
+            .map_err(format_php_err)
     }
 
     /// Write bytes into given path, binary safe.
     pub fn write_binary(&self, path: &str, content: Vec<u8>) -> PhpResult<()> {
-        self.0.write(path, content).map_err(format_php_err)
+        self.0
+            .write(path, content)
+            .map(|_| ())
+            .map_err(format_php_err)
     }
 
     /// Read the whole path into bytes, binary safe.
     pub fn read(&self, path: &str) -> PhpResult<Binary<u8>> {
-        self.0.read(path).map_err(format_php_err).map(Binary::from)
+        self.0
+            .read(path)
+            .map_err(format_php_err)
+            .map(|buf| Binary::from(buf.to_vec()))
     }
 
     /// Check if this path exists or not, return 1 if exists, 0 otherwise.
     pub fn is_exist(&self, path: &str) -> PhpResult<u8> {
         self.0
-            .is_exist(path)
+            .exists(path)
             .map_err(format_php_err)
             .map(|b| if b { 1 } else { 0 })
     }
@@ -99,48 +120,51 @@ impl Operator {
     }
 }
 
-#[php_class(name = "OpenDAL\\Metadata")]
+#[php_class]
+#[php(name = "OpenDAL\\Metadata")]
 pub struct Metadata(od::Metadata);
 
-#[php_impl(rename_methods = "none")]
+#[php_impl]
+#[php(change_method_case = "none")]
 impl Metadata {
-    #[getter]
+    #[php(getter)]
     pub fn content_disposition(&self) -> Option<String> {
         self.0.content_disposition().map(|s| s.to_string())
     }
 
     /// Content length of this entry.
-    #[getter]
+    #[php(getter)]
     pub fn content_length(&self) -> u64 {
         self.0.content_length()
     }
 
     /// Content MD5 of this entry.
-    #[getter]
+    #[php(getter)]
     pub fn content_md5(&self) -> Option<String> {
         self.0.content_md5().map(|s| s.to_string())
     }
 
     /// Content Type of this entry.
-    #[getter]
+    #[php(getter)]
     pub fn content_type(&self) -> Option<String> {
         self.0.content_type().map(|s| s.to_string())
     }
 
     /// ETag of this entry.
-    #[getter]
+    #[php(getter)]
     pub fn etag(&self) -> Option<String> {
         self.0.etag().map(|s| s.to_string())
     }
 
     /// mode represent this entry's mode.
-    #[getter]
+    #[php(getter)]
     pub fn mode(&self) -> EntryMode {
         EntryMode(self.0.mode())
     }
 }
 
-#[php_class(name = "OpenDAL\\EntryMode")]
+#[php_class]
+#[php(name = "OpenDAL\\EntryMode")]
 pub struct EntryMode(od::EntryMode);
 
 impl<'b> FromZval<'b> for EntryMode {
@@ -151,9 +175,10 @@ impl<'b> FromZval<'b> for EntryMode {
     }
 }
 
-#[php_impl(rename_methods = "none")]
+#[php_impl]
+#[php(change_method_case = "none")]
 impl EntryMode {
-    #[getter]
+    #[php(getter)]
     pub fn is_dir(&self) -> u8 {
         match self.0.is_dir() {
             true => 1,
@@ -161,7 +186,7 @@ impl EntryMode {
         }
     }
 
-    #[getter]
+    #[php(getter)]
     pub fn is_file(&self) -> u8 {
         match self.0.is_file() {
             true => 1,
@@ -179,4 +204,7 @@ fn format_php_err(e: od::Error) -> PhpException {
 #[php_module]
 pub fn get_module(module: ModuleBuilder) -> ModuleBuilder {
     module
+        .class::<Operator>()
+        .class::<Metadata>()
+        .class::<EntryMode>()
 }

@@ -17,4 +17,4 @@
 
 # For available configuration options, see:
 #   https://github.com/testdouble/standard
-ruby_version: 3.1
+ruby_version: 3.2

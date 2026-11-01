@@ -15,17 +15,16 @@
 # specific language governing permissions and limitations
 # under the License.
 
-import pytest
 import pickle
 from datetime import datetime
 from uuid import uuid4
 
+import pytest
+
 
 @pytest.mark.need_capability("read", "write", "delete")
 def test_sync_file_pickle(service_name, operator, async_operator):
-    """
-    Test pickle streaming serialization and deserialization using OpenDAL operator.
-    """
+    """Test pickle streaming serialization and deserialization using operator."""
     data = {
         "a": 1,
         "b": "hello",
@@ -33,7 +32,7 @@ def test_sync_file_pickle(service_name, operator, async_operator):
         "d": {"e": 4},
         "f": None,
         "g": b"hello\nworld",
-        "h": set([1, 2, 3]),
+        "h": {1, 2, 3},
         "i": 1.23,
         "j": True,
         "k": datetime.strptime("2024-01-01", "%Y-%m-%d"),

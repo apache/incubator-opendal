@@ -20,22 +20,27 @@
 // @ts-check
 // Note: type annotations allow type checking and IDEs autocompletion
 
-const semver = require("semver");
-const exec = require("child_process").execSync;
+const { themes } = require("prism-react-renderer");
+const {
+  addRustdocLlmSessions,
+  applyGeneratedConfig,
+  createLegacyDocsRedirect,
+  getWebsiteSettings,
+  orderByPathDepth,
+} = require("./config/site-helpers");
+const {
+  parseSpecificationFrontMatter,
+  remarkIncludeSpecification,
+} = require("./plugins/specifications-docs-plugin");
 
-const lightCodeTheme = require("prism-react-renderer/themes/github");
-const darkCodeTheme = require("prism-react-renderer/themes/dracula");
 const repoAddress = "https://github.com/apache/opendal";
 
-const baseUrl = process.env.OPENDAL_WEBSITE_BASE_URL
-  ? process.env.OPENDAL_WEBSITE_BASE_URL
-  : "/";
-const websiteNotLatest = process.env.OPENDAL_WEBSITE_NOT_LATEST
-  ? process.env.OPENDAL_WEBSITE_NOT_LATEST
-  : false;
-const websiteStaging = process.env.OPENDAL_WEBSITE_STAGING
-  ? process.env.OPENDAL_WEBSITE_STAGING
-  : false;
+const { baseUrl, websiteNotLatest, websiteStaging, websiteVersion } =
+  getWebsiteSettings();
+const localImages = require("./plugins/local-images")({
+  siteDir: __dirname,
+  baseUrl,
+});
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
@@ -46,37 +51,36 @@ const config = {
 
   customFields: {
     isStaging: websiteStaging,
-    version: (function () {
-      if (websiteStaging && process.env.GITHUB_REF_TYPE === "tag") {
-        const refName = process.env.GITHUB_REF_NAME;
-        if (refName.startsWith("v")) {
-          const version = semver.parse(refName, {}, true);
-          return `${version.major}.${version.minor}.${version.patch}`;
-        }
-      }
-
-      const refName = exec(
-        "git describe --tags --abbrev=0 --match 'v*'",
-      ).toString();
-      const version = semver.parse(refName, {}, true);
-      return `${version.major}.${version.minor}.${version.patch}`;
-    })(),
+    version: websiteVersion,
   },
 
   url: "https://opendal.apache.org/",
   baseUrl: "/",
 
+  // Always set trailingSlash to true to avoid redirecting to a URL with a trailing slash
+  trailingSlash: true,
+
   onBrokenLinks: "throw",
-  onBrokenMarkdownLinks: "throw",
+  markdown: {
+    format: "detect",
+    parseFrontMatter: parseSpecificationFrontMatter,
+    hooks: {
+      onBrokenMarkdownLinks: "throw",
+    }
+  },
 
   i18n: {
     defaultLocale: "en",
     locales: ["en"],
   },
 
-  markdown: {
-    format: "detect",
+  future: {
+    faster: {
+      rspackBundler: true,
+      rspackPersistentCache: true,
+    },
   },
+
 
   presets: [
     [
@@ -84,19 +88,33 @@ const config = {
       /** @type {import('@docusaurus/preset-classic').Options} */
       ({
         docs: {
-          routeBasePath: "/",
+          routeBasePath: "docs",
           sidebarPath: require.resolve("./docs/sidebars.js"),
           editUrl: "https://github.com/apache/opendal/tree/main/website/",
           showLastUpdateAuthor: true,
           showLastUpdateTime: true,
+          beforeDefaultRemarkPlugins: [remarkIncludeSpecification],
+          remarkPlugins: [require("./plugins/remark-include-code")],
+          rehypePlugins: [localImages.rehype],
         },
         blog: {
           showReadingTime: true,
           editUrl: "https://github.com/apache/opendal/tree/main/website/",
           onUntruncatedBlogPosts: "warn",
+          rehypePlugins: [localImages.rehype],
+        },
+        pages: {
+          rehypePlugins: [localImages.rehype],
         },
         theme: {
-          customCss: require.resolve("./src/css/custom.css"),
+          customCss: [
+            require.resolve("./src/css/variables.css"),
+            require.resolve("./src/css/global.css"),
+            require.resolve("./src/css/navbar.css"),
+            require.resolve("./src/css/search.css"),
+            require.resolve("./src/css/sidebar.css"),
+            require.resolve("./src/css/footer.css"),
+          ],
         },
         sitemap: {
           changefreq: "daily",
@@ -109,6 +127,10 @@ const config = {
   ],
 
   plugins: [
+    // Keep a single @docusaurus/theme-common instance so navbar hooks share
+    // the same React context as theme-classic providers under pnpm.
+    require.resolve("./plugins/theme-common-singleton-plugin"),
+    require.resolve("./plugins/specifications-docs-plugin"),
     [
       "@docusaurus/plugin-content-docs",
       {
@@ -117,6 +139,7 @@ const config = {
         routeBasePath: "community",
         sidebarPath: require.resolve("./community/sidebars.js"),
         editUrl: "https://github.com/apache/opendal/tree/main/website/",
+        rehypePlugins: [localImages.rehype],
       },
     ],
     [require.resolve("docusaurus-plugin-image-zoom"), {}],
@@ -125,21 +148,67 @@ const config = {
       {
         redirects: [
           {
-            from: "/docs/vision",
-            to: "/vision",
-          },
-          {
             from: "/discord",
-            to: "https://discord.gg/XQy8yGR2dg",
+            to: "https://discord.com/invite/XQy8yGR2dg",
           },
           {
             from: "/maillist",
             to: "https://lists.apache.org/list.html?dev@opendal.apache.org",
           },
         ],
+        createRedirects: createLegacyDocsRedirect,
       },
     ],
     require.resolve("docusaurus-lunr-search"),
+    // Generates the /services section from data/services.json.
+    require.resolve("./plugins/services-docs-plugin"),
+    localImages.plugin,
+    [
+      "docusaurus-plugin-llms-builder",
+      /** @type {import("docusaurus-plugin-llms-builder").PluginOptions} */
+      ({
+        version: websiteVersion,
+        llmConfigs: [
+          {
+            title: "Apache OpenDAL™: One Layer, All Storage.",
+            description:
+              'OpenDAL (/ˈoʊ.pən.dæl/, pronounced "OH-puhn-dal") is an Open Data Access Layer that enables seamless interaction with diverse storage services.',
+            summary:
+              "OpenDAL's development is guided by its vision of One Layer, All Storage and its core principles: Open Community, Solid Foundation, Fast Access, Object Storage First, and Extensible Architecture. Read the explained vision at OpenDAL Vision.",
+            generateLLMsTxt: true,
+            generateLLMsFullTxt: true,
+            hooks: {
+              "generate:prepare": (ctx) => {
+                addRustdocLlmSessions(ctx, baseUrl);
+              },
+            },
+            sessions: [
+              {
+                type: "docs",
+                docsDir: "docs",
+                sessionName: "Docs",
+                sitemap: "sitemap.xml",
+                patterns: {
+                  ignorePatterns: ["**/blog/**", "**/blog", "**/community/**"],
+                  orderPatterns: orderByPathDepth,
+                },
+              },
+              {
+                type: "blog",
+                docsDir: "blog",
+                sessionName: "Blog",
+                rss: "rss.xml",
+              },
+              {
+                type: "docs",
+                docsDir: "community",
+                sessionName: "Community",
+              },
+            ],
+          },
+        ],
+      }),
+    ],
   ],
 
   themeConfig:
@@ -149,7 +218,8 @@ const config = {
       // image: 'img/opendal-social-card.jpg',
       colorMode: {
         defaultMode: "light",
-        disableSwitch: true,
+        disableSwitch: false,
+        respectPrefersColorScheme: true,
       },
       navbar: {
         logo: {
@@ -166,6 +236,11 @@ const config = {
             docId: "overview",
             position: "right",
             label: "Docs",
+          },
+          {
+            to: "/services",
+            label: "Services",
+            position: "right",
           },
           {
             to: "/blog",
@@ -248,30 +323,16 @@ const config = {
         copyright: `Copyright © 2022-${new Date().getFullYear()}, The Apache Software Foundation<br/>Apache OpenDAL, OpenDAL, Apache, the Apache feather and the Apache OpenDAL project logo are either registered trademarks or trademarks of the Apache Software Foundation.`,
       },
       prism: {
-        theme: lightCodeTheme,
-        darkTheme: darkCodeTheme,
-        additionalLanguages: ["rust", "java", "groovy"],
+        theme: themes.github,
+        darkTheme: themes.dracula,
+        additionalLanguages: ["rust", "java", "groovy", "python", "ruby", "cpp"],
       },
       zoom: {
-        selector: ".markdown img",
+        selector: "img:not(a img)",
         background: "rgba(255, 255, 255, 0.8)",
         config: {},
       },
     }),
 };
 
-function generateConfig() {
-  config.baseUrl = baseUrl;
-
-  if (websiteNotLatest) {
-    config.themeConfig.announcementBar = {
-      id: "announcementBar-0", // Increment on change
-      content:
-        'You are viewing the documentation of a <strong>historical release</strong>. <a href="https://nightlies.apache.org/opendal/opendal-docs-stable/">View the latest stable release</a>.',
-    };
-  }
-
-  return config;
-}
-
-module.exports = generateConfig();
+module.exports = applyGeneratedConfig(config, { baseUrl, websiteNotLatest });
