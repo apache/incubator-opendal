@@ -17,46 +17,94 @@
 
 services:
   db:
-    image: mariadb:10.11
+    image: ${SEAFILE_DB_IMAGE:-mariadb:10.11}
     container_name: seafile-mysql
     environment:
-      - MYSQL_ROOT_PASSWORD=db_dev  # Requested, set the root's password of MySQL service.
+      - MYSQL_ROOT_PASSWORD=${INIT_SEAFILE_MYSQL_ROOT_PASSWORD:-db_dev}
       - MYSQL_LOG_CONSOLE=true
+      - MARIADB_AUTO_UPGRADE=1
+    volumes:
+      - seafile-mysql:/var/lib/mysql
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "/usr/local/bin/healthcheck.sh",
+          "--connect",
+          "--mariadbupgrade",
+          "--innodb_initialized",
+        ]
+      interval: 20s
+      start_period: 30s
+      timeout: 5s
+      retries: 10
     networks:
       - seafile-net
 
-  memcached:
-    image: memcached:1.6.18
-    container_name: seafile-memcached
-    entrypoint: memcached -m 256
+  redis:
+    image: ${SEAFILE_REDIS_IMAGE:-redis}
+    container_name: seafile-redis
+    command:
+      - /bin/sh
+      - -c
+      - redis-server --requirepass "$$REDIS_PASSWORD"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
     networks:
       - seafile-net
 
   seafile:
-    # Revert to latest after https://github.com/apache/opendal/issues/4106 addressed
-    image: seafileltd/seafile-mc:11.0.4
+    image: ${SEAFILE_IMAGE:-seafileltd/seafile-mc:13.0.20}
     container_name: seafile
     ports:
       - "80:80"
-    healthcheck:
-      test: curl --fail http://127.0.0.1:80/ || exit 1
-      interval: 10s
-      timeout: 30s
-      retries: 5
-      start_period: 60s
+    volumes:
+      - seafile-data:/shared
     environment:
-      - DB_HOST=db
-      - DB_ROOT_PASSWD=db_dev  # Requested, the value should be root's password of MySQL service.
-      - TIME_ZONE=Asia/Shanghai  # Optional, default is UTC. Should be uncomment and set to your local time zone.
-      - SEAFILE_ADMIN_EMAIL=me@example.com # Specifies Seafile admin user, default is 'me@example.com'.
-      - SEAFILE_ADMIN_PASSWORD=asecret     # Specifies Seafile admin password, default is 'asecret'.
-      - SEAFILE_SERVER_LETSENCRYPT=false   # Whether to use https or not.
-      - SEAFILE_SERVER_HOSTNAME=127.0.0.1:80 # Specifies your host name if https is enabled.
+      - SEAFILE_MYSQL_DB_HOST=${SEAFILE_MYSQL_DB_HOST:-db}
+      - SEAFILE_MYSQL_DB_PORT=${SEAFILE_MYSQL_DB_PORT:-3306}
+      - SEAFILE_MYSQL_DB_USER=${SEAFILE_MYSQL_DB_USER:-seafile}
+      - SEAFILE_MYSQL_DB_PASSWORD=${SEAFILE_MYSQL_DB_PASSWORD:-db_dev}
+      - INIT_SEAFILE_MYSQL_ROOT_PASSWORD=${INIT_SEAFILE_MYSQL_ROOT_PASSWORD:-db_dev}
+      - SEAFILE_MYSQL_DB_CCNET_DB_NAME=${SEAFILE_MYSQL_DB_CCNET_DB_NAME:-ccnet_db}
+      - SEAFILE_MYSQL_DB_SEAFILE_DB_NAME=${SEAFILE_MYSQL_DB_SEAFILE_DB_NAME:-seafile_db}
+      - SEAFILE_MYSQL_DB_SEAHUB_DB_NAME=${SEAFILE_MYSQL_DB_SEAHUB_DB_NAME:-seahub_db}
+      - TIME_ZONE=${TIME_ZONE:-Asia/Shanghai}
+      - INIT_SEAFILE_ADMIN_EMAIL=${INIT_SEAFILE_ADMIN_EMAIL:-me@example.com}
+      - INIT_SEAFILE_ADMIN_PASSWORD=${INIT_SEAFILE_ADMIN_PASSWORD:-asecret}
+      - SEAFILE_SERVER_HOSTNAME=${SEAFILE_SERVER_HOSTNAME:-127.0.0.1:80}
+      - SEAFILE_SERVER_PROTOCOL=${SEAFILE_SERVER_PROTOCOL:-http}
+      - SITE_ROOT=${SITE_ROOT:-/}
+      - NON_ROOT=${NON_ROOT:-false}
+      - JWT_PRIVATE_KEY=${JWT_PRIVATE_KEY:-opendal-seafile-fixture-jwt-key}
+      - SEAFILE_LOG_TO_STDOUT=${SEAFILE_LOG_TO_STDOUT:-true}
+      - ENABLE_GO_FILESERVER=${ENABLE_GO_FILESERVER:-true}
+      - ENABLE_SEADOC=${ENABLE_SEADOC:-false}
+      - CACHE_PROVIDER=${CACHE_PROVIDER:-redis}
+      - REDIS_HOST=${REDIS_HOST:-redis}
+      - REDIS_PORT=${REDIS_PORT:-6379}
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-}
+      - ENABLE_NOTIFICATION_SERVER=${ENABLE_NOTIFICATION_SERVER:-false}
+      - ENABLE_SEAFILE_AI=${ENABLE_SEAFILE_AI:-false}
+      - ENABLE_FACE_RECOGNITION=${ENABLE_FACE_RECOGNITION:-false}
+      - MD_FILE_COUNT_LIMIT=${MD_FILE_COUNT_LIMIT:-100000}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:80 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     depends_on:
-      - db
-      - memcached
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - seafile-net
 
 networks:
   seafile-net:
+
+volumes:
+  seafile-data:
+  seafile-mysql:

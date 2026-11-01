@@ -21,14 +21,21 @@ on:
   push:
     tags:
       # Triggers on version tags (v0.54.0, v0.54.0-rc.1, etc.)
-      - 'v[0-9]+.[0-9]+.[0-9]+'
-      - 'v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+'
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
   pull_request:
     branches:
       - main
     paths:
       - ".github/workflows/release_ruby.yml"
-  workflow_dispatch: # allow repo collaborators to publish gem
+  # Rubygems doesn't have a staging environment, and Rubygems don't provide a
+  # public registry. Most gems follow a pre-release tag convention. But
+  # OpenDAL doesn't want pre-releases to a publish registry beyond
+  # a release process. For now, we can rely on artifacts for testing pre-releases.
+  # In the future, we could consider a GitHub private registry for pre-releases.
+  #
+  # Manual dispatch builds candidates and publishes final tags.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -50,7 +57,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Setup Ruby
         uses: ruby/setup-ruby@v1
@@ -65,7 +72,7 @@ jobs:
         run: ls -la pkg/
 
       - name: Upload artifact (source gem)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: opendal-ruby-gem-source
           path: bindings/ruby/pkg/*.gem
@@ -85,6 +92,38 @@ jobs:
           echo "**Ref:** ${{ github.ref_name || github.ref }}" >> "$GITHUB_STEP_SUMMARY"
           echo "**Version:** $VERSION" >> "$GITHUB_STEP_SUMMARY"
 
+  smoke-test:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true # runs 'bundle install' and caches installed gems automatically
+          working-directory: bindings/ruby
+
+      - name: Download source gem artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: opendal-ruby-gem-source
+          path: bindings/ruby/pkg/
+
+      - name: Smoke test source gem
+        run: |
+          gem install --local pkg/opendal-*.gem --no-document
+          ruby -ropendal <<'EOF'
+          op = OpenDal::Operator.new("memory", {})
+          op.write("hello.txt", "hello")
+          raise "bad read" unless op.read("hello.txt") == "hello"
+          EOF
+
   # We maintain multiple build targets for native gems.
   # We only provide best-effort support for native gems. We could withdraw the support to these builds at any time.
   build-native:
@@ -92,41 +131,52 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             platform: x86_64-linux
             rust_target: x86_64-unknown-linux-gnu
           - os: ubuntu-24.04-arm
             platform: aarch64-linux
             rust_target: aarch64-unknown-linux-gnu
+          # Publish a versionless macOS platform gem. RubyGems matches
+          # arm64-darwin against runtime platforms like arm64-darwin23/24/25,
+          # so separate Darwin-version gems only add release artifacts.
+          # Compatibility with older macOS is controlled by the binary's
+          # deployment target, not this platform suffix. For Rust ARM64 macOS,
+          # rustc defaults to macOS 11.0 unless MACOSX_DEPLOYMENT_TARGET is set.
+          #
+          # Read more https://doc.rust-lang.org/rustc/platform-support/apple-darwin.html
           - os: macos-latest
-            platform: arm64-darwin23
+            platform: arm64-darwin
             rust_target: aarch64-apple-darwin
 
     runs-on: ${{ matrix.os }}
     continue-on-error: true
 
     env:
-      RB_SYS_CARGO_TARGET: ${{ matrix.rust_target }}
+      CARGO_BUILD_TARGET: ${{ matrix.rust_target }}
+      OPENDAL_RUBY_PLATFORM: ${{ matrix.platform }}
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.rust_target }}
+      - name: Setup Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add ${{ matrix.rust_target }}
 
       - name: Setup Ruby and install dependencies
         uses: ruby/setup-ruby@v1
         with:
           bundler-cache: true
-          working-directory: bindings/ruby # must repeat because GitHub Actions will not use defaults.run
+          working-directory: bindings/ruby # must repeat because actions will not use defaults.run
 
       - name: Show available rake tasks
         run: bundle exec rake --tasks
 
       - name: Build native gem
-        run: bundle exec rake native:opendal:${{ matrix.platform }} gem
+        run: bundle exec rake native:opendal
 
       - name: Collect built gem
         run: |
@@ -138,27 +188,23 @@ jobs:
           cp -r pkg/*.gem pkg_out/
 
       - name: Upload gem artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: opendal-ruby-gem-${{ matrix.platform }}
           path: bindings/ruby/pkg_out/*.gem
           retention-days: 30
 
   publish:
-    # allow:
-    # - standard tag releases
-    # - workflow_dispatch:
-    #   - reattempt standard tag releases
-    #   - pre-releases
-    if: >-
-      startsWith(github.ref, 'refs/tags/v') ||
-        (github.event_name == 'workflow_dispatch' && contains(needs.build.outputs.version, 'rc'))
-    needs: [build, build-native]
+    # RC tags only build artifacts for release verification. RubyGems does not
+    # provide a staging registry, so publish only from the final release tag.
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-')
+
+    needs: [build, smoke-test, build-native]
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           persist-credentials: false
 
@@ -169,7 +215,7 @@ jobs:
           working-directory: bindings/ruby
 
       - name: Download gem artifacts
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           pattern: opendal-ruby-gem-*
           path: bindings/ruby/pkg/
@@ -180,95 +226,10 @@ jobs:
           echo "Downloaded gems:"
           ls -lh pkg/*.gem
 
-      # Adapted from rubygems/release-gem@v1. Changed:
-      # 1. publishing git tag
-      # 2. support custom working directory
-      #
-      # TODO: we can consider using rubygems/release-gem when the gem resolves:
-      # https://github.com/rubygems/release-gem/pull/12
-      - name: Attribute commits to last committer
-        run: |
-          git config --global user.email "$(git log -1 --pretty=format:'%ae')"
-          git config --global user.name "$(git log -1 --pretty=format:'%an')"
-
-      - name: Configure Git using cached credentials
-        run: |
-          git credential-cache --timeout=300 store <<EOF
-          protocol=https
-          host=github.com
-          username=x-access-token
-          password=${{ github.token }}
-
-          EOF
-          git config --local credential.helper 'cache --timeout=300'
-
-      # Patch file copied from
-      # https://github.com/rubygems/release-gem/blob/a25424ba2ba8b387abc8ef40807c2c85b96cbe32/rubygems-attestation-patch.rb
-      - name: Amend patch file
-        run: |
-          cat <<EOF >> rubygems-attestation-patch.rb
-          # frozen_string_literal: true
-
-          return if RUBY_ENGINE == "jruby"
-          return unless defined?(Gem)
-
-          require "rubygems/commands/push_command"
-
-          Gem::Commands::PushCommand.prepend(Module.new do
-            def send_push_request(name, args)
-              return super if options[:attestations]&.any? || @host != "https://rubygems.org"
-
-              begin
-                send_push_request_with_attestation(name, args)
-              rescue StandardError => e
-                alert_warning "Failed to push with attestation, retrying without attestation.\n#{e.full_message}"
-                super
-              end
-            end
-
-            def send_push_request_with_attestation(name, args)
-              attestation = attest!(name)
-              if options[:attestations]
-                options[:attestations] << attestation
-                send_push_request(name, args)
-              else
-                rubygems_api_request(*args, scope: get_push_scope) do |request|
-                  request.set_form([
-                                    ["gem", Gem.read_binary(name), { filename: name, content_type: "application/octet-stream" }],
-                                    ["attestations", "[#{Gem.read_binary(attestation)}]", { content_type: "application/json" }]
-                                  ], "multipart/form-data")
-                  request.add_field "Authorization", api_key
-                end
-              end
-            end
-
-            def attest!(name)
-              require "open3"
-              bundle = "#{name}.sigstore.json"
-              env = defined?(Bundler.unbundled_env) ? Bundler.unbundled_env : ENV.to_h
-              out, st = Open3.capture2e(
-                env,
-                Gem.ruby, "-S", "gem", "exec",
-                "sigstore-cli:0.2.1", "sign", name, "--bundle", bundle,
-                unsetenv_others: true
-              )
-              raise Gem::Exception, "Failed to sign gem:\n\n#{out}" unless st.success?
-
-              bundle
-            end
-          end)
-          EOF
-
-      - name: Configure trusted publishing credentials
-        uses: rubygems/configure-rubygems-credentials@v1.0.0
-
-      - name: Release gem
-        run: bundle exec rake release
-        env:
-          RUBYOPT: "${{ format('-r{0}/bindings/ruby/rubygems-attestation-patch.rb {1}', github.workspace, env.RUBYOPT) || env.RUBYOPT }}"
-
-      - name: Wait for release to propagate
-        run: gem exec rubygems-await pkg/*.gem
+      - name: Release opendal gem
+        uses: rubygems/release-gem@052cc82692552de3ef2b81fd670e41d13cba8092 # v1.2.0
+        with:
+          working-directory: bindings/ruby
 
       - name: Log Release
         run: |
@@ -277,7 +238,3 @@ jobs:
           echo "**Version:** $(bundle exec rake version)" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Check out the [RubyGems page](https://rubygems.org/gems/opendal) for more details." >> "$GITHUB_STEP_SUMMARY"
-
-      - name: Clean up credentials
-        if: always()
-        run: git credential-cache exit || true

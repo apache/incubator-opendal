@@ -19,30 +19,66 @@
 allow = [
   "Apache-2.0",
   "Apache-2.0 WITH LLVM-exception",
-  "MIT",
-  "MPL-2.0",
+  "BSD-2-Clause",
   "BSD-3-Clause",
-  "ISC",
+  "BSL-1.0",
   "CC0-1.0",
+  # ASF LEGAL-732 treats CDLA-Permissive-2.0 as Category A.
+  "CDLA-Permissive-2.0",
+  "ISC",
+  "MIT",
+  "OpenSSL",
+  "Unicode-3.0",
+  "Zlib",
 ]
-exceptions = [
-  { allow = [
-    "OpenSSL",
-  ], name = "ring" },
-  { allow = [
-    "Unicode-DFS-2016",
-  ], name = "unicode-ident" },
-]
-version = 2
 
-[[licenses.clarify]]
-name = "ring"
-# SPDX considers OpenSSL to encompass both the OpenSSL and SSLeay licenses
-# https://spdx.org/licenses/OpenSSL.html
-# ISC - Both BoringSSL and ring use this for their new files
-# MIT - "Files in third_party/ have their own licenses, as described therein. The MIT
-# license, for third_party/fiat, which, unlike other third_party directories, is
-# compiled into non-test libraries, is included below."
-# OpenSSL - Obviously
-expression = "ISC AND MIT AND OpenSSL"
-license-files = [{ path = "LICENSE", hash = 0xbd0eed23 }]
+exceptions = [
+  # cbindgen is used to generate C bindings; it is only a build dependency
+  # so it won't be included in the final library
+  { crate = "cbindgen", allow = [
+    "MPL-2.0",
+  ] },
+
+  # colored and option-ext are runtime dependencies of the Hugging Face Xet
+  # client enabled by the Java, .NET, Node.js, and Python release builds. Their
+  # source is not bundled in ASF source releases.
+  { crate = "colored", allow = [
+    "MPL-2.0",
+  ] },
+  { crate = "option-ext", allow = [
+    "MPL-2.0",
+  ] },
+
+  # persy implements the Persy service enabled by the Java, .NET, Node.js, and
+  # Python release builds. Its source is not bundled in ASF source releases.
+  { crate = "persy", allow = [
+    "MPL-2.0",
+  ] },
+
+  # malachite and its subcrates are introduced in the Python bindings (pyo3-stub-gen)
+  # they are only used in proc-macro so they won't be included in the final library
+  { crate = "malachite", allow = [
+    "LGPL-3.0-only",
+  ] },
+  { crate = "malachite-base", allow = [
+    "LGPL-3.0-only",
+  ] },
+  { crate = "malachite-bigint", allow = [
+    "LGPL-3.0-only",
+  ] },
+  { crate = "malachite-nz", allow = [
+    "LGPL-3.0-only",
+  ] },
+  { crate = "malachite-q", allow = [
+    "LGPL-3.0-only",
+  ] },
+
+  # open data license that SHOULD be OK
+  { crate = "unicode_names2", allow = [
+    "Unicode-DFS-2016",
+  ] },
+]
+
+# this config file is used for all crates; some of them would not encounter all the allowed licenses
+unused-allowed-license = "allow"
+unused-license-exception = "allow"

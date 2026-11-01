@@ -18,7 +18,6 @@
 use magnus::Error;
 use magnus::RModule;
 use magnus::method;
-use magnus::prelude::*;
 
 use crate::*;
 

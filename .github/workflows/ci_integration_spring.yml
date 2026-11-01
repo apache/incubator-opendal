@@ -37,7 +37,7 @@ jobs:
   integration_spring:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
@@ -45,8 +45,8 @@ jobs:
       - name: Set up Java
         uses: actions/setup-java@v5
         with:
-          java-version: '17'
-          distribution: 'temurin'
+          java-version: 25
+          distribution: zulu
 
       - name: package and test
         working-directory: integrations/spring

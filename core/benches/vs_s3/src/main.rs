@@ -22,14 +22,15 @@ use aws_config::Region;
 use aws_credential_types::Credentials;
 use criterion::Criterion;
 use opendal::Operator;
-use opendal::raw::tests::TEST_RUNTIME;
 use opendal::services;
+use opendal::tests::TEST_RUNTIME;
 use rand::prelude::*;
+use rand::rng;
 use tokio::io::AsyncReadExt;
 
 fn main() {
     let _ = dotenvy::dotenv();
-    let _ = logforth::stderr().try_apply();
+    let _ = logforth::starter_log::stderr().try_apply();
 
     let endpoint = env::var("OPENDAL_S3_ENDPOINT").unwrap();
     let access_key = env::var("OPENDAL_S3_ACCESS_KEY_ID").unwrap();
@@ -44,7 +45,7 @@ fn main() {
         .secret_access_key(&secret_key)
         .bucket(&bucket)
         .region(&region);
-    let op = Operator::new(cfg).unwrap().finish();
+    let op = Operator::new(cfg).unwrap();
 
     // Init AWS S3 SDK.
     let mut config_loader = aws_config::defaults(BehaviorVersion::latest());
@@ -115,7 +116,7 @@ fn bench_read(c: &mut Criterion, op: Operator, s3_client: aws_sdk_s3::Client, bu
 }
 
 async fn prepare(op: &Operator) {
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let mut content = vec![0; 16 * 1024 * 1024];
     rng.fill_bytes(&mut content);
 

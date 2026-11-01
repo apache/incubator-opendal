@@ -60,6 +60,7 @@ public class MetadataTest {
             assertThat(metadata.contentType).isNull();
             assertThat(metadata.etag).isNull();
             assertThat(metadata.version).isNull();
+            assertThat(metadata.userMetadata).isEmpty();
 
             op.delete(dir).join();
             op.delete(path).join();
@@ -91,6 +92,7 @@ public class MetadataTest {
             assertThat(metadata.contentType).isNull();
             assertThat(metadata.etag).isNull();
             assertThat(metadata.version).isNull();
+            assertThat(metadata.userMetadata).isEmpty();
 
             op.delete(dir);
             op.delete(path);

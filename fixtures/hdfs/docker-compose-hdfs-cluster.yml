@@ -38,4 +38,3 @@ services:
       HDFS_CONF_dfs_permissions_enabled: false
       HDFS_CONF_dfs_support_append: true
       HDFS_CONF_dfs_replication: 1
-

@@ -1,0 +1,88 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+line-length = 88
+show-fixes = true
+
+[analyze]
+detect-string-imports = true
+
+[format]
+docstring-code-format = true
+docstring-code-line-length = 60
+skip-magic-trailing-comma = false
+
+[lint]
+extend-select = ["D400"]
+ignore = [
+  "W505", # generate code contains long line
+]
+select = [
+  "ANN",    # flake8-annotations
+  "B",      # flake8-bugbear
+  "C4",     # flake8-comprehensions
+  "D",      # flake8-docstrings
+  "E",      # pycodestyle
+  "EM",     # flake8-errmsg
+  "F",      # pyflakes
+  "FA",     # flake8-future-annotations
+  "FBT001", # flake8-boolean-trap
+  "I",      # isort
+  "ICN",    # flake8-import-conventions
+  "INT",    # flake8-gettext
+  "PERF",   # perflint
+  "PIE",    # flake8-pie
+  "PT",     # flake8-pytest-style
+  "PTH",    # flake8-use-pathlib
+  "PYI",    # flake8-pyi
+  "SIM",    # flake8-simplify
+  "TD",     # flake8-todos
+  "TID",    # flake8-tidy-imports
+  "TRY",    # tryceratops
+  "UP",     # pyupgrade
+  "W",      # pycodestyle
+]
+
+[lint.pycodestyle]
+ignore-overlong-task-comments = true
+max-doc-length = 88
+max-line-length = 88
+
+[lint.pydocstyle]
+convention = "numpy"
+
+[lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[lint.flake8-type-checking]
+strict = true
+
+[lint.isort]
+known-first-party = ["opendal"]
+
+[lint.per-file-ignores]
+"*.pyi" = [
+  "PYI021", # keep docstrings in generated stubs
+  "ANN401", # Any in signatures
+  "ANN003", # **kwargs untyped
+  "TID252", # injected relative sibling imports from generated stubs
+]
+"benchmark/*" = ["D100", "D101", "D103", "ANN201"]
+"examples/*" = ["D100", "D101", "D103", "ANN201"]
+# Generated file; docstrings are copied verbatim from Rust and can be long.
+"python/opendal/config.py" = ["E501"]
+"tests/*" = ["D101", "D100", "D103", "ANN201", "ANN001"]

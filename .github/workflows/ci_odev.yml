@@ -27,6 +27,19 @@ on:
     paths:
       - "**/*.rs"
       - ".github/workflows/ci_odev.yml"
+      - "dev/Cargo.toml"
+      - "dev/Cargo.lock"
+      - "scripts/verify_source_reproducibility.py"
+      - "scripts/sign_source_release.py"
+      - "scripts/test_sign_source_release.py"
+      - "scripts/release_impact.py"
+      - "scripts/test_release_impact.py"
+      - "scripts/release_lifecycle.py"
+      - "scripts/test_release_lifecycle.py"
+      - ".github/workflows/weekly_release.yml"
+      - ".github/workflows/release_lifecycle.yml"
+      - ".github/workflows/release_publish.yml"
+      - ".github/workflows/release-compose.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -36,21 +49,37 @@ jobs:
   check_clippy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      # Useful for debugging
+      - name: Print Clippy version
+        working-directory: dev
+        run: cargo clippy --version
+
       - name: Cargo clippy
         working-directory: dev
         run: cargo clippy --all-targets --all-features -- -D warnings
 
+  test_signing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python3 -m unittest discover -s scripts -p 'test_sign_source_release.py'
+      - run: python3 -m unittest discover -s scripts -p 'test_release_lifecycle.py'
+      - run: python3 -m unittest discover -s scripts -p 'test_release_impact.py'
+
   test_dev:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
@@ -60,3 +89,77 @@ jobs:
       - name: Cargo Test
         working-directory: dev
         run: cargo test
+
+  check_generated:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate Python bindings code
+        run: cargo run --manifest-path=dev/Cargo.toml -- generate -l python
+
+      - name: Generate Java bindings code
+        run: cargo run --manifest-path=dev/Cargo.toml -- generate -l java
+
+      - name: Generate Dotnet bindings code
+        run: cargo run --manifest-path=dev/Cargo.toml -- generate -l dotnet
+
+      - name: Generate services documentation data
+        run: cargo run --manifest-path=dev/Cargo.toml -- generate -l docs
+      - run: cargo fmt --manifest-path bindings/python/Cargo.toml --all
+      - run: cargo fmt --manifest-path bindings/dotnet/Cargo.toml --all
+
+      - name: Check diff
+        run: git diff --exit-code
+
+  reproduce:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: ./.github/actions/setup
+      - name: Rebuild source packages in independent checkouts
+        run: python3 scripts/verify_source_reproducibility.py --output "$RUNNER_TEMP/reproduction"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: source-reproducibility-${{ matrix.os }}
+          path: |
+            ${{ runner.temp }}/reproduction/report.json
+            ${{ runner.temp }}/reproduction/build-*.log
+          if-no-files-found: error
+
+  compare:
+    needs: reproduce
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: source-reproducibility-*
+          path: reproduction
+      - name: Compare Linux and macOS archive digests
+        run: |
+          python3 - <<'PYTHON'
+          import json
+          from pathlib import Path
+          reports = [json.loads(p.read_text()) for p in Path("reproduction").glob("*/report.json")]
+          assert len(reports) == 2, "missing platform report"
+          assert all(r["matched"] for r in reports), "checkout reproduction failed"
+          assert reports[0]["commit"] == reports[1]["commit"], "different source commits"
+          assert reports[0]["runs"][0] == reports[1]["runs"][0], "Linux and macOS artifacts differ"
+          print("All source archives match across Linux and macOS")
+          PYTHON

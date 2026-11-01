@@ -25,6 +25,16 @@ This folder contains the bindings for OpenDAL. Currently, we support the followi
 * [Swift](swift/README.md)
 * [Zig](zig/README.md)
 
+## Versioning
+
+We release each binding independently of the
+[`opendal` crate](https://crates.io/crates/opendal) (Rust core). This allows
+bindings to follow their own release cycles and compatibility requirements.
+
+For example, while the `opendal` crate might be at version `0.55.0`, a binding
+might be at version `0.47.0` or `0.49.2`. For updates and compatibility, use
+the specific binding version instead of the `opendal` crate version.
+
 ## Getting Started
 
 Every binding should provide a `README.md` file to help users get started.

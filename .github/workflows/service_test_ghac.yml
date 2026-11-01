@@ -25,11 +25,17 @@ on:
     branches:
       - main
     paths:
-      - "core/src/**"
+      - "core/Cargo.toml"
+      - "core/Cargo.lock"
+      - "core/core/Cargo.toml"
+      - "core/core/src/**"
+      - "core/layers/**"
+      - "core/testkit/**"
       - "core/tests/**"
-      - "!core/src/docs/**"
-      - "!core/src/services/**"
-      - "core/src/services/ghac/**"
+      - "!core/core/src/docs/**"
+      - "core/services/azblob/**"
+      - "core/services/azure-common/**"
+      - "core/services/ghac/**"
       - ".github/workflows/service_test_ghac.yml"
 
 concurrency:
@@ -43,14 +49,14 @@ jobs:
     permissions:
       actions: write
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
         with:
           need-nextest: true
 
       - name: Configure Cache Env
-        uses: actions/github-script@v8
+        uses: actions/github-script@v9
         with:
           script: |
             core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');

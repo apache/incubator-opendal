@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-
     Licensed to the Apache Software Foundation (ASF) under one
     or more contributor license agreements.  See the NOTICE file
     distributed with this work for additional information
@@ -17,8 +16,8 @@
     KIND, either express or implied.  See the License for the
     specific language governing permissions and limitations
     under the License.
-
 -->
+
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -32,7 +31,7 @@
 
     <groupId>org.apache.opendal</groupId>
     <artifactId>opendal</artifactId>
-    <version>0.48.1</version> <!-- update version number -->
+    <version>0.50.8</version> <!-- update version number -->
 
     <name>Apache OpenDAL™</name>
     <description>
@@ -53,33 +52,34 @@
 
     <properties>
         <!-- This value is for Reproducible Builds. It will be updated by Maven Release Plugin during releases. -->
-        <project.build.outputTimestamp>10</project.build.outputTimestamp>
+        <project.build.outputTimestamp>2026-01-01T00:00:00Z</project.build.outputTimestamp>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
 
         <!-- customized properties -->
         <cargo-build.profile>dev</cargo-build.profile>
-        <cargo-build.features>default</cargo-build.features>
         <cargo-build.enableZigbuild>false</cargo-build.enableZigbuild>
         <cargo-build.target/> <!-- override cargo build target; e.g., use musl instead -->
         <jni.classifier>${os.detected.classifier}</jni.classifier>
 
         <!-- library dependencies -->
-        <assertj.version>3.23.1</assertj.version>
-        <commons-io.version>2.16.1</commons-io.version>
+        <assertj.version>3.27.7</assertj.version>
+        <commons-io.version>2.21.0</commons-io.version>
         <dotenv.version>2.3.2</dotenv.version>
-        <lombok.version>1.18.34</lombok.version>
-        <slf4j.version>2.0.7</slf4j.version>
-        <httpclient.version>5.2</httpclient.version>
+        <httpclient.version>5.6</httpclient.version>
+        <junit.version>5.10.0</junit.version>
+        <lombok.version>1.18.42</lombok.version>
+        <slf4j.version>2.0.17</slf4j.version>
 
         <!-- plugins dependencies -->
-        <maven-surefire-plugin.version>3.1.2</maven-surefire-plugin.version>
-        <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
-        <exec-maven-plugin.version>3.1.0</exec-maven-plugin.version>
-        <os-maven-plugin.version>1.7.0</os-maven-plugin.version>
-        <palantir-java-format.version>2.36.0</palantir-java-format.version>
-        <spotless.version>2.39.0</spotless.version>
+        <maven-surefire-plugin.version>3.5.5</maven-surefire-plugin.version>
+        <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
+        <exec-maven-plugin.version>3.6.3</exec-maven-plugin.version>
+        <os-maven-plugin.version>1.7.1</os-maven-plugin.version>
+        <palantir-java-format.version>2.81.0</palantir-java-format.version>
+        <spotless.version>3.2.0</spotless.version>
         <maven-javadoc-plugin.version>3.6.3</maven-javadoc-plugin.version>
     </properties>
 
@@ -88,7 +88,7 @@
             <dependency>
                 <groupId>org.junit</groupId>
                 <artifactId>junit-bom</artifactId>
-                <version>5.9.2</version>
+                <version>${junit.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -215,8 +215,6 @@
                                 <argument>${cargo-build.target}</argument>
                                 <argument>--profile</argument>
                                 <argument>${cargo-build.profile}</argument>
-                                <argument>--features</argument>
-                                <argument>${cargo-build.features}</argument>
                                 <argument>--enable-zigbuild</argument>
                                 <argument>${cargo-build.enableZigbuild}</argument>
                             </arguments>
@@ -251,6 +249,13 @@
                     <execution>
                         <id>default-jar</id>
                         <configuration>
+                            <!--
+                                Without an includes list, maven-jar-plugin packages every file from
+                                ${project.build.outputDirectory}, including compiled classes and META-INF licensing
+                                files. Adding an <includes> list replaces that all-files default with only the matching
+                                patterns. A licensing-only list would therefore omit compiled classes such as
+                                org/apache/opendal/NativeLibrary.class from the default JAR.
+                            -->
                             <excludes>
                                 <exclude>native/**</exclude>
                             </excludes>
@@ -264,8 +269,17 @@
                         </goals>
                         <configuration>
                             <classifier>${jni.classifier}</classifier>
+                            <!--
+                                This <includes> allowlist limits each classified JAR to its native library and the
+                                licensing files required when that JAR is distributed independently. Compiled Java
+                                classes remain in the default JAR.
+                            -->
                             <includes>
                                 <include>native/**</include>
+                                <include>META-INF/DEPENDENCIES</include>
+                                <include>META-INF/LICENSE</include>
+                                <include>META-INF/LICENSE-MPL-2.0.txt</include>
+                                <include>META-INF/NOTICE</include>
                             </includes>
                         </configuration>
                     </execution>
@@ -298,11 +312,36 @@
                 <version>${maven-javadoc-plugin.version}</version>
                 <configuration>
                     <bottom>
-                        Copyright © 2022-2024, The Apache Software Foundation. Apache OpenDAL, OpenDAL, and Apache
+                        Copyright © 2022-2026, The Apache Software Foundation. Apache OpenDAL, OpenDAL, and Apache
                         are either registered trademarks or trademarks of the Apache Software Foundation.
                     </bottom>
                 </configuration>
             </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <profile>
+            <id>apache-release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-assembly-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>source-release-assembly</id>
+                                <configuration combine.self="override">
+                                    <runOnlyAtExecutionRoot>true</runOnlyAtExecutionRoot>
+                                    <descriptors>
+                                        <descriptor>src/assembly/source-release.xml</descriptor>
+                                    </descriptors>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>

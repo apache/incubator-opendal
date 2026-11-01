@@ -23,7 +23,6 @@
 #![allow(rustdoc::bare_urls, reason = "YARD's syntax for documentation")]
 
 use std::collections::HashMap;
-use std::str::FromStr;
 
 use magnus::Error;
 use magnus::RHash;
@@ -88,12 +87,6 @@ impl Operator {
         scheme: String,
         options: Option<HashMap<String, String>>,
     ) -> Result<Self, Error> {
-        let scheme = ocore::Scheme::from_str(&scheme)
-            .map_err(|err| {
-                ocore::Error::new(ocore::ErrorKind::Unexpected, "unsupported scheme")
-                    .set_source(err)
-            })
-            .map_err(|err| Error::new(ruby.exception_runtime_error(), err.to_string()))?;
         let options = options.unwrap_or_default();
 
         let op = ocore::Operator::via_iter(scheme, options)
@@ -147,7 +140,7 @@ impl Operator {
     /// Gets capabilities of the current operator
     /// @return [Capability]
     fn capability(&self) -> Result<Capability, Error> {
-        let capability = self.blocking_op.info().full_capability();
+        let capability = self.blocking_op.info().capability();
         Ok(Capability::new(capability))
     }
 
@@ -207,9 +200,16 @@ impl Operator {
     /// @param path [String]
     /// @return [nil]
     fn remove_all(ruby: &Ruby, rb_self: &Self, path: String) -> Result<(), Error> {
+        use ocore::options::DeleteOptions;
         rb_self
             .blocking_op
-            .remove_all(&path)
+            .delete_options(
+                &path,
+                DeleteOptions {
+                    recursive: true,
+                    ..Default::default()
+                },
+            )
             .map_err(|err| Error::new(ruby.exception_runtime_error(), err.to_string()))
     }
 
@@ -223,6 +223,7 @@ impl Operator {
         rb_self
             .blocking_op
             .copy(&from, &to)
+            .map(|_| ())
             .map_err(|err| Error::new(ruby.exception_runtime_error(), err.to_string()))
     }
 

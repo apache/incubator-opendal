@@ -1,0 +1,87 @@
+<!--
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements.  See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership.  The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License.  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied.  See the License for the
+    specific language governing permissions and limitations
+    under the License.
+-->
+
+<Project Sdk="Microsoft.NET.Sdk">
+
+    <PropertyGroup>
+        <Title>Apache OpenDAL .NET</Title>
+        <PackageId>Apache.OpenDAL</PackageId>
+        <Description>The official .NET binding for Apache OpenDAL™</Description>
+        <VersionPrefix>0.3.1</VersionPrefix>
+        <AssemblyVersion>$(VersionPrefix)</AssemblyVersion>
+        <FileVersion>$(VersionPrefix)</FileVersion>
+        <Authors>Apache OpenDAL™</Authors>
+        <Company>Apache Software Foundation</Company>
+        <Copyright>$(Company)</Copyright>
+        <PackageTags>Apache;OpenDAL</PackageTags>
+        <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+        <PackageReadmeFile>README.md</PackageReadmeFile>
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <!-- Include files without an extension in the NuGet package.
+        See https://learn.microsoft.com/en-us/nuget/reference/msbuild-targets#packing-a-file-without-an-extension -->
+        <None Include="../README.md" Pack="true" PackagePath="" />
+        <None Include="../LICENSE" Pack="true" PackagePath="" />
+        <None Include="../LICENSE-MPL-2.0.txt" Pack="true" PackagePath="" />
+        <None Include="../LICENSE-CC0-1.0.txt" Pack="true" PackagePath="" />
+        <None Include="../NOTICE" Pack="true" PackagePath="" />
+        <None Include="runtimes\win-x64\native\opendal_dotnet.dll"
+            Pack="true"
+            PackagePath="runtimes/win-x64/native/" />
+        <None Include="runtimes\linux-x64\native\libopendal_dotnet.so"
+            Pack="true"
+            PackagePath="runtimes/linux-x64/native/" />
+        <None Include="runtimes\linux-arm64\native\libopendal_dotnet.so"
+            Pack="true"
+            PackagePath="runtimes/linux-arm64/native/" />
+        <None Include="runtimes\osx-arm64\native\libopendal_dotnet.dylib"
+            Pack="true"
+            PackagePath="runtimes/osx-arm64/native/" />
+    </ItemGroup>
+
+    <!-- Resolve Rust build output path -->
+    <PropertyGroup>
+        <RustTargetDir>../target</RustTargetDir>
+        <NativeOutputDir Condition="'$(Configuration)' == 'Debug'">$(RustTargetDir)/debug</NativeOutputDir>
+        <NativeOutputDir Condition="'$(Configuration)' == 'Release'">$(RustTargetDir)/release</NativeOutputDir>
+    </PropertyGroup>
+
+    <!-- Copy native libs for local run -->
+    <ItemGroup Condition="Exists('$(NativeOutputDir)')">
+
+        <!-- Unix (Linux + macOS) -->
+        <None Include="$(NativeOutputDir)/libopendal_dotnet.*"
+            Condition="'$(OS)' != 'Windows_NT'">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+
+        <!-- Windows -->
+        <None Include="$(NativeOutputDir)/opendal_dotnet.dll"
+            Condition="'$(OS)' == 'Windows_NT'">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+
+    </ItemGroup>
+
+</Project>

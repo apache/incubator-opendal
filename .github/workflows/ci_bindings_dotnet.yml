@@ -23,13 +23,15 @@ on:
       - main
     tags:
       - '*'
+    paths: &paths
+      - "bindings/dotnet/**"
+      - "core/**"
+      - ".github/actions/setup/**"
+      - ".github/workflows/ci_bindings_dotnet.yml"
   pull_request:
     branches:
       - main
-    paths:
-      - "bindings/dotnet/**"
-      - "core/**"
-      - ".github/workflows/ci_bindings_dotnet.yml"
+    paths: *paths
   workflow_dispatch:
 
 concurrency:
@@ -40,24 +42,69 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+        with:
+          need-nextest: true
+          need-protoc: true
+          need-rocksdb: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Useful for debugging
+      - name: Print Clippy version
+        working-directory: "bindings/dotnet"
+        run: cargo clippy --version
+
+      - name: Clippy Check
+        working-directory: "bindings/dotnet"
+        run: cargo clippy -- -D warnings
+
+  test:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+          - macos-latest
+          - windows-latest
+    steps:
+      - uses: actions/checkout@v7
       - name: Setup dotnet toolchain
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: '7.0.x'
+          dotnet-version: |
+            8.0.x
+            10.0.x
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
-      
-      - name: Clippy Check
-        working-directory: "bindings/dotnet"
-        run: |
-          cargo clippy -- -D warnings
+        with:
+          need-nextest: true
+          need-protoc: true
+          need-rocksdb: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & Test
+      - name: Build native library
         working-directory: "bindings/dotnet"
+        run: cargo build
+
+      - name: Test
+        working-directory: "bindings/dotnet"
+        run: dotnet test
+        env:
+          OPENDAL_TEST: memory
+
+      # The example backs the snippet shown in the website guide. Running it
+      # keeps the docs honest: a broken example fails CI instead of shipping
+      # bad docs. It uses the in-memory service, so it needs no credentials.
+      - name: Run guide example
+        working-directory: "bindings/dotnet"
+        shell: bash
         run: |
-          cargo build
-          dotnet test
+          dotnet run --project examples/GettingStarted -f net8.0
+          dotnet run --project examples/GettingStarted -f net10.0

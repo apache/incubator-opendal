@@ -19,9 +19,13 @@ use std::fmt::Debug;
 use std::fmt::Display;
 use std::fmt::Formatter;
 
-use jni::JNIEnv;
+use jni::Env;
+use jni::errors::ErrorPolicy;
+use jni::jni_sig;
+use jni::jni_str;
 use jni::objects::JThrowable;
 use jni::objects::JValue;
+use jni::strings::JNIString;
 use opendal::ErrorKind;
 
 pub(crate) struct Error {
@@ -29,22 +33,21 @@ pub(crate) struct Error {
 }
 
 impl Error {
-    pub(crate) fn throw(&self, env: &mut JNIEnv) {
+    pub(crate) fn throw(&self, env: &mut Env) {
         if let Err(err) = self.do_throw(env) {
             match err {
                 jni::errors::Error::JavaException => {
-                    // other calls throws exception; safely ignored
+                    // The exception has been thrown; it will propagate to the JVM.
                 }
-                _ => env.fatal_error(err.to_string()),
+                _ => env.fatal_error(JNIString::new(err.to_string()).as_ref()),
             }
         }
     }
 
     pub(crate) fn to_exception<'local>(
         &self,
-        env: &mut JNIEnv<'local>,
+        env: &mut Env<'local>,
     ) -> jni::errors::Result<JThrowable<'local>> {
-        let class = env.find_class("org/apache/opendal/OpenDALException")?;
         let code = env.new_string(match self.inner.kind() {
             ErrorKind::Unexpected => "Unexpected",
             ErrorKind::Unsupported => "Unsupported",
@@ -58,20 +61,70 @@ impl Error {
             ErrorKind::IsSameFile => "IsSameFile",
             ErrorKind::ConditionNotMatch => "ConditionNotMatch",
             ErrorKind::RangeNotSatisfied => "RangeNotSatisfied",
+            ErrorKind::Conflict => "Conflict",
             _ => "Unexpected",
         })?;
         let message = env.new_string(format!("{:?}", self.inner))?;
         let exception = env.new_object(
-            class,
-            "(Ljava/lang/String;Ljava/lang/String;)V",
+            jni_str!("org/apache/opendal/OpenDALException"),
+            jni_sig!("(Ljava/lang/String;Ljava/lang/String;)V"),
             &[JValue::Object(&code), JValue::Object(&message)],
         )?;
-        Ok(JThrowable::from(exception))
+        // SAFETY: `exception` was just constructed as an `OpenDALException`, a
+        // subclass of `java.lang.Throwable`.
+        Ok(unsafe { JThrowable::from_raw(env, exception.into_raw()) })
     }
 
-    fn do_throw(&self, env: &mut JNIEnv) -> jni::errors::Result<()> {
+    fn do_throw(&self, env: &mut Env) -> jni::errors::Result<()> {
         let exception = self.to_exception(env)?;
         env.throw(exception)
+    }
+}
+
+/// A native-method [`ErrorPolicy`] that converts a Rust [`Error`] into an
+/// `OpenDALException` and a panic into a `RuntimeException`, returning the
+/// default value to the JVM in both cases.
+pub(crate) enum ThrowException {}
+
+impl<T: Default> ErrorPolicy<T, Error> for ThrowException {
+    type Captures<'unowned_env_local: 'native_method, 'native_method> = ();
+
+    fn on_error<'unowned_env_local: 'native_method, 'native_method>(
+        env: &mut Env<'unowned_env_local>,
+        _cap: &mut Self::Captures<'unowned_env_local, 'native_method>,
+        err: Error,
+    ) -> jni::errors::Result<T> {
+        if !env.exception_check() {
+            err.throw(env);
+        }
+        Ok(T::default())
+    }
+
+    fn on_panic<'unowned_env_local: 'native_method, 'native_method>(
+        env: &mut Env<'unowned_env_local>,
+        _cap: &mut Self::Captures<'unowned_env_local, 'native_method>,
+        payload: Box<dyn std::any::Any + Send + 'static>,
+    ) -> jni::errors::Result<T> {
+        if !env.exception_check() {
+            fn downcast_payload(payload: Box<dyn std::any::Any + Send + 'static>) -> String {
+                let payload = match payload.downcast::<&'static str>() {
+                    Ok(payload) => return payload.to_string(),
+                    Err(payload) => payload,
+                };
+
+                let payload = match payload.downcast::<String>() {
+                    Ok(payload) => return *payload,
+                    Err(payload) => payload,
+                };
+
+                let _ = payload;
+                "native method panicked".to_string()
+            }
+
+            let payload = downcast_payload(payload);
+            env.fatal_error(JNIString::new(payload).as_ref());
+        }
+        Ok(T::default())
     }
 }
 

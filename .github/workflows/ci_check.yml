@@ -33,15 +33,34 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  hf-temp-repo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+      - name: Test temporary HF repository cleanup
+        run: node --test .github/actions/hf-temp-repo/cleanup.test.js
+
+  labels:
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - name: Test label classification and event handling
+        run: python3 -m unittest discover -s scripts -p test_label.py
+
   typos:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       FORCE_COLOR: 1
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Check typos
-        uses: crate-ci/typos@v1.38.1
+        uses: crate-ci/typos@v1.48.0
 
   licenses:
     runs-on: ubuntu-latest
@@ -49,9 +68,13 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
+      - name: Install Hawkeye
+        uses: taiki-e/install-action@v2
+        with:
+          tool: hawkeye@7.2.0
       - name: Check license headers
-        uses: korandoru/hawkeye@v6
+        run: hawkeye check
 
   # Add python format check later.
   code-format:
@@ -60,12 +83,26 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Rust Code Format
         run: ./scripts/workspace.py cargo fmt -- --check
+
+  toml-format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FORCE_COLOR: 1
+    steps:
+      - uses: actions/checkout@v7
+      - name: Setup taplo
+        uses: taiki-e/install-action@v2
+        with:
+          tool: taplo-cli
+      - name: TOML format
+        run: taplo format --check
 
   dependencies:
     runs-on: ubuntu-latest
@@ -73,7 +110,7 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
@@ -88,26 +125,32 @@ jobs:
 
   website-dependencies:
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
+    defaults:
+      run:
+        working-directory: website
 
-      - uses: pnpm/action-setup@v4
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
-          version: 8
+          # Follow website/package.json packageManager field
+          version: 11.8.0
           run_install: false
 
-      - uses: actions/setup-node@v5
+      - uses: actions/setup-node@v6
         with:
-          node-version: "20"
+          node-version-file: "website/.node-version"
           cache: pnpm
           cache-dependency-path: "website/pnpm-lock.yaml"
 
       - name: Install Dependencies
-        working-directory: website
         run: pnpm install --frozen-lockfile
 
+      - name: Test website image processing
+        run: pnpm test
+
       - name: Check dependencies
-        working-directory: website
         run: |
           npx license-checker --production --excludePrivatePackages --csv > DEPENDENCIES.node.csv
           git diff --exit-code

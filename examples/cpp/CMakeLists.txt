@@ -27,6 +27,11 @@ add_executable(basic-example basic.cpp)
 target_link_libraries(basic-example opendal_cpp)
 include_directories(basic-example opendal_cpp)
 
+add_executable(getting-started getting_started.cpp)
+target_link_libraries(getting-started opendal_cpp)
+include_directories(getting-started opendal_cpp)
+
 if(APPLE)
     target_link_libraries(basic-example "-framework CoreFoundation -framework Security")
+    target_link_libraries(getting-started "-framework CoreFoundation -framework Security")
 endif()

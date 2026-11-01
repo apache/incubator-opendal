@@ -23,32 +23,27 @@ on:
       - main
     tags:
       - "*"
+    paths: &paths
+      - "bindings/ocaml/**"
+      - "core/**"
+      - ".github/actions/setup-ocaml/**"
+      - ".github/workflows/ci_bindings_ocaml.yml"
   pull_request:
     branches:
       - main
-    paths:
-      - "bindings/ocaml/**"
-      - "core/**"
-      - ".github/workflows/ci_bindings_ocaml.yml"
+    paths: *paths
   workflow_dispatch:
 
-jobs:
-  test:
-    # Wait for https://github.com/ocaml/setup-ocaml/issues/872 fixes
-    runs-on: ubuntu-22.04
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
 
+jobs:
+  build:
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout PR
-        uses: actions/checkout@v5
-
-      - name: Cache OPAM dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.opam
-          key: ${{ runner.os }}-opam-${{ hashFiles('bindings/ocaml/dune-project') }}
-          restore-keys: |
-            ${{ runner.os }}-opam-
-            ${{ runner.os }}-opam-doc-
+        uses: actions/checkout@v7
 
       - name: Setup OCaml toolchain
         uses: ./.github/actions/setup-ocaml
@@ -56,10 +51,27 @@ jobs:
           need-depext: true
           need-pin: true
 
+      # Useful for debugging
+      - name: Print Clippy version
+        working-directory: "bindings/ocaml"
+        run: cargo clippy --version
+
       - name: Clippy Check
         working-directory: "bindings/ocaml"
-        run: |
-          cargo clippy -- -D warnings
+        run: cargo clippy -- -D warnings
+
+  test:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v7
+
+      - name: Setup OCaml toolchain
+        uses: ./.github/actions/setup-ocaml
+        with:
+          need-depext: true
+          need-pin: true
 
       - name: Checks
         run: |
@@ -67,5 +79,12 @@ jobs:
           opam install -y dune ounit2 ocamlformat
           eval $(opam env)
           cd bindings/ocaml
-          dune runtest
           dune build @fmt
+          dune runtest
+
+      - name: Run getting-started example
+        run: |
+          eval $(opam env)
+          cd bindings/ocaml
+          dune build examples/getting_started.exe
+          dune build @run_examples

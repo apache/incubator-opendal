@@ -16,7 +16,7 @@
 # under the License.
 
 name: Setup Rust Builder
-description: 'Prepare Rust Build Environment'
+description: "Prepare Rust Build Environment"
 inputs:
   need-rocksdb:
     description: "This setup needs rocksdb or not"
@@ -55,14 +55,89 @@ runs:
     - name: Setup Linux
       if: runner.os == 'Linux'
       shell: bash
-      run: sudo apt-get install libgflags-dev libsnappy-dev zlib1g-dev libbz2-dev liblz4-dev libzstd-dev
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libclang-dev libgflags-dev libsnappy-dev zlib1g-dev libbz2-dev liblz4-dev libzstd-dev
 
     - name: Setup Protoc
       if: inputs.need-protoc == 'true'
-      uses: arduino/setup-protoc@v3
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        PROTOC_VERSION="23.4"
+        PROTOC_ROOT="${RUNNER_TEMP}/protoc/${PROTOC_VERSION}"
+
+        case "${RUNNER_OS}-${RUNNER_ARCH}" in
+          Linux-X64)
+            PROTOC_PLATFORM="linux-x86_64"
+            ;;
+          Linux-ARM64)
+            PROTOC_PLATFORM="linux-aarch_64"
+            ;;
+          macOS-X64)
+            PROTOC_PLATFORM="osx-x86_64"
+            ;;
+          macOS-ARM64)
+            PROTOC_PLATFORM="osx-aarch_64"
+            ;;
+          Windows-X64)
+            PROTOC_PLATFORM="win64"
+            ;;
+          *)
+            echo "Unsupported runner: ${RUNNER_OS}-${RUNNER_ARCH}" >&2
+            exit 1
+            ;;
+        esac
+
+        echo "PROTOC_VERSION=${PROTOC_VERSION}" >> "${GITHUB_ENV}"
+        echo "PROTOC_ROOT=${PROTOC_ROOT}" >> "${GITHUB_ENV}"
+        echo "PROTOC_PLATFORM=${PROTOC_PLATFORM}" >> "${GITHUB_ENV}"
+
+    - name: Cache Protoc
+      if: inputs.need-protoc == 'true'
+      id: cache-protoc
+      uses: actions/cache@v5
       with:
-        version: "23.4"
-        repo-token: ${{ inputs.github-token }}
+        path: ${{ runner.temp }}/protoc/${{ env.PROTOC_VERSION }}
+        key: protoc-${{ env.PROTOC_VERSION }}-${{ runner.os }}-${{ runner.arch }}
+
+    - name: Install Protoc (Unix)
+      if: inputs.need-protoc == 'true' && runner.os != 'Windows' && steps.cache-protoc.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        PROTOC_ZIP="protoc-${PROTOC_VERSION}-${PROTOC_PLATFORM}.zip"
+        PROTOC_URL="https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/${PROTOC_ZIP}"
+
+        mkdir -p "${PROTOC_ROOT}"
+        curl -fsSL -o "${RUNNER_TEMP}/${PROTOC_ZIP}" "${PROTOC_URL}"
+        unzip -q "${RUNNER_TEMP}/${PROTOC_ZIP}" -d "${PROTOC_ROOT}"
+
+    - name: Install Protoc (Windows)
+      if: inputs.need-protoc == 'true' && runner.os == 'Windows' && steps.cache-protoc.outputs.cache-hit != 'true'
+      shell: pwsh
+      run: |
+        $ErrorActionPreference = 'Stop'
+
+        $protocZip = "protoc-$env:PROTOC_VERSION-$env:PROTOC_PLATFORM.zip"
+        $protocUrl = "https://github.com/protocolbuffers/protobuf/releases/download/v$env:PROTOC_VERSION/$protocZip"
+        $zipPath = Join-Path $env:RUNNER_TEMP $protocZip
+        $dest = $env:PROTOC_ROOT
+
+        New-Item -ItemType Directory -Force -Path $dest | Out-Null
+        Invoke-WebRequest -Uri $protocUrl -OutFile $zipPath
+        Expand-Archive -Path $zipPath -DestinationPath $dest -Force
+
+    - name: Add Protoc to PATH
+      if: inputs.need-protoc == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        echo "${PROTOC_ROOT}/bin" >> "${GITHUB_PATH}"
+        export PATH="${PROTOC_ROOT}/bin:${PATH}"
+        protoc --version
 
     - name: Install cargo-nextest
       if: inputs.need-nextest == 'true'
@@ -74,7 +149,7 @@ runs:
       if: inputs.need-deny == 'true'
       uses: taiki-e/install-action@v2
       with:
-        tool: cargo-deny@0.14.22
+        tool: cargo-deny@0.20.2
 
     - name: Setup rocksdb on linux
       if: runner.os == 'Linux' && inputs.need-rocksdb == 'true'
@@ -85,11 +160,11 @@ runs:
 
     - name: Cache rocksdb
       id: cache-rocksdb
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       if: runner.os == 'Linux' && inputs.need-rocksdb == 'true'
       with:
         path: /tmp/rocksdb
-        key: r2-rocksdb-8.1.1
+        key: r3-rocksdb-10.4.2-${{ runner.os }}-${{ runner.arch }}
 
     - name: Build rocksdb if not cached
       if: steps.cache-rocksdb.outputs.cache-hit != 'true' && runner.os == 'Linux' && inputs.need-rocksdb == 'true'
@@ -98,9 +173,9 @@ runs:
         set -e
 
         cd /tmp
-        curl https://github.com/facebook/rocksdb/archive/refs/tags/v8.1.1.tar.gz -L -o rocksdb.tar.gz
+        curl https://github.com/facebook/rocksdb/archive/refs/tags/v10.4.2.tar.gz -L -o rocksdb.tar.gz
         tar -xzf rocksdb.tar.gz
-        cd rocksdb-8.1.1
+        cd rocksdb-10.4.2
 
         mkdir /tmp/rocksdb
         cmake -DCMAKE_INSTALL_PREFIX=/tmp/rocksdb -DPORTABLE=1
@@ -108,15 +183,15 @@ runs:
         make install
 
         cd ..
-        rm -rf /tmp/rocksdb-8.1.1
+        rm -rf /tmp/rocksdb-10.4.2
 
     - name: Cache foundationdb
       id: cache-foundationdb
-      uses: actions/cache@v4
+      uses: actions/cache@v5
       if: runner.os == 'Linux' && inputs.need-foundationdb == 'true'
       with:
         path: /etc/foundationdb
-        key: r0-foundationdb-7.1.17
+        key: r0-foundationdb-7.3.69
 
     - name: Build foundationdb if not cached
       if: steps.cache-foundationdb.outputs.cache-hit != 'true' && runner.os == 'Linux' && inputs.need-foundationdb == 'true'
@@ -126,11 +201,10 @@ runs:
 
         cd /tmp
 
-        curl https://github.com/apple/foundationdb/releases/download/7.1.17/foundationdb-clients_7.1.17-1_amd64.deb -L -o foundationdb-clients_7.1.17-1_amd64.deb
-        curl https://github.com/apple/foundationdb/releases/download/7.1.17/foundationdb-server_7.1.17-1_amd64.deb -L -o foundationdb-server_7.1.17-1_amd64.deb
+        curl https://github.com/apple/foundationdb/releases/download/7.3.69/foundationdb-clients_7.3.69-1_amd64.deb -L -o foundationdb-clients_7.3.69-1_amd64.deb
+        curl https://github.com/apple/foundationdb/releases/download/7.3.69/foundationdb-server_7.3.69-1_amd64.deb -L -o foundationdb-server_7.3.69-1_amd64.deb
 
-        sudo dpkg -i foundationdb-clients_7.1.17-1_amd64.deb foundationdb-server_7.1.17-1_amd64.deb
+        sudo dpkg -i foundationdb-clients_7.3.69-1_amd64.deb foundationdb-server_7.3.69-1_amd64.deb
 
-        rm foundationdb-clients_7.1.17-1_amd64.deb
-        rm foundationdb-server_7.1.17-1_amd64.deb
-
+        rm foundationdb-clients_7.3.69-1_amd64.deb
+        rm foundationdb-server_7.3.69-1_amd64.deb

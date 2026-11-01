@@ -199,3 +199,19 @@
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+
+------------------------------------------------------------------------------------
+This product bundles third-party components under other open source licenses.
+This section summarizes those components and their licenses. See the referenced
+license files for text of these licenses.
+
+
+Creative Commons Zero v1.0 Universal
+------------------------------------
+
+bindings/dotnet/.gitignore
+
+The above file is derived from VisualStudio.gitignore in
+https://github.com/github/gitignore. Its license text is in
+bindings/dotnet/LICENSE-CC0-1.0.txt.

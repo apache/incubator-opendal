@@ -24,7 +24,7 @@ edition = "2024"
 homepage = "https://opendal.apache.org/"
 license = "Apache-2.0"
 repository = "https://github.com/apache/opendal"
-rust-version = "1.85"
+rust-version = "1.91"
 
 [features]
 default = ["mlua/lua52"]
@@ -34,7 +34,7 @@ lua52 = ["mlua", "mlua/lua52"]
 crate-type = ["cdylib"]
 
 [dependencies]
-mlua = { version = "0.9", features = [
+mlua = { version = "0.11", features = [
   "module",
   "macros",
 ], default-features = false, optional = true }

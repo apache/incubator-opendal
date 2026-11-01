@@ -1,7 +1,7 @@
 {
   "name": "opendal",
   "author": "Apache OpenDAL <dev@opendal.apache.org>",
-  "version": "0.49.1",
+  "version": "0.49.13",
   "license": "Apache-2.0",
   "main": "index.cjs",
   "module": "index.mjs",
@@ -48,6 +48,7 @@
     "generated.d.ts",
     "generated.js",
     "LICENSE",
+    "LICENSE-MPL-2.0.txt",
     "NOTICE"
   ],
   "exports": {
@@ -68,14 +69,14 @@
     "@napi-rs/cli": "^3.1.3",
     "@swc-node/register": "^1.6.2",
     "@swc/core": "^1.3.38",
-    "@types/node": "^18.14.5",
+    "@types/node": "^20.19.41",
     "@types/react": "^18.2.48",
     "benny": "^3.7.1",
     "dotenv": "^16.0.3",
     "prettier": "^2.8.4",
     "typedoc": "^0.28",
     "typescript": "^5.0.2",
-    "vitest": "^3.2.3"
+    "vitest": "^4.1.6"
   },
   "engines": {
     "node": ">= 10"
@@ -90,7 +91,6 @@
     "format": "prettier --write .",
     "test": "vitest",
     "bench": "node -r dotenv/config ./benchmark/node.js dotenv_config_path=./.env",
-    "bench:deno": "deno bench --unstable-detect-cjs ./benchmark/deno.ts --allow-read --allow-ffi --allow-net --allow-env",
     "prepublishOnly": "napi prepublish -t npm --no-gh-release"
   },
   "prettier": {

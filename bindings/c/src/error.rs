@@ -45,10 +45,12 @@ pub enum opendal_code {
     OPENDAL_RATE_LIMITED,
     /// The given file paths are same.
     OPENDAL_IS_SAME_FILE,
-    /// The condition of this operation is not match.
+    /// A condition supplied through the OpenDAL operation evaluated to false.
     OPENDAL_CONDITION_NOT_MATCH,
     /// The range of the content is not satisfied.
     OPENDAL_RANGE_NOT_SATISFIED,
+    /// The operation conflicts with the current or transitional state of the resource.
+    OPENDAL_CONFLICT,
 }
 
 impl From<core::ErrorKind> for opendal_code {
@@ -66,6 +68,7 @@ impl From<core::ErrorKind> for opendal_code {
             core::ErrorKind::IsSameFile => opendal_code::OPENDAL_IS_SAME_FILE,
             core::ErrorKind::ConditionNotMatch => opendal_code::OPENDAL_CONDITION_NOT_MATCH,
             core::ErrorKind::RangeNotSatisfied => opendal_code::OPENDAL_RANGE_NOT_SATISFIED,
+            core::ErrorKind::Conflict => opendal_code::OPENDAL_CONFLICT,
             // if this is triggered, check the [`core`] crate and add a
             // new error code accordingly
             _ => unimplemented!(
@@ -115,7 +118,8 @@ impl opendal_error {
     pub unsafe extern "C" fn opendal_error_free(ptr: *mut opendal_error) {
         unsafe {
             if !ptr.is_null() {
-                drop(Box::from_raw(ptr));
+                let mut err = Box::from_raw(ptr);
+                opendal_bytes::opendal_bytes_free(&mut err.message);
             }
         }
     }

@@ -1,0 +1,248 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+.explorer {
+  --explorer-gap: clamp(2rem, 1rem + 3vw, 3.5rem);
+  --explorer-title-size: var(--odl-text-base);
+  --explorer-desc-size: 0.8125rem;
+  --explorer-choice-action-space: 2.65rem;
+  --explorer-doc-action-size: 1.75rem;
+  --explorer-doc-action-inset: 0.375rem;
+  --explorer-doc-action-offset: calc(
+    var(--odl-space-4) - var(--explorer-doc-action-inset)
+  );
+  --explorer-choice-mobile-extra-block: 10px;
+
+  display: grid;
+  gap: var(--explorer-gap);
+  align-items: start;
+}
+.explorerWidePreview {
+  --explorer-preview-height: 19rem;
+  --explorer-doc-action-offset: calc(
+    var(--odl-space-3) - var(--explorer-doc-action-inset)
+  );
+
+  grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
+}
+.explorerEven {
+  --explorer-preview-height: 13rem;
+  --explorer-title-size: var(--odl-text-sm);
+
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.choiceNav {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--odl-space-2);
+}
+.choiceShell {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  background: transparent;
+}
+.choiceButton {
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--odl-space-3);
+  padding: var(--odl-space-3) var(--odl-space-4);
+  padding-right: var(--explorer-choice-action-space);
+  font-family: var(--odl-font-sans);
+  text-align: left;
+  color: inherit;
+  background: var(--odl-surface);
+  border: 1px solid transparent;
+  border-radius: var(--odl-radius-md);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--odl-dur) var(--odl-ease),
+    border-color var(--odl-dur) var(--odl-ease);
+}
+.choiceButton:hover {
+  background: var(--odl-surface);
+  text-decoration: none;
+}
+.choiceButtonActive {
+  background: var(--odl-surface);
+  border-color: var(--odl-border);
+  box-shadow: var(--odl-shadow-sm);
+}
+.choiceText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.choiceTitle {
+  font-size: var(--explorer-title-size);
+  font-weight: 650;
+  letter-spacing: var(--odl-tracking-tight);
+  color: var(--odl-fg-strong);
+}
+.choiceBlurb {
+  font-size: var(--explorer-desc-size);
+  line-height: var(--odl-leading-snug);
+  color: var(--odl-fg-muted);
+}
+.docAction {
+  --odl-icon-action-md: var(--explorer-doc-action-size);
+
+  position: absolute;
+  top: var(--explorer-doc-action-offset);
+  right: var(--explorer-doc-action-offset);
+  z-index: 1;
+  font-family: var(--odl-font-mono);
+  font-size: var(--odl-text-sm);
+  line-height: 1;
+  opacity: 0.78;
+}
+.docAction:hover,
+.docAction:focus-visible {
+  background: color-mix(in srgb, var(--odl-accent) 9%, var(--odl-surface-2));
+  color: var(--odl-accent);
+  opacity: 1;
+}
+.previewPane {
+  position: sticky;
+  top: 5rem;
+}
+.previewCodeBody {
+  height: var(--explorer-preview-height);
+  overflow: auto;
+  background: var(--odl-code-bg);
+}
+.previewCodeFade {
+  animation: odlFade var(--odl-dur) var(--odl-ease);
+}
+
+.tileGrid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1px;
+  background: var(--odl-border);
+  border: 1px solid var(--odl-border);
+  border-radius: var(--odl-radius-lg);
+  overflow: hidden;
+}
+.tileButton {
+  appearance: none;
+  width: 100%;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--odl-space-3) var(--odl-space-4);
+  padding-right: var(--explorer-choice-action-space);
+  font-family: var(--odl-font-sans);
+  border: 0;
+  background: var(--odl-surface);
+  color: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color var(--odl-dur) var(--odl-ease);
+}
+.tileButton:hover {
+  background: var(--odl-surface-2);
+  text-decoration: none;
+}
+.tileButtonActive {
+  background: var(--odl-surface-2);
+}
+.tileName {
+  font-family: var(--odl-font-mono);
+  font-size: var(--explorer-title-size);
+  font-weight: 600;
+  color: var(--odl-fg-strong);
+  transition: color var(--odl-dur) var(--odl-ease);
+}
+.tileButtonActive .tileName {
+  color: var(--odl-accent);
+}
+.tileDesc {
+  font-size: var(--explorer-desc-size);
+  line-height: var(--odl-leading-snug);
+  color: var(--odl-fg-muted);
+}
+
+@keyframes odlFade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .previewCodeFade {
+    animation: none;
+  }
+}
+
+@media (max-width: 996px) {
+  .explorer {
+    grid-template-columns: 1fr;
+  }
+  .previewPane {
+    position: static;
+  }
+  .listPreviewCodeBody {
+    height: auto;
+    overflow: visible;
+  }
+  .choiceNav {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: var(--odl-space-3);
+  }
+}
+
+@media (max-width: 640px) {
+  .choiceNav,
+  .tileGrid {
+    grid-template-columns: 1fr;
+  }
+  .choiceButton {
+    padding: var(--odl-space-3) var(--odl-space-4);
+    padding-bottom: calc(
+      var(--odl-space-3) + var(--explorer-choice-mobile-extra-block)
+    );
+    padding-right: var(--explorer-choice-action-space);
+  }
+  .tilePreviewCodeBody {
+    height: auto;
+    overflow: visible;
+  }
+  .tileButton {
+    gap: 2px;
+    padding: var(--odl-space-3) var(--explorer-choice-action-space)
+      var(--odl-space-3) var(--odl-space-3);
+  }
+}

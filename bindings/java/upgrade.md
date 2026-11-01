@@ -1,6 +1,39 @@
+# Upgrade to v0.50
+
+## Breaking change
+
+### `OperatorInfo` exposes a single capability
+
+`OperatorInfo.fullCapability` and `OperatorInfo.nativeCapability` have been replaced by `OperatorInfo.capability`.
+
+```diff
+-Capability caps = operator.info().fullCapability;
++Capability caps = operator.info().capability;
+```
+
 # Upgrade to v0.49
 
 ## Breaking changes
+
+### Hugging Face config requires `repoType`
+
+`ServiceConfig.Hf` no longer relies on the backend's implicit `model` default. Set `repoType` explicitly when creating Hugging Face operators:
+
+```diff
+ ServiceConfig.Hf config = ServiceConfig.Hf.builder()
++    .repoType("model")
+     .repoId("username/repo")
+     .build();
+```
+
+Use the appropriate value for the repository: `model`, `dataset`, `space`, or `bucket`.
+
+### Generated service configs use canonical service names
+
+Generated `ServiceConfig` entries now use canonical OpenDAL service names.
+
+- Replace `ServiceConfig.Huggingface` with `ServiceConfig.Hf`.
+- `scheme()` now returns hyphenated canonical service names for affected services, such as `aliyun-drive`, `cloudflare-kv`, `hdfs-native`, `vercel-artifacts`, `vercel-blob`, and `yandex-disk`, instead of the previous underscore variants.
 
 ### Removed services
 

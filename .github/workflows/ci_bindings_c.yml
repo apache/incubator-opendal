@@ -23,13 +23,15 @@ on:
       - main
     tags:
       - '*'
+    paths: &paths
+      - "bindings/c/**"
+      - "core/**"
+      - ".github/actions/setup/**"
+      - ".github/workflows/ci_bindings_c.yml"
   pull_request:
     branches:
       - main
-    paths:
-      - "bindings/c/**"
-      - "core/**"
-      - ".github/workflows/ci_bindings_c.yml"
+    paths: *paths
   workflow_dispatch:
 
 concurrency:
@@ -42,8 +44,9 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
@@ -51,49 +54,32 @@ jobs:
       - name: Install C build tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config uuid-dev
+          sudo apt-get install -y build-essential pkg-config uuid-dev libcurl4-gnutls-dev
+
+      # Useful for debugging
+      - name: Print Clippy version
+        working-directory: "bindings/c"
+        run: cargo clippy --version
 
       - name: Clippy Check
         working-directory: "bindings/c"
-        
+
         run: |
           cargo clippy -- -D warnings
-
 
       - name: Build C binding
         working-directory: "bindings/c"
         run: |
           mkdir build && cd build
-          cmake .. -DTEST_ENABLE_ASAN=ON -DFEATURES=opendal/layers-tracing,opendal/services-memory 
+          cmake .. -DTEST_ENABLE_ASAN=ON -DFEATURES=opendal/services-memory
           make -j$(nproc)
-
-      - name: Compile logging_example.c
-        working-directory: "bindings/c/build"
-        run: gcc -o logging_example ../examples/logging_example.c -I../include -L../target/debug -Wall -Werror -Wextra -Wl,-rpath,'$ORIGIN/../target/debug' -lopendal_c -lpthread -ldl -lm
-
-      - name: Run logging_example.c with RUST_LOG
-        working-directory: "bindings/c/build"
-        run: |
-          export RUST_LOG=opendal=trace
-          ./logging_example 2>&1 | tee output.txt
-          cat output.txt
-          grep "opendal::services" output.txt || (echo "RUST_LOG output not found" && exit 1)
-
-      - name: Compile glog_example.c
-        working-directory: "bindings/c/build"
-        run: gcc -o glog_example ../examples/glog_example.c -I../include -L../target/debug -Wall -Werror -Wextra -Wl,-rpath,'$ORIGIN/../target/debug' -lopendal_c -lpthread -ldl -lm
-
-      - name: Run glog_example.c
-        working-directory: "bindings/c/build"
-        run: |
-          ./glog_example | tee output.txt
-          cat output.txt
-          # Check for the specific glog init messages from Rust, and a line from the C callback
-          grep "\\[Rust\\] GlogSubscriber set as global default" output.txt || (echo "Rust glog init message not found" && exit 1)
-          grep "\\[INFO\\]" output.txt || grep "\\[DEBUG\\]" output.txt || grep "\\[WARN\\]" output.txt || grep "\\[ERROR\\]" output.txt || (echo "C glog callback output not found, this is expected for now" && exit 0)
 
       - name: Check diff
         run: git diff --exit-code
+
+      - name: Run getting-started example
+        working-directory: "bindings/c"
+        run: ./build/getting_started
 
       - name: Build and Run tests
         working-directory: "bindings/c"

@@ -1,0 +1,157 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: goosefs
+description: "Behavior test for GooseFS (single-container / local profile)"
+
+# This composite action is picked up automatically by
+# `.github/scripts/test_behavior/plan.py::provided_cases()` — every
+# `.github/services/<service>/<setup>/action.yml` becomes a matrix cell
+# `{service=goosefs, setup=goosefs, feature=services-goosefs}`. No changes
+# to workflow YAMLs are required.
+#
+# The fixture image `ghcr.io/tencent/tencent-goosefs-rust-sdk/goosefs:v2.0.0`
+# is public (no authentication required), so this action does NOT pull any
+# 1Password secret and therefore runs on every PR (plan.py filters out
+# actions that reference `op:` URLs when GITHUB_HAS_SECRETS is not set).
+# Override with GOOSEFS_IMAGE (for example TCR
+# goosefs.tencentcloudcr.com/goosefs/repo:v2.1.0.1).
+runs:
+  using: "composite"
+  steps:
+    - name: Setup GooseFS service
+      shell: bash
+      working-directory: fixtures/goosefs
+      run: |
+        set -euo pipefail
+        IMAGE="${GOOSEFS_IMAGE:-ghcr.io/tencent/tencent-goosefs-rust-sdk/goosefs:v2.0.0}"
+        export GOOSEFS_IMAGE="${IMAGE}"
+        echo "GOOSEFS_IMAGE=${IMAGE}"
+        # Bound the wait so an unhealthy fixture fails fast instead of
+        # hanging the job indefinitely.
+        docker compose -f docker-compose-goosefs.yml up -d --wait \
+          --wait-timeout "${GOOSEFS_WAIT_TIMEOUT:-300}"
+    - name: Set environment variables
+      shell: bash
+      run: |
+        cat << EOF >> $GITHUB_ENV
+        OPENDAL_GOOSEFS_MASTER_ADDR=127.0.0.1:9200
+        OPENDAL_GOOSEFS_ROOT=/
+        OPENDAL_GOOSEFS_WRITE_TYPE=must_cache
+        EOF
+    # -----------------------------------------------------------------------
+    # Post-setup diagnostics (only on failure).
+    #
+    # Captures a snapshot of the fixture state whenever an earlier step
+    # in this composite action fails — container state, listening
+    # sockets, worker registration, JVM logs, disk/shm usage. Wrapped
+    # in `|| true` / `2>&1` so a diagnostic hiccup never masks the real
+    # failure.
+    # -----------------------------------------------------------------------
+    - name: Dump GooseFS diagnostics (on failure)
+      if: failure()
+      shell: bash
+      working-directory: fixtures/goosefs
+      run: |
+        echo "=============================================================="
+        echo "  docker compose ps (state + exit codes)"
+        echo "=============================================================="
+        docker compose -f docker-compose-goosefs.yml ps -a || true
+        echo
+        echo "=============================================================="
+        echo "  docker inspect opendal-goosefs (state, restarts, OOMKilled)"
+        echo "=============================================================="
+        docker inspect opendal-goosefs \
+          --format '{{json .State}}' 2>&1 || true
+        echo
+        echo "=============================================================="
+        echo "  docker logs opendal-goosefs (last 500 lines)"
+        echo "=============================================================="
+        docker logs --tail=500 opendal-goosefs 2>&1 || true
+        echo
+        echo "=============================================================="
+        echo "  Listening TCP sockets inside the container"
+        echo "=============================================================="
+        # Prefer `ss` / `netstat` when the image has them; the upstream
+        # GooseFS image intentionally ships a slim userland and has
+        # neither, so fall back to parsing /proc/net/tcp{,6} directly
+        # (every Linux kernel provides these). The awk bit decodes the
+        # hex local_address/port into human-readable form and keeps
+        # only LISTEN state entries (st == 0A).
+        docker exec opendal-goosefs sh -c '
+          if command -v ss >/dev/null 2>&1; then
+            ss -ltn
+          elif command -v netstat >/dev/null 2>&1; then
+            netstat -ltn
+          else
+            echo "(ss/netstat missing; parsing /proc/net/tcp{,6})"
+            for f in /proc/net/tcp /proc/net/tcp6; do
+              [ -r "$f" ] || continue
+              echo "--- $f ---"
+              awk "NR>1 && \$4==\"0A\" {print \$2}" "$f"
+            done
+          fi
+        ' 2>&1 || true
+        echo
+        echo "=============================================================="
+        echo "  Host-side reachability probe (IPv4 127.0.0.1)"
+        echo "=============================================================="
+        for port in 9200 9201 9203 9204; do
+          echo "--- 127.0.0.1:${port} ---"
+          (timeout 3 bash -c "</dev/tcp/127.0.0.1/${port}" \
+            && echo "connect OK") \
+            || echo "connect FAILED"
+        done
+        echo
+        echo "=============================================================="
+        echo "  goosefs fsadmin report (worker registration + capacity)"
+        echo "=============================================================="
+        docker exec opendal-goosefs /opt/goosefs/bin/goosefs fsadmin report \
+          2>&1 || true
+        echo
+        echo "=============================================================="
+        echo "  tail -n 300 /opt/goosefs/logs/master.log"
+        echo "=============================================================="
+        docker exec opendal-goosefs sh -c \
+          'tail -n 300 /opt/goosefs/logs/master.log 2>/dev/null || true' \
+          2>&1 || true
+        echo
+        echo "=============================================================="
+        echo "  tail -n 300 /opt/goosefs/logs/worker.log"
+        echo "=============================================================="
+        docker exec opendal-goosefs sh -c \
+          'tail -n 300 /opt/goosefs/logs/worker.log 2>/dev/null || true' \
+          2>&1 || true
+        echo
+        echo "=============================================================="
+        echo "  /opt/goosefs/logs/*.out (stderr/stdout of the JVMs)"
+        echo "=============================================================="
+        docker exec opendal-goosefs sh -c \
+          'for f in /opt/goosefs/logs/*.out; do echo "--- $f ---"; tail -n 100 "$f" 2>/dev/null || true; done' \
+          2>&1 || true
+        echo
+        echo "=============================================================="
+        echo "  /dev/shm usage (worker dies when this fills up)"
+        echo "=============================================================="
+        docker exec opendal-goosefs df -h /dev/shm 2>&1 || true
+        echo
+        echo "=============================================================="
+        echo "  Worker block store / UFS root disk usage"
+        echo "=============================================================="
+        docker exec opendal-goosefs sh -c \
+          'df -h /mnt/datadisk0/goosefs-worker /usr/local/service/goosesfs/underFSStorage 2>/dev/null || true' \
+          2>&1 || true

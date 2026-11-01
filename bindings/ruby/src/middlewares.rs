@@ -25,7 +25,6 @@ use magnus::Ruby;
 use magnus::method;
 use magnus::prelude::*;
 
-use opendal::raw::Accessor as OCoreAccessor;
 use opendal::raw::Layer as OCoreLayer;
 
 use crate::operator::Operator;
@@ -46,7 +45,7 @@ fn apply_layer<T>(
     name: &'static str,
 ) -> Result<Operator, Error>
 where
-    T: OCoreLayer<OCoreAccessor> + Clone + Send + Sync + 'static,
+    T: OCoreLayer + Clone + Send + Sync + 'static,
 {
     let guard = inner.lock().map_err(|_| {
         Error::new(

@@ -23,15 +23,16 @@ on:
       - main
     tags:
       - '*'
-  pull_request:
-    branches:
-      - main
-    paths:
+    paths: &paths
       - "core/**"
       - "bindings/c/**"
       - "bindings/go/**"
       - ".github/workflows/ci_bindings_go.yml"
       - ".github/scripts/test_go_binding/matrix.yaml"
+  pull_request:
+    branches:
+      - main
+    paths: *paths
   workflow_dispatch:
 
 concurrency:
@@ -47,11 +48,30 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: actions/setup-go@v6
         with:
-          go-version: stable
-      - uses: golangci/golangci-lint-action@v8
+          go-version-file: bindings/go/go.mod
+          cache-dependency-path: bindings/go/go.sum
+      - uses: golangci/golangci-lint-action@v9
         with:
-          version: "v2.1"
+          version: "v2.12.2"
           working-directory: bindings/go
+
+  run_examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: bindings/go/go.mod
+          cache-dependency-path: bindings/go/examples/guide/go.sum
+      # The example backs the snippet shown in the website guide. We compile it
+      # against the in-repo binding so a breaking API change fails CI here. It is
+      # not executed: running needs a locally built libopendal_c matching HEAD,
+      # because the published memory service module ships a prebuilt lib that can
+      # lag core's C ABI. Runtime is covered by the Go behavior tests, which
+      # build the C library locally.
+      - name: Build guide example
+        working-directory: bindings/go/examples/guide
+        run: go build ./...

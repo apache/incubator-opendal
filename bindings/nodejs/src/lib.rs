@@ -21,7 +21,6 @@ extern crate napi_derive;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::io::Read;
-use std::str::FromStr;
 use std::time::Duration;
 
 use futures::AsyncReadExt;
@@ -31,7 +30,10 @@ use opendal::options::{
     DeleteOptions, ListOptions, ReadOptions, ReaderOptions, StatOptions, WriteOptions,
 };
 
+use crate::layer::Layer;
+
 mod capability;
+mod layer;
 mod options;
 
 #[napi]
@@ -48,15 +50,41 @@ impl Operator {
     /// Note that the current options key is snake_case.
     #[napi(constructor, async_runtime)]
     pub fn new(scheme: String, options: Option<HashMap<String, String>>) -> Result<Self> {
-        let scheme = opendal::Scheme::from_str(&scheme)
-            .map_err(|err| {
-                opendal::Error::new(opendal::ErrorKind::Unexpected, "not supported scheme")
-                    .set_source(err)
-            })
-            .map_err(format_napi_error)?;
         let options = options.unwrap_or_default();
 
         let async_op = opendal::Operator::via_iter(scheme, options).map_err(format_napi_error)?;
+
+        let blocking_op =
+            opendal::blocking::Operator::new(async_op.clone()).map_err(format_napi_error)?;
+
+        Ok(Operator {
+            async_op,
+            blocking_op,
+        })
+    }
+
+    /// Create a new operator from a URI string.
+    ///
+    /// The URI encodes the scheme and configuration in a single string, e.g.
+    /// `memory://localhost/` or `s3://bucket/path?region=us-east-1`.
+    ///
+    /// Optional extra key-value options can be passed to override or supplement
+    /// the values encoded in the URI.
+    ///
+    /// ### Example
+    ///
+    /// ```javascript
+    /// const op = Operator.fromUri("memory://localhost/");
+    /// const op2 = Operator.fromUri("s3://my-bucket/", { region: "us-east-1" });
+    /// ```
+    #[napi(factory, async_runtime)]
+    pub fn from_uri(uri: String, options: Option<HashMap<String, String>>) -> Result<Self> {
+        let options = options.unwrap_or_default();
+        let async_op = if options.is_empty() {
+            opendal::Operator::from_uri(uri).map_err(format_napi_error)?
+        } else {
+            opendal::Operator::from_uri((uri.as_str(), options)).map_err(format_napi_error)?
+        };
 
         let blocking_op =
             opendal::blocking::Operator::new(async_op.clone()).map_err(format_napi_error)?;
@@ -71,7 +99,7 @@ impl Operator {
     #[napi]
     pub fn capability(&self) -> Result<capability::Capability> {
         Ok(capability::Capability::new(
-            self.async_op.info().full_capability(),
+            self.async_op.info().capability(),
         ))
     }
 
@@ -394,6 +422,7 @@ impl Operator {
         self.async_op
             .copy(&from, &to)
             .await
+            .map(|_| ())
             .map_err(format_napi_error)
     }
 
@@ -405,7 +434,10 @@ impl Operator {
     /// ```
     #[napi]
     pub fn copy_sync(&self, from: String, to: String) -> Result<()> {
-        self.blocking_op.copy(&from, &to).map_err(format_napi_error)
+        self.blocking_op
+            .copy(&from, &to)
+            .map(|_| ())
+            .map_err(format_napi_error)
     }
 
     /// Rename file according to given `from` and `to` path.
@@ -520,7 +552,8 @@ impl Operator {
     #[napi]
     pub async fn remove_all(&self, path: String) -> Result<()> {
         self.async_op
-            .remove_all(&path)
+            .delete_with(&path)
+            .recursive(true)
             .await
             .map_err(format_napi_error)
     }
@@ -536,8 +569,15 @@ impl Operator {
     /// ```
     #[napi]
     pub fn remove_all_sync(&self, path: String) -> Result<()> {
+        use opendal::options::DeleteOptions;
         self.blocking_op
-            .remove_all(&path)
+            .delete_options(
+                &path,
+                DeleteOptions {
+                    recursive: true,
+                    ..Default::default()
+                },
+            )
             .map_err(format_napi_error)
     }
 
@@ -635,6 +675,93 @@ impl Operator {
         Ok(l.into_iter().map(Entry).collect())
     }
 
+    /// Create a lister to list entries at given path.
+    ///
+    /// This function returns a Lister that can be used to iterate over entries
+    /// in a streaming manner, which is more memory-efficient for large directories.
+    ///
+    /// An error will be returned if given path doesn't end with `/`.
+    ///
+    /// ### Example
+    ///
+    /// ```javascript
+    /// const lister = await op.lister("path/to/dir/");
+    /// let entry;
+    /// while ((entry = await lister.next()) !== null) {
+    ///   console.log(entry.path());
+    /// }
+    /// ```
+    ///
+    /// #### List recursively
+    ///
+    /// With `recursive` option, you can list recursively.
+    ///
+    /// ```javascript
+    /// const lister = await op.lister("path/to/dir/", { recursive: true });
+    /// let entry;
+    /// while ((entry = await lister.next()) !== null) {
+    ///   console.log(entry.path());
+    /// }
+    /// ```
+    #[napi]
+    pub async fn lister(
+        &self,
+        path: String,
+        options: Option<options::ListOptions>,
+    ) -> Result<Lister> {
+        let options = options.map_or(ListOptions::default(), ListOptions::from);
+        let l = self
+            .async_op
+            .lister_options(&path, options)
+            .await
+            .map_err(format_napi_error)?;
+
+        Ok(Lister(l))
+    }
+
+    /// Create a lister to list entries at given path synchronously.
+    ///
+    /// This function returns a BlockingLister that can be used to iterate over entries
+    /// in a streaming manner, which is more memory-efficient for large directories.
+    ///
+    /// An error will be returned if given path doesn't end with `/`.
+    ///
+    /// ### Example
+    ///
+    /// ```javascript
+    /// const lister = op.listerSync("path/to/dir/");
+    /// let entry;
+    /// while ((entry = lister.next()) !== null) {
+    ///   console.log(entry.path());
+    /// }
+    /// ```
+    ///
+    /// #### List recursively
+    ///
+    /// With `recursive` option, you can list recursively.
+    ///
+    /// ```javascript
+    /// const lister = op.listerSync("path/to/dir/", { recursive: true });
+    /// let entry;
+    /// while ((entry = lister.next()) !== null) {
+    ///   console.log(entry.path());
+    /// }
+    /// ```
+    #[napi]
+    pub fn lister_sync(
+        &self,
+        path: String,
+        options: Option<options::ListOptions>,
+    ) -> Result<BlockingLister> {
+        let options = options.map_or(ListOptions::default(), ListOptions::from);
+        let l = self
+            .blocking_op
+            .lister_options(&path, options)
+            .map_err(format_napi_error)?;
+
+        Ok(BlockingLister(l))
+    }
+
     /// Get a presigned request for read.
     ///
     /// Unit of `expires` is seconds.
@@ -703,6 +830,29 @@ impl Operator {
             .map_err(format_napi_error)?;
         Ok(PresignedRequest::new(res))
     }
+
+    /// Get a presigned request for delete.
+    ///
+    /// Unit of `expires` is seconds.
+    ///
+    /// ### Example
+    ///
+    /// ```javascript
+    /// const req = await op.presignDelete(path, parseInt(expires));
+    ///
+    /// console.log("method: ", req.method);
+    /// console.log("url: ", req.url);
+    /// console.log("headers: ", req.headers);
+    /// ```
+    #[napi]
+    pub async fn presign_delete(&self, path: String, expires: u32) -> Result<PresignedRequest> {
+        let res = self
+            .async_op
+            .presign_delete(&path, Duration::from_secs(expires as u64))
+            .await
+            .map_err(format_napi_error)?;
+        Ok(PresignedRequest::new(res))
+    }
 }
 
 /// Entry returned by Lister or BlockingLister to represent a path, and it's a relative metadata.
@@ -715,6 +865,12 @@ impl Entry {
     #[napi]
     pub fn path(&self) -> String {
         self.0.path().to_string()
+    }
+
+    /// Return the name of this entry.
+    #[napi]
+    pub fn name(&self) -> String {
+        self.0.name().to_string()
     }
 
     /// Return the metadata of this entry.
@@ -808,7 +964,12 @@ impl Metadata {
     /// User Metadata of this object.
     #[napi(getter)]
     pub fn user_metadata(&self) -> Option<HashMap<String, String>> {
-        self.0.user_metadata().cloned()
+        self.0.user_metadata().map(|metadata| {
+            metadata
+                .into_iter()
+                .map(|(key, value)| (key.to_string(), value.to_string()))
+                .collect()
+        })
     }
 
     /// ETag of this object.
@@ -1052,16 +1213,6 @@ impl PresignedRequest {
     }
 }
 
-pub trait NodeLayer: Send + Sync {
-    fn layer(&self, op: opendal::Operator) -> opendal::Operator;
-}
-
-/// A public layer wrapper
-#[napi]
-pub struct Layer {
-    inner: Box<dyn NodeLayer>,
-}
-
 #[napi]
 impl Operator {
     /// Add a layer to this operator.
@@ -1076,126 +1227,6 @@ impl Operator {
             async_op,
             blocking_op,
         })
-    }
-}
-
-impl NodeLayer for opendal::layers::RetryLayer {
-    fn layer(&self, op: opendal::Operator) -> opendal::Operator {
-        op.layer(self.clone())
-    }
-}
-
-/// Retry layer
-///
-/// Add retry for temporary failed operations.
-///
-/// # Notes
-///
-/// This layer will retry failed operations when [`Error::is_temporary`]
-/// returns true.
-/// If the operation still failed, this layer will set error to
-/// `Persistent` which means error has been retried.
-///
-/// `write` and `blocking_write` don't support retry so far,
-/// visit [this issue](https://github.com/apache/opendal/issues/1223) for more details.
-///
-/// # Examples
-///
-/// ```javascript
-/// const op = new Operator("file", { root: "/tmp" })
-///
-/// const retry = new RetryLayer();
-/// retry.max_times = 3;
-/// retry.jitter = true;
-///
-/// op.layer(retry.build());
-/// ```
-#[derive(Default)]
-#[napi]
-pub struct RetryLayer {
-    jitter: bool,
-    max_times: Option<u32>,
-    factor: Option<f64>,
-    max_delay: Option<f64>,
-    min_delay: Option<f64>,
-}
-
-#[napi]
-impl RetryLayer {
-    #[napi(constructor)]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Set jitter of current backoff.
-    ///
-    /// If jitter is enabled, ExponentialBackoff will add a random jitter in `[0, min_delay)`
-    /// to current delay.
-    #[napi(setter)]
-    pub fn jitter(&mut self, v: bool) {
-        self.jitter = v;
-    }
-
-    /// Set max_times of current backoff.
-    ///
-    /// Backoff will return `None` if max times are reached.
-    #[napi(setter)]
-    pub fn max_times(&mut self, v: u32) {
-        self.max_times = Some(v);
-    }
-
-    /// Set factor of current backoff.
-    ///
-    /// # Panics
-    ///
-    /// This function will panic if the input factor is smaller than `1.0`.
-    #[napi(setter)]
-    pub fn factor(&mut self, v: f64) {
-        self.factor = Some(v);
-    }
-
-    /// Set max_delay of current backoff.
-    ///
-    /// Delay will not increase if the current delay is larger than max_delay.
-    ///
-    /// # Notes
-    ///
-    /// - The unit of max_delay is millisecond.
-    #[napi(setter)]
-    pub fn max_delay(&mut self, v: f64) {
-        self.max_delay = Some(v);
-    }
-
-    /// Set min_delay of current backoff.
-    ///
-    /// # Notes
-    ///
-    /// - The unit of min_delay is millisecond.
-    #[napi(setter)]
-    pub fn min_delay(&mut self, v: f64) {
-        self.min_delay = Some(v);
-    }
-
-    #[napi]
-    pub fn build(&self) -> External<Layer> {
-        let mut l = opendal::layers::RetryLayer::default();
-        if self.jitter {
-            l = l.with_jitter();
-        }
-        if let Some(max_times) = self.max_times {
-            l = l.with_max_times(max_times as usize);
-        }
-        if let Some(factor) = self.factor {
-            l = l.with_factor(factor as f32);
-        }
-        if let Some(max_delay) = self.max_delay {
-            l = l.with_max_delay(Duration::from_millis(max_delay as u64));
-        }
-        if let Some(min_delay) = self.min_delay {
-            l = l.with_min_delay(Duration::from_millis(min_delay as u64));
-        }
-
-        External::new(Layer { inner: Box::new(l) })
     }
 }
 

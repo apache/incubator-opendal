@@ -9,209 +9,147 @@ import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 class Capability {
   final Capability field0;
 
-  const Capability({
-    required this.field0,
-  });
+  const Capability({required this.field0});
 
   /// If operator supports blocking.
   Future<bool> blocking() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityBlocking(
-        that: this,
-      );
+      RustLib.instance.api.crateApiCapabilityCapabilityBlocking(that: this);
 
   /// If operator supports copy.
-  Future<bool> copy() => RustLib.instance.api.crateApiCapabilityCapabilityCopy(
-        that: this,
-      );
+  Future<bool> copy() =>
+      RustLib.instance.api.crateApiCapabilityCapabilityCopy(that: this);
 
   /// If operator supports create dir.
   Future<bool> createDir() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityCreateDir(
-        that: this,
-      );
+      RustLib.instance.api.crateApiCapabilityCapabilityCreateDir(that: this);
 
   /// If operator supports delete.
   Future<bool> delete() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityDelete(
-        that: this,
-      );
+      RustLib.instance.api.crateApiCapabilityCapabilityDelete(that: this);
 
   /// If operator supports list.
-  Future<bool> list() => RustLib.instance.api.crateApiCapabilityCapabilityList(
-        that: this,
-      );
+  Future<bool> list() =>
+      RustLib.instance.api.crateApiCapabilityCapabilityList(that: this);
 
   /// If backend supports list with limit.
-  Future<bool> listWithLimit() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityListWithLimit(
-        that: this,
-      );
+  Future<bool> listWithLimit() => RustLib.instance.api
+      .crateApiCapabilityCapabilityListWithLimit(that: this);
 
   /// If backend supports list with recursive.
-  Future<bool> listWithRecursive() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityListWithRecursive(
-        that: this,
-      );
+  Future<bool> listWithRecursive() => RustLib.instance.api
+      .crateApiCapabilityCapabilityListWithRecursive(that: this);
 
   /// If backend supports list with start after.
-  Future<bool> listWithStartAfter() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityListWithStartAfter(
-        that: this,
-      );
+  Future<bool> listWithStartAfter() => RustLib.instance.api
+      .crateApiCapabilityCapabilityListWithStartAfter(that: this);
 
   /// If operator supports presign.
   Future<bool> presign() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityPresign(
-        that: this,
-      );
+      RustLib.instance.api.crateApiCapabilityCapabilityPresign(that: this);
 
   /// If operator supports presign read.
   Future<bool> presignRead() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityPresignRead(
-        that: this,
-      );
+      RustLib.instance.api.crateApiCapabilityCapabilityPresignRead(that: this);
 
   /// If operator supports presign stat.
   Future<bool> presignStat() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityPresignStat(
-        that: this,
-      );
+      RustLib.instance.api.crateApiCapabilityCapabilityPresignStat(that: this);
 
   /// If operator supports presign write.
   Future<bool> presignWrite() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityPresignWrite(
-        that: this,
-      );
+      RustLib.instance.api.crateApiCapabilityCapabilityPresignWrite(that: this);
 
   /// If operator supports read.
-  Future<bool> read() => RustLib.instance.api.crateApiCapabilityCapabilityRead(
-        that: this,
-      );
+  Future<bool> read() =>
+      RustLib.instance.api.crateApiCapabilityCapabilityRead(that: this);
 
   /// If operator supports read with if matched.
-  Future<bool> readWithIfMatch() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityReadWithIfMatch(
-        that: this,
-      );
+  Future<bool> readWithIfMatch() => RustLib.instance.api
+      .crateApiCapabilityCapabilityReadWithIfMatch(that: this);
 
   /// If operator supports read with if not match.
-  Future<bool> readWithIfNoneMatch() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityReadWithIfNoneMatch(
-        that: this,
-      );
+  Future<bool> readWithIfNoneMatch() => RustLib.instance.api
+      .crateApiCapabilityCapabilityReadWithIfNoneMatch(that: this);
 
   /// if operator supports read with override cache control.
   Future<bool> readWithOverrideCacheControl() => RustLib.instance.api
-          .crateApiCapabilityCapabilityReadWithOverrideCacheControl(
-        that: this,
-      );
+      .crateApiCapabilityCapabilityReadWithOverrideCacheControl(that: this);
 
   /// if operator supports `read` with override content disposition.
   Future<bool> readWithOverrideContentDisposition() => RustLib.instance.api
-          .crateApiCapabilityCapabilityReadWithOverrideContentDisposition(
+      .crateApiCapabilityCapabilityReadWithOverrideContentDisposition(
         that: this,
       );
 
   /// if operator supports read with override content type.
   Future<bool> readWithOverrideContentType() => RustLib.instance.api
-          .crateApiCapabilityCapabilityReadWithOverrideContentType(
-        that: this,
-      );
+      .crateApiCapabilityCapabilityReadWithOverrideContentType(that: this);
 
   /// If operator supports rename.
   Future<bool> rename() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityRename(
-        that: this,
-      );
+      RustLib.instance.api.crateApiCapabilityCapabilityRename(that: this);
 
   /// If operator supports shared.
   Future<bool> shared() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityShared(
-        that: this,
-      );
+      RustLib.instance.api.crateApiCapabilityCapabilityShared(that: this);
 
   /// If operator supports stat.
-  Future<bool> stat() => RustLib.instance.api.crateApiCapabilityCapabilityStat(
-        that: this,
-      );
+  Future<bool> stat() =>
+      RustLib.instance.api.crateApiCapabilityCapabilityStat(that: this);
 
   /// If operator supports stat with if matched.
-  Future<bool> statWithIfMatch() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityStatWithIfMatch(
-        that: this,
-      );
+  Future<bool> statWithIfMatch() => RustLib.instance.api
+      .crateApiCapabilityCapabilityStatWithIfMatch(that: this);
 
   /// If operator supports stat with if not match.
-  Future<bool> statWithIfNoneMatch() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityStatWithIfNoneMatch(
-        that: this,
-      );
+  Future<bool> statWithIfNoneMatch() => RustLib.instance.api
+      .crateApiCapabilityCapabilityStatWithIfNoneMatch(that: this);
 
   /// If operator supports write.
   Future<bool> write() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityWrite(
-        that: this,
-      );
+      RustLib.instance.api.crateApiCapabilityCapabilityWrite(that: this);
 
   /// If operator supports write by append.
-  Future<bool> writeCanAppend() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityWriteCanAppend(
-        that: this,
-      );
+  Future<bool> writeCanAppend() => RustLib.instance.api
+      .crateApiCapabilityCapabilityWriteCanAppend(that: this);
 
   /// If operator supports write with empty content.
-  Future<bool> writeCanEmpty() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityWriteCanEmpty(
-        that: this,
-      );
+  Future<bool> writeCanEmpty() => RustLib.instance.api
+      .crateApiCapabilityCapabilityWriteCanEmpty(that: this);
 
   /// If operator supports write can be called in multi times.
-  Future<bool> writeCanMulti() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityWriteCanMulti(
-        that: this,
-      );
+  Future<bool> writeCanMulti() => RustLib.instance.api
+      .crateApiCapabilityCapabilityWriteCanMulti(that: this);
 
   /// write_multi_max_size is the max size that services support in write_multi.
   ///
   /// For example, AWS S3 supports 5GiB as max in write_multi.
-  Future<BigInt?> writeMultiMaxSize() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityWriteMultiMaxSize(
-        that: this,
-      );
+  Future<BigInt?> writeMultiMaxSize() => RustLib.instance.api
+      .crateApiCapabilityCapabilityWriteMultiMaxSize(that: this);
 
   /// write_multi_min_size is the min size that services support in write_multi.
   ///
   /// For example, AWS S3 requires at least 5MiB in write_multi expect the last one.
-  Future<BigInt?> writeMultiMinSize() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityWriteMultiMinSize(
-        that: this,
-      );
+  Future<BigInt?> writeMultiMinSize() => RustLib.instance.api
+      .crateApiCapabilityCapabilityWriteMultiMinSize(that: this);
 
   /// write_total_max_size is the max size that services support in write_total.
   ///
   /// For example, Cloudflare D1 supports 1MB as max in write_total.
-  Future<BigInt?> writeTotalMaxSize() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityWriteTotalMaxSize(
-        that: this,
-      );
+  Future<BigInt?> writeTotalMaxSize() => RustLib.instance.api
+      .crateApiCapabilityCapabilityWriteTotalMaxSize(that: this);
 
   /// If operator supports write with cache control.
-  Future<bool> writeWithCacheControl() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityWriteWithCacheControl(
-        that: this,
-      );
+  Future<bool> writeWithCacheControl() => RustLib.instance.api
+      .crateApiCapabilityCapabilityWriteWithCacheControl(that: this);
 
   /// If operator supports write with content disposition.
   Future<bool> writeWithContentDisposition() => RustLib.instance.api
-          .crateApiCapabilityCapabilityWriteWithContentDisposition(
-        that: this,
-      );
+      .crateApiCapabilityCapabilityWriteWithContentDisposition(that: this);
 
   /// If operator supports write with content type.
-  Future<bool> writeWithContentType() =>
-      RustLib.instance.api.crateApiCapabilityCapabilityWriteWithContentType(
-        that: this,
-      );
+  Future<bool> writeWithContentType() => RustLib.instance.api
+      .crateApiCapabilityCapabilityWriteWithContentType(that: this);
 
   @override
   int get hashCode => field0.hashCode;

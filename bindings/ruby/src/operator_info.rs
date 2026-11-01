@@ -23,7 +23,6 @@
 use magnus::Error;
 use magnus::RModule;
 use magnus::method;
-use magnus::prelude::*;
 
 use crate::capability::Capability;
 use crate::*;
@@ -38,7 +37,7 @@ impl OperatorInfo {
     /// Returns the scheme string of the operator.
     /// @return [String]
     pub fn scheme(&self) -> &str {
-        self.0.scheme().into()
+        self.0.scheme()
     }
 
     /// @yard
@@ -68,7 +67,7 @@ impl OperatorInfo {
     /// Returns the [`Full Capability`] of the operator.
     /// @return [Capability]
     pub fn capability(&self) -> Capability {
-        Capability::new(self.0.full_capability())
+        Capability::new(self.0.capability())
     }
 }
 

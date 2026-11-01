@@ -23,7 +23,7 @@ mod utils;
 use libtest_mimic::Arguments;
 
 fn main() -> anyhow::Result<()> {
-    let Ok(Some(op)) = opendal::raw::tests::init_test_service() else {
+    let Ok(Some(op)) = opendal::tests::init_test_service() else {
         return Ok(());
     };
     let store = object_store_opendal::OpendalStore::new(op);

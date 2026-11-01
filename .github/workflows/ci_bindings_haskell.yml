@@ -23,13 +23,15 @@ on:
       - main
     tags:
       - "*"
+    paths: &paths
+      - "bindings/haskell/**"
+      - "core/**"
+      - ".github/actions/setup/**"
+      - ".github/workflows/ci_bindings_haskell.yml"
   pull_request:
     branches:
       - main
-    paths:
-      - "bindings/haskell/**"
-      - "core/**"
-      - ".github/workflows/ci_bindings_haskell.yml"
+    paths: *paths
   workflow_dispatch:
 
 concurrency:
@@ -41,23 +43,44 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # GHC's hsc2hs links with -fuse-ld=gold, which Ubuntu 26.04's
+    # binutils no longer ships.
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
-      - name: Setup Haskell toolchain (ghc-9.4.8)
+      - uses: actions/checkout@v7
+      - name: Install Haskell build tools
         run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
+          sudo apt-get update
+          sudo apt-get install -y alex happy
+      - name: Setup Haskell toolchain (ghc-9.4.8)
+        env:
+          GHCUP_INSTALL_BASE_PREFIX: ${{ runner.temp }}
+        run: |
+          export PATH="${GHCUP_INSTALL_BASE_PREFIX}/.ghcup/bin:${PATH}"
+          echo "${GHCUP_INSTALL_BASE_PREFIX}/.ghcup/bin" >> "${GITHUB_PATH}"
+          mkdir -p "${HOME}/.cabal"
+          cat > "${HOME}/.cabal/config" <<'EOF'
+          repository hackage-direct
+            url: https://hackage.haskell.org/
+            secure: False
+          active-repositories: hackage-direct
+          EOF
+          curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | BOOTSTRAP_HASKELL_NONINTERACTIVE=1 BOOTSTRAP_HASKELL_MINIMAL=1 sh
           ghcup install ghc 9.4.8 --set
           ghcup install cabal --set
-          cabal update
+          cabal update --ignore-project
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
+      # Useful for debugging
+      - name: Print Clippy version
+        working-directory: "bindings/haskell"
+        run: cargo clippy --version
+
       - name: Clippy Check
         working-directory: "bindings/haskell"
-        run: |
-          cargo clippy -- -D warnings
+        run: cargo clippy -- -D warnings
       - name: Restore haskell cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           key: ${{ runner.os }}-haskell-${{ hashFiles('**/*.cabal', '**/Setup.hs') }}
           path: |
@@ -68,8 +91,20 @@ jobs:
         working-directory: "bindings/haskell"
         run: |
           cabal test
+      - name: Run getting-started example
+        working-directory: "bindings/haskell"
+        # The example compiles and links, but cabal's post-link install step
+        # cannot register the libopendal_hs foreign library (a Custom-Setup
+        # quirk). Tolerate that step, then run the linked binary directly; a real
+        # compile error leaves no binary (exit 1) and a runtime error fails here.
+        run: |
+          cabal build exe:getting-started || true
+          bin=$(find dist-newstyle -type f -name getting-started -path '*/build/getting-started/*' | head -1)
+          if [ -z "$bin" ]; then echo "getting-started failed to build"; exit 1; fi
+          echo "running $bin"
+          "$bin"
       - name: Save haskell cache
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v6
         with:
           key: ${{ runner.os }}-haskell-${{ hashFiles('**/*.cabal', '**/Setup.hs') }}
           path: |
@@ -77,20 +112,37 @@ jobs:
             bindings/haskell/dist-newstyle
 
   package:
-    runs-on: ubuntu-latest
+    # GHC's hsc2hs links with -fuse-ld=gold, which Ubuntu 26.04's
+    # binutils no longer ships.
+    runs-on: ubuntu-24.04
     if: ${{ startsWith(github.ref, 'refs/tags/') }}
     steps:
-      - uses: actions/checkout@v5
-      - name: Setup Haskell toolchain (ghc-9.2.8)
+      - uses: actions/checkout@v7
+      - name: Install Haskell build tools
         run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | sh
+          sudo apt-get update
+          sudo apt-get install -y alex happy
+      - name: Setup Haskell toolchain (ghc-9.2.8)
+        env:
+          GHCUP_INSTALL_BASE_PREFIX: ${{ runner.temp }}
+        run: |
+          export PATH="${GHCUP_INSTALL_BASE_PREFIX}/.ghcup/bin:${PATH}"
+          echo "${GHCUP_INSTALL_BASE_PREFIX}/.ghcup/bin" >> "${GITHUB_PATH}"
+          mkdir -p "${HOME}/.cabal"
+          cat > "${HOME}/.cabal/config" <<'EOF'
+          repository hackage-direct
+            url: https://hackage.haskell.org/
+            secure: False
+          active-repositories: hackage-direct
+          EOF
+          curl --proto '=https' --tlsv1.2 -sSf https://get-ghcup.haskell.org | BOOTSTRAP_HASKELL_NONINTERACTIVE=1 BOOTSTRAP_HASKELL_MINIMAL=1 sh
           ghcup install ghc 9.2.8 --set
           ghcup install cabal --set
-          cabal update
+          cabal update --ignore-project
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
       - name: Restore haskell cache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v6
         with:
           key: ${{ runner.os }}-haskell-${{ hashFiles('**/*.cabal', '**/Setup.hs') }}
           path: |
@@ -105,7 +157,7 @@ jobs:
           tar xf opendal-*.crate --strip-components=1
           cabal sdist
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bindings-haskell-sdist
           path: bindings/haskell/target/package/dist-newstyle/sdist/*.tar.gz
@@ -122,7 +174,7 @@ jobs:
 #          name: bindings-haskell-sdist
 #      - name: Load secret
 #        id: op-load-secret
-#        uses: 1password/load-secrets-action@13f58eec611f8e5db52ec16247f58c508398f3e6 # v3
+#        uses: 1Password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
 #        with:
 #          export-env: true
 #        env:

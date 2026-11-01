@@ -25,14 +25,11 @@ use futures::StreamExt;
 use futures::io::BufReader;
 use futures::io::Cursor;
 use futures::stream;
-use log::warn;
-use sha2::Digest;
-use sha2::Sha256;
 
 use crate::*;
 
 pub fn tests(op: &Operator, tests: &mut Vec<Trial>) {
-    let cap = op.info().full_capability();
+    let cap = op.info().capability();
 
     if cap.read && cap.write && cap.stat {
         tests.extend(async_trials!(
@@ -48,6 +45,8 @@ pub fn tests(op: &Operator, tests: &mut Vec<Trial>) {
             test_write_with_if_none_match,
             test_write_with_if_not_exists,
             test_write_with_if_match,
+            test_write_with_version_conditions,
+            test_write_if_not_changed,
             test_write_with_user_metadata,
             test_write_returns_metadata,
             test_writer_write,
@@ -59,7 +58,13 @@ pub fn tests(op: &Operator, tests: &mut Vec<Trial>) {
             test_writer_abort_with_concurrent,
             test_writer_futures_copy,
             test_writer_futures_copy_with_concurrent,
-            test_writer_return_metadata
+            test_writer_return_metadata,
+            test_writer_copy_from_interleaved,
+            test_writer_write_non_contiguous_data,
+            test_writer_write_with_if_not_exists,
+            test_writer_write_with_if_none_match,
+            test_writer_write_with_if_match,
+            test_writer_write_with_version_conditions
         ))
     }
 
@@ -87,7 +92,7 @@ pub async fn test_write_only(op: Operator) -> Result<()> {
 
 /// Write a file with empty content.
 pub async fn test_write_with_empty_content(op: Operator) -> Result<()> {
-    if !op.info().full_capability().write_can_empty {
+    if !op.info().capability().write_can_empty {
         return Ok(());
     }
 
@@ -114,20 +119,14 @@ pub async fn test_write_with_dir_path(op: Operator) -> Result<()> {
 
 /// Write a single file with special chars should succeed.
 pub async fn test_write_with_special_chars(op: Operator) -> Result<()> {
-    // Ignore test for atomicserver until https://github.com/atomicdata-dev/atomic-server/issues/663 addressed.
-    if op.info().scheme() == opendal::Scheme::Atomicserver {
-        warn!(
-            "ignore test for atomicserver until https://github.com/atomicdata-dev/atomic-server/issues/663 is resolved"
-        );
-        return Ok(());
-    }
     // Ignore test for vercel blob https://github.com/apache/opendal/pull/4103.
-    if op.info().scheme() == opendal::Scheme::VercelBlob {
-        warn!("ignore test for vercel blob https://github.com/apache/opendal/pull/4103");
+    #[cfg(feature = "services-vercel-blob")]
+    if op.info().scheme() == services::VERCEL_BLOB_SCHEME {
+        log::warn!("ignore test for vercel blob https://github.com/apache/opendal/pull/4103");
         return Ok(());
     }
 
-    let path = format!("{} !@#$%^&()_+-=;',.txt", uuid::Uuid::new_v4());
+    let path = format!("nested/{} !@#$%^&()_+-=;',.txt", uuid::Uuid::new_v4());
     let (path, content, size) = TEST_FIXTURE.new_file_with_path(op.clone(), &path);
 
     op.write(&path, content).await?;
@@ -140,12 +139,12 @@ pub async fn test_write_with_special_chars(op: Operator) -> Result<()> {
 
 /// Write a single file with cache control should succeed.
 pub async fn test_write_with_cache_control(op: Operator) -> Result<()> {
-    if !op.info().full_capability().write_with_cache_control {
+    if !op.info().capability().write_with_cache_control {
         return Ok(());
     }
 
     let path = uuid::Uuid::new_v4().to_string();
-    let (content, _) = gen_bytes(op.info().full_capability());
+    let (content, _) = gen_bytes(op.info().capability());
 
     let target_cache_control = "no-cache, no-store, max-age=300";
     op.write_with(&path, content)
@@ -166,7 +165,7 @@ pub async fn test_write_with_cache_control(op: Operator) -> Result<()> {
 
 /// Write a single file with content type should succeed.
 pub async fn test_write_with_content_type(op: Operator) -> Result<()> {
-    if !op.info().full_capability().write_with_content_type {
+    if !op.info().capability().write_with_content_type {
         return Ok(());
     }
 
@@ -190,7 +189,7 @@ pub async fn test_write_with_content_type(op: Operator) -> Result<()> {
 
 /// Write a single file with content disposition should succeed.
 pub async fn test_write_with_content_disposition(op: Operator) -> Result<()> {
-    if !op.info().full_capability().write_with_content_disposition {
+    if !op.info().capability().write_with_content_disposition {
         return Ok(());
     }
 
@@ -214,7 +213,7 @@ pub async fn test_write_with_content_disposition(op: Operator) -> Result<()> {
 
 /// Write a single file with content encoding should succeed.
 pub async fn test_write_with_content_encoding(op: Operator) -> Result<()> {
-    if !op.info().full_capability().write_with_content_encoding {
+    if !op.info().capability().write_with_content_encoding {
         return Ok(());
     }
 
@@ -236,7 +235,7 @@ pub async fn test_write_with_content_encoding(op: Operator) -> Result<()> {
 
 /// write a single file with user defined metadata should succeed.
 pub async fn test_write_with_user_metadata(op: Operator) -> Result<()> {
-    if !op.info().full_capability().write_with_user_metadata {
+    if !op.info().capability().write_with_user_metadata {
         return Ok(());
     }
 
@@ -250,7 +249,10 @@ pub async fn test_write_with_user_metadata(op: Operator) -> Result<()> {
     let resp_meta = meta.user_metadata().expect("meta data must exist");
 
     assert_eq!(
-        *resp_meta,
+        resp_meta
+            .into_iter()
+            .map(|(key, value)| (key.to_owned(), value.to_owned()))
+            .collect::<HashMap<_, _>>(),
         target_user_metadata.into_iter().collect::<HashMap<_, _>>()
     );
 
@@ -324,7 +326,7 @@ pub async fn test_writer_abort_with_concurrent(op: Operator) -> Result<()> {
 
 /// Append data into writer
 pub async fn test_writer_write(op: Operator) -> Result<()> {
-    if !(op.info().full_capability().write_can_multi) {
+    if !(op.info().capability().write_can_multi) {
         return Ok(());
     }
 
@@ -344,22 +346,75 @@ pub async fn test_writer_write(op: Operator) -> Result<()> {
     let bs = op.read(&path).await?.to_bytes();
     assert_eq!(bs.len(), size * 2, "read size");
     assert_eq!(
-        format!("{:x}", Sha256::digest(&bs[..size])),
-        format!("{:x}", Sha256::digest(content_a)),
+        sha256_digest(&bs[..size]),
+        sha256_digest(content_a),
         "read content a"
     );
     assert_eq!(
-        format!("{:x}", Sha256::digest(&bs[size..])),
-        format!("{:x}", Sha256::digest(content_b)),
+        sha256_digest(&bs[size..]),
+        sha256_digest(content_b),
         "read content b"
     );
 
     Ok(())
 }
 
+/// Assemble a destination from local bytes and source ranges in call order.
+pub async fn test_writer_copy_from_interleaved(op: Operator) -> Result<()> {
+    if !op.info().capability().write_can_multi {
+        return Ok(());
+    }
+
+    let source_path = TEST_FIXTURE.new_file_path();
+    let target_path = TEST_FIXTURE.new_file_path();
+    let source = gen_fixed_bytes(18 * 1024 * 1024);
+    op.write(&source_path, source.clone()).await?;
+    let source_meta = op.stat(&source_path).await?;
+    let source_if_match =
+        if op.info().capability().read_with_if_match && op.info().capability().stat_with_if_match {
+            source_meta.etag().map(str::to_string)
+        } else {
+            None
+        };
+
+    let mut writer = op.writer(&target_path).await?;
+    writer.write("header").await?;
+    writer.copy_from(&source_path, 1024_u64..2048).await?;
+    writer
+        .copy_from_options(
+            &source_path,
+            options::ReadOptions {
+                range: (2048_u64..14 * 1024 * 1024).into(),
+                if_match: source_if_match.clone(),
+                ..Default::default()
+            },
+        )
+        .await?;
+    writer.write("footer").await?;
+    writer
+        .copy_from_options(
+            &source_path,
+            options::ReadOptions {
+                range: (15 * 1024 * 1024_u64..).into(),
+                if_match: source_if_match,
+                ..Default::default()
+            },
+        )
+        .await?;
+    writer.close().await?;
+
+    let mut expected = Vec::new();
+    expected.extend_from_slice(b"header");
+    expected.extend_from_slice(&source[1024..14 * 1024 * 1024]);
+    expected.extend_from_slice(b"footer");
+    expected.extend_from_slice(&source[15 * 1024 * 1024..]);
+    assert_eq!(op.read(&target_path).await?.to_bytes(), expected);
+    Ok(())
+}
+
 /// Append data into writer
 pub async fn test_writer_write_with_concurrent(op: Operator) -> Result<()> {
-    if !(op.info().full_capability().write_can_multi) {
+    if !(op.info().capability().write_can_multi) {
         return Ok(());
     }
 
@@ -381,21 +436,18 @@ pub async fn test_writer_write_with_concurrent(op: Operator) -> Result<()> {
     let bs = op.read(&path).await?.to_bytes();
     assert_eq!(bs.len(), size_a + size_b + size_c, "read size");
     assert_eq!(
-        format!("{:x}", Sha256::digest(&bs[..size_a])),
-        format!("{:x}", Sha256::digest(content_a)),
+        sha256_digest(&bs[..size_a]),
+        sha256_digest(content_a),
         "read content a"
     );
     assert_eq!(
-        format!("{:x}", Sha256::digest(&bs[size_a..size_a + size_b])),
-        format!("{:x}", Sha256::digest(content_b)),
+        sha256_digest(&bs[size_a..size_a + size_b]),
+        sha256_digest(content_b),
         "read content b"
     );
     assert_eq!(
-        format!(
-            "{:x}",
-            Sha256::digest(&bs[size_a + size_b..size_a + size_b + size_c])
-        ),
-        format!("{:x}", Sha256::digest(content_c)),
+        sha256_digest(&bs[size_a + size_b..size_a + size_b + size_c]),
+        sha256_digest(content_c),
         "read content b"
     );
 
@@ -404,7 +456,7 @@ pub async fn test_writer_write_with_concurrent(op: Operator) -> Result<()> {
 
 /// Streaming data into writer
 pub async fn test_writer_sink(op: Operator) -> Result<()> {
-    let cap = op.info().full_capability();
+    let cap = op.info().capability();
     if !(cap.write && cap.write_can_multi) {
         return Ok(());
     }
@@ -433,13 +485,13 @@ pub async fn test_writer_sink(op: Operator) -> Result<()> {
     let bs = op.read(&path).await?.to_bytes();
     assert_eq!(bs.len(), size * 2, "read size");
     assert_eq!(
-        format!("{:x}", Sha256::digest(&bs[..size])),
-        format!("{:x}", Sha256::digest(content_a)),
+        sha256_digest(&bs[..size]),
+        sha256_digest(content_a),
         "read content a"
     );
     assert_eq!(
-        format!("{:x}", Sha256::digest(&bs[size..])),
-        format!("{:x}", Sha256::digest(content_b)),
+        sha256_digest(&bs[size..]),
+        sha256_digest(content_b),
         "read content b"
     );
 
@@ -448,7 +500,7 @@ pub async fn test_writer_sink(op: Operator) -> Result<()> {
 
 /// Streaming data into writer
 pub async fn test_writer_sink_with_concurrent(op: Operator) -> Result<()> {
-    let cap = op.info().full_capability();
+    let cap = op.info().capability();
     if !(cap.write && cap.write_can_multi) {
         return Ok(());
     }
@@ -478,13 +530,13 @@ pub async fn test_writer_sink_with_concurrent(op: Operator) -> Result<()> {
     let bs = op.read(&path).await?.to_bytes();
     assert_eq!(bs.len(), size * 2, "read size");
     assert_eq!(
-        format!("{:x}", Sha256::digest(&bs[..size])),
-        format!("{:x}", Sha256::digest(content_a)),
+        sha256_digest(&bs[..size]),
+        sha256_digest(content_a),
         "read content a"
     );
     assert_eq!(
-        format!("{:x}", Sha256::digest(&bs[size..])),
-        format!("{:x}", Sha256::digest(content_b)),
+        sha256_digest(&bs[size..]),
+        sha256_digest(content_b),
         "read content b"
     );
 
@@ -493,7 +545,7 @@ pub async fn test_writer_sink_with_concurrent(op: Operator) -> Result<()> {
 
 /// Copy data from reader to writer
 pub async fn test_writer_futures_copy(op: Operator) -> Result<()> {
-    if !(op.info().full_capability().write_can_multi) {
+    if !(op.info().capability().write_can_multi) {
         return Ok(());
     }
 
@@ -518,8 +570,8 @@ pub async fn test_writer_futures_copy(op: Operator) -> Result<()> {
     let bs = op.read(&path).await?.to_bytes();
     assert_eq!(bs.len(), size, "read size");
     assert_eq!(
-        format!("{:x}", Sha256::digest(&bs[..size])),
-        format!("{:x}", Sha256::digest(content)),
+        sha256_digest(&bs[..size]),
+        sha256_digest(content),
         "read content"
     );
 
@@ -528,7 +580,7 @@ pub async fn test_writer_futures_copy(op: Operator) -> Result<()> {
 
 /// Copy data from reader to writer
 pub async fn test_writer_futures_copy_with_concurrent(op: Operator) -> Result<()> {
-    if !(op.info().full_capability().write_can_multi) {
+    if !(op.info().capability().write_can_multi) {
         return Ok(());
     }
 
@@ -554,8 +606,8 @@ pub async fn test_writer_futures_copy_with_concurrent(op: Operator) -> Result<()
     let bs = op.read(&path).await?.to_bytes();
     assert_eq!(bs.len(), size, "read size");
     assert_eq!(
-        format!("{:x}", Sha256::digest(&bs[..size])),
-        format!("{:x}", Sha256::digest(content)),
+        sha256_digest(&bs[..size]),
+        sha256_digest(content),
         "read content"
     );
 
@@ -563,7 +615,7 @@ pub async fn test_writer_futures_copy_with_concurrent(op: Operator) -> Result<()
 }
 
 pub async fn test_writer_return_metadata(op: Operator) -> Result<()> {
-    let cap = op.info().full_capability();
+    let cap = op.info().capability();
     if !cap.write_can_multi {
         return Ok(());
     }
@@ -588,8 +640,8 @@ pub async fn test_writer_return_metadata(op: Operator) -> Result<()> {
 /// Test append to a file must success.
 pub async fn test_write_with_append(op: Operator) -> Result<()> {
     let path = TEST_FIXTURE.new_file_path();
-    let (content_one, size_one) = gen_bytes(op.info().full_capability());
-    let (content_two, size_two) = gen_bytes(op.info().full_capability());
+    let (content_one, size_one) = gen_bytes(op.info().capability());
+    let (content_two, size_two) = gen_bytes(op.info().capability());
 
     op.write_with(&path, content_one.clone())
         .append(true)
@@ -618,7 +670,7 @@ pub async fn test_write_with_append(op: Operator) -> Result<()> {
 }
 
 pub async fn test_write_with_append_returns_metadata(op: Operator) -> Result<()> {
-    let cap = op.info().full_capability();
+    let cap = op.info().capability();
 
     let path = TEST_FIXTURE.new_file_path();
     let (content_one, _) = gen_bytes(cap);
@@ -689,8 +741,8 @@ pub async fn test_writer_with_append(op: Operator) -> Result<()> {
     let bs = op.read(&path).await?.to_bytes();
     assert_eq!(bs.len(), size, "read size");
     assert_eq!(
-        format!("{:x}", Sha256::digest(&bs[..size])),
-        format!("{:x}", Sha256::digest(content)),
+        sha256_digest(&bs[..size]),
+        sha256_digest(content),
         "read content"
     );
 
@@ -700,19 +752,20 @@ pub async fn test_writer_with_append(op: Operator) -> Result<()> {
 
 pub async fn test_writer_write_with_overwrite(op: Operator) -> Result<()> {
     // ghac does not support overwrite
-    if op.info().scheme() == Scheme::Ghac {
+    #[cfg(feature = "services-ghac")]
+    if op.info().scheme() == services::GHAC_SCHEME {
         return Ok(());
     }
 
     let path = uuid::Uuid::new_v4().to_string();
-    let (content_one, _) = gen_bytes(op.info().full_capability());
-    let (content_two, _) = gen_bytes(op.info().full_capability());
+    let (content_one, _) = gen_bytes(op.info().capability());
+    let (content_two, _) = gen_bytes(op.info().capability());
 
     op.write(&path, content_one.clone()).await?;
     let bs = op.read(&path).await?.to_bytes();
     assert_eq!(
-        format!("{:x}", Sha256::digest(&bs)),
-        format!("{:x}", Sha256::digest(&content_one)),
+        sha256_digest(&bs),
+        sha256_digest(&content_one),
         "read content_one"
     );
     op.write(&path, content_two.clone())
@@ -720,13 +773,13 @@ pub async fn test_writer_write_with_overwrite(op: Operator) -> Result<()> {
         .expect("write overwrite must succeed");
     let bs = op.read(&path).await?.to_bytes();
     assert_ne!(
-        format!("{:x}", Sha256::digest(&bs)),
-        format!("{:x}", Sha256::digest(&content_one)),
+        sha256_digest(&bs),
+        sha256_digest(&content_one),
         "content_one must be overwrote"
     );
     assert_eq!(
-        format!("{:x}", Sha256::digest(&bs)),
-        format!("{:x}", Sha256::digest(&content_two)),
+        sha256_digest(&bs),
+        sha256_digest(&content_two),
         "read content_two"
     );
 
@@ -736,7 +789,7 @@ pub async fn test_writer_write_with_overwrite(op: Operator) -> Result<()> {
 
 /// Write an exists file with if_none_match should match, else get a ConditionNotMatch error.
 pub async fn test_write_with_if_none_match(op: Operator) -> Result<()> {
-    if !op.info().full_capability().write_with_if_none_match {
+    if !op.info().capability().write_with_if_none_match {
         return Ok(());
     }
 
@@ -758,9 +811,9 @@ pub async fn test_write_with_if_none_match(op: Operator) -> Result<()> {
     Ok(())
 }
 
-/// Write an file with if_not_exists will get a ConditionNotMatch error if file exists.
+/// Write a file with if_not_exists will get a ConditionNotMatch error if file exists.
 pub async fn test_write_with_if_not_exists(op: Operator) -> Result<()> {
-    if !op.info().full_capability().write_with_if_not_exists {
+    if !op.info().capability().write_with_if_not_exists {
         return Ok(());
     }
 
@@ -782,9 +835,9 @@ pub async fn test_write_with_if_not_exists(op: Operator) -> Result<()> {
     Ok(())
 }
 
-/// Write an file with if_match will get a ConditionNotMatch error if file's etag does not match.
+/// Write a file with if_match will get a ConditionNotMatch error if file's etag does not match.
 pub async fn test_write_with_if_match(op: Operator) -> Result<()> {
-    if !op.info().full_capability().write_with_if_match {
+    if !op.info().capability().write_with_if_match {
         return Ok(());
     }
 
@@ -816,6 +869,295 @@ pub async fn test_write_with_if_match(op: Operator) -> Result<()> {
         .await;
     assert!(res.is_err());
     assert_eq!(res.unwrap_err().kind(), ErrorKind::ConditionNotMatch);
+
+    Ok(())
+}
+
+/// Version preconditions should compare against the current live object version.
+pub async fn test_write_with_version_conditions(op: Operator) -> Result<()> {
+    let cap = op.info().capability();
+    if !cap.write_with_if_version_match || !cap.write_with_if_version_not_match {
+        return Ok(());
+    }
+
+    let path = TEST_FIXTURE.new_file_path();
+    let (initial, _) = gen_bytes(cap);
+    let (replacement, _) = gen_bytes(cap);
+    assert_ne!(initial, replacement);
+
+    op.write(&path, initial).await?;
+    let first_version = op
+        .stat(&path)
+        .await?
+        .version()
+        .expect("version must exist")
+        .to_string();
+
+    op.write_with(&path, replacement.clone())
+        .if_version_match(&first_version)
+        .await?;
+
+    let current_version = op
+        .stat(&path)
+        .await?
+        .version()
+        .expect("version must exist")
+        .to_string();
+    let err = op
+        .write_with(&path, replacement.clone())
+        .if_version_match(&first_version)
+        .await
+        .expect_err("stale version match must fail");
+    assert_eq!(err.kind(), ErrorKind::ConditionNotMatch);
+
+    let err = op
+        .write_with(&path, replacement.clone())
+        .if_version_not_match(&current_version)
+        .await
+        .expect_err("equal version non-match must fail");
+    assert_eq!(err.kind(), ErrorKind::ConditionNotMatch);
+    op.write_with(&path, replacement)
+        .if_version_not_match(&first_version)
+        .await?;
+
+    let missing = TEST_FIXTURE.new_file_path();
+    for result in [
+        op.write_with(&missing, Vec::<u8>::new())
+            .if_version_match(&current_version)
+            .await,
+        op.write_with(&missing, Vec::<u8>::new())
+            .if_version_not_match(&current_version)
+            .await,
+    ] {
+        assert_eq!(
+            result.expect_err("missing target must fail").kind(),
+            ErrorKind::ConditionNotMatch
+        );
+    }
+
+    Ok(())
+}
+
+/// `if_not_changed` should accept the observed state once and reject it after replacement.
+pub async fn test_write_if_not_changed(op: Operator) -> Result<()> {
+    let cap = op.info().capability();
+    if !cap.write_with_if_version_match && !cap.write_with_if_match {
+        return Ok(());
+    }
+
+    let path = TEST_FIXTURE.new_file_path();
+    let (initial, _) = gen_bytes(cap);
+    let (replacement, _) = gen_bytes(cap);
+    assert_ne!(initial, replacement);
+
+    op.write(&path, initial).await?;
+    let expected = op.stat(&path).await?;
+
+    let mut conflicting = options::WriteOptions {
+        if_not_changed: Some(expected.clone()),
+        ..Default::default()
+    };
+    let mut matching = conflicting.clone();
+    if cap.write_with_if_version_match {
+        let version = expected.version().expect("version must exist");
+        conflicting.if_version_match = Some(format!("different-{version}"));
+        matching.if_version_match = Some(version.to_string());
+    } else {
+        let etag = expected.etag().expect("etag must exist");
+        conflicting.if_match = Some(format!("different-{etag}"));
+        matching.if_match = Some(etag.to_string());
+    }
+
+    let err = op
+        .write_options(&path, replacement.clone(), conflicting)
+        .await
+        .expect_err("conflicting explicit condition must fail");
+    assert_eq!(err.kind(), ErrorKind::ConditionNotMatch);
+
+    op.write_options(&path, replacement.clone(), matching)
+        .await?;
+    let err = op
+        .write_with(&path, replacement)
+        .if_not_changed(&expected)
+        .await
+        .expect_err("stale metadata must fail");
+    assert_eq!(err.kind(), ErrorKind::ConditionNotMatch);
+
+    Ok(())
+}
+
+/// Write an existing file through a chunked writer with if_not_exists should get a
+/// ConditionNotMatch error.
+pub async fn test_writer_write_with_if_not_exists(op: Operator) -> Result<()> {
+    let cap = op.info().capability();
+    if !cap.write_with_if_not_exists || !cap.write_can_multi {
+        return Ok(());
+    }
+
+    let path = TEST_FIXTURE.new_file_path();
+    let content = gen_fixed_bytes(cap.write_multi_min_size.unwrap_or(1));
+
+    op.write(&path, content.clone())
+        .await
+        .expect("write must succeed");
+
+    // Some services reject the precondition when the writer is created or on an early
+    // write rather than at commit time
+    let res: opendal::Result<()> = async {
+        let mut w = op.writer_with(&path).if_not_exists(true).await?;
+        w.write(content.clone()).await?;
+        w.write(content.clone()).await?;
+        w.close().await?;
+        Ok(())
+    }
+    .await;
+    assert_eq!(res.unwrap_err().kind(), ErrorKind::ConditionNotMatch);
+
+    Ok(())
+}
+
+/// Write an existing file through a chunked writer with its own etag as if_none_match
+/// should get a ConditionNotMatch error.
+pub async fn test_writer_write_with_if_none_match(op: Operator) -> Result<()> {
+    let cap = op.info().capability();
+    if !cap.write_with_if_none_match || !cap.write_can_multi {
+        return Ok(());
+    }
+
+    let path = TEST_FIXTURE.new_file_path();
+    let content = gen_fixed_bytes(cap.write_multi_min_size.unwrap_or(1));
+
+    op.write(&path, content.clone())
+        .await
+        .expect("write must succeed");
+
+    let meta = op.stat(&path).await?;
+    let etag = meta.etag().expect("etag must exist");
+
+    let res: opendal::Result<()> = async {
+        let mut w = op.writer_with(&path).if_none_match(etag).await?;
+        w.write(content.clone()).await?;
+        w.write(content.clone()).await?;
+        w.close().await?;
+        Ok(())
+    }
+    .await;
+    assert_eq!(res.unwrap_err().kind(), ErrorKind::ConditionNotMatch);
+
+    Ok(())
+}
+
+/// Write a file through a chunked writer with if_match should succeed with the file's own
+/// etag and get a ConditionNotMatch error with a stale one.
+pub async fn test_writer_write_with_if_match(op: Operator) -> Result<()> {
+    let cap = op.info().capability();
+    if !cap.write_with_if_match || !cap.write_can_multi {
+        return Ok(());
+    }
+
+    let path_a = TEST_FIXTURE.new_file_path();
+    let content_a = gen_fixed_bytes(cap.write_multi_min_size.unwrap_or(1));
+    let (path_b, content_b, _) = TEST_FIXTURE.new_file(op.clone());
+
+    op.write(&path_a, content_a.clone()).await?;
+    op.write(&path_b, content_b.clone()).await?;
+
+    let etag_a = op
+        .stat(&path_a)
+        .await?
+        .etag()
+        .expect("etag must exist")
+        .to_string();
+    let etag_b = op
+        .stat(&path_b)
+        .await?
+        .etag()
+        .expect("etag must exist")
+        .to_string();
+
+    let mut w = op.writer_with(&path_a).if_match(&etag_a).await?;
+    w.write(content_a.clone()).await?;
+    w.write(content_a.clone()).await?;
+    w.close().await.expect("close with own etag must succeed");
+
+    // Should fail: writing to path_a with path_b's etag.
+    let res: opendal::Result<()> = async {
+        let mut w = op.writer_with(&path_a).if_match(&etag_b).await?;
+        w.write(content_a.clone()).await?;
+        w.write(content_a.clone()).await?;
+        w.close().await?;
+        Ok(())
+    }
+    .await;
+    assert_eq!(res.unwrap_err().kind(), ErrorKind::ConditionNotMatch);
+
+    Ok(())
+}
+
+/// Chunked writers should preserve version preconditions through final commit.
+pub async fn test_writer_write_with_version_conditions(op: Operator) -> Result<()> {
+    let cap = op.info().capability();
+    if !cap.write_can_multi
+        || !cap.write_with_if_version_match
+        || !cap.write_with_if_version_not_match
+    {
+        return Ok(());
+    }
+
+    let path = TEST_FIXTURE.new_file_path();
+    let body = gen_fixed_bytes(cap.write_multi_min_size.unwrap_or(1));
+    op.write(&path, body.clone()).await?;
+    let expected = op
+        .stat(&path)
+        .await?
+        .version()
+        .expect("version must exist")
+        .to_string();
+
+    let mut writer = op.writer_with(&path).if_version_match(&expected).await?;
+    writer.write(body.clone()).await?;
+    writer.write(body.clone()).await?;
+    writer.close().await?;
+
+    let current = op
+        .stat(&path)
+        .await?
+        .version()
+        .expect("version must exist")
+        .to_string();
+    let result: opendal::Result<()> = async {
+        let mut writer = op.writer_with(&path).if_version_not_match(&current).await?;
+        writer.write(body.clone()).await?;
+        writer.write(body).await?;
+        writer.close().await?;
+        Ok(())
+    }
+    .await;
+    assert_eq!(result.unwrap_err().kind(), ErrorKind::ConditionNotMatch);
+
+    Ok(())
+}
+
+pub async fn test_writer_write_non_contiguous_data(op: Operator) -> Result<()> {
+    let path = TEST_FIXTURE.new_file_path();
+    let size = 1024 * 1024; // write file with 1 MiB
+    let content_a = gen_fixed_bytes(size);
+    let digest_a = sha256_digest(&content_a);
+    let content_b = gen_fixed_bytes(size);
+    let digest_b = sha256_digest(&content_b);
+
+    let mut w = op.writer(&path).await?;
+    w.write(vec![Bytes::from(content_a), Bytes::from(content_b)])
+        .await?;
+    w.close().await?;
+
+    let meta = op.stat(&path).await.expect("stat must succeed");
+    assert_eq!(meta.content_length(), (size * 2) as u64);
+
+    let bs = op.read(&path).await?.to_bytes();
+    assert_eq!(bs.len(), size * 2, "read size");
+    assert_eq!(sha256_digest(&bs[..size]), digest_a, "read content a");
+    assert_eq!(sha256_digest(&bs[size..]), digest_b, "read content b");
 
     Ok(())
 }

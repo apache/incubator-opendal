@@ -1,0 +1,149 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: Full CI Promote
+
+on:
+  pull_request_target:
+    types:
+      - labeled
+
+concurrency:
+  group: full-ci-promote-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  promote:
+    if: |
+      github.event.label.name == 'run-with-secrets' &&
+      github.event.pull_request.head.repo.full_name != github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Fetch contributor branch
+        env:
+          PR_HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          TARGET_BRANCH: ci/pr-${{ github.event.pull_request.number }}
+        run: |
+          git config user.name "opendal-bot"
+          git config user.email "opendal-bot@apache.org"
+          git fetch https://github.com/${PR_HEAD_REPO} ${PR_HEAD_REF}:refs/remotes/contrib/head
+          git checkout -B "${TARGET_BRANCH}" remotes/contrib/head
+          git push --force origin "${TARGET_BRANCH}"
+
+      - name: Create or update mirror PR
+        id: create_internal_pr
+        uses: actions/github-script@v9
+        env:
+          TARGET_BRANCH: ci/pr-${{ github.event.pull_request.number }}
+        with:
+          script: |
+            const targetBranch = process.env.TARGET_BRANCH;
+            const base = 'main';
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const headParam = `${owner}:${targetBranch}`;
+
+            const { data: existing } = await github.rest.pulls.list({
+              owner,
+              repo,
+              state: 'open',
+              head: headParam,
+              base,
+              per_page: 1,
+            });
+
+            let mirrorPr = existing[0];
+            if (!mirrorPr) {
+              const title = `[CI] Full run for #${context.payload.pull_request.number}`;
+              const body = [
+                `Mirrored branch for PR #${context.payload.pull_request.number}.`,
+                'This PR is created automatically to run full CI with repository secrets after maintainer approval.',
+                'Do not edit manually.',
+              ].join('\n');
+
+              const createResp = await github.rest.pulls.create({ owner, repo, head: headParam, base, title, body });
+              mirrorPr = createResp.data;
+            }
+
+            core.setOutput('mirror_pr_number', mirrorPr.number);
+            core.setOutput('mirror_pr_html_url', mirrorPr.html_url);
+
+      - name: Trigger Behavior Test
+        uses: actions/github-script@v9
+        env:
+          TARGET_BRANCH: ci/pr-${{ github.event.pull_request.number }}
+        with:
+          script: |
+            const workflows = [
+              { id: 'test_behavior.yml', inputs: { pr_number: `${context.payload.pull_request.number}` } },
+            ];
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const ref = process.env.TARGET_BRANCH;
+
+            for (const workflow of workflows) {
+              await github.rest.actions.createWorkflowDispatch({
+                owner,
+                repo,
+                workflow_id: workflow.id,
+                ref,
+                inputs: workflow.inputs,
+              });
+              core.info(`Dispatched ${workflow.id} on ref ${ref}`);
+            }
+
+      - name: Comment on PR
+        uses: actions/github-script@v9
+        env:
+          MIRROR_PR: ${{ steps.create_internal_pr.outputs.mirror_pr_number || '' }}
+          MIRROR_PR_URL: ${{ steps.create_internal_pr.outputs.mirror_pr_html_url || '' }}
+        with:
+          script: |
+            const marker = '<!-- ci-bot:full-ci -->';
+            const prNumber = context.payload.pull_request.number;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const mirrorUrl = process.env.MIRROR_PR_URL;
+
+            const body = [
+              marker,
+              'Maintainer triggered full CI with repository secrets.',
+              `Please monitor the mirrored CI PR for results: ${mirrorUrl}`,
+              'Workflows dispatched: test_behavior.yml.',
+              'Re-applying the label will refresh this mirror.',
+            ].join('\n');
+
+            const { data: comments } = await github.rest.issues.listComments({ owner, repo, issue_number: prNumber, per_page: 100 });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number: prNumber, body });
+            }

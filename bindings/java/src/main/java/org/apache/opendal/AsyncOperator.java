@@ -32,6 +32,13 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * AsyncOperator represents an underneath OpenDAL operator that
  * accesses data asynchronously.
+ *
+ * <p>Operators without an explicit executor share a default executor. Operators,
+ * derived streams, and outstanding operations keep it alive. Closing the last
+ * operator and stream releases it after outstanding operations complete; a later
+ * operator creates a new default executor.</p>
+ *
+ * <p>The default executor uses the same worker context class loader behavior as {@link AsyncExecutor}.</p>
  */
 public class AsyncOperator extends NativeObject {
 
@@ -153,7 +160,7 @@ public class AsyncOperator extends NativeObject {
      */
     public static AsyncOperator of(String scheme, Map<String, String> map, AsyncExecutor executor) {
         final long executorHandle = executor != null ? executor.nativeHandle : 0;
-        final long nativeHandle = constructor(scheme, map);
+        final long nativeHandle = constructor(scheme, map, executorHandle);
         final OperatorInfo info = makeOperatorInfo(nativeHandle);
         return new AsyncOperator(nativeHandle, executorHandle, info);
     }
@@ -250,17 +257,62 @@ public class AsyncOperator extends NativeObject {
     }
 
     public CompletableFuture<PresignedRequest> presignRead(String path, Duration duration) {
-        final long requestId = presignRead(nativeHandle, executorHandle, path, duration.toNanos());
+        return presignRead(path, duration, ReadOptions.builder().build());
+    }
+
+    /**
+     * Creates a presigned read request with the given options.
+     *
+     * <p>The service must support presigning this operation. Support for individual options
+     * depends on the service. Send the returned HTTP method and headers along with the URI.
+     *
+     * @param path the path of the object.
+     * @param duration how long the presigned request remains valid.
+     * @param options the read options to include in the presigned request.
+     * @return the presigned request.
+     */
+    public CompletableFuture<PresignedRequest> presignRead(String path, Duration duration, ReadOptions options) {
+        final long requestId = presignRead(nativeHandle, executorHandle, path, duration.toNanos(), options);
         return AsyncRegistry.take(requestId);
     }
 
     public CompletableFuture<PresignedRequest> presignWrite(String path, Duration duration) {
-        final long requestId = presignWrite(nativeHandle, executorHandle, path, duration.toNanos());
+        return presignWrite(path, duration, WriteOptions.builder().build());
+    }
+
+    /**
+     * Creates a presigned write request with the given options.
+     *
+     * <p>The service must support presigning this operation. Support for individual options
+     * depends on the service. Send the returned HTTP method and headers along with the URI.
+     *
+     * @param path the path of the object.
+     * @param duration how long the presigned request remains valid.
+     * @param options the write options to include in the presigned request.
+     * @return the presigned request.
+     */
+    public CompletableFuture<PresignedRequest> presignWrite(String path, Duration duration, WriteOptions options) {
+        final long requestId = presignWrite(nativeHandle, executorHandle, path, duration.toNanos(), options);
         return AsyncRegistry.take(requestId);
     }
 
     public CompletableFuture<PresignedRequest> presignStat(String path, Duration duration) {
-        final long requestId = presignStat(nativeHandle, executorHandle, path, duration.toNanos());
+        return presignStat(path, duration, StatOptions.builder().build());
+    }
+
+    /**
+     * Creates a presigned stat request with the given options.
+     *
+     * <p>The service must support presigning this operation. Support for individual options
+     * depends on the service. Send the returned HTTP method and headers along with the URI.
+     *
+     * @param path the path of the object.
+     * @param duration how long the presigned request remains valid.
+     * @param options the stat options to include in the presigned request.
+     * @return the presigned request.
+     */
+    public CompletableFuture<PresignedRequest> presignStat(String path, Duration duration, StatOptions options) {
+        final long requestId = presignStat(nativeHandle, executorHandle, path, duration.toNanos(), options);
         return AsyncRegistry.take(requestId);
     }
 
@@ -304,7 +356,7 @@ public class AsyncOperator extends NativeObject {
 
     private static native long duplicate(long nativeHandle);
 
-    private static native long constructor(String scheme, Map<String, String> map);
+    private static native long constructor(String scheme, Map<String, String> map, long executorHandle);
 
     private static native long read(long nativeHandle, long executorHandle, String path, ReadOptions options);
 
@@ -317,11 +369,14 @@ public class AsyncOperator extends NativeObject {
 
     private static native long stat(long nativeHandle, long executorHandle, String path, StatOptions options);
 
-    private static native long presignRead(long nativeHandle, long executorHandle, String path, long duration);
+    private static native long presignRead(
+            long nativeHandle, long executorHandle, String path, long duration, ReadOptions options);
 
-    private static native long presignWrite(long nativeHandle, long executorHandle, String path, long duration);
+    private static native long presignWrite(
+            long nativeHandle, long executorHandle, String path, long duration, WriteOptions options);
 
-    private static native long presignStat(long nativeHandle, long executorHandle, String path, long duration);
+    private static native long presignStat(
+            long nativeHandle, long executorHandle, String path, long duration, StatOptions options);
 
     private static native OperatorInfo makeOperatorInfo(long nativeHandle);
 

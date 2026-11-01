@@ -24,7 +24,6 @@ use std::ffi::CStr;
 use std::ffi::CString;
 use std::mem;
 use std::os::raw::c_char;
-use std::str::FromStr;
 use std::sync::LazyLock;
 
 use ::opendal as od;
@@ -68,18 +67,10 @@ pub unsafe extern "C" fn via_map_ffi(
     result: *mut FFIResult<od::blocking::Operator>,
 ) {
     unsafe {
-        let scheme_str = match CStr::from_ptr(scheme).to_str() {
+        let scheme = match CStr::from_ptr(scheme).to_str() {
             Ok(s) => s,
             Err(_) => {
                 *result = FFIResult::err("Failed to convert scheme to string");
-                return;
-            }
-        };
-
-        let scheme = match od::Scheme::from_str(scheme_str) {
-            Ok(s) => s,
-            Err(_) => {
-                *result = FFIResult::err("Failed to parse scheme");
                 return;
             }
         };
@@ -98,16 +89,15 @@ pub unsafe extern "C" fn via_map_ffi(
             })
             .collect::<HashMap<String, String>>();
 
-        if let Some(callback) = callback {
-            if let Err(e) = log::set_boxed_logger(Box::new(HsLogger { callback }))
+        if let Some(callback) = callback
+            && let Err(e) = log::set_boxed_logger(Box::new(HsLogger { callback }))
                 .map(|()| log::set_max_level(log::LevelFilter::Debug))
-            {
-                *result = FFIResult::err_with_source(
-                    "Failed to register logger",
-                    od::Error::new(od::ErrorKind::Unexpected, e.to_string().as_str()),
-                );
-                return;
-            }
+        {
+            *result = FFIResult::err_with_source(
+                "Failed to register logger",
+                od::Error::new(od::ErrorKind::Unexpected, e.to_string().as_str()),
+            );
+            return;
         }
 
         let res = match od::Operator::via_iter(scheme, map) {
@@ -362,7 +352,7 @@ pub unsafe extern "C" fn blocking_copy(
         };
 
         let res = match op.copy(path_from_str, path_to_str) {
-            Ok(()) => FFIResult::ok(()),
+            Ok(_) => FFIResult::ok(()),
             Err(e) => FFIResult::err_with_source("Failed to copy", e),
         };
 
@@ -715,9 +705,18 @@ pub unsafe extern "C" fn blocking_remove_all(
             }
         };
 
-        let res = match op.remove_all(path_str) {
-            Ok(()) => FFIResult::ok(()),
-            Err(e) => FFIResult::err_with_source("Failed to remove all", e),
+        let res = {
+            use od::options::DeleteOptions;
+            match op.delete_options(
+                path_str,
+                DeleteOptions {
+                    recursive: true,
+                    ..Default::default()
+                },
+            ) {
+                Ok(()) => FFIResult::ok(()),
+                Err(e) => FFIResult::err_with_source("Failed to remove all", e),
+            }
         };
 
         *result = res;

@@ -18,7 +18,7 @@
 use libtest_mimic::{Failed, Trial};
 use object_store_opendal::OpendalStore;
 use opendal::raw::MaybeSend;
-use opendal::raw::tests::TEST_RUNTIME;
+use opendal::tests::TEST_RUNTIME;
 use std::future::Future;
 
 pub fn build_trail<F, Fut>(name: &str, store: &OpendalStore, f: F) -> Trial

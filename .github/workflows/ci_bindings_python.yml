@@ -21,13 +21,15 @@ on:
   push:
     branches:
       - main
-  pull_request:
-    branches:
-      - main
-    paths:
+    paths: &paths
+      - ".github/actions/setup/**"
       - ".github/workflows/ci_bindings_python.yml"
       - "bindings/python/**"
       - "core/**"
+  pull_request:
+    branches:
+      - main
+    paths: *paths
   workflow_dispatch:
 
 concurrency:
@@ -35,18 +37,89 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
+  lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
+
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
-      - name: Clippy Check
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          working-directory: "bindings/python"
+
+      - uses: taiki-e/install-action@just
+
+      # Useful for debugging
+      - name: Print Clippy version
+        working-directory: "bindings/python"
+        run: cargo clippy --version
+
+      - name: Run Lints
+        working-directory: "bindings/python"
+        run: just lint
+
+  stubs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          working-directory: "bindings/python"
+
+      - uses: taiki-e/install-action@just
+
+      - name: Setup taplo
+        uses: taiki-e/install-action@v2
+        with:
+          tool: taplo-cli
+
+      - name: Install Hawkeye
+        uses: taiki-e/install-action@v2
+        with:
+          tool: hawkeye@7.2.0
+
+      - name: Regenerate stubs
+        working-directory: "bindings/python"
+        run: just stub-gen
+
+      - name: Check diff
+        run: git diff --exit-code
+
+  examples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+        with:
+          need-protoc: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          working-directory: bindings/python
+
+      - name: Build with maturin
+        shell: bash
         working-directory: "bindings/python"
         run: |
-          cargo clippy -- -D warnings
-      - name: Ruff Check
+          uv venv --python=python3.11
+          uv sync --all-extras
+          uv run -- maturin develop
+
+      # Examples back the snippets shown in the website guide. Running them keeps
+      # the docs honest: a broken example fails CI instead of shipping bad docs.
+      - name: Run guide examples
+        shell: bash
         working-directory: "bindings/python"
-        run: |
-          pip install ruff
-          ruff check .
+        run: uv run -- python examples/getting_started.py

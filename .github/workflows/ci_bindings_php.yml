@@ -23,12 +23,14 @@ on:
       - main
     tags:
       - '*'
+    paths: &paths
+      - "bindings/php/**"
+      - ".github/actions/setup/**"
+      - ".github/workflows/ci_bindings_php.yml"
   pull_request:
     branches:
       - main
-    paths:
-      - "bindings/php/**"
-      - ".github/workflows/bindings_php.yml"
+    paths: *paths
   workflow_dispatch:
 
 concurrency:
@@ -49,7 +51,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
@@ -62,10 +64,14 @@ jobs:
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
 
+      # Useful for debugging
+      - name: Print Clippy version
+        working-directory: "bindings/php"
+        run: cargo clippy --version
+
       - name: Clippy Check
         working-directory: "bindings/php"
-        run: |
-          cargo clippy -- -D warnings
+        run: cargo clippy -- -D warnings
 
       - name: Build opendal-php extension
         working-directory: "bindings/php"
@@ -85,6 +91,10 @@ jobs:
 
       - name: Check PHP Extensions
         run: php -m
+
+      - name: Run getting-started example
+        working-directory: "bindings/php"
+        run: php examples/getting-started.php
 
       - name: Install Composer dependencies
         working-directory: "bindings/php"

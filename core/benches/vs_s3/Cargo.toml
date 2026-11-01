@@ -21,18 +21,18 @@ edition = "2024"
 license = "Apache-2.0"
 name = "opendal-benchmark-vs-s3"
 publish = false
-rust-version = "1.85"
-version = "0.0.0"
+rust-version = "1.86"
+version = "0.59.5"
 
 [dependencies]
 aws-config = { version = "1.0.1", features = ["behavior-version-latest"] }
-aws-credential-types = { version = "1.2.7", features = [
+aws-credential-types = { version = "1.2.8", features = [
   "hardcoded-credentials",
 ] }
 aws-sdk-s3 = "1.91.0"
-criterion = { version = "0.7", features = ["async", "async_tokio"] }
+criterion = { version = "0.8.2", features = ["async", "async_tokio"] }
 dotenvy = "0.15"
-logforth = { version = "0.23.1", default-features = false }
-opendal = { path = "../..", features = ["tests"] }
-rand = "0.8"
-tokio = { version = "1", features = ["full"] }
+logforth = { workspace = true }
+opendal = { path = "../..", features = ["services-s3", "tests"] }
+rand = { workspace = true }
+tokio = { workspace = true, features = ["full"] }

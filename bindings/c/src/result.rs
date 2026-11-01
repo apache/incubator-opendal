@@ -180,3 +180,52 @@ pub struct opendal_result_writer_write {
     /// The error, if ok, it is null
     pub error: *mut opendal_error,
 }
+
+/// \brief The result type returned by the metadata-returning write operations.
+///
+/// Returned by opendal_operator_write_with_metadata() and
+/// opendal_writer_close_with_metadata(). On success the `meta` field holds the
+/// metadata of the just-written object (e.g. etag, version, last modified) and
+/// `error` is null; on failure `meta` is null and `error` is set.
+#[repr(C)]
+pub struct opendal_result_write {
+    /// The metadata of the written object, or null on error.
+    pub meta: *mut opendal_metadata,
+    /// The error, if ok, it is null
+    pub error: *mut opendal_error,
+}
+
+/// \brief The result type returned by opendal_operator_copier().
+///
+/// Fields:
+/// * `copier`: the copier used to drive a long-running copy operation by calling
+///   opendal_copier_next() repeatedly; only valid when `error` is null.
+/// * `error`: the error of the operation; null when the operation succeeds.
+#[repr(C)]
+pub struct opendal_result_operator_copier {
+    /// The pointer for opendal_copier
+    pub copier: *mut opendal_copier,
+    /// The error, if ok, it is null
+    pub error: *mut opendal_error,
+}
+
+/// \brief The result type returned by opendal_copier_next().
+///
+/// A copy is driven by calling opendal_copier_next() repeatedly: each call
+/// performs one step of the copy until the copy reports completion.
+///
+/// Fields:
+/// * `size`: the number of bytes copied in this step; zero on error or completion.
+/// * `has_next`: true when the copy made progress and should be driven again by
+///   another opendal_copier_next() call; when false and `error` is null, the copy
+///   has completed.
+/// * `error`: the error code and message; null when the step succeeds.
+#[repr(C)]
+pub struct opendal_result_copier_next {
+    /// The number of bytes copied in this step.
+    pub size: usize,
+    /// Whether the copy operation made progress and should be driven again.
+    pub has_next: bool,
+    /// The error, if ok, it is null
+    pub error: *mut opendal_error,
+}

@@ -21,16 +21,17 @@ use opendal::Operator;
 use opendal::Result;
 use opendal::services::Fs;
 use rand::prelude::*;
+use rand::rng;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let builder =
         Fs::default().root(&env::var("OPENDAL_FS_ROOT").expect("root must be set for this test"));
-    let op = Operator::new(builder)?.finish();
+    let op = Operator::new(builder)?;
 
-    let size = thread_rng().gen_range(512 * 1024 + 1..4 * 1024 * 1024);
+    let size = rng().random_range(512 * 1024 + 1..4 * 1024 * 1024);
     let mut bs = vec![0; size];
-    thread_rng().fill_bytes(&mut bs);
+    rng().fill_bytes(&mut bs);
 
     let result = op.write("/test", bs).await;
     // Write file with size > 512KB should fail

@@ -4,6 +4,10 @@ First, thank you for contributing to OpenDAL! The goal of this document is to pr
 
 - [Contributing](#contributing)
   - [Your First Contribution](#your-first-contribution)
+  - [AI-Assisted Contributions](#ai-assisted-contributions)
+    - [Human Involvement](#human-involvement)
+    - [Bug Reports](#bug-reports)
+    - [Code Changes](#code-changes)
   - [Workflow](#workflow)
     - [Git Branches](#git-branches)
     - [GitHub Pull Requests](#github-pull-requests)
@@ -23,6 +27,81 @@ First, thank you for contributing to OpenDAL! The goal of this document is to pr
 1. [Create a new Git branch](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-and-deleting-branches-within-your-repository).
 1. Make your changes.
 1. [Submit the branch as a pull request](https://help.github.com/en/github/collaborating-with-issues-and-pull-requests/creating-a-pull-request-from-a-fork) to the main OpenDAL repo. An OpenDAL team member should comment and/or review your pull request within a few days. Although, depending on the circumstances, it may take longer.
+
+## AI-Assisted Contributions
+
+Attention is the scarcest resource in an open source community. We appreciate
+everyone who gives their attention to OpenDAL, and we ask contributors to
+protect the attention of others. These standards apply to every contribution;
+AI assistance does not lower them.
+
+### Human Involvement
+
+OpenDAL welcomes and encourages AI-assisted contributions when a human actively
+guides the work and remains accountable for it.
+
+- Every Issue, Pull Request, Discussion, and review conversation must involve
+  meaningful human participation. Do not delegate project communication entirely
+  to an AI agent.
+- Do not copy and paste LLM output into project conversations. Review, edit, and
+  verify AI-assisted analysis before sharing it with the community.
+- Understand every submitted claim and change well enough to explain and defend
+  it during review.
+- Disclose material AI involvement and any assumptions or unknowns that affect
+  review.
+
+The contributor, not the AI tool, is responsible for the accuracy, relevance,
+and quality of every submission.
+
+### AI Usage Statement
+
+If AI materially assisted a Pull Request, include the following in its AI Usage
+Statement:
+
+- **Harness:** The application or agent framework used to run the model.
+- **Model:** The model name or identifier shown by the harness, including its
+  version when available.
+- **Effort:** The reasoning effort setting used, as named by the harness.
+- **Role:** How AI contributed, and any assumptions or unknowns that affect
+  review.
+
+List each harness, model, and effort combination that materially contributed.
+Keep the statement brief and omit routine command output or information already
+provided elsewhere. If AI did not materially assist the PR, write `None`.
+
+### Bug Reports
+
+OpenDAL welcomes the use of AI tools to analyze source code and find bugs. A
+source-code hypothesis is not sufficient evidence for a bug report.
+
+- Reproduce the reported behavior against the affected component. For a
+  service-specific bug, reproduce it against the actual service being reported.
+  A mock server, emulator, or source-code analysis alone does not establish a
+  bug in the service.
+- Provide the OpenDAL version or commit, the service or component, relevant
+  sanitized configuration, minimal reproduction steps, the actual result, and
+  the expected result.
+- Submit an unverified hypothesis as a
+  [Discussion](https://github.com/apache/opendal/discussions) or question, not as
+  a confirmed bug.
+
+Do not publish credentials or other sensitive data. Report security concerns
+through the process described in [Security](website/community/security.md).
+
+### Code Changes
+
+OpenDAL welcomes AI-assisted bug fixes and feature implementations that solve a
+demonstrated problem or meet a concrete use case.
+
+- Link the change to an Issue that establishes the problem or requirement.
+- Verify a bug before fixing it, and add tests that demonstrate the failure and
+  protect the intended behavior when practical.
+- Explain the user-facing, correctness, or maintenance value of the change.
+
+OpenDAL does not accept speculative fixes for unverified bugs or mechanical
+refactors without an agreed technical goal. Maintainers may close submissions
+that lack meaningful human participation or are unverified, speculative, or
+otherwise incomplete without performing a detailed technical review.
 
 ## Workflow
 
@@ -97,7 +176,7 @@ Rustup will read OpenDAL's `rust-toolchain.toml` and set up everything else auto
 
 ```shell
 $ cargo version
-cargo 1.85.0 (stable)
+cargo 1.91.0 (stable)
 ```
 
 Some components may require specific setup steps. Please refer to their respective `CONTRIBUTING` documentation for more details.

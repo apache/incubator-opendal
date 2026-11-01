@@ -23,13 +23,15 @@ on:
       - main
     tags:
       - '*'
+    paths: &paths
+      - "bindings/ruby/**"
+      - "core/**"
+      - ".github/actions/setup/**"
+      - ".github/workflows/ci_bindings_ruby.yml"
   pull_request:
     branches:
       - main
-    paths:
-      - "bindings/ruby/**"
-      - "core/**"
-      - ".github/workflows/ci_bindings_ruby.yml"
+    paths: *paths
   workflow_dispatch:
 
 concurrency:
@@ -40,34 +42,60 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  lint:
     runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        ruby-version: ["3.2", "3.3", "3.4"]
 
     env: # $BUNDLE_GEMFILE must be set at the job level, so it is set for all steps
       BUNDLE_GEMFILE: ${{ github.workspace }}/bindings/ruby/Gemfile
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: ruby/setup-ruby@v1
         with:
-          ruby-version: ${{ matrix.ruby-version }}
           bundler-cache: true # runs 'bundle install' and caches installed gems automatically
+          working-directory: bindings/ruby
 
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
 
+      # Useful for debugging
+      - name: Print Clippy version
+        working-directory: "bindings/ruby"
+        run: cargo clippy --version
+
       - name: Clippy Check
         working-directory: "bindings/ruby"
-        run: |
-          cargo clippy -- -D warnings
+        run: cargo clippy -- -D warnings
 
-      - name: Run tests and lint
+      - name: Run lint
         working-directory: bindings/ruby
         run: |
-          bundle exec rake
+          bundle exec rake standard
+
+  examples:
+    runs-on: ubuntu-latest
+
+    env: # $BUNDLE_GEMFILE must be set at the job level, so it is set for all steps
+      BUNDLE_GEMFILE: ${{ github.workspace }}/bindings/ruby/Gemfile
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true # runs 'bundle install' and caches installed gems automatically
+          working-directory: bindings/ruby
+
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+
+      - name: Build native extension
+        working-directory: bindings/ruby
+        run: |
+          bundle exec rake compile
+
+      - name: Run getting started example
+        working-directory: bindings/ruby
+        run: |
+          bundle exec ruby examples/getting_started.rb

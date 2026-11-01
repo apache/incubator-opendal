@@ -28,13 +28,24 @@ let package = Package(
         .library(
             name: "OpenDAL",
             targets: ["OpenDAL"]
-        )
+        ),
+        .executable(
+            name: "GettingStarted",
+            targets: ["GettingStarted"]
+        ),
     ],
     targets: [
         .systemLibrary(name: "COpenDAL"),
         .target(
             name: "OpenDAL",
             dependencies: ["COpenDAL"],
+            linkerSettings: [
+                .unsafeFlags(["-L\(packageRoot)/Sources/COpenDAL/lib"])
+            ]
+        ),
+        .executableTarget(
+            name: "GettingStarted",
+            dependencies: ["OpenDAL"],
             linkerSettings: [
                 .unsafeFlags(["-L\(packageRoot)/Sources/COpenDAL/lib"])
             ]

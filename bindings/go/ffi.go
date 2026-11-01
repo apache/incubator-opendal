@@ -1,27 +1,26 @@
-/*
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
 
 package opendal
 
 import (
 	"context"
 	"errors"
+	"sync"
 	"unsafe"
 
 	"github.com/jupiterrider/ffi"
@@ -84,8 +83,29 @@ func (f *FFI[T]) withFFI(ctx context.Context, lib uintptr) (context.Context, err
 
 var withFFIs []contextWithFFI
 
-func newContext(path string) (ctx context.Context, cancel context.CancelFunc, err error) {
+var (
+	libraryMu sync.Mutex
+	libraries = map[string]uintptr{}
+)
+
+func loadSharedLibrary(path string) (uintptr, error) {
+	libraryMu.Lock()
+	defer libraryMu.Unlock()
+
+	if lib, ok := libraries[path]; ok {
+		return lib, nil
+	}
+
 	lib, err := LoadLibrary(path)
+	if err != nil {
+		return 0, err
+	}
+	libraries[path] = lib
+	return lib, nil
+}
+
+func newContext(path string) (ctx context.Context, cancel context.CancelFunc, err error) {
+	lib, err := loadSharedLibrary(path)
 	if err != nil {
 		return
 	}
@@ -96,9 +116,10 @@ func newContext(path string) (ctx context.Context, cancel context.CancelFunc, er
 			return
 		}
 	}
-	cancel = func() {
-		_ = FreeLibrary(lib)
-	}
+	// Keep the library loaded for the process lifetime. The context stores libffi
+	// call targets into this library, so unloading it during operator cleanup can
+	// leave Go frames returning into unmapped code.
+	cancel = func() {}
 
 	return
 }

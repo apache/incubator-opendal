@@ -6,6 +6,15 @@ sidebar_position: 3
 This document mainly introduces how the release manager
 releases a new version of Apache OpenDAL™ in accordance with the Apache requirements.
 
+See [Reproducible source archives](./reproducible-source.md) for rebuilding and
+comparing the source packages before signing.
+
+For candidates prepared on `releases/<version>-rc.N`, follow the
+[weekly release lifecycle](weekly.md): start the vote with ATR automatic resolution
+and publication enabled, then monitor publication and review the version-sync PR.
+The manual steps
+below apply to candidates outside that lifecycle, including older weekly branches.
+
 ## Introduction
 
 `Source Release` is the key point which Apache values, and is also necessary for an ASF release.
@@ -18,16 +27,15 @@ This guide complements the foundation-wide policies and guides:
 - [Release Distribution Policy](https://infra.apache.org/release-distribution)
 - [Release Creation Process](https://infra.apache.org/release-publishing.html)
 
-## Some Terminology of release
+## Release terminology
 
-In the context of our release, we use several terms to describe different stages of the release process.
+The release process uses the following terms:
 
-Here's an explanation of these terms:
-
-- `opendal_version`: the version of OpenDAL to be released, like `0.46.0`.
-- `release_version`: the version of release candidate, like `0.46.0-rc.1`.
-- `rc_version`: the minor version for voting round, like `rc.1`.
-- `maven_artifact_number`: the number for Maven staging artifacts, like `1010`. The number can be found by searching "opendal" on https://repository.apache.org/#stagingRepositories. And the Maven staging artifacts will be created automatically when we push a git tag to GitHub for now.
+- `release_version`: the final version proposed for release, like `0.46.0`.
+- `release_candidate_version`: the exact candidate used during staging and voting, formed from `${release_version}-${rc_version}`, like `0.46.0-rc.1`.
+- `opendal_last_version`: the most recent final version, used as the starting point for the release comparison.
+- `rc_version`: the suffix that identifies the release candidate and voting round, like `rc.1`.
+- `maven_artifact_number`: the number of the Maven staging repository, like `1010`. Find it by searching for "opendal" in the [Apache Nexus staging repositories](https://repository.apache.org/#stagingRepositories). GitHub Actions creates the staged Maven artifacts when the release candidate tag is pushed.
 
 ## Preparation
 
@@ -52,18 +60,18 @@ Title:
 Content:
 
 ```
-Hello, Apache OpenDAL Community,
+Hello, Apache OpenDAL community,
 
-This is a call for a discussion to release Apache OpenDAL version ${opendal_version}.
+I would like to start a discussion about releasing Apache OpenDAL ${release_version}.
 
-The change lists about this release:
+Changes since Apache OpenDAL ${opendal_last_version}:
 
 https://github.com/apache/opendal/compare/v${opendal_last_version}...main
 
-Please leave your comments here about this release plan. We will bump the version in the repo and start the release process after the discussion.
+Please share any comments on this release plan. After the discussion, we will
+update the repository versions and begin preparing the release candidate.
 
-Thanks
-
+Thanks,
 ${name}
 ```
 
@@ -73,12 +81,20 @@ Start a [tracking issue on GitHub](https://github.com/apache/opendal/issues/new?
 
 ## Release List
 
-Update the version list in the `dev/src/release/package.rs` file.
+Weekly releases calculate versions from the optional breaking change declarations
+in merged PRs; see [Declaring breaking changes](weekly.md#declaring-breaking-changes).
+Compatible PRs need no additional metadata. The candidate Discussion includes the
+frozen version plan and migration instructions.
+
+For a manual release, update the version list in `dev/src/release/package.rs`.
+
+This file is the source of truth for the split source release layout. Each entry in this list produces an independent source archive named `apache-opendal-{package}-{version}-src.tar.gz`.
 
 For example:
 
 - If there is any breaking change, please bump the `minor` version instead of the `patch` version.
-- If this package is not ready for release, please skip.
+- If this package is not ready for release, please skip it from the release list.
+- Packages that have moved to separate repositories must not be included here.
 
 ## GitHub Side
 
@@ -86,10 +102,16 @@ For example:
 
 Run `just update-version` to bump the version in the project.
 
+Before updating any files, this command compares public compatibility dependencies
+against the latest reachable final release tag. It rejects an integration target
+that uses a patch bump after `opendal` or another configured public dependency
+crosses a Cargo-incompatible version boundary. Fetch the repository tags before
+running the command.
+
 ### Update docs
 
 - Update `CHANGELOG.md`, refer to [Generate Release Note](reference/generate_release_note.md) for more information.
-- Update `core/src/docs/upgrade.md` if there are breaking changes in `core`
+- Update `core/core/src/docs/upgrade.md` if there are breaking changes in `core`
 - Make sure every released bindings' `upgrade.md` has been updated.
     - java: `bindings/java/upgrade.md`
     - node.js: `bindings/nodejs/upgrade.md`
@@ -101,9 +123,57 @@ Download and setup `cargo-deny`. You can refer to [cargo-deny](https://embarkstu
 
 Running `python3 ./scripts/dependencies.py generate` to update the dependency list of every package.
 
+### Bootstrap Rust crate names
+
+During release preparation, wait until the intended Rust crate-name set is on
+`apache/opendal` `main`. The release manager chooses the exact reservation time,
+normally about three days before the planned release. At that time, check out
+the current `main` commit and run:
+
+```shell
+.agents/skills/opendal-release/scripts/bootstrap-rust-crates.sh
+```
+
+The helper dispatches the manual `Bootstrap Rust Crates` workflow without
+inputs. The workflow scans the Rust publish plan from the `main` commit that
+GitHub records as the run's `headSha`. The helper resolves that exact run,
+checks the `headSha`, and waits for it to finish. A PMC member must approve the
+protected `rust-bootstrap` environment on every run.
+
+The protected job authenticates ownership and audits every existing planned
+crate before it writes anything. Each established crate must already have
+`apache/opendal`, `release_rust.yml`, and the `release` environment as its only
+Trusted Publisher, with `trustpub_only` enabled. The workflow never modifies an
+established crate. For each missing name, it publishes a dependency-free
+`0.0.0` package, configures that Trusted Publisher, and enables
+`trustpub_only`. Reruns reconcile every placeholder. The protected authenticated
+audit runs even when there are no bootstrap candidates.
+
+The one-time migration of existing crates is a separate administrative task.
+Configure the same `apache/opendal`, `release_rust.yml`, and `release` publisher
+identity and enable `trustpub_only` for every existing crate. This workflow
+audits but never modifies established crates, and it fails if the migration is
+incomplete. Complete that migration before using the OIDC-only Rust release
+workflow.
+
+The `0.0.0` package is a namespace reservation, not an ASF software release or
+release artifact. crates.io exposes the reservation publicly, and publishing it
+is irreversible. The release manager decides when the names are stable enough
+to reserve. Run the helper again if a later `main` commit adds another planned
+crate. Do not create the RC tag until every name in the current publish plan has
+passed the workflow.
+
+ASF Infrastructure provisions the `rust-bootstrap` GitHub environment from
+`.asf.yaml` with PMC required reviewers, self-review disabled, and a `main`-only
+deployment policy. A PMC release manager must add a
+`CARGO_REGISTRY_BOOTSTRAP_TOKEN` environment secret. The crates.io token must
+have only the `publish-new` and `trusted-publishing` endpoint scopes and
+OpenDAL-specific crate scopes. The normal Rust release workflow must not have
+access to this token.
+
 ### Push release candidate tag
 
-After bump version PR gets merged, we can create a GitHub release for the release candidate:
+After bump version PR gets merged, push the release candidate tag:
 
 - Create a tag at `main` branch on the `Bump Version` / `Patch up version` commit: `git tag -s "v0.46.0-rc.1"`, please correctly check out the corresponding commit instead of directly tagging on the main branch.
 - Push tags to GitHub: `git push --tags`.
@@ -111,19 +181,45 @@ After bump version PR gets merged, we can create a GitHub release for the releas
 
 :::note
 
-Pushing a Git tag to GitHub repo will trigger a GitHub Actions workflow that creates a staging Maven release on https://repository.apache.org which can be verified on voting.
+Pushing an RC tag to GitHub will trigger the tag-based release workflows. In the current flow, this includes the Java staging artifacts on https://repository.apache.org and dry-run checks for other released packages.
 
 :::
 
 ### Check the GitHub action status
 
-After pushing the tag, we need to check the GitHub action status to make sure the release candidate is created successfully.
+After pushing the tag, check the GitHub action status to make sure the RC workflows finished successfully.
 
-- Python: [Bindings Python CI](https://github.com/apache/opendal/actions/workflows/ci_bindings_python.yml)
+- Rust packages: [Release Rust Packages](https://github.com/apache/opendal/actions/workflows/release_rust.yml)
+- Python: [Release Python Binding](https://github.com/apache/opendal/actions/workflows/release_python.yml)
 - Java: [Bindings Java CI](https://github.com/apache/opendal/actions/workflows/ci_bindings_java.yml) and [Bindings Java Release](https://github.com/apache/opendal/actions/workflows/release_java.yml)
-- Node.js: [Bindings Node.js CI](https://github.com/apache/opendal/actions/workflows/ci_bindings_nodejs.yml)
+- Node.js: [Bindings Node.js CI](https://github.com/apache/opendal/actions/workflows/ci_bindings_nodejs.yml) and [Release NodeJS Binding](https://github.com/apache/opendal/actions/workflows/release_nodejs.yml)
+- Docs: [Docs](https://github.com/apache/opendal/actions/workflows/docs.yml)
 
 In the most cases, it would be great to rerun the failed workflow directly when you find some failures. But if a new code patch is needed to fix the failure, you should create a new release candidate tag, increase the rc number and push it to GitHub.
+
+### Check Rust crates.io readiness
+
+Before the official release tag is pushed, check the Rust package publish plan:
+
+```shell
+python3 .github/scripts/release_rust/plan.py
+```
+
+The plan must include every Rust package that is referenced by released crates.
+For example, `opendal-testkit` is referenced by the `opendal` crate's `tests`
+feature, so it must be publishable and appear before `opendal` in the plan.
+
+The Rust release workflow uses `.github/scripts/release_rust/publish.py` instead
+of calling `cargo publish` directly. The helper temporarily removes repo-local
+`dev-dependencies` while packaging crates, because crates.io resolves
+`dev-dependencies` even when `cargo publish --no-verify` is used. Without this
+step, same-version dev dependencies and dev-only cycles can block the release
+even though they are not needed by downstream users.
+
+The normal workflow publishes only through Trusted Publishing. The helper
+fetches and revokes a fresh OIDC-derived crates.io token for every publish
+attempt, including attempts retried after a rate limit. New crate names must
+already exist from the reservation workflow.
 
 ## ASF Side
 
@@ -135,15 +231,17 @@ Additionally, we should also drop the staging Maven artifacts on https://reposit
 
 ### Create an ASF Release
 
-After GitHub Release has been created, we can start to create ASF Release.
+After the RC tag has been pushed and the required workflows are green, create the ASF source release artifacts.
 
 - Checkout to released tag. (e.g. `git checkout v0.46.0-rc.1`, tag is created in the previous step)
 - Use the release script to create a new release: `just release`
-  - This script will generate the release candidate artifacts under `dist`, including:
+  - This script will generate the release candidate artifacts under `dist` for every package listed in `dev/src/release/package.rs`, including:
     - `apache-opendal-{package}-{version}-src.tar.gz`
     - `apache-opendal-{package}-{version}-src.tar.gz.asc`
     - `apache-opendal-{package}-{version}-src.tar.gz.sha512`
-- Push the newly created branch to GitHub
+  - Artifact names use each package's own version. The RC version is only used for the SVN directory name, such as `0.55.0-rc.1/`.
+  - Each archive contains `LICENSE`, `NOTICE`, the package directory itself, and any repo-local dependencies needed to build that package from source.
+  - This repository no longer produces a monolithic `apache-opendal-${release_version}-src.tar.gz` artifact or any `apache-opendal-bin-*` artifacts.
 
 This script will create a new release under `dist`.
 
@@ -151,21 +249,36 @@ For example:
 
 ```shell
 dist
-├── apache-opendal-bindings-c-0.44.2-src.tar.gz
-├── apache-opendal-bindings-c-0.44.2-src.tar.gz.asc
-├── apache-opendal-bindings-c-0.44.2-src.tar.gz.sha512
-...
-├── apache-opendal-core-0.45.0-src.tar.gz
-├── apache-opendal-core-0.45.0-src.tar.gz.asc
-├── apache-opendal-core-0.45.0-src.tar.gz.sha512
-├── apache-opendal-integrations-dav-server-0.0.0-src.tar.gz
-├── apache-opendal-integrations-dav-server-0.0.0-src.tar.gz.asc
-├── apache-opendal-integrations-dav-server-0.0.0-src.tar.gz.sha512
-├── apache-opendal-integrations-object_store-0.42.0-src.tar.gz
-├── apache-opendal-integrations-object_store-0.42.0-src.tar.gz.asc
-└── apache-opendal-integrations-object_store-0.42.0-src.tar.gz.sha512
-
-1 directory, 60 files
+├── apache-opendal-bindings-c-${c_version}-src.tar.gz
+├── apache-opendal-bindings-c-${c_version}-src.tar.gz.asc
+├── apache-opendal-bindings-c-${c_version}-src.tar.gz.sha512
+├── apache-opendal-bindings-cpp-${cpp_version}-src.tar.gz
+├── apache-opendal-bindings-cpp-${cpp_version}-src.tar.gz.asc
+├── apache-opendal-bindings-cpp-${cpp_version}-src.tar.gz.sha512
+├── apache-opendal-bindings-java-${java_version}-src.tar.gz
+├── apache-opendal-bindings-java-${java_version}-src.tar.gz.asc
+├── apache-opendal-bindings-java-${java_version}-src.tar.gz.sha512
+├── apache-opendal-bindings-nodejs-${nodejs_version}-src.tar.gz
+├── apache-opendal-bindings-nodejs-${nodejs_version}-src.tar.gz.asc
+├── apache-opendal-bindings-nodejs-${nodejs_version}-src.tar.gz.sha512
+├── apache-opendal-bindings-python-${python_version}-src.tar.gz
+├── apache-opendal-bindings-python-${python_version}-src.tar.gz.asc
+├── apache-opendal-bindings-python-${python_version}-src.tar.gz.sha512
+├── apache-opendal-core-${core_version}-src.tar.gz
+├── apache-opendal-core-${core_version}-src.tar.gz.asc
+├── apache-opendal-core-${core_version}-src.tar.gz.sha512
+├── apache-opendal-integrations-dav-server-${dav_server_version}-src.tar.gz
+├── apache-opendal-integrations-dav-server-${dav_server_version}-src.tar.gz.asc
+├── apache-opendal-integrations-dav-server-${dav_server_version}-src.tar.gz.sha512
+├── apache-opendal-integrations-object_store-${object_store_version}-src.tar.gz
+├── apache-opendal-integrations-object_store-${object_store_version}-src.tar.gz.asc
+├── apache-opendal-integrations-object_store-${object_store_version}-src.tar.gz.sha512
+├── apache-opendal-integrations-parquet-${parquet_version}-src.tar.gz
+├── apache-opendal-integrations-parquet-${parquet_version}-src.tar.gz.asc
+├── apache-opendal-integrations-parquet-${parquet_version}-src.tar.gz.sha512
+├── apache-opendal-integrations-unftp-sbe-${unftp_sbe_version}-src.tar.gz
+├── apache-opendal-integrations-unftp-sbe-${unftp_sbe_version}-src.tar.gz.asc
+└── apache-opendal-integrations-unftp-sbe-${unftp_sbe_version}-src.tar.gz.sha512
 ```
 
 ### Upload artifacts to the SVN dist repo
@@ -187,22 +300,22 @@ svn co https://dist.apache.org/repos/dist/dev/opendal opendal-dist-dev
 
 Then, upload the artifacts:
 
-> The `${release_version}` here should be like `0.46.0-rc.1`
+> The `${release_candidate_version}` here should be like `0.46.0-rc.1`.
 
 ```shell
 cd opendal-dist-dev
 # create a directory named by version
-mkdir ${release_version}
+mkdir ${release_candidate_version}
 # copy source code and signature package to the versioned directory
-cp ${repo_dir}/dist/* ${release_version}/
+cp ${repo_dir}/dist/* ${release_candidate_version}/
 # check svn status
 svn status
 # add to svn
-svn add ${release_version}
+svn add ${release_candidate_version}
 # check svn status
 svn status
 # commit to SVN remote server
-svn commit -m "Prepare for ${release_version}"
+svn commit -m "Prepare for ${release_candidate_version}"
 ```
 
 Visit <https://dist.apache.org/repos/dist/dev/opendal/> to make sure the artifacts are uploaded correctly.
@@ -224,159 +337,193 @@ If the vote failed, click "Drop" to drop the staging Maven artifacts.
 
 ### Rescue
 
-If you accidentally published wrong or unexpected artifacts, like wrong signature files, wrong sha256 files,
-please cancel the release for the current `release_version`,
-_increase th RC counting_ and re-initiate a release with the new `release_version`.
-And remember to delete the wrong artifacts from the SVN dist repo.
-Additionally, you should also drop the staging Maven artifacts on https://repository.apache.org.
+If you publish incorrect or unexpected artifacts, such as invalid signatures or
+checksums, abandon the current release candidate `${release_candidate_version}`,
+increment `rc_version`, and prepare a new candidate. Delete the incorrect
+artifacts from the SVN dist repository and drop the Maven staging repository at
+https://repository.apache.org.
 
 ## Voting
 
-OpenDAL requires votes from both the OpenDAL Community.
+A release candidate must receive at least three binding `+1` votes from OpenDAL
+PMC members and more binding `+1` than `-1` votes.
 
 Start a VOTE at [OpenDAL Discussion General](https://github.com/apache/opendal/discussions/categories/general):
 
 Title:
 
 ```
-[VOTE] Release Apache OpenDAL ${release_version} - Vote Round 1
+[VOTE] Release Apache OpenDAL ${release_candidate_version}
 ```
 
 Content:
 
-```
-Hello, Apache OpenDAL Community,
+````
+Hello, Apache OpenDAL community,
 
-This is a call for a vote to release Apache OpenDAL version ${opendal_version}.
+This is a call for a vote on Apache OpenDAL release candidate
+v${release_candidate_version}, proposed for release as Apache OpenDAL ${release_version}.
 
-The tag to be voted on is ${opendal_version}.
+Release candidate source packages:
 
-The release candidate:
+https://dist.apache.org/repos/dist/dev/opendal/${release_candidate_version}/
 
-https://dist.apache.org/repos/dist/dev/opendal/${release_version}/
-
-Keys to verify the release candidate:
+Keys used to verify the signatures:
 
 https://downloads.apache.org/opendal/KEYS
 
-Git tag for the release:
+Release candidate Git tag:
 
-https://github.com/apache/opendal/releases/tag/v${release_version}
+https://github.com/apache/opendal/releases/tag/v${release_candidate_version}
 
-Maven staging repo:
+Maven staging repository:
 
 https://repository.apache.org/content/repositories/orgapacheopendal-${maven_artifact_number}/
 
-Pypi testing repo:
+Python packages on TestPyPI:
 
 https://test.pypi.org/project/opendal/
 
-Website staged:
+Staged website:
 
-https://opendal-v${release_version | replace('.', '-')}.staged.apache.org/
+https://opendal-v${release_candidate_version | replace('.', '-')}.staged.apache.org/
 
-Please download, verify, and test.
+Please download, verify, and test the release candidate. When voting, state
+which checks you performed.
 
-The VOTE will be open for at least 72 hours and until the necessary
-number of votes are reached.
+The vote will remain open for at least 72 hours and until the release candidate
+receives at least three binding `+1` votes, with more binding `+1` than `-1`
+votes.
 
-- [ ] +1 approve
-- [ ] +0 no opinion
-- [ ] -1 disapprove with the reason
+```markdown
+- [ ] +1 Approve.
+- [ ] +0 No opinion.
+- [ ] -1 Do not approve. Please explain why.
 
-To learn more about apache opendal, please see https://opendal.apache.org/
+Verification checklist:
 
-Checklist for reference:
-
-- [ ] Download links are valid.
-- [ ] Checksums and signatures.
-- [ ] LICENSE/NOTICE files exist
-- [ ] No unexpected binary files
-- [ ] All source files have ASF headers
-- [ ] Can compile from source
-
-Use our verify.py to assist in the verify process:
-
-    svn co https://dist.apache.org/repos/dist/dev/opendal/${release_version}/ opendal-dev
-    cd opendal-dev
-    curl -sSL https://github.com/apache/opendal/raw/v${release_version}/scripts/verify.py -o verify.py
-    python verify.py
-
-Thanks
-
-${name}
+- [ ] Download links work.
+- [ ] Checksums and signatures are valid.
+- [ ] LICENSE and NOTICE files are present.
+- [ ] Source packages contain no unexpected binary files.
+- [ ] Source files include ASF license headers.
+- [ ] Source builds successfully.
 ```
+
+Use `verify.py` to help verify the release candidate:
+
+```shell
+svn checkout https://dist.apache.org/repos/dist/dev/opendal/${release_candidate_version}/ opendal-dist-${release_candidate_version}
+cd opendal-dist-${release_candidate_version}
+curl --silent --show-error --location https://github.com/apache/opendal/raw/v${release_candidate_version}/scripts/verify.py --output verify.py
+python verify.py
+```
+
+For more information about Apache OpenDAL, visit https://opendal.apache.org/.
+
+Thanks,
+${name}
+````
 
 Example: <https://github.com/apache/opendal/discussions/5211>
 
-The vote should be open for **at least 72 hours** except the following cases:
+The vote should remain open for **at least 72 hours**, except in the following cases:
 
 1. Security issues
-2. The wild user affected bug fixes
-3. Any other emergency cases
+2. Urgent bug fixes that affect many users
+3. Other emergencies approved by the PMC
 
-The Release manager should claim the emergency cases in the vote email if he wants to vote it rapidly.
+The release manager must explain the emergency and shortened voting period in the vote message.
 
-> Tips: The 72 hours is the minimum time for voting, so we can ensure that community members from various time zones can participate in the verification process.
+> The 72-hour minimum gives community members in different time zones an opportunity to verify the release candidate and vote.
 
-After at least 3 `+1` binding vote ([from OpenDAL PMC member](https://people.apache.org/phonebook.html?project=opendal)) and more +1 bindings than -1 bindings, claim the vote result:
+After the release candidate receives at least three binding `+1` votes from [OpenDAL PMC members](https://people.apache.org/phonebook.html?project=opendal), with more binding `+1` than `-1` votes, announce the result:
 
 Title:
 
 ```
-[RESULT][VOTE] Release Apache OpenDAL ${release_version} - Vote Round 1
+[RESULT][VOTE] Release Apache OpenDAL ${release_candidate_version}
 ```
 
 Content:
 
 ```
-Hello, Apache OpenDAL Community,
+Hello, Apache OpenDAL community,
 
-The vote to release Apache OpenDAL ${release_version} has passed.
+The vote on Apache OpenDAL release candidate v${release_candidate_version} has passed.
+The candidate is approved for release as Apache OpenDAL ${release_version}.
 
-The vote PASSED with 3 +1 binding and 1 +1 non-binding votes, no +0 or -1 votes:
-
-Binding votes:
+Binding +1 votes:
 
 - xxx
 - yyy
 - zzz
 
-Non-Binding votes:
+Non-binding +1 votes:
 
 - aaa
 
++0 votes:
+
+- None
+
+-1 votes:
+
+- None
+
 Vote thread: ${vote_thread_url}
 
-Thanks
-
+Thanks,
 ${name}
 ```
 
-It's better to use the real name or the public name which is displayed on the voters' profile page,
-or Apache ID of the voter, to show who voted in the vote result email,
-and avoid using nicknames, it will make the vote result hard for others to track the voter.
-We should make sure the binding votes are from the people who have the right to vote the binding one.
+Identify voters by their real name, public profile name, or Apache ID. Avoid
+nicknames that make votes difficult to verify. Confirm that every binding vote
+comes from an OpenDAL PMC member.
 
 Example: <https://lists.apache.org/thread/xk5myl10mztcfotn59oo59s4ckvojds6>
 
 ## Official Release
 
+For the new weekly lifecycle, a passing ATR resolution automatically starts final
+publication. See [After the vote passes](weekly.md#after-the-vote-passes) for final
+refs, package jobs, Nexus promotion, announcements, main synchronization and RC
+branch cleanup. Do not also execute the manual publication steps below for that
+candidate.
+
+For the manual path, the release manager initiates this phase after the vote
+passes. Use the approved RC commit even if `main` has advanced.
+
+For a candidate staged in ATR, complete source publication through ATR using the
+approved revision. The SVN instructions below apply to candidates staged in
+`dist/dev`; preserve the approved archives in either path.
+
 ### Push the release git tag
 
 ```shell
 # Checkout the tags that passed VOTE
-git checkout ${release_version}
-# Tag with the opendal version
-git tag -s ${opendal_version}
+git checkout v${release_candidate_version}
+# Tag with the final release version
+git tag -s v${release_version}
 # Push tags to GitHub to trigger releases
-git push origin ${opendal_version}
+git push origin v${release_version}
 ```
+
+Push the final tag with the release manager's credentials. This triggers the
+existing tag workflows: Rust, Python, Node.js, Ruby and .NET take their formal
+publication paths; Java stages to Nexus and requires the promotion below. Dart
+builds artifacts. Check the resulting runs and package repositories before
+claiming publication succeeded.
+
+Tags pushed with `GITHUB_TOKEN` need explicit final-tag workflow dispatch.
+`release_publish.yml` handles this for new weekly candidates; RC dispatch inputs
+are not final-publication inputs. Creating the GitHub Release later is separate
+from this trigger.
 
 ### Publish artifacts to SVN RELEASE branch
 
 ```shell
-svn mv https://dist.apache.org/repos/dist/dev/opendal/${release_version} https://dist.apache.org/repos/dist/release/opendal/${opendal_version} -m "Release ${opendal_version}"
+svn mv https://dist.apache.org/repos/dist/dev/opendal/${release_candidate_version} https://dist.apache.org/repos/dist/release/opendal/${release_version} -m "Release ${release_version}"
 ```
 
 ### Release Maven artifacts
@@ -396,9 +543,14 @@ If the vote failed, click "Drop" to drop the staging Maven artifacts.
 
 We need to check the language binding artifacts in the language package repo to make sure they are released successfully.
 
+- Rust: <https://crates.io/crates/opendal>
 - Python: <https://pypi.org/project/opendal/>
 - Java: <https://repository.apache.org/#nexus-search;quick~opendal>
 - Node.js: <https://www.npmjs.com/package/opendal>
+
+For Rust crates, check both the top-level `opendal` crate and split crates that
+were added or changed in the release, such as `opendal-service-*`,
+`opendal-layer-*`, and integration crates.
 
 For Java binding, if we cannot find the latest version of artifacts in the repo,
 we need to check the `orgapacheopendal-${maven_artifact_number}` artifact status in staging repo.
@@ -410,23 +562,23 @@ we need to check the GitHub action status.
 
 - Click [here](https://github.com/apache/opendal/releases/new) to create a new release.
 - Pick the git tag of this release version from the dropdown menu.
-- Make sure the branch target is `main`.
+- Use the existing final tag at the approved RC commit, even if main has advanced.
 - Generate the release note by clicking the `Generate release notes` button.
 - Add the release note from every component's `upgrade.md` if there are breaking changes before the content generated by GitHub. Check them carefully.
 - Publish the release.
 
 ### Send the announcement
 
-Start an announcement to [OpenDAL Discussion Announcements](https://github.com/apache/opendal/discussions/categories/announcements) and send the same content to `announce@apache.org`.
+Post an announcement in [OpenDAL Discussion Announcements](https://github.com/apache/opendal/discussions/categories/announcements) and send the same content to `announce@apache.org`.
 
-> Tips: Please follow the [Committer Email](https://infra.apache.org/committer-email.html) guide to make sure you have already set up the email SMTP. Otherwise, your email cannot be sent to the announcement mailing list.
+> Follow the [Committer Email](https://infra.apache.org/committer-email.html) guide to configure SMTP before sending to the announcement mailing list.
 
-Instead of adding breaking changes, let's include the new features as "notable changes" in the announcement.
+Summarize notable user-facing changes instead of copying the raw breaking-change list.
 
 Title:
 
 ```
-[ANNOUNCE] Release Apache OpenDAL ${opendal_version}
+[ANNOUNCE] Release Apache OpenDAL ${release_version}
 ```
 
 Content:
@@ -434,31 +586,31 @@ Content:
 ```
 Hi all,
 
-The Apache OpenDAL community is pleased to announce
-that Apache OpenDAL ${opendal_version} has been released!
+The Apache OpenDAL community is pleased to announce the release of
+Apache OpenDAL ${release_version}.
 
-OpenDAL is a data access layer that allows users to easily and efficiently
-retrieve data from various storage services in a unified way.
+Apache OpenDAL provides a unified data access layer for applications,
+libraries, and data systems.
 
-The notable changes since ${opendal_version} include:
+Notable changes in this release include:
 
 1. xxxxx
 2. yyyyyy
 3. zzzzzz
 
-Please refer to the change log for the complete list of changes:
-https://github.com/apache/opendal/releases/tag/v${opendal_version}
+Changelog: https://github.com/apache/opendal/releases/tag/v${release_version}
 
-Apache OpenDAL website: https://opendal.apache.org/
+Download: https://opendal.apache.org/download
 
-Download Links: https://opendal.apache.org/download
+Website: https://opendal.apache.org/
 
-OpenDAL Resources:
-- Issue: https://github.com/apache/opendal/issues
-- Mailing list: dev@opendal.apache.org
+Issue tracker: https://github.com/apache/opendal/issues
 
-Thanks
-On behalf of Apache OpenDAL community
+Mailing list: dev@opendal.apache.org
+
+Thanks,
+${name}
+on behalf of the Apache OpenDAL community
 ```
 
 Example: <https://lists.apache.org/thread/oy77n55brvk72tnlb2bjzfs9nz3cfd0s>

@@ -1,0 +1,101 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: Bindings MoonBit CI
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "*"
+    paths: &paths
+      - "core/**"
+      - "bindings/moonbit/**"
+      - ".github/actions/setup/**"
+      - ".github/workflows/ci_bindings_moonbit.yml"
+  pull_request:
+    branches:
+      - main
+    paths: *paths
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  MOONBIT_VERSION: 0.10.14+7d59c7ec9
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+
+      - name: Install native build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential
+
+      - name: Install MoonBit
+        run: |
+          curl -fsSL https://cli.moonbitlang.com/install/unix.sh | bash -s "$MOONBIT_VERSION"
+          echo "$HOME/.moon/bin" >> "$GITHUB_PATH"
+
+      - name: Print tool versions
+        run: |
+          rustc --version
+          cargo --version
+          moon version --all
+
+      - name: Check MoonBit source
+        working-directory: bindings/moonbit
+        run: |
+          moon check --target native --deny-warn
+          moon fmt --check
+          moon info --target native
+
+      - name: Check Rust bridge
+        working-directory: bindings/moonbit
+        run: |
+          cargo fmt -- --check
+          cargo clippy --all-targets -- -D warnings
+
+      - name: Build Rust bridge
+        working-directory: bindings/moonbit
+        run: cargo build --release
+
+      - name: Check C adapter
+        working-directory: bindings/moonbit
+        run: cc -std=c11 -Wall -Wextra -Werror -I"$HOME/.moon/include" -fsyntax-only src/opendal_stub.c
+
+      - name: Run native smoke test
+        working-directory: bindings/moonbit
+        env:
+          LIBRARY_PATH: ${{ github.workspace }}/bindings/moonbit/target/release
+          LD_LIBRARY_PATH: ${{ github.workspace }}/bindings/moonbit/target/release
+        run: moon test --target native --release --deny-warn
+
+      - name: Check generated files
+        run: git diff --exit-code

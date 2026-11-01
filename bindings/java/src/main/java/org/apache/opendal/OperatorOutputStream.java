@@ -43,13 +43,13 @@ public class OperatorOutputStream extends OutputStream {
 
     private int offset = 0;
 
-    public OperatorOutputStream(Operator operator, String path) {
-        this(operator, path, DEFAULT_MAX_BYTES);
+    public OperatorOutputStream(Operator operator, String path, WriteOptions options) {
+        this(operator, path, DEFAULT_MAX_BYTES, options);
     }
 
-    public OperatorOutputStream(Operator operator, String path, int maxBytes) {
+    public OperatorOutputStream(Operator operator, String path, int maxBytes, WriteOptions options) {
         final long op = operator.nativeHandle;
-        this.writer = new Writer(constructWriter(op, path));
+        this.writer = new Writer(constructWriter(op, path, options));
         this.maxBytes = maxBytes;
         this.bytes = new byte[maxBytes];
     }
@@ -57,15 +57,17 @@ public class OperatorOutputStream extends OutputStream {
     @Override
     public void write(int b) throws IOException {
         bytes[offset++] = (byte) b;
-        if (offset >= maxBytes) {
-            flush();
+        if (offset != maxBytes) {
+            return;
         }
+        flush();
     }
 
     @Override
-    public void flush() throws IOException {
+    public void flush() {
         if (offset > maxBytes) {
-            throw new IOException("INTERNAL ERROR: " + offset + " > " + maxBytes);
+            // unreachable
+            throw new IllegalStateException("INTERNAL ERROR: " + offset + " > " + maxBytes);
         } else if (offset < maxBytes) {
             final byte[] bytes = Arrays.copyOf(this.bytes, offset);
             writeBytes(writer.nativeHandle, bytes);
@@ -76,14 +78,14 @@ public class OperatorOutputStream extends OutputStream {
     }
 
     @Override
-    public void close() throws IOException {
+    public void close() {
         flush();
         writer.close();
     }
 
-    private static native long constructWriter(long op, String path);
+    private static native long constructWriter(long op, String path, WriteOptions options);
 
-    private static native long disposeWriter(long writer);
+    private static native void disposeWriter(long writer);
 
-    private static native byte[] writeBytes(long writer, byte[] bytes);
+    private static native void writeBytes(long writer, byte[] bytes);
 }

@@ -71,6 +71,12 @@ library
     hs-source-dirs:   haskell-src
     extra-bundled-libraries: opendal_hs
 
+executable getting-started
+    import:           base
+    main-is:          GettingStarted.hs
+    hs-source-dirs:   examples
+    build-depends:    opendal
+
 test-suite opendal-test
     import:           base
     type:             exitcode-stdio-1.0

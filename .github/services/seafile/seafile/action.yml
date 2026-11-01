@@ -25,13 +25,14 @@ runs:
       shell: bash
       working-directory: fixtures/seafile
       run: |
-        docker compose -f docker-compose-seafile.yml up -d --wait
+        docker compose --env-file seafile.env -f docker-compose-seafile.yml down -v --remove-orphans || true
+        docker compose --env-file seafile.env -f docker-compose-seafile.yml up -d --wait
 
     - name: Create test token and setup test library
       shell: bash
       run: |
-        token=$(curl --location --request POST -d "username=me@example.com&password=asecret" http://127.0.0.1:80/api2/auth-token/ | awk -F '"' '/token/{print $4}')
-        curl --location --request POST -d 'name=test' -H "Authorization: Token $token" http://127.0.0.1:80/api2/repos/
+        token=$(curl --fail-with-body --silent --show-error --location --request POST -d "username=me@example.com&password=asecret" http://127.0.0.1:80/api2/auth-token/ | awk -F '"' '/token/{print $4}')
+        curl --fail-with-body --silent --show-error --location --request POST -d 'name=test' -H "Authorization: Token $token" http://127.0.0.1:80/api2/repos/
 
     - name: Set environment variables
       shell: bash

@@ -19,7 +19,7 @@ use crate::utils::{build_trail, new_file_path};
 use anyhow::Result;
 use bytes::Bytes;
 use libtest_mimic::Trial;
-use object_store::{ObjectStore, PutMode, UpdateVersion};
+use object_store::{ObjectStore, ObjectStoreExt, PutMode, UpdateVersion};
 use object_store_opendal::OpendalStore;
 
 pub fn tests(store: &OpendalStore, tests: &mut Vec<Trial>) {
@@ -75,7 +75,7 @@ pub async fn test_put_opts_with_overwrite(store: OpendalStore) -> Result<()> {
 }
 
 pub async fn test_put_opts_with_create(store: OpendalStore) -> Result<()> {
-    if !store.info().full_capability().write_with_if_not_exists {
+    if !store.info().capability().write_with_if_not_exists {
         return Ok(());
     }
 
@@ -103,7 +103,7 @@ pub async fn test_put_opts_with_create(store: OpendalStore) -> Result<()> {
 }
 
 pub async fn test_put_opts_with_update(store: OpendalStore) -> Result<()> {
-    if !store.info().full_capability().write_with_if_match {
+    if !store.info().capability().write_with_if_match {
         return Ok(());
     }
 

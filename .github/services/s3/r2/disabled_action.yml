@@ -22,7 +22,7 @@ runs:
   using: "composite"
   steps:
     - name: Setup
-      uses: 1password/load-secrets-action@13f58eec611f8e5db52ec16247f58c508398f3e6 # v3
+      uses: 1Password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
       with:
         export-env: true
       env:
@@ -31,13 +31,12 @@ runs:
         OPENDAL_S3_ACCESS_KEY_ID: op://services/r2/access_key_id
         OPENDAL_S3_SECRET_ACCESS_KEY: op://services/r2/secret_access_key
 
-    # OPENDAL_S3_BATCH_MAX_OPERATIONS is the R2's limitation
+    # R2 has a lower delete batch limit and doesn't support stat override response queries.
     # Refer to https://opendal.apache.org/docs/services/s3#compatible-services for more information
     - name: Add extra settings
       shell: bash
       run: |
         cat << EOF >> $GITHUB_ENV
         OPENDAL_S3_REGION=auto
-        OPENDAL_S3_DELETE_MAX_SIZE=700
-        OPENDAL_S3_DISABLE_STAT_WITH_OVERRIDE=true
+        OPENDAL_TEST_CAPABILITY_OVERRIDES=stat_with_version=false,read_with_version=false,delete_with_version=false,list_with_versions=false,list_with_deleted=false,copy_with_source_version=false,restore=false,restore_with_version=false,restore_with_if_not_exists=false,write_can_append=false,delete_max_size=700,stat_with_override_cache_control=false,stat_with_override_content_disposition=false,stat_with_override_content_type=false
         EOF

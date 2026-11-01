@@ -15,38 +15,94 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use jni::JNIEnv;
+use std::collections::HashSet;
+
+use jni::Env;
+use jni::EnvUnowned;
+use jni::jni_str;
 use jni::objects::JClass;
 use jni::objects::JObject;
-use jni::sys::jobjectArray;
+use jni::objects::JObjectArray;
 use jni::sys::jsize;
-use opendal::Scheme;
 
 use crate::Result;
 use crate::convert::string_to_jstring;
+use crate::error::ThrowException;
 
 /// # Safety
 ///
 /// This function should not be called before the Operator is ready.
 #[unsafe(no_mangle)]
-pub unsafe extern "system" fn Java_org_apache_opendal_OpenDAL_loadEnabledServices(
-    mut env: JNIEnv,
-    _: JClass,
-) -> jobjectArray {
-    intern_load_enabled_services(&mut env).unwrap_or_else(|e| {
-        e.throw(&mut env);
-        JObject::default().into_raw()
-    })
+pub unsafe extern "system" fn Java_org_apache_opendal_OpenDAL_loadEnabledServices<'local>(
+    mut env: EnvUnowned<'local>,
+    _: JClass<'local>,
+) -> JObjectArray<'local> {
+    env.with_env(|env| intern_load_enabled_services(env))
+        .resolve::<ThrowException>()
 }
 
-fn intern_load_enabled_services(env: &mut JNIEnv) -> Result<jobjectArray> {
-    let services = Scheme::enabled();
-    let res = env.new_object_array(services.len() as jsize, "java/lang/String", JObject::null())?;
+fn intern_load_enabled_services<'local>(env: &mut Env<'local>) -> Result<JObjectArray<'local>> {
+    let services = HashSet::from([
+        opendal::services::ALIYUN_DRIVE_SCHEME,
+        opendal::services::ALLUXIO_SCHEME,
+        opendal::services::AZBLOB_SCHEME,
+        opendal::services::AZDLS_SCHEME,
+        opendal::services::AZFILE_SCHEME,
+        opendal::services::B2_SCHEME,
+        opendal::services::CACACHE_SCHEME,
+        opendal::services::COS_SCHEME,
+        opendal::services::DASHMAP_SCHEME,
+        opendal::services::DROPBOX_SCHEME,
+        opendal::services::ETCD_SCHEME,
+        opendal::services::FS_SCHEME,
+        opendal::services::GCS_SCHEME,
+        opendal::services::GDRIVE_SCHEME,
+        opendal::services::GHAC_SCHEME,
+        opendal::services::GRIDFS_SCHEME,
+        opendal::services::HTTP_SCHEME,
+        opendal::services::HF_SCHEME,
+        opendal::services::IPFS_SCHEME,
+        opendal::services::IPMFS_SCHEME,
+        opendal::services::KOOFR_SCHEME,
+        opendal::services::MEMCACHED_SCHEME,
+        opendal::services::MEMORY_SCHEME,
+        opendal::services::MINI_MOKA_SCHEME,
+        opendal::services::MOKA_SCHEME,
+        opendal::services::MONGODB_SCHEME,
+        opendal::services::MYSQL_SCHEME,
+        opendal::services::OBS_SCHEME,
+        opendal::services::ONEDRIVE_SCHEME,
+        opendal::services::OSS_SCHEME,
+        opendal::services::PERSY_SCHEME,
+        opendal::services::POSTGRESQL_SCHEME,
+        opendal::services::REDB_SCHEME,
+        opendal::services::REDIS_SCHEME,
+        opendal::services::S3_SCHEME,
+        opendal::services::SEAFILE_SCHEME,
+        #[cfg(unix)]
+        opendal::services::SFTP_SCHEME,
+        opendal::services::SLED_SCHEME,
+        opendal::services::SQLITE_SCHEME,
+        opendal::services::SWIFT_SCHEME,
+        opendal::services::TIKV_SCHEME,
+        opendal::services::TOS_SCHEME,
+        opendal::services::UPYUN_SCHEME,
+        opendal::services::VERCEL_ARTIFACTS_SCHEME,
+        opendal::services::WEBDAV_SCHEME,
+        opendal::services::WEBHDFS_SCHEME,
+        opendal::services::YANDEX_DISK_SCHEME,
+    ]);
 
-    for (idx, service) in services.iter().enumerate() {
-        let srv = string_to_jstring(env, Some(&service.to_string()))?;
-        env.set_object_array_element(&res, idx as jsize, srv)?;
+    let res = env.new_object_array(
+        services.len() as jsize,
+        jni_str!("java/lang/String"),
+        JObject::null(),
+    )?;
+
+    for (idx, service) in services.into_iter().enumerate() {
+        let srv = string_to_jstring(env, Some(service))?;
+        res.set_element(env, idx, &srv)?;
     }
 
-    Ok(res.into_raw())
+    Ok(res)
 }

@@ -43,6 +43,5 @@ runs:
         OPENDAL_S3_ACCESS_KEY_ID=demo
         OPENDAL_S3_SECRET_ACCESS_KEY=demo
         OPENDAL_S3_REGION=us-east-1
-        OPENDAL_S3_ENABLE_VERSIONING=true
-        OPENDAL_S3_DISABLE_WRITE_WITH_IF_MATCH=on
+        OPENDAL_TEST_CAPABILITY_OVERRIDES=write_with_if_match=false,write_can_append=false
         EOF

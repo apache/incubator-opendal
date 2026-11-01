@@ -18,8 +18,8 @@
 name: Test Core
 description: 'Test Core with given setup and service'
 inputs:
-  setup:
-    description: "The setup action for test"
+  setups:
+    description: "The comma-separated setup actions for test"
   service:
     description: "The service to test"
   feature:
@@ -30,20 +30,91 @@ runs:
   steps:
     - name: Setup
       shell: bash
+      env:
+        TEST_FEATURE: ${{ inputs.feature }}
+        TEST_SERVICE: ${{ inputs.service }}
+        TEST_SETUPS: ${{ inputs.setups }}
       run: |
-        mkdir -p ./dynamic_test_core &&
-        cat <<EOF >./dynamic_test_core/action.yml
+        mkdir -p ./dynamic_test_core
+        cat <<'EOF' >./dynamic_test_core/action.yml
         runs:
           using: composite
           steps:
-          - name: Setup Test Core
-            uses: ./.github/services/${{ inputs.service }}/${{ inputs.setup }}
-          - name: Run Test Core
+        EOF
+
+        index=0
+        IFS=',' read -r -a setups <<<"$TEST_SETUPS"
+        for setup in "${setups[@]}"; do
+          setup_action="./dynamic_test_core/setup_$index"
+          mkdir -p "$setup_action"
+          cat <<EOF >"$setup_action/action.yml"
+        runs:
+          using: composite
+          steps:
+          - name: Record existing Docker resources for $setup
+            if: always()
+            shell: bash
+            run: |
+              : >"\$RUNNER_TEMP/opendal-containers-$index"
+              : >"\$RUNNER_TEMP/opendal-networks-$index"
+              : >"\$RUNNER_TEMP/opendal-volumes-$index"
+              if docker info >/dev/null 2>&1; then
+                docker ps -aq | sort >"\$RUNNER_TEMP/opendal-containers-$index"
+                docker network ls -q | sort >"\$RUNNER_TEMP/opendal-networks-$index"
+                docker volume ls -q | sort >"\$RUNNER_TEMP/opendal-volumes-$index"
+              fi
+          - name: Setup Test Core - $setup
+            id: setup_$index
+            if: always()
+            uses: ./.github/services/$TEST_SERVICE/$setup
+          - name: Run Test Core - $setup
+            if: always() && steps.setup_$index.outcome == 'success'
             shell: bash
             working-directory: core
-            run: cargo test behavior --features tests,${{ inputs.feature }}
+            # libtest-mimic requires an argument for the configured thread limit.
+            run: cargo test behavior --features tests,$TEST_FEATURE -- \${RUST_TEST_THREADS:+--test-threads="\$RUST_TEST_THREADS"}
             env:
-              OPENDAL_TEST: ${{ inputs.service }}
+              OPENDAL_TEST: $TEST_SERVICE
+          - name: Cleanup Test Core - $setup
+            if: always()
+            shell: bash
+            run: |
+              if docker info >/dev/null 2>&1; then
+                current_containers=\$(docker ps -aq | sort)
+                new_containers=\$(comm -13 "\$RUNNER_TEMP/opendal-containers-$index" <(printf '%s\n' "\$current_containers"))
+                if [ -n "\$new_containers" ]; then
+                  docker rm -f \$new_containers
+                fi
+
+                current_networks=\$(docker network ls -q | sort)
+                new_networks=\$(comm -13 "\$RUNNER_TEMP/opendal-networks-$index" <(printf '%s\n' "\$current_networks"))
+                if [ -n "\$new_networks" ]; then
+                  docker network rm \$new_networks
+                fi
+
+                current_volumes=\$(docker volume ls -q | sort)
+                new_volumes=\$(comm -13 "\$RUNNER_TEMP/opendal-volumes-$index" <(printf '%s\n' "\$current_volumes"))
+                if [ -n "\$new_volumes" ]; then
+                  docker volume rm \$new_volumes
+                fi
+              fi
+
+              service_prefix=\$(printf '%s' "$TEST_SERVICE" | tr '[:lower:]-' '[:upper:]_')
+              while IFS='=' read -r name _; do
+                case "\$name" in
+                  "OPENDAL_\${service_prefix}_"* | OPENDAL_DISABLE_RANDOM_ROOT | OPENDAL_TEST_CAPABILITY_OVERRIDES | OPENDAL_TEST_IO_TIMEOUT)
+                    echo "\$name=__OPENDAL_TEST_UNSET__" >>"\$GITHUB_ENV"
+                    ;;
+                esac
+              done < <(env)
         EOF
+
+          cat <<EOF >>./dynamic_test_core/action.yml
+          - name: Test Core - $setup
+            if: always()
+            uses: ./dynamic_test_core/setup_$index
+        EOF
+          index=$((index + 1))
+        done
     - name: Run
       uses: ./dynamic_test_core

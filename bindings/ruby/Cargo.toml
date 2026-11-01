@@ -24,8 +24,8 @@ edition = "2024"
 homepage = "https://opendal.apache.org/"
 license = "Apache-2.0"
 repository = "https://github.com/apache/opendal"
-rust-version = "1.85"
-version = "0.1.6-rc.2" # updates this version to bump Rubygem version during release process
+rust-version = "1.91"
+version = "0.1.16"
 
 [lib]
 crate-type = ["cdylib"]
@@ -34,8 +34,11 @@ name = "opendal_ruby"
 
 [dependencies]
 magnus = { version = "0.8", features = ["bytes", "io"] }
-# 1. this crate won't be published, we always use the local version
-# 2. we use the symbolink to allow released gem to find core's source files.
+# 1. we don't use published core but a local copy
+# 2. for a source release, this path must be the local "./core".
+#   we set it via rake copy_core. Read more in:
+#     - Rakefile
+#     - opendal.gemspec
 opendal = { version = ">=0", path = "../../core", features = [
   "blocking",
   "layers-throttle",
@@ -62,4 +65,4 @@ bytes = "1.6"
 tokio = { version = "1", features = ["full"] }
 
 [build-dependencies]
-rb-sys-env = "0.1.2"
+rb-sys-env = "0.2.3"

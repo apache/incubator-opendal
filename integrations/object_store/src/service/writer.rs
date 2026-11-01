@@ -23,10 +23,10 @@ use object_store::PutPayload;
 use object_store::path::Path as ObjectStorePath;
 use object_store::{Attribute, AttributeValue};
 
+use asyncband::mutex::Mutex;
 use opendal::raw::oio::MultipartPart;
 use opendal::raw::*;
 use opendal::*;
-use tokio::sync::Mutex;
 
 use super::core::{format_put_multipart_options, format_put_result, parse_op_write};
 use super::error::parse_error;
@@ -79,15 +79,15 @@ impl oio::MultipartWrite for ObjectStoreWriter {
             .map_err(parse_error)?;
 
         // Build metadata from put result
-        let mut metadata = Metadata::new(EntryMode::FILE);
+        let mut metadata = MetadataBuilder::unknown();
         if let Some(etag) = &result.e_tag {
-            metadata.set_etag(etag);
+            metadata.etag(etag);
         }
         if let Some(version) = &result.version {
-            metadata.set_version(version);
+            metadata.version(version);
         }
 
-        Ok(metadata)
+        Ok(metadata.build())
     }
 
     // Generate a unique upload ID that we'll use to track this session
@@ -156,15 +156,12 @@ impl oio::MultipartWrite for ObjectStoreWriter {
             part_number,
             etag,
             checksum: None, // No checksum for now
+            size: None,
         };
         Ok(multipart_part)
     }
 
-    async fn complete_part(
-        &self,
-        _upload_id: &str,
-        parts: &[oio::MultipartPart],
-    ) -> Result<Metadata> {
+    async fn complete_part(&self, _upload_id: &str, parts: &[MultipartPart]) -> Result<Metadata> {
         // Validate that we have parts to complete
         if parts.is_empty() {
             return Err(Error::new(

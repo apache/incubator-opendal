@@ -24,7 +24,7 @@ edition = "2021"
 homepage = "https://opendal.apache.org/"
 license = "Apache-2.0"
 repository = "https://github.com/apache/opendal"
-rust-version = "1.85"
+rust-version = "1.91"
 
 [lib]
 crate-type = ["cdylib", "staticlib"]
@@ -35,11 +35,10 @@ cbindgen = "0.29.0"
 
 [dependencies]
 bytes = "1.4.0"
+log = { version = "0.4.33", features = ["std"] }
 # this crate won't be published, we always use the local version
 opendal = { version = ">=0", path = "../../core", features = ["blocking"] }
 tokio = { version = "1.27", features = ["fs", "macros", "rt-multi-thread"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 [features]
 default = []

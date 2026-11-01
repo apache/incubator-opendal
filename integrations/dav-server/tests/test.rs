@@ -31,7 +31,7 @@ use std::path::Path;
 async fn test() -> Result<()> {
     let builder = Fs::default().root("/tmp");
 
-    let op = Operator::new(builder)?.finish();
+    let op = Operator::new(builder)?;
 
     let webdavfs = OpendalFs::new(op);
 
@@ -47,7 +47,7 @@ async fn test() -> Result<()> {
 #[tokio::test]
 async fn test_create_dir_nested() {
     let builder = opendal::services::Memory::default();
-    let op = Operator::new(builder).unwrap().finish();
+    let op = Operator::new(builder).unwrap();
     let webdavfs = OpendalFs::new(op.clone());
 
     webdavfs
@@ -66,7 +66,7 @@ async fn test_create_dir_nested() {
 fn setup_temp(path: &str) -> Box<OpendalFs> {
     let _ = fs::remove_dir_all(path);
     let builder = Fs::default().root(path);
-    let op = Operator::new(builder).unwrap().finish();
+    let op = Operator::new(builder).unwrap();
     OpendalFs::new(op)
 }
 

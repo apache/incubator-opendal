@@ -22,7 +22,7 @@ runs:
   using: "composite"
   steps:
     - name: Setup
-      uses: 1password/load-secrets-action@13f58eec611f8e5db52ec16247f58c508398f3e6 # v3
+      uses: 1Password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
       with:
         export-env: true
       env:
@@ -34,4 +34,4 @@ runs:
     - name: Add extra settings
       shell: bash
       run: |
-        echo "OPENDAL_OSS_ENABLE_VERSIONING=true" >> $GITHUB_ENV
+        echo "OPENDAL_TEST_CAPABILITY_OVERRIDES=write_with_if_not_exists=false" >> $GITHUB_ENV

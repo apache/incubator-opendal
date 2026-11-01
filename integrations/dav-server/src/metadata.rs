@@ -17,7 +17,7 @@
 
 use dav_server::fs::FsError;
 use dav_server::fs::{DavMetaData, FsResult};
-use opendal::Metadata;
+use opendal_core::Metadata;
 use std::time::SystemTime;
 
 /// OpendalMetaData is a `DavMetaData` implementation for opendal.
@@ -58,8 +58,9 @@ impl DavMetaData for OpendalMetaData {
     }
 
     fn status_changed(&self) -> FsResult<SystemTime> {
-        self.metadata
-            .last_modified()
-            .map_or(Err(FsError::GeneralFailure), |t| Ok(t.into()))
+        match self.metadata.last_modified() {
+            Some(t) => Ok(t.into()),
+            None => Err(FsError::GeneralFailure),
+        }
     }
 }

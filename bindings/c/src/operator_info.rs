@@ -49,6 +49,18 @@ pub struct opendal_capability {
     pub stat_with_if_match: bool,
     /// If operator supports stat with if none match.
     pub stat_with_if_none_match: bool,
+    /// If operator supports stat with if modified since.
+    pub stat_with_if_modified_since: bool,
+    /// If operator supports stat with if unmodified since.
+    pub stat_with_if_unmodified_since: bool,
+    /// if operator supports stat with override cache control.
+    pub stat_with_override_cache_control: bool,
+    /// if operator supports stat with override content disposition.
+    pub stat_with_override_content_disposition: bool,
+    /// if operator supports stat with override content type.
+    pub stat_with_override_content_type: bool,
+    /// If operator supports stat with version.
+    pub stat_with_version: bool,
 
     /// If operator supports read.
     pub read: bool,
@@ -62,6 +74,12 @@ pub struct opendal_capability {
     pub read_with_override_content_disposition: bool,
     /// if operator supports read with override content type.
     pub read_with_override_content_type: bool,
+    /// If operator supports read with if modified since.
+    pub read_with_if_modified_since: bool,
+    /// If operator supports read with if unmodified since.
+    pub read_with_if_unmodified_since: bool,
+    /// If operator supports read with version.
+    pub read_with_version: bool,
 
     /// If operator supports write.
     pub write: bool,
@@ -75,8 +93,18 @@ pub struct opendal_capability {
     pub write_with_content_type: bool,
     /// If operator supports write with content disposition.
     pub write_with_content_disposition: bool,
+    /// If operator supports write with content encoding.
+    pub write_with_content_encoding: bool,
     /// If operator supports write with cache control.
     pub write_with_cache_control: bool,
+    /// If operator supports write with if match.
+    pub write_with_if_match: bool,
+    /// If operator supports write with if none match.
+    pub write_with_if_none_match: bool,
+    /// If operator supports write with if not exists.
+    pub write_with_if_not_exists: bool,
+    /// If operator supports write with user metadata.
+    pub write_with_user_metadata: bool,
     /// write_multi_max_size is the max size that services support in write_multi.
     ///
     /// For example, AWS S3 supports 5GiB as max in write_multi.
@@ -101,9 +129,29 @@ pub struct opendal_capability {
 
     /// If operator supports delete.
     pub delete: bool,
+    /// If operator supports delete with version.
+    pub delete_with_version: bool,
+    /// If operator supports delete with recursive.
+    pub delete_with_recursive: bool,
 
     /// If operator supports copy.
     pub copy: bool,
+    /// If operator supports copy with if not exists.
+    pub copy_with_if_not_exists: bool,
+    /// If operator supports copy with if match.
+    pub copy_with_if_match: bool,
+    /// If operator supports copy with source version.
+    pub copy_with_source_version: bool,
+    /// If operator supports copy can be split into multiple server-side tasks.
+    pub copy_can_multi: bool,
+    /// copy_multi_max_size is the max size supported for segmented copy tasks.
+    ///
+    /// If it is not set, this will be zero
+    pub copy_multi_max_size: usize,
+    /// copy_multi_min_size is the min size required for segmented copy tasks.
+    ///
+    /// If it is not set, this will be zero
+    pub copy_multi_min_size: usize,
 
     /// If operator supports rename.
     pub rename: bool,
@@ -116,6 +164,10 @@ pub struct opendal_capability {
     pub list_with_start_after: bool,
     /// If backend supports list without delimiter.
     pub list_with_recursive: bool,
+    /// If backend supports list with versions.
+    pub list_with_versions: bool,
+    /// If backend supports list with deleted.
+    pub list_with_deleted: bool,
 
     /// If operator supports presign.
     pub presign: bool,
@@ -125,6 +177,8 @@ pub struct opendal_capability {
     pub presign_stat: bool,
     /// If operator supports presign write.
     pub presign_write: bool,
+    /// If operator supports presign delete.
+    pub presign_delete: bool,
 
     /// If operator supports shared.
     pub shared: bool,
@@ -144,7 +198,7 @@ impl opendal_operator_info {
     /// assert(!strcmp(scheme, "memory"));
     ///
     /// /// free the heap memory
-    /// free(scheme);
+    /// opendal_string_free(scheme);
     /// opendal_operator_info_free(info);
     /// ```
     #[no_mangle]
@@ -168,7 +222,7 @@ impl opendal_operator_info {
 
     /// \brief Return the nul-terminated operator's scheme, i.e. service
     ///
-    /// \note: The string is on heap, remember to free it
+    /// \note: The string is on heap, free it with opendal_string_free()
     #[no_mangle]
     pub unsafe extern "C" fn opendal_operator_info_get_scheme(&self) -> *mut c_char {
         let scheme = self.deref().scheme().to_string();
@@ -179,7 +233,7 @@ impl opendal_operator_info {
 
     /// \brief Return the nul-terminated operator's working root path
     ///
-    /// \note: The string is on heap, remember to free it
+    /// \note: The string is on heap, free it with opendal_string_free()
     #[no_mangle]
     pub unsafe extern "C" fn opendal_operator_info_get_root(&self) -> *mut c_char {
         let root = self.deref().root();
@@ -191,7 +245,7 @@ impl opendal_operator_info {
     /// \brief Return the nul-terminated operator backend's name, could be empty if underlying backend has no
     /// namespace concept.
     ///
-    /// \note: The string is on heap, remember to free it
+    /// \note: The string is on heap, free it with opendal_string_free()
     #[no_mangle]
     pub unsafe extern "C" fn opendal_operator_info_get_name(&self) -> *mut c_char {
         let name = self.deref().name();
@@ -200,21 +254,10 @@ impl opendal_operator_info {
             .into_raw()
     }
 
-    /// \brief Return the operator's full capability
+    /// \brief Return the operator's capability
     #[no_mangle]
-    pub unsafe extern "C" fn opendal_operator_info_get_full_capability(
-        &self,
-    ) -> opendal_capability {
-        let cap = self.deref().full_capability();
-        cap.into()
-    }
-
-    /// \brief Return the operator's native capability
-    #[no_mangle]
-    pub unsafe extern "C" fn opendal_operator_info_get_native_capability(
-        &self,
-    ) -> opendal_capability {
-        let cap = self.deref().native_capability();
+    pub unsafe extern "C" fn opendal_operator_info_get_capability(&self) -> opendal_capability {
+        let cap = self.deref().capability();
         cap.into()
     }
 }
@@ -225,34 +268,59 @@ impl From<core::Capability> for opendal_capability {
             stat: value.stat,
             stat_with_if_match: value.stat_with_if_match,
             stat_with_if_none_match: value.stat_with_if_none_match,
+            stat_with_if_modified_since: value.stat_with_if_modified_since,
+            stat_with_if_unmodified_since: value.stat_with_if_unmodified_since,
+            stat_with_override_content_type: value.stat_with_override_content_type,
+            stat_with_override_cache_control: value.stat_with_override_cache_control,
+            stat_with_override_content_disposition: value.stat_with_override_content_disposition,
+            stat_with_version: value.stat_with_version,
             read: value.read,
             read_with_if_match: value.read_with_if_match,
             read_with_if_none_match: value.read_with_if_none_match,
             read_with_override_content_type: value.read_with_override_content_type,
             read_with_override_cache_control: value.read_with_override_cache_control,
             read_with_override_content_disposition: value.read_with_override_content_disposition,
+            read_with_if_modified_since: value.read_with_if_modified_since,
+            read_with_if_unmodified_since: value.read_with_if_unmodified_since,
+            read_with_version: value.read_with_version,
             write: value.write,
             write_can_multi: value.write_can_multi,
             write_can_empty: value.write_can_empty,
             write_can_append: value.write_can_append,
             write_with_content_type: value.write_with_content_type,
             write_with_content_disposition: value.write_with_content_disposition,
+            write_with_content_encoding: value.write_with_content_encoding,
             write_with_cache_control: value.write_with_cache_control,
+            write_with_if_match: value.write_with_if_match,
+            write_with_if_none_match: value.write_with_if_none_match,
+            write_with_if_not_exists: value.write_with_if_not_exists,
+            write_with_user_metadata: value.write_with_user_metadata,
             write_multi_max_size: value.write_multi_max_size.unwrap_or(0),
             write_multi_min_size: value.write_multi_min_size.unwrap_or(0),
             write_total_max_size: value.write_total_max_size.unwrap_or(0),
             create_dir: value.create_dir,
             delete: value.delete,
+            delete_with_version: value.delete_with_version,
+            delete_with_recursive: value.delete_with_recursive,
             copy: value.copy,
+            copy_with_if_not_exists: value.copy_with_if_not_exists,
+            copy_with_if_match: value.copy_with_if_match,
+            copy_with_source_version: value.copy_with_source_version,
+            copy_can_multi: value.copy_can_multi,
+            copy_multi_max_size: value.copy_multi_max_size.unwrap_or(0),
+            copy_multi_min_size: value.copy_multi_min_size.unwrap_or(0),
             rename: value.rename,
             list: value.list,
             list_with_limit: value.list_with_limit,
             list_with_start_after: value.list_with_start_after,
             list_with_recursive: value.list_with_recursive,
+            list_with_versions: value.list_with_versions,
+            list_with_deleted: value.list_with_deleted,
             presign: value.presign,
             presign_read: value.presign_read,
             presign_stat: value.presign_stat,
             presign_write: value.presign_write,
+            presign_delete: value.presign_delete,
             shared: value.shared,
         }
     }

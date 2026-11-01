@@ -1,12 +1,16 @@
 {
   "name": "@opendal/lib-linux-arm64-gnu",
-  "version": "0.49.1",
+  "version": "0.49.13",
   "cpu": [
     "arm64"
   ],
   "main": "opendal.linux-arm64-gnu.node",
   "files": [
-    "opendal.linux-arm64-gnu.node"
+    "opendal.linux-arm64-gnu.node",
+    "LICENSE",
+    "LICENSE-MPL-2.0.txt",
+    "NOTICE",
+    "README.md"
   ],
   "description": "Apache OpenDAL: One Layer, All Storage.",
   "keywords": [

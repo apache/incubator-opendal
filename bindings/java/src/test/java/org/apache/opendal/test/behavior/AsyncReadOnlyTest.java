@@ -46,7 +46,7 @@ public class AsyncReadOnlyTest extends BehaviorTestBase {
 
     @BeforeAll
     public void precondition() {
-        final Capability capability = asyncOp().info.fullCapability;
+        final Capability capability = asyncOp().info.capability;
         assumeTrue(capability.read && !capability.write);
     }
 

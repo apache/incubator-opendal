@@ -57,8 +57,8 @@ jobs:
             target_suffix: macos_aarch64
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
-      - uses: actions/cache@v4
+        uses: actions/checkout@v7
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/bin/
@@ -73,11 +73,19 @@ jobs:
       - name: Install cross
         run: cargo install cross --git https://github.com/cross-rs/cross --force
 
-      - name: Build on linux
-        if: runner.os == 'Linux'
+      - name: Build on native linux
+        if: runner.os == 'Linux' && matrix.target == 'x86_64-unknown-linux-gnu'
+        env:
+          CC_x86_64_unknown_linux_gnu: gcc
         run: |
           cd bindings/dart/rust
-          cross build --release --target ${{ matrix.target }}
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Build on cross linux
+        if: runner.os == 'Linux' && matrix.target != 'x86_64-unknown-linux-gnu'
+        # Run from the repository root so cross mounts the changelog symlink target.
+        run: |
+          cross build --release --manifest-path bindings/dart/rust/Cargo.toml --target ${{ matrix.target }}
 
       - name: Build not on linux
         if: runner.os != 'Linux'
@@ -86,7 +94,7 @@ jobs:
           cargo build --release --target ${{ matrix.target }}
 
       - name: Upload build artifact (per platform)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
           path: bindings/dart/rust/target/${{ matrix.target }}/release/*opendal*
@@ -96,14 +104,14 @@ jobs:
       runs-on: ubuntu-latest
       steps:
         - name: Checkout code
-          uses: actions/checkout@v5
+          uses: actions/checkout@v7
         - name: create release dir
           run: |
             cd bindings/dart/rust
             mkdir -p target/release/
 
         - name: Download all artifacts
-          uses: actions/download-artifact@v5
+          uses: actions/download-artifact@v8
           with:
             path: artifacts
 
@@ -120,7 +128,7 @@ jobs:
             cd bindings/dart/rust
             ls -R .
         - name: Upload combined build artifacts
-          uses: actions/upload-artifact@v4
+          uses: actions/upload-artifact@v7
           with:
               name: combined-release
               path: bindings/dart/rust/target/release/

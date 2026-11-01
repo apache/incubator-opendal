@@ -1,0 +1,355 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+.model {
+  margin: var(--odl-space-6) 0;
+}
+
+/* ===== Diagram =========================================================== */
+.diagram {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--odl-space-4);
+  padding: clamp(2rem, 1.5rem + 2vw, 3rem) clamp(1.25rem, 1rem + 1.5vw, 2rem);
+  background: var(--odl-bg);
+}
+/* Blueprint grid fading out from the top, as on the landing hero. */
+.gridLayer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(
+    110% 100% at 50% 0%,
+    #000 0%,
+    transparent 78%
+  );
+  mask-image: radial-gradient(110% 100% at 50% 0%, #000 0%, transparent 78%);
+}
+
+.app,
+.flow,
+.ringOuter,
+.backend {
+  position: relative;
+  transition: opacity var(--odl-dur) var(--odl-ease);
+}
+
+.app,
+.service {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--odl-space-3) var(--odl-space-4);
+  border: 1px solid var(--odl-border-strong);
+  border-radius: var(--odl-radius-md);
+  background: var(--odl-surface);
+  box-shadow: var(--odl-shadow-sm);
+  transition: border-color var(--odl-dur) var(--odl-ease);
+}
+
+.comment {
+  font-family: var(--odl-font-mono);
+  font-size: var(--odl-text-2xs);
+  color: var(--odl-fg-subtle);
+  white-space: nowrap;
+}
+.code {
+  font-family: var(--odl-font-mono);
+  font-size: var(--odl-text-xs);
+  color: var(--odl-fg);
+  background: none;
+  border: 0;
+  padding: 0;
+  white-space: nowrap;
+}
+
+/* Connectors: hairlines converging on the operator. The build arrow points
+   right (config flows in), the call arrow points left (the app calls in). */
+.flow {
+  flex: 1 1 1.5rem;
+  min-width: 1.25rem;
+  height: 1px;
+  background: var(--odl-border-strong);
+}
+.flow::after {
+  content: "";
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-top: 1px solid var(--odl-border-strong);
+  border-right: 1px solid var(--odl-border-strong);
+  transition: border-color var(--odl-dur) var(--odl-ease);
+}
+.flowBuild::after {
+  right: 0;
+  top: -3.5px;
+  transform: rotate(45deg);
+}
+.flowCall::after {
+  left: 0;
+  top: -3.5px;
+  transform: rotate(-135deg);
+}
+.flowLabel {
+  position: absolute;
+  left: 50%;
+  bottom: 5px;
+  transform: translateX(-50%);
+  font-family: var(--odl-font-mono);
+  font-size: var(--odl-text-2xs);
+  letter-spacing: 0.04em;
+  color: var(--odl-fg-subtle);
+  transition: color var(--odl-dur) var(--odl-ease);
+}
+
+/* Layers wrap the operator as light, dashed envelopes; the operator stays
+   the only solid mass in the middle. */
+.ringOuter,
+.ringInner {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: var(--odl-space-2) var(--odl-space-3) var(--odl-space-3);
+  border: 1px dashed var(--odl-border-strong);
+  transition: border-color var(--odl-dur) var(--odl-ease);
+}
+.ringOuter {
+  border-radius: var(--odl-radius-lg);
+  background: transparent;
+}
+.ringInner {
+  border-radius: var(--odl-radius-md);
+  background: var(--odl-surface);
+  box-shadow: var(--odl-shadow-sm);
+}
+.ringLabel {
+  font-family: var(--odl-font-mono);
+  font-size: var(--odl-text-2xs);
+  color: var(--odl-fg-muted);
+  white-space: nowrap;
+  transition: color var(--odl-dur) var(--odl-ease),
+    opacity var(--odl-dur) var(--odl-ease);
+}
+/* "kind ·" prefix inside labels: quiet type, louder instance. */
+.kind {
+  font-weight: 400;
+  color: var(--odl-fg-subtle);
+  transition: color var(--odl-dur) var(--odl-ease);
+}
+
+/* The operator is the solid "bar" at the center of the model. */
+.core {
+  font-family: var(--odl-font-mono);
+  font-size: var(--odl-text-sm);
+  font-weight: 600;
+  text-align: center;
+  padding: var(--odl-space-3) var(--odl-space-6);
+  border-radius: var(--odl-radius-sm);
+  background: var(--odl-bar);
+  color: var(--odl-bg);
+  box-shadow: var(--odl-shadow-md);
+  transition: opacity var(--odl-dur) var(--odl-ease),
+    box-shadow var(--odl-dur) var(--odl-ease);
+}
+
+.backend {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--odl-space-2);
+}
+.svcName {
+  font-family: var(--odl-font-mono);
+  font-size: var(--odl-text-xs);
+  font-weight: 600;
+  color: var(--odl-fg-strong);
+  transition: color var(--odl-dur) var(--odl-ease);
+}
+.alts {
+  font-family: var(--odl-font-mono);
+  font-size: var(--odl-text-2xs);
+  color: var(--odl-fg-subtle);
+  padding-left: 2px;
+  white-space: nowrap;
+  transition: color var(--odl-dur) var(--odl-ease);
+}
+
+/* ===== Highlight states ================================================== */
+/* service */
+.model[data-active="service"] .app,
+.model[data-active="service"] .flow,
+.model[data-active="service"] .ringOuter {
+  opacity: 0.35;
+}
+.model[data-active="service"] .service {
+  border-color: var(--odl-accent);
+}
+.model[data-active="service"] .svcName,
+.model[data-active="service"] .svcName .kind {
+  color: var(--odl-accent);
+}
+.model[data-active="service"] .alts {
+  color: var(--odl-fg-muted);
+}
+
+/* operator */
+.model[data-active="operator"] .app,
+.model[data-active="operator"] .flow,
+.model[data-active="operator"] .backend {
+  opacity: 0.35;
+}
+.model[data-active="operator"] .ringOuter,
+.model[data-active="operator"] .ringInner {
+  border-color: var(--odl-border);
+}
+.model[data-active="operator"] .ringLabel {
+  opacity: 0.4;
+}
+.model[data-active="operator"] .core {
+  box-shadow: 0 0 0 2px var(--odl-accent), var(--odl-shadow-md);
+}
+
+/* layer */
+.model[data-active="layer"] .app,
+.model[data-active="layer"] .flow,
+.model[data-active="layer"] .backend {
+  opacity: 0.35;
+}
+.model[data-active="layer"] .ringOuter,
+.model[data-active="layer"] .ringInner {
+  border-color: var(--odl-accent);
+}
+.model[data-active="layer"] .ringLabel,
+.model[data-active="layer"] .ringLabel .kind {
+  color: var(--odl-accent);
+}
+.model[data-active="layer"] .core {
+  opacity: 0.5;
+}
+
+/* operation */
+.model[data-active="operation"] .app {
+  border-color: var(--odl-accent);
+}
+.model[data-active="operation"] .flow {
+  background: var(--odl-accent);
+}
+.model[data-active="operation"] .flow::after {
+  border-color: var(--odl-accent);
+}
+.model[data-active="operation"] .flowLabel {
+  color: var(--odl-accent);
+}
+
+/* ===== Legend — one compact row, tab-style accent indicator ============= */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0;
+  border-top: 1px solid var(--odl-border);
+  background: var(--odl-surface-2);
+}
+.legendItem {
+  appearance: none;
+  font: inherit;
+  flex: 1 1 25%;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: var(--odl-space-2);
+  padding: var(--odl-space-3) var(--odl-space-2);
+  border: 0;
+  border-top: 2px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color var(--odl-dur) var(--odl-ease),
+    border-color var(--odl-dur) var(--odl-ease);
+}
+.legendItem:hover {
+  background: var(--odl-surface);
+}
+.legendItemActive {
+  background: var(--odl-surface);
+  border-top-color: var(--odl-accent);
+}
+.legendIndex {
+  font-family: var(--odl-font-mono);
+  font-size: var(--odl-text-2xs);
+  font-weight: 500;
+  letter-spacing: var(--odl-tracking-label);
+  color: var(--odl-fg-subtle);
+  transition: color var(--odl-dur) var(--odl-ease);
+}
+.legendItemActive .legendIndex {
+  color: var(--odl-accent);
+}
+.legendName {
+  font-family: var(--odl-font-mono);
+  font-size: var(--odl-text-sm);
+  font-weight: 600;
+  color: var(--odl-fg-muted);
+  transition: color var(--odl-dur) var(--odl-ease);
+}
+.legendItemActive .legendName {
+  color: var(--odl-fg-strong);
+}
+
+/* ===== Responsive ======================================================== */
+@media (max-width: 768px) {
+  .diagram {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .app,
+  .ringOuter,
+  .backend {
+    align-self: center;
+  }
+  .flow {
+    flex: 0 0 auto;
+    align-self: center;
+    width: 1px;
+    min-width: 0;
+    height: 1.5rem;
+    min-height: 1.5rem;
+  }
+  /* Stacked: build points down into the operator, call points up from the
+     app at the bottom. */
+  .flowBuild::after {
+    right: -3.5px;
+    top: auto;
+    bottom: 0;
+    transform: rotate(135deg);
+  }
+  .flowCall::after {
+    left: -3.5px;
+    top: 0;
+    transform: rotate(-45deg);
+  }
+  .flowLabel {
+    left: 10px;
+    bottom: auto;
+    top: 50%;
+    transform: translateY(-50%);
+  }
+  .legendItem {
+    flex-basis: 50%;
+  }
+}

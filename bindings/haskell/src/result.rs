@@ -32,18 +32,21 @@ pub struct FFIResult<T> {
 #[repr(C)]
 #[derive(Debug)]
 pub enum FFIErrorCode {
-    Ok,
-    FFIError,
-    Unexpected,
-    Unsupported,
-    ConfigInvalid,
-    NotFound,
-    PermissionDenied,
-    IsADirectory,
-    NotADirectory,
-    AlreadyExists,
-    RateLimited,
-    IsSameFile,
+    Ok = 0,
+    FFIError = 1,
+    Unexpected = 2,
+    Unsupported = 3,
+    ConfigInvalid = 4,
+    NotFound = 5,
+    PermissionDenied = 6,
+    IsADirectory = 7,
+    NotADirectory = 8,
+    AlreadyExists = 9,
+    RateLimited = 10,
+    IsSameFile = 11,
+    Conflict = 12,
+    ConditionNotMatch = 13,
+    RangeNotSatisfied = 14,
 }
 
 impl<T> FFIResult<T> {
@@ -88,7 +91,31 @@ impl From<od::ErrorKind> for FFIErrorCode {
             od::ErrorKind::AlreadyExists => FFIErrorCode::AlreadyExists,
             od::ErrorKind::RateLimited => FFIErrorCode::RateLimited,
             od::ErrorKind::IsSameFile => FFIErrorCode::IsSameFile,
+            od::ErrorKind::Conflict => FFIErrorCode::Conflict,
+            od::ErrorKind::ConditionNotMatch => FFIErrorCode::ConditionNotMatch,
+            od::ErrorKind::RangeNotSatisfied => FFIErrorCode::RangeNotSatisfied,
             _ => FFIErrorCode::Unexpected,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn error_kind_conversion_preserves_public_error_kinds() {
+        assert!(matches!(
+            FFIErrorCode::from(od::ErrorKind::ConditionNotMatch),
+            FFIErrorCode::ConditionNotMatch
+        ));
+        assert!(matches!(
+            FFIErrorCode::from(od::ErrorKind::RangeNotSatisfied),
+            FFIErrorCode::RangeNotSatisfied
+        ));
+        assert!(matches!(
+            FFIErrorCode::from(od::ErrorKind::Conflict),
+            FFIErrorCode::Conflict
+        ));
     }
 }

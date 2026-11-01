@@ -16,12 +16,16 @@
 # under the License.
 
 [package]
-edition = "2021"
-license = "Apache-2.0"
 name = "opendal-fuzz"
 publish = false
-rust-version = "1.85"
-version = "0.0.0"
+
+authors = { workspace = true }
+edition = { workspace = true }
+homepage = { workspace = true }
+license = { workspace = true }
+repository = { workspace = true }
+rust-version = { workspace = true }
+version = { workspace = true }
 
 [package.metadata]
 cargo-fuzz = true
@@ -45,8 +49,9 @@ services-gdrive = ["opendal/services-gdrive"]
 services-ghac = ["opendal/services-ghac"]
 services-gridfs = ["opendal/services-gridfs"]
 services-hdfs = ["opendal/services-hdfs"]
+services-hf = ["opendal/services-hf"]
 services-http = ["opendal/services-http"]
-services-huggingface = ["opendal/services-huggingface"]
+services-huggingface = ["services-hf"]
 services-ipfs = ["opendal/services-ipfs"]
 services-ipmfs = ["opendal/services-ipmfs"]
 services-memcached = ["opendal/services-memcached"]
@@ -78,15 +83,27 @@ services-webhdfs = ["opendal/services-webhdfs"]
 [dependencies]
 arbitrary = { version = "1.4.2", features = ["derive"] }
 libfuzzer-sys = "0.4"
-log = { version = "0.4.28" }
-logforth = { version = "0.23.1", default-features = false }
-opendal = { path = "..", features = ["tests"] }
-uuid = { version = "1", features = ["v4"] }
+log = { workspace = true }
+logforth = { workspace = true }
+opendal = { path = "..", features = ["tests", "services-fs"] }
+uuid = { workspace = true, features = ["v4"] }
+
+[[bin]]
+name = "fuzz_from_uri"
+path = "fuzz_from_uri.rs"
+test = false
+
+[[bin]]
+name = "fuzz_path"
+path = "fuzz_path.rs"
+test = false
 
 [[bin]]
 name = "fuzz_reader"
 path = "fuzz_reader.rs"
+test = false
 
 [[bin]]
 name = "fuzz_writer"
 path = "fuzz_writer.rs"
+test = false

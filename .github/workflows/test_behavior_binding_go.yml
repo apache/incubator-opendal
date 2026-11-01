@@ -27,20 +27,39 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: binding_go-${{ inputs.os }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
 jobs:
+  # Prevent parallel cache building in `test` job by building cache in a separate job
+  go-cache:
+    runs-on: ${{ inputs.os }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: bindings/go/go.mod
+          # params must be in sync with `test` job
+          cache-dependency-path: |
+            bindings/go/go.sum
+            bindings/go/tests/behavior_tests/go.sum
+
   test:
     name: ${{ matrix.cases.service }} / ${{ matrix.cases.setup }}
+    needs: go-cache
     runs-on: ${{ inputs.os }}
     strategy:
       fail-fast: false
       matrix:
         cases: ${{ fromJson(inputs.cases) }}
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           path: "opendal"
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           repository: "apache/opendal-go-services"
           path: "opendal-go-services"
@@ -53,13 +72,16 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup 1Password Connect
-        uses: 1password/load-secrets-action/configure@v3
-        with:
-          connect-host: ${{ secrets.OP_CONNECT_HOST }}
-          connect-token: ${{ secrets.OP_CONNECT_TOKEN }}
+        shell: bash
+        run: |
+          echo "::add-mask::${{ secrets.OP_CONNECT_HOST }}"
+          echo "::add-mask::${{ secrets.OP_CONNECT_TOKEN }}"
+          echo "OP_CONNECT_HOST=${{ secrets.OP_CONNECT_HOST }}" >> "$GITHUB_ENV"
+          echo "OP_CONNECT_TOKEN=${{ secrets.OP_CONNECT_TOKEN }}" >> "$GITHUB_ENV"
       - uses: actions/setup-go@v6
         with:
-          go-version: stable
+          # params must be in sync with `go-cache` job
+          go-version-file: bindings/go/go.mod
           cache-dependency-path: |
             bindings/go/go.sum
             bindings/go/tests/behavior_tests/go.sum

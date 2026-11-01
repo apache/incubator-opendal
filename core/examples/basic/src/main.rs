@@ -43,7 +43,7 @@ async fn example(op: Operator) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    use opendal::raw::tests::init_test_service;
+    use opendal::tests::init_test_service;
     let op = init_test_service()?.expect("OPENDAL_TEST must be set");
 
     println!("service {:?} has been initialized", op.info());

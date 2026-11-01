@@ -2,240 +2,107 @@
 
 [![](https://img.shields.io/badge/status-unreleased-red)](https://opendal.apache.org/bindings/c/)
 
-![](https://github.com/apache/opendal/assets/5351546/87bbf6e5-f19e-449a-b368-3e283016c887)
+A C binding for OpenDAL, providing blocking access to S3, GCS, Azure Blob, the
+local filesystem, and 50+ more storage backends through a single C API.
+
+We release the OpenDAL C binding independently of the
+[`opendal` crate](https://crates.io/crates/opendal) (Rust core). For updates
+and compatibility, use the C binding version instead of the `opendal` crate
+version.
+
+**User guide**: https://opendal.apache.org/docs/bindings/c
+
+## Building
+
+Requirements: C11/C++14 compiler, CMake, Rust toolchain.
+
+```shell
+mkdir -p build && cd build
+
+# Default build (memory + fs services)
+cmake ..
+make
+
+# Enable additional services
+cmake .. -DFEATURES="opendal/services-s3,opendal/services-gcs"
+make
+```
+
+The header is at `include/opendal.h`. The shared library is written to
+`../../target/debug/` after building.
 
 ## Example
 
-A simple read and write example
-
-```C
-#include "assert.h"
+```c
+#include <assert.h>
+#include <stdio.h>
 #include "opendal.h"
-#include "stdio.h"
 
-int main()
+int main(void)
 {
-    /* Initialize a operator for "memory" backend, with no options */
-    opendal_result_operator_new result = opendal_operator_new("memory", 0);
-    assert(result.operator_ptr != NULL);
-    assert(result.error == NULL);
+    /* Build an operator for the "memory" service. */
+    opendal_result_operator_new result = opendal_operator_new("memory", NULL);
+    assert(result.op != NULL && result.error == NULL);
+    opendal_operator *op = result.op;
 
-    /* Prepare some data to be written */
-    opendal_bytes data = {
-        .data = (uint8_t*)"this_string_length_is_24",
-        .len = 24,
-    };
+    /* Write bytes. */
+    const char *msg = "Hello, OpenDAL!";
+    opendal_bytes data = { .data = (uint8_t *)msg, .len = 15 };
+    opendal_error *err = opendal_operator_write(op, "/hello.txt", &data);
+    assert(err == NULL);
 
-    /* Write this into path "/testpath" */
-    opendal_error *error = opendal_operator_write(op, "/testpath", &data);
-    assert(error == NULL);
-
-    /* We can read it out, make sure the data is the same */
-    opendal_result_read r = opendal_operator_read(op, "/testpath");
-    opendal_bytes read_bytes = r.data;
+    /* Read them back. */
+    opendal_result_read r = opendal_operator_read(op, "/hello.txt");
     assert(r.error == NULL);
-    assert(read_bytes.len == 24);
+    printf("%.*s\n", (int)r.data.len, r.data.data);
+    opendal_bytes_free(&r.data);
 
-    /* Lets print it out */
-    for (int i = 0; i < 24; ++i) {
-        printf("%c", read_bytes.data[i]);
-    }
-    printf("\n");
-
-    /* the opendal_bytes read is heap allocated, please free it */
-    opendal_bytes_free(&read_bytes);
-
-    /* the operator_ptr is also heap allocated */
-    opendal_operator_free(&op);
-}
-```
-
-For more examples, please refer to `./examples`
-
-## Logging
-
-The OpenDAL C binding provides two mechanisms for enabling logs, which can be helpful for debugging and understanding internal operations.
-
-### 1. Environment Variable based Logging (via `RUST_LOG`)
-
-This is the quickest way to get detailed logs from OpenDAL. It uses the `tracing` ecosystem from Rust, similar to how `RUST_LOG` works for other Rust applications.
-
-**Initialization:**
-Call `opendal_init_logger()` once at the beginning of your program.
-
-```c
-#include "opendal.h"
-
-int main() {
-    // Initialize the standard logger
-    opendal_init_logger();
-
-    // ... rest of your OpenDAL operations ...
-    // Example:
-    // opendal_operator_options *options = opendal_operator_options_new();
-    // opendal_result_operator_new result_op_new = opendal_operator_new("memory", options);
-    // opendal_operator *op = result_op_new.op;
-    // if (op) {
-    //     opendal_operator_exists(op, "some_path");
-    //     opendal_operator_free(op);
-    // }
-    // opendal_operator_options_free(options);
-
+    opendal_operator_free(op);
     return 0;
 }
 ```
 
-**Usage:**
-Set the `RUST_LOG` environment variable when running your application. For example:
-- `RUST_LOG=trace ./your_application` (for very verbose logs from all components)
-- `RUST_LOG=opendal_core=debug,opendal_c=info ./your_application` (for debug logs from `opendal_core` and info logs from the C binding itself)
+See `examples/` for more, including error handling patterns.
 
-Refer to the `examples/logging_example.c` for a runnable example.
+Full documentation is at https://opendal.apache.org/docs/bindings/c.
 
-### 2. Custom Callback based Logging (e.g., for `glog` integration)
+## Contributing
 
-This method allows you to redirect OpenDAL's logs to your existing C/C++ logging infrastructure, such as `glog`. You provide a C callback function that OpenDAL will invoke for each log event.
-
-**Callback Signature:**
-Your callback function must match the `opendal_glog_callback_t` type:
-```c
-typedef void (*opendal_glog_callback_t)(int level, const char *file, unsigned int line, const char *message);
-```
-- `level`: An integer representing the log level (e.g., 0 for DEBUG/TRACE, 1 for INFO, 2 for WARNING, 3 for ERROR).
-- `file`: The source file where the log originated (can be NULL).
-- `line`: The line number in the source file (can be 0).
-- `message`: The log message.
-
-**Initialization:**
-Call `opendal_init_glog_logging()` once at the beginning of your program, passing your callback function.
-
-```c
-#include "opendal.h"
-#include <stdio.h> // For a simple printf logger
-
-// Your custom logging function
-void my_custom_logger(int level, const char* file, unsigned int line, const char* message) {
-    const char* level_str = "UNKNOWN";
-    switch (level) {
-        case 0: level_str = "DEBUG"; break;
-        case 1: level_str = "INFO"; break;
-        case 2: level_str = "WARN"; break;
-        case 3: level_str = "ERROR"; break;
-    }
-    if (file) {
-        printf("[%s] %s:%u: %s\n", level_str, file, line, message);
-    } else {
-        printf("[%s] %s\n", level_str, message);
-    }
-    fflush(stdout);
-}
-
-int main() {
-    // Initialize with your custom glog-style logger
-    opendal_init_glog_logging(my_custom_logger);
-
-    // ... rest of your OpenDAL operations ...
-    // Example:
-    // opendal_operator_options *options = opendal_operator_options_new();
-    // opendal_result_operator_new result_op_new = opendal_operator_new("memory", options);
-    // opendal_operator *op = result_op_new.op;
-    // if (op) {
-    //     opendal_operator_exists(op, "another_path");
-    //     opendal_operator_free(op);
-    // }
-    // opendal_operator_options_free(options);
-
-    return 0;
-}
-```
-
-Refer to the `examples/glog_example.c` for a runnable example.
-
-## Prerequisites
-
-To build OpenDAL C binding, the following is all you need:
-
-- A compiler that supports **C11** and **C++14**, _e.g._ clang and gcc
-
-- To format the code, you need to install **clang-format**
-
-  - The `opendal.h` is not formatted by hands when you contribute, please do not format the file. **Use `make format` only.**
-  - If your contribution is related to the files under `./tests`, you may format it before submitting your pull request. But notice that different versions of `clang-format` may format the files differently.
-
-- (optional) **Doxygen** need to be installed to generate documentations.
-
-For Ubuntu and Debian:
+See [`CONTRIBUTING.md`](../../CONTRIBUTING.md) at the repository root. To run
+tests you need Valgrind and GTest:
 
 ```shell
-# install C/C++ toolchain
-sudo apt install -y build-essential
-
-# install clang-format
-sudo apt install clang-format
-
-# install and build GTest library under /usr/lib and softlink to /usr/local/lib
-sudo apt-get install libgtest-dev
-
-# install CMake
-sudo apt-get install cmake
-
-# install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+cd build && make tests && ./tests
 ```
 
-## Makefile
-
-- To **build the library and header file**.
-
-  ```sh
-  mkdir -p build && cd build
-  cmake ..
-  make
-  ```
-
-  - The header file `opendal.h` is under `./include`
-
-  - The library is under `../../target/debug` after building.
-
-  - use `FEATURES` to enable services, like `cmake .. -DFEATURES="opendal/services-memory,opendal/services-fs"`
-
-- To **clean** the build results.
-
-  ```sh
-  cargo clean
-  cd build && make clean
-  ```
-
-- To build and run the **tests**. (Note that you need to install Valgrind and GTest)
-
-  ```sh
-  cd build
-  make tests && ./tests
-  ```
-
-- To build the **examples**
-
-  ```sh
-  cd build
-  make basic error_handle
-  ```
-
-## Documentation
-
-The documentation index page source is under `./docs/doxygen/html/index.html`.
-If you want to build the documentations yourself, you could use
-
-```sh
-# this requires you to install doxygen
-make doc
-```
-
-## Used by
-
-Check out the [users](./users.md) list for more details on who is using OpenDAL.
+Format C sources with `make format` (requires `clang-format`). Do not manually
+format `include/opendal.h`.
 
 ## License and Trademarks
 
 Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 
 Apache OpenDAL, OpenDAL, and Apache are either registered trademarks or trademarks of the Apache Software Foundation.
+
+## Native logging
+
+Call `opendal_logging_init` once to install a program-lifetime, thread-safe C
+callback for OpenDAL's Rust log facade. The default `opendal_operator_new`
+constructor emits operation events through that callback. The explicit
+`opendal_operator_new_with_layers` constructor uses only the supplied layers.
+The callback may also receive other Rust log records from the same library.
+
+The callback receives DEBUG=0 (including TRACE), INFO=1, WARN=2, or ERROR=3,
+a source file, a line number, and a message. File and message are borrowed,
+NUL-terminated strings valid only during the callback. Copy values that must
+outlive the invocation. Embedded NUL bytes are escaped as `\0`. The callback
+must not unwind or recursively log through this facade.
+
+The initializer returns NULL on success. Free a returned error with
+`opendal_error_free`; a null callback or an already installed logger returns
+`OPENDAL_CONFIG_INVALID`. Failed registration keeps the existing logger and
+its level. The library cannot replace or unregister it.
+
+When adapting to glog, map levels explicitly: DEBUG to `VLOG(1)`, INFO to
+`LOG(INFO)`, WARN to `LOG(WARNING)`, and ERROR to `LOG(ERROR)`. The callback's
+integer values are not glog severity constants.

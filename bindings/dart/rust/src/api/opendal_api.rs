@@ -20,7 +20,6 @@ use flutter_rust_bridge::frb;
 use ::opendal as od;
 
 use std::collections::HashMap;
-use std::str::FromStr;
 use std::sync::LazyLock;
 
 static RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
@@ -38,8 +37,7 @@ pub struct Operator {
 
 impl Operator {
     #[frb(sync)]
-    pub fn new(scheme_str: String, map: HashMap<String, String>) -> Operator {
-        let scheme: od::Scheme = od::Scheme::from_str(&scheme_str).unwrap();
+    pub fn new(scheme: String, map: HashMap<String, String>) -> Operator {
         let async_op = od::Operator::via_iter(scheme, map).unwrap();
         let handle = RUNTIME.handle();
         let _enter = handle.enter();
@@ -91,6 +89,40 @@ impl Operator {
     #[frb(sync)]
     pub fn rename_sync(&self, from: String, to: String) -> () {
         self.blocking_op.rename(&from, &to).unwrap()
+    }
+
+    pub async fn read(&self, path: String) -> anyhow::Result<Vec<u8>> {
+        let buf = self
+            .async_op
+            .read(&path)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        Ok(buf.to_vec())
+    }
+
+    #[frb(sync)]
+    pub fn read_sync(&self, path: String) -> anyhow::Result<Vec<u8>> {
+        let buf = self
+            .blocking_op
+            .read(&path)
+            .map_err(|e| anyhow::anyhow!(e))?;
+        Ok(buf.to_vec())
+    }
+
+    pub async fn write(&self, path: String, data: Vec<u8>) -> anyhow::Result<()> {
+        self.async_op
+            .write(&path, data)
+            .await
+            .map_err(|e| anyhow::anyhow!(e))?;
+        Ok(())
+    }
+
+    #[frb(sync)]
+    pub fn write_sync(&self, path: String, data: Vec<u8>) -> anyhow::Result<()> {
+        self.blocking_op
+            .write(&path, data)
+            .map_err(|e| anyhow::anyhow!(e))?;
+        Ok(())
     }
 }
 

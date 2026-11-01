@@ -1,0 +1,17 @@
+{
+	"name": "getting-started",
+	"description": "OpenDAL D binding Getting Started example",
+	"license": "Apache-2.0",
+	"targetType": "executable",
+	"dependencies": {
+		"opendal": { "path": "../.." }
+	},
+	"buildTypes": {
+		"debug": {
+			"buildOptions": ["debugMode", "debugInfo"]
+		},
+		"release": {
+			"buildOptions": ["releaseMode", "optimize", "inline"]
+		}
+	}
+}

@@ -24,8 +24,9 @@ edition = "2024"
 homepage = "https://opendal.apache.org/"
 license = "Apache-2.0"
 repository = "https://github.com/apache/opendal"
-rust-version = "1.85"
-version = "0.46.1"
+rust-version = "1.91"
+# Release candidate builds derive prerelease versions from tags in release_python.yml.
+version = "0.47.12"
 
 [features]
 default = [
@@ -49,135 +50,175 @@ default = [
 # When enable or disable some features,
 # Also, you need to update the `enabled_service` function in dev/src/generate/python.rs to match it.
 services-all = [
-  "default",
-  "services-aliyun-drive",
-  "services-azfile",
-  "services-cacache",
-  "services-dashmap",
-  "services-dropbox",
-  # FIXME this service need protoc
-  # "services-etcd",
-  # FIXME this requires a preinstalled fdb library
-  # "services-foundationdb",
-  # "services-ftp",
-  "services-gdrive",
-  # FIXME how to support HDFS services in bindings?
-  # "services-hdfs",
-  # "services-hdfs-native",
-  "services-huggingface",
-  "services-ipfs",
-  "services-memcached",
-  "services-mini-moka",
-  "services-moka",
-  "services-onedrive",
-  "services-persy",
-  "services-postgresql",
-  "services-mysql",
-  "services-redb",
-  "services-redis",
-  # FIXME how to support rocksdb services in bindings?
-  # "services-rocksdb",
-  "services-sled",
-  "services-swift",
-  # FIXME this service need protoc
-  # "services-tikv",
-  "services-vercel-artifacts",
-  "services-mongodb",
-  "services-gridfs",
-  "services-sqlite",
-  "services-alluxio",
-  "services-b2",
-  "services-seafile",
-  "services-upyun",
-  "services-koofr",
-  "services-yandex-disk",
+  'default',
+  'services-aliyun-drive',
+  'services-alluxio',
+  'services-azfile',
+  'services-b2',
+  'services-cacache',
+  'services-dashmap',
+  'services-dropbox',
+  'services-ftp',
+  'services-gcs-grpc',
+  'services-gdrive',
+  'services-gridfs',
+  'services-hdfs-native',
+  'services-hf',
+  'services-ipfs',
+  'services-koofr',
+  'services-memcached',
+  'services-mini-moka',
+  'services-moka',
+  'services-mongodb',
+  'services-mysql',
+  'services-onedrive',
+  'services-persy',
+  'services-postgresql',
+  'services-redb',
+  'services-redis',
+  'services-seafile',
+  'services-sled',
+  'services-sqlite',
+  'services-swift',
+  'services-upyun',
+  'services-tos',
+  'services-vercel-artifacts',
+  'services-yandex-disk',
 ]
 
-# Default services provided by opendal.
+# List of feature-flags for all services provided by opendal.
 services-aliyun-drive = ["opendal/services-aliyun-drive"]
+services-alluxio = ["opendal/services-alluxio"]
 services-azblob = ["opendal/services-azblob"]
 services-azdls = ["opendal/services-azdls"]
-services-cos = ["opendal/services-cos"]
-services-fs = ["opendal/services-fs"]
-services-gcs = ["opendal/services-gcs"]
-services-ghac = ["opendal/services-ghac"]
-services-http = ["opendal/services-http"]
-services-ipmfs = ["opendal/services-ipmfs"]
-services-memory = ["opendal/services-memory"]
-services-obs = ["opendal/services-obs"]
-services-oss = ["opendal/services-oss"]
-services-s3 = ["opendal/services-s3"]
-services-webdav = ["opendal/services-webdav"]
-services-webhdfs = ["opendal/services-webhdfs"]
-
-# Optional services provided by opendal.
-services-alluxio = ["opendal/services-alluxio"]
 services-azfile = ["opendal/services-azfile"]
 services-b2 = ["opendal/services-b2"]
 services-cacache = ["opendal/services-cacache"]
+services-cloudflare-kv = [
+  "opendal/services-cloudflare-kv",
+] # FIXME EXCLUDED: Needs tests/ maintenance
+services-compfs = [
+  "opendal/services-compfs",
+] # FIXME EXCLUDED: Needs tests/ maintenance
+services-cos = ["opendal/services-cos"]
+services-d1 = ["opendal/services-d1"] # FIXME EXCLUDED: Needs tests/ maintenance
 services-dashmap = ["opendal/services-dashmap"]
+services-dbfs = [
+  "opendal/services-dbfs",
+] # FIXME EXCLUDED: Needs tests/ maintenance
 services-dropbox = ["opendal/services-dropbox"]
-services-etcd = ["opendal/services-etcd"]
-services-foundationdb = ["opendal/services-foundationdb"]
+services-etcd = [
+  "opendal/services-etcd",
+] # FIXME EXCLUDED: this service needs protoc
+services-foundationdb = [
+  "opendal/services-foundationdb",
+] # FIXME EXCLUDED: this service needs preinstalled fdb library
+services-foyer = ["opendal/services-foyer"]
+services-fs = ["opendal/services-fs"]
 services-ftp = ["opendal/services-ftp"]
+services-gcs = ["opendal/services-gcs"]
+services-gcs-grpc = ["opendal/services-gcs-grpc"]
 services-gdrive = ["opendal/services-gdrive"]
+services-ghac = ["opendal/services-ghac"]
+services-github = [
+  "opendal/services-github",
+] # FIXME EXCLUDED: Needs tests/ maintenance
+services-goosefs = [
+  "opendal/services-goosefs",
+] # FIXME EXCLUDED: armhf build failure because of tokiofs dependency
 services-gridfs = ["opendal/services-gridfs"]
-services-hdfs = ["opendal/services-hdfs"]
+services-hdfs = [
+  "opendal/services-hdfs",
+] # FIXME EXCLUDED: how to support HDFS services in bindings?
 services-hdfs-native = ["opendal/services-hdfs-native"]
-services-huggingface = ["opendal/services-huggingface"]
+services-hf = ["opendal/services-hf"]
+services-http = ["opendal/services-http"]
+services-huggingface = ["services-hf"]
 services-ipfs = ["opendal/services-ipfs"]
+services-ipmfs = ["opendal/services-ipmfs"]
 services-koofr = ["opendal/services-koofr"]
+services-lakefs = [
+  "opendal/services-lakefs",
+] # FIXME EXCLUDED: Needs tests/ maintenance
 services-memcached = ["opendal/services-memcached"]
+services-memory = ["opendal/services-memory"]
 services-mini-moka = ["opendal/services-mini-moka"]
 services-moka = ["opendal/services-moka"]
 services-mongodb = ["opendal/services-mongodb"]
-services-monoiofs = ["opendal/services-monoiofs"]
+services-monoiofs = [
+  "opendal/services-monoiofs",
+] # FIXME EXCLUDED: Needs tests/ maintenance
 services-mysql = ["opendal/services-mysql"]
+services-obs = ["opendal/services-obs"]
 services-onedrive = ["opendal/services-onedrive"]
+services-opfs = [
+  "opendal/services-opfs",
+] # FIXME EXCLUDED: Needs tests/ maintenance
+services-oss = ["opendal/services-oss"]
+services-pcloud = [
+  "opendal/services-pcloud",
+] # FIXME EXCLUDED: Needs tests/ maintenance
 services-persy = ["opendal/services-persy"]
 services-postgresql = ["opendal/services-postgresql"]
 services-redb = ["opendal/services-redb"]
 services-redis = ["opendal/services-redis"]
-services-rocksdb = ["opendal/services-rocksdb"]
+services-rocksdb = [
+  "opendal/services-rocksdb",
+] # FIXME EXCLUDED: how to support rocksdb services in bindings?
+services-s3 = ["opendal/services-s3"]
 services-seafile = ["opendal/services-seafile"]
 services-sftp = ["opendal/services-sftp"]
 services-sled = ["opendal/services-sled"]
 services-sqlite = ["opendal/services-sqlite"]
+services-surrealdb = [
+  "opendal/services-surrealdb",
+] # FIXME EXCLUDED: Needs tests/ maintenance
 services-swift = ["opendal/services-swift"]
-services-tikv = ["opendal/services-tikv"]
+services-tikv = [
+  "opendal/services-tikv",
+] # FIXME EXCLUDED: this service needs protoc
+services-tos = ["opendal/services-tos"]
 services-upyun = ["opendal/services-upyun"]
 services-vercel-artifacts = ["opendal/services-vercel-artifacts"]
+services-vercel-blob = [
+  "opendal/services-vercel-blob",
+] # FIXME EXCLUDED: Needs tests/ maintenance
+services-webdav = ["opendal/services-webdav"]
+services-webhdfs = ["opendal/services-webhdfs"]
 services-yandex-disk = ["opendal/services-yandex-disk"]
-services-compfs = ["opendal/services-compfs"]
+
 # we build cp311-abi3 and cp310 wheels now, move this to pyo3 after we drop cp310
 abi3 = ["pyo3/abi3-py311"]
+
+# Conditionally include sftp only on non-windows targets
+[target.'cfg(not(windows))'.features]
+services-all = ["services-sftp"]
 
 [lib]
 crate-type = ["cdylib"]
 doc = false
+name = "_opendal"
 
 [dependencies]
-bytes = "1.5.0"
-dict_derive = "0.6.0"
+asyncband = { version = "0.7.1", features = ["mutex"] }
+bytes = "1.10.1"
 futures = "0.3.28"
 jiff = { version = "0.2.15" }
 # this crate won't be published, we always use the local version
 opendal = { version = ">=0", path = "../../core", features = [
   "blocking",
-  "layers-mime-guess"
+  "layers-mime-guess",
 ] }
-pyo3 = { version = "0.26.0", features = ["generate-import-lib", "jiff-02"] }
-pyo3-async-runtimes = { version = "0.26.0", features = ["tokio-runtime"] }
+pyo3 = { version = "0.29.1", features = [
+  "experimental-inspect",
+  "generate-import-lib",
+  "jiff-02",
+] }
+pyo3-async-runtimes = { version = "0.29.0", features = ["tokio-runtime"] }
 tokio = "1"
 
-[target.'cfg(unix)'.dependencies.opendal]
-features = [
-  "blocking",
-  "layers-mime-guess",
-  # Depend on "openssh" which depends on "tokio-pipe" that is unavailable on Windows.
-  #
-  # FIXME: waiting for https://github.com/NobodyXu/concurrent_arena/issues/25
-  # "services-sftp",
-]
-path = "../../core"
-version = ">=0"
+[profile.release]
+codegen-units = 1
+debug = false
+lto = "fat"
+strip = true

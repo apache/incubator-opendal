@@ -1,3 +1,46 @@
+# Upgrade to v0.47
+
+## Breaking change: Hugging Face config requires `repo_type`
+
+The `hf` service no longer relies on the backend's implicit `model` default. Set `repo_type` explicitly when creating Hugging Face operators:
+
+```diff
+-op = opendal.Operator("hf", repo_id="username/repo")
++op = opendal.Operator("hf", repo_type="model", repo_id="username/repo")
+```
+
+Use the appropriate value for the repository: `model`, `dataset`, `space`, or `bucket`.
+
+## Breaking change: Module exports are explicit
+
+`opendal.__init__` now only re-exports the `capability`, `exceptions`, `file`, `layers`, `services`, `types`, `Operator`, and `AsyncOperator` symbols. Imports such as:
+
+```python
+from opendal import Metadata, Layer
+```
+
+no longer work. Update them to use the dedicated submodules:
+
+```python
+from opendal.types import Metadata
+from opendal.layers import Layer
+```
+
+The legacy helper module `opendal.__base` has also been removed together with `_Base`.
+
+## Breaking change: Capability accessors renamed
+
+Both `Operator.full_capability()` and `AsyncOperator.full_capability()` have been renamed to `capability()`. Adjust your code accordingly:
+
+```diff
+-caps = op.full_capability()
++caps = op.capability()
+```
+
+## Breaking change: Service identifiers now have typed enums
+
+The constructors for `Operator` / `AsyncOperator` provide overloads that accept `opendal.services.Scheme` members. While plain strings are still accepted at runtime, type checkers (ty/mypy) expect the new enum values. Migrate code bases that relied on importing the old `Scheme` enum from `opendal` to `from opendal import services` and use `services.Scheme.<NAME>`.
+
 # Upgrade to v0.46
 
 ## Breaking change: Native blocking API removed
@@ -14,7 +57,7 @@ The following services have been removed due to lack of maintainers and users:
 
 - `atomicserver` - This service is no longer supported
 - `icloud` - This service is no longer supported
-- `nebula_graph` - This service is no longer supported
+- `nebula-graph` - This service is no longer supported
 
 If you were using any of these services, you'll need to migrate to an alternative storage backend.
 

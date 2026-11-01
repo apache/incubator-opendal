@@ -26,7 +26,7 @@ async fn main() -> Result<(), Box<dyn Error + Send + Sync>> {
     let service = opendal::services::Memory::default();
 
     // Init an operator with the service created
-    let op = Operator::new(service)?.finish();
+    let op = Operator::new(service)?;
 
     // Wrap the operator with `OpendalStorage`
     let backend = OpendalStorage::new(op);

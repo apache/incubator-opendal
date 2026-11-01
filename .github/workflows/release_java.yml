@@ -28,6 +28,9 @@ on:
       - main
     paths:
       - ".github/workflows/release_java.yml"
+      - "bindings/java/pom.xml"
+      - "bindings/java/src/assembly/**"
+      - "bindings/java/src/main/resources/META-INF/**"
       - "bindings/java/tools/build.py"
   workflow_dispatch:
 
@@ -42,8 +45,12 @@ jobs:
         include:
           - os: ubuntu-latest
             classifier: linux-x86_64
+          - os: ubuntu-latest
+            classifier: linux-x86_64-musl
           - os: ubuntu-24.04-arm
             classifier: linux-aarch_64
+          - os: ubuntu-24.04-arm
+            classifier: linux-aarch_64-musl
           - os: windows-latest
             classifier: windows-x86_64
           - os: macos-latest
@@ -51,11 +58,11 @@ jobs:
           - os: macos-latest
             classifier: osx-aarch_64
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Set up JDK 8
         uses: actions/setup-java@v5
         with:
-          distribution: "zulu"
+          distribution: zulu
           java-version: "8"
           cache: "maven"
           server-id: apache.releases.https
@@ -66,36 +73,114 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
-      - name: Install Protoc
-        uses: arduino/setup-protoc@v3
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
         with:
-          version: "23.4"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          need-protoc: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup linux for zigbuild
         if: ${{ contains(matrix.os, 'ubuntu') }}
         run: pip install cargo-zigbuild
 
+      - name: Build linux musl JNI library in Alpine
+        if: ${{ contains(matrix.os, 'ubuntu') && contains(matrix.classifier, 'musl') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          HOST_UID="$(id -u)"
+          HOST_GID="$(id -g)"
+          PLATFORM="linux/amd64"
+          if [[ "${{ matrix.classifier }}" == *"aarch_64"* ]]; then
+            PLATFORM="linux/arm64"
+          fi
+
+          docker run --rm \
+            --platform "$PLATFORM" \
+            -e HOST_UID="$HOST_UID" \
+            -e HOST_GID="$HOST_GID" \
+            -v "$GITHUB_WORKSPACE":/work \
+            -w /work/bindings/java \
+            rust:1.91-alpine3.20 \
+            sh -lc '
+              set -eu
+              apk add --no-cache python3 build-base cmake pkgconfig git protobuf sqlite-dev zlib-dev
+              export PATH=/usr/local/cargo/bin:$PATH
+
+              python3 tools/build.py \
+                --classifier "${{ matrix.classifier }}" \
+                --profile release \
+                --enable-zigbuild false
+
+              chown -R "$HOST_UID:$HOST_GID" /work/bindings/java/target
+            '
+
       - name: Local staging
         working-directory: bindings/java
         shell: bash
         run: |
-          ./mvnw -Papache-release package verify org.sonatype.plugins:nexus-staging-maven-plugin:deploy \
+          EXTRA_MVN_ARGS=""
+          if [[ "${{ matrix.classifier }}" == *"musl" ]]; then
+            EXTRA_MVN_ARGS="-Dexec.skip=true"
+          fi
+
+          MVN_GOALS="package verify"
+          if [[ "${{ github.event_name }}" != "pull_request" ]]; then
+            MVN_GOALS="$MVN_GOALS org.sonatype.plugins:nexus-staging-maven-plugin:deploy"
+            EXTRA_MVN_ARGS="$EXTRA_MVN_ARGS \
+              -DaltStagingDirectory=local-staging \
+              -DskipRemoteStaging=true \
+              -DserverId=apache.releases.https \
+              -DnexusUrl=https://repository.apache.org"
+          fi
+
+          ./mvnw -Papache-release $MVN_GOALS \
             -DskipTests=true \
             -Djni.classifier=${{ matrix.classifier }} \
             -Dcargo-build.profile=release \
-            -Dcargo-build.features=services-all \
             -Dcargo-build.enableZigbuild=${{ env.CARGO_BUILD_ENABLE_ZIGBUILD }} \
-            -DaltStagingDirectory=local-staging \
-            -DskipRemoteStaging=true \
-            -DserverId=apache.releases.https \
-            -DnexusUrl=https://repository.apache.org
+            $EXTRA_MVN_ARGS
         env:
           MAVEN_USERNAME: ${{ secrets.NEXUS_STAGE_DEPLOYER_USER }}
           MAVEN_CENTRAL_TOKEN: ${{ secrets.NEXUS_STAGE_DEPLOYER_PW }}
           MAVEN_GPG_PASSPHRASE: ""
+      - name: Smoke linux musl JNI library in Alpine
+        if: ${{ contains(matrix.os, 'ubuntu') && contains(matrix.classifier, 'musl') }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLATFORM="linux/amd64"
+          if [[ "${{ matrix.classifier }}" == *"aarch_64"* ]]; then
+            PLATFORM="linux/arm64"
+          fi
+
+          docker run --rm \
+            --platform "$PLATFORM" \
+            -v "$GITHUB_WORKSPACE":/work \
+            -w /work/bindings/java \
+            alpine:3.20 \
+            sh -lc '
+              set -eu
+              apk add --no-cache openjdk17-jdk libgcc
+              BASE_JAR="$(find target -maxdepth 1 -name "opendal-*.jar" ! -name "*-linux-*.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -n 1)"
+              NATIVE_JAR="$(find target -maxdepth 1 -name "opendal-*-${{ matrix.classifier }}.jar" | head -n 1)"
+              test -n "$BASE_JAR"
+              test -n "$NATIVE_JAR"
+
+              {
+                echo "import org.apache.opendal.NativeLibrary;"
+                echo "public class OpenDALSmoke {"
+                echo "    public static void main(String[] args) {"
+                echo "        NativeLibrary.loadLibrary();"
+                echo "    }"
+                echo "}"
+              } > /tmp/OpenDALSmoke.java
+
+              java -cp "$BASE_JAR:$NATIVE_JAR" /tmp/OpenDALSmoke.java
+            '
       - name: Upload local staging directory
-        uses: actions/upload-artifact@v4
+        if: ${{ github.event_name != 'pull_request' }}
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.classifier }}-local-staging
           path: bindings/java/local-staging
@@ -103,17 +188,18 @@ jobs:
           include-hidden-files: true
 
   deploy-staged-snapshots:
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: ubuntu-latest
     needs: [stage-snapshot]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           repository: apache/opendal
-          ref: ${{ inputs.ref }}
+          ref: ${{ github.ref }}
       - name: Set up JDK 8
         uses: actions/setup-java@v5
         with:
-          distribution: "zulu"
+          distribution: zulu
           java-version: "8"
           cache: "maven"
           server-id: apache.releases.https
@@ -126,32 +212,42 @@ jobs:
         run: echo "LOCAL_STAGING_DIR=$HOME/local-staging" >> $GITHUB_ENV
 
       - name: Download windows staging directory
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: windows-x86_64-local-staging
           path: ~/windows-x86_64-local-staging
       - name: Download linux x86_64 staging directory
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: linux-x86_64-local-staging
           path: ~/linux-x86_64-local-staging
+      - name: Download linux x86_64 (musl) staging directory
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-x86_64-musl-local-staging
+          path: ~/linux-x86_64-musl-local-staging
       - name: Download linux aarch_64 staging directory
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: linux-aarch_64-local-staging
           path: ~/linux-aarch_64-local-staging
+      - name: Download linux aarch_64 (musl) staging directory
+        uses: actions/download-artifact@v8
+        with:
+          name: linux-aarch_64-musl-local-staging
+          path: ~/linux-aarch_64-musl-local-staging
       - name: Download darwin staging directory
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: osx-x86_64-local-staging
           path: ~/osx-x86_64-local-staging
       - name: Download darwin (aarch64) staging directory
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v8
         with:
           name: osx-aarch_64-local-staging
           path: ~/osx-aarch_64-local-staging
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           path: ci-opendal
       - name: Merge staging repositories
@@ -160,7 +256,9 @@ jobs:
           python ./scripts/merge_local_staging.py $LOCAL_STAGING_DIR/staging \
             ~/windows-x86_64-local-staging/staging \
             ~/linux-x86_64-local-staging/staging \
+            ~/linux-x86_64-musl-local-staging/staging \
             ~/linux-aarch_64-local-staging/staging \
+            ~/linux-aarch_64-musl-local-staging/staging \
             ~/osx-x86_64-local-staging/staging \
             ~/osx-aarch_64-local-staging/staging
 
@@ -170,7 +268,6 @@ jobs:
         run: |
           ./mvnw org.sonatype.plugins:nexus-staging-maven-plugin:deploy-staged \
             -DaltStagingDirectory=$LOCAL_STAGING_DIR \
-            -DskipStagingRepositoryClose=true \
             -DserverId=apache.releases.https \
             -DnexusUrl=https://repository.apache.org
         env:

@@ -76,24 +76,6 @@ Thanks for everyone's support!
 ${your_name}
 ```
 
-## Send NOTICE to Board after VOTE PASSED
-
-The nominating PMC member should send a message to the Board <board@apache.org> with a reference to the vote result in the following form:
-
-Title:
-
-```
-[NOTICE] ${candidate_name} for Apache OpenDAL PMC
-```
-
-Content:
-
-```
-${candidate_name} has been voted as a new member of the Apache OpenDAL PMC. the vote thread is at: 
-
-https://lists.apache.org/thread/yg2gz2tof3cvbrgp1wxzk6mf9o858h7t
-```
-
 ## Send invitation to the candidate
 
 Send an invitation to the candidate and cc <private@opendal.apache.org>:

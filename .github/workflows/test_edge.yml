@@ -25,12 +25,19 @@ on:
     branches:
       - main
     paths:
-      - "core/src/**"
-      - "!core/src/docs/**"
-      - "!core/src/services/**"
-      - "core/src/services/fs/**"
-      - "core/src/services/s3/**"
-      - ".github/workflows/edge_test.yml"
+      - "core/Cargo.toml"
+      - "core/Cargo.lock"
+      - "core/core/Cargo.toml"
+      - "core/core/src/**"
+      - "core/layers/**"
+      - "core/testkit/**"
+      - "!core/core/src/docs/**"
+      - "core/edge/file_write_on_full_disk/**"
+      - "core/edge/s3_aws_assume_role_with_web_identity/**"
+      - "core/edge/s3_read_on_wasm/**"
+      - "core/services/fs/**"
+      - "core/services/s3/**"
+      - ".github/workflows/test_edge.yml"
 
 jobs:
   test_file_write_on_full_disk:
@@ -38,7 +45,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       - name: Create disk image
         run: |
@@ -64,7 +71,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
 
@@ -83,14 +90,16 @@ jobs:
           cp -r chromedriver-linux64 /tmp/chrome/chromedriver
 
       - name: Setup wasm-pack
-        uses: taiki-e/install-action@v2
-        with:
-          tool: wasm-pack
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsSL https://wasm-bindgen.github.io/wasm-pack/installer/init.sh | bash
+          wasm-pack --version
 
-      - name: Setup MinIO Server
+      - name: Setup Silo Server
         shell: bash
         working-directory: fixtures/s3
-        run: docker compose -f docker-compose-minio.yml up -d --wait
+        run: docker compose -f docker-compose-silo.yml up -d --wait
 
       - name: Setup test bucket
         shell: bash
@@ -115,10 +124,10 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
-      - uses: actions/github-script@v8
+      - uses: actions/github-script@v9
         id: id-token
         with:
           script: return await core.getIDToken("sts.amazonaws.com")
@@ -138,3 +147,4 @@ jobs:
           OPENDAL_S3_BUCKET: opendal-testing
           OPENDAL_S3_ROLE_ARN: arn:aws:iam::952853449216:role/opendal-testing
           OPENDAL_S3_REGION: ap-northeast-1
+          RUST_LOG: debug

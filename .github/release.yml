@@ -36,3 +36,6 @@ changelog:
     - title: Chore
       labels:
         - releases-note/chore
+    - title: Other Changes
+      labels:
+        - "*"

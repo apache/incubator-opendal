@@ -20,44 +20,27 @@
 // @ts-check
 // Note: type annotations allow type checking and IDEs autocompletion
 
-const semver = require("semver");
-const exec = require("child_process").execSync;
-const path = require("path");
-const crates_llms_txt = require("crates-llms-txt");
-
 const { themes } = require("prism-react-renderer");
+const {
+  addRustdocLlmSessions,
+  applyGeneratedConfig,
+  createLegacyDocsRedirect,
+  getWebsiteSettings,
+  orderByPathDepth,
+} = require("./config/site-helpers");
+const {
+  parseSpecificationFrontMatter,
+  remarkIncludeSpecification,
+} = require("./plugins/specifications-docs-plugin");
+
 const repoAddress = "https://github.com/apache/opendal";
 
-const baseUrl = process.env.OPENDAL_WEBSITE_BASE_URL
-  ? process.env.OPENDAL_WEBSITE_BASE_URL
-  : "/";
-const websiteNotLatest = process.env.OPENDAL_WEBSITE_NOT_LATEST
-  ? process.env.OPENDAL_WEBSITE_NOT_LATEST
-  : false;
-const websiteStaging = process.env.OPENDAL_WEBSITE_STAGING
-  ? process.env.OPENDAL_WEBSITE_STAGING
-  : false;
-
-const websiteVersion = (function () {
-  if (websiteStaging && process.env.GITHUB_REF_TYPE === "tag") {
-    const refName = process.env.GITHUB_REF_NAME;
-    if (refName?.startsWith("v")) {
-      const version = semver.parse(refName, {}, true);
-      return `${version.major}.${version.minor}.${version.patch}`;
-    }
-  }
-
-  try {
-    const refName = exec(
-      "git describe --tags --abbrev=0 --match 'v*' --exclude '*rc*'"
-    ).toString();
-    const version = semver.parse(refName, {}, true);
-    return `${version.major}.${version.minor}.${version.patch}`;
-  } catch (error) {
-    console.warn("Failed to get version from Git, using default '0.0.0'");
-    return "0.0.0";
-  }
-})();
+const { baseUrl, websiteNotLatest, websiteStaging, websiteVersion } =
+  getWebsiteSettings();
+const localImages = require("./plugins/local-images")({
+  siteDir: __dirname,
+  baseUrl,
+});
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
@@ -80,6 +63,7 @@ const config = {
   onBrokenLinks: "throw",
   markdown: {
     format: "detect",
+    parseFrontMatter: parseSpecificationFrontMatter,
     hooks: {
       onBrokenMarkdownLinks: "throw",
     }
@@ -90,25 +74,47 @@ const config = {
     locales: ["en"],
   },
 
+  future: {
+    faster: {
+      rspackBundler: true,
+      rspackPersistentCache: true,
+    },
+  },
+
+
   presets: [
     [
       "@docusaurus/preset-classic",
       /** @type {import('@docusaurus/preset-classic').Options} */
       ({
         docs: {
-          routeBasePath: "/",
+          routeBasePath: "docs",
           sidebarPath: require.resolve("./docs/sidebars.js"),
           editUrl: "https://github.com/apache/opendal/tree/main/website/",
           showLastUpdateAuthor: true,
           showLastUpdateTime: true,
+          beforeDefaultRemarkPlugins: [remarkIncludeSpecification],
+          remarkPlugins: [require("./plugins/remark-include-code")],
+          rehypePlugins: [localImages.rehype],
         },
         blog: {
           showReadingTime: true,
           editUrl: "https://github.com/apache/opendal/tree/main/website/",
           onUntruncatedBlogPosts: "warn",
+          rehypePlugins: [localImages.rehype],
+        },
+        pages: {
+          rehypePlugins: [localImages.rehype],
         },
         theme: {
-          customCss: require.resolve("./src/css/custom.css"),
+          customCss: [
+            require.resolve("./src/css/variables.css"),
+            require.resolve("./src/css/global.css"),
+            require.resolve("./src/css/navbar.css"),
+            require.resolve("./src/css/search.css"),
+            require.resolve("./src/css/sidebar.css"),
+            require.resolve("./src/css/footer.css"),
+          ],
         },
         sitemap: {
           changefreq: "daily",
@@ -121,6 +127,10 @@ const config = {
   ],
 
   plugins: [
+    // Keep a single @docusaurus/theme-common instance so navbar hooks share
+    // the same React context as theme-classic providers under pnpm.
+    require.resolve("./plugins/theme-common-singleton-plugin"),
+    require.resolve("./plugins/specifications-docs-plugin"),
     [
       "@docusaurus/plugin-content-docs",
       {
@@ -129,6 +139,7 @@ const config = {
         routeBasePath: "community",
         sidebarPath: require.resolve("./community/sidebars.js"),
         editUrl: "https://github.com/apache/opendal/tree/main/website/",
+        rehypePlugins: [localImages.rehype],
       },
     ],
     [require.resolve("docusaurus-plugin-image-zoom"), {}],
@@ -136,10 +147,6 @@ const config = {
       "@docusaurus/plugin-client-redirects",
       {
         redirects: [
-          {
-            from: "/docs/vision",
-            to: "/vision",
-          },
           {
             from: "/discord",
             to: "https://discord.com/invite/XQy8yGR2dg",
@@ -149,11 +156,13 @@ const config = {
             to: "https://lists.apache.org/list.html?dev@opendal.apache.org",
           },
         ],
+        createRedirects: createLegacyDocsRedirect,
       },
     ],
     require.resolve("docusaurus-lunr-search"),
-    // This plugin will download all images to local and rewrite the url in html.
-    require.resolve("./plugins/image-ssr-plugin"),
+    // Generates the /services section from data/services.json.
+    require.resolve("./plugins/services-docs-plugin"),
+    localImages.plugin,
     [
       "docusaurus-plugin-llms-builder",
       /** @type {import("docusaurus-plugin-llms-builder").PluginOptions} */
@@ -170,59 +179,7 @@ const config = {
             generateLLMsFullTxt: true,
             hooks: {
               "generate:prepare": (ctx) => {
-                try {
-                  // cargo rustdoc all features
-                  const config = crates_llms_txt.fromLocal(
-                    path.resolve(process.cwd(), "../core/Cargo.toml")
-                  );
-                  if (!config) return;
-
-                  const linkProcess = (/** @type {string} */ link) => {
-                    if (
-                      /^https:\/\/docs\.rs([\/\w].*\/[0-9]+.[0-9]+.[0-9]+$)/.test(
-                        link
-                      )
-                    ) {
-                      return "https://opendal.apache.org/docs/rust/opendal/";
-                    }
-
-                    return link.includes("source/src")
-                      ? link.replace(
-                        /https:\/\/docs\.rs\/crate\/([^/]+)\/([^/]+)\/source\/src/g,
-                        "https://opendal.apache.org/docs/rust/src/opendal"
-                      ) + ".html"
-                      : link;
-                  };
-
-                  if (config.sessions) {
-                    const sessions = config.sessions;
-                    ctx.llmConfig.llmStdConfig.sessions.unshift({
-                      sessionName: config.libName,
-                      source: "normal",
-                      items: sessions.map((item) => {
-                        return {
-                          title: item.title,
-                          description: item.description,
-                          link: linkProcess(item.link),
-                        };
-                      }),
-                    });
-                  }
-
-                  if (config.fullSessions) {
-                    const fullSessions = config.fullSessions;
-                    ctx.llmConfig.llmFullStdConfig.sessions = fullSessions
-                      .map((item) => {
-                        return {
-                          link: linkProcess(item.link),
-                          content: item.content,
-                        };
-                      })
-                      .concat(ctx.llmConfig.llmFullStdConfig.sessions);
-                  }
-                } catch (error) {
-                  console.log("QAQ error:", error);
-                }
+                addRustdocLlmSessions(ctx, baseUrl);
               },
             },
             sessions: [
@@ -233,19 +190,7 @@ const config = {
                 sitemap: "sitemap.xml",
                 patterns: {
                   ignorePatterns: ["**/blog/**", "**/blog", "**/community/**"],
-                  orderPatterns: (a, b) => {
-                    const aPath = new URL(a).pathname;
-                    const bPath = new URL(b).pathname;
-
-                    const aSegments = aPath.split("/").filter(Boolean);
-                    const bSegments = bPath.split("/").filter(Boolean);
-
-                    if (aSegments.length !== bSegments.length) {
-                      return aSegments.length - bSegments.length;
-                    }
-
-                    return a.localeCompare(b);
-                  },
+                  orderPatterns: orderByPathDepth,
                 },
               },
               {
@@ -273,7 +218,8 @@ const config = {
       // image: 'img/opendal-social-card.jpg',
       colorMode: {
         defaultMode: "light",
-        disableSwitch: true,
+        disableSwitch: false,
+        respectPrefersColorScheme: true,
       },
       navbar: {
         logo: {
@@ -290,6 +236,11 @@ const config = {
             docId: "overview",
             position: "right",
             label: "Docs",
+          },
+          {
+            to: "/services",
+            label: "Services",
+            position: "right",
           },
           {
             to: "/blog",
@@ -374,7 +325,7 @@ const config = {
       prism: {
         theme: themes.github,
         darkTheme: themes.dracula,
-        additionalLanguages: ["rust", "java", "groovy"],
+        additionalLanguages: ["rust", "java", "groovy", "python", "ruby", "cpp"],
       },
       zoom: {
         selector: "img:not(a img)",
@@ -384,18 +335,4 @@ const config = {
     }),
 };
 
-function generateConfig() {
-  config.baseUrl = baseUrl;
-
-  if (websiteNotLatest && config.themeConfig) {
-    config.themeConfig.announcementBar = {
-      id: "announcementBar-0", // Increment on change
-      content:
-        'You are viewing the documentation of a <strong>historical release</strong>. <a href="https://nightlies.apache.org/opendal/opendal-docs-stable/">View the latest stable release</a>.',
-    };
-  }
-
-  return config;
-}
-
-module.exports = generateConfig();
+module.exports = applyGeneratedConfig(config, { baseUrl, websiteNotLatest });

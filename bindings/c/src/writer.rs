@@ -52,6 +52,15 @@ impl opendal_writer {
         bytes: &opendal_bytes,
     ) -> opendal_result_writer_write {
         let size = bytes.len;
+        let bytes = match bytes.to_buffer() {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                return opendal_result_writer_write {
+                    size: 0,
+                    error: opendal_error::new(e),
+                };
+            }
+        };
         match self.deref_mut().write(bytes) {
             Ok(()) => opendal_result_writer_write {
                 size,
@@ -80,6 +89,44 @@ impl opendal_writer {
                 }
             }
             std::ptr::null_mut()
+        }
+    }
+
+    /// \brief Close the writer and return the written object's metadata.
+    ///
+    /// Like `opendal_writer_close`, but on success returns the metadata of the
+    /// written object (e.g. etag, version, last modified) instead of discarding it.
+    ///
+    /// @param ptr The opendal_writer to close
+    /// @see opendal_result_write
+    /// @return Returns opendal_result_write. On success the `meta` field holds the
+    /// metadata and `error` is null; on failure `meta` is null and `error` is set.
+    ///
+    /// \note The returned metadata must be freed with opendal_metadata_free().
+    #[no_mangle]
+    pub unsafe extern "C" fn opendal_writer_close_with_metadata(
+        ptr: *mut opendal_writer,
+    ) -> opendal_result_write {
+        unsafe {
+            if ptr.is_null() {
+                return opendal_result_write {
+                    meta: std::ptr::null_mut(),
+                    error: std::ptr::null_mut(),
+                };
+            }
+            match (*ptr).deref_mut().close() {
+                Ok(m) => opendal_result_write {
+                    meta: Box::into_raw(Box::new(opendal_metadata::new(m))),
+                    error: std::ptr::null_mut(),
+                },
+                Err(e) => opendal_result_write {
+                    meta: std::ptr::null_mut(),
+                    error: opendal_error::new(
+                        core::Error::new(core::ErrorKind::Unexpected, "close writer failed")
+                            .set_source(e),
+                    ),
+                },
+            }
         }
     }
 

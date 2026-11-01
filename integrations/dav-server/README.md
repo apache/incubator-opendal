@@ -29,7 +29,7 @@ use opendal::Operator;
 
 #[tokio::test]
 async fn test() -> Result<()> {
- let op = Operator::new(Memory::default())?.finish();
+ let op = Operator::new(Memory::default())?;
 
  let webdavfs = OpendalFs::new(op);
 

@@ -27,16 +27,41 @@ on:
         required: true
         type: string
 
+concurrency:
+  group: binding_python-${{ inputs.os }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
 jobs:
+  # Prevent parallel cache building in `test` job by building cache in a separate job
+  python-cache:
+    runs-on: ${{ inputs.os }}
+    steps:
+      - uses: actions/checkout@v7
+    
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+        with:
+          need-nextest: true
+          need-protoc: true
+          need-rocksdb: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          # params must be in sync with `test` job
+          working-directory: bindings/python
+
   test:
     name: ${{ matrix.cases.service }} / ${{ matrix.cases.setup }}
+    needs: python-cache
     runs-on: ${{ inputs.os }}
     strategy:
       fail-fast: false
       matrix:
         cases: ${{ fromJson(inputs.cases) }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
         with:
@@ -46,15 +71,26 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup 1Password Connect
-        uses: 1password/load-secrets-action/configure@v3
-        with:
-          connect-host: ${{ secrets.OP_CONNECT_HOST }}
-          connect-token: ${{ secrets.OP_CONNECT_TOKEN }}
+        shell: bash
+        run: |
+          echo "::add-mask::${{ secrets.OP_CONNECT_HOST }}"
+          echo "::add-mask::${{ secrets.OP_CONNECT_TOKEN }}"
+          echo "OP_CONNECT_HOST=${{ secrets.OP_CONNECT_HOST }}" >> "$GITHUB_ENV"
+          echo "OP_CONNECT_TOKEN=${{ secrets.OP_CONNECT_TOKEN }}" >> "$GITHUB_ENV"
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
-          enable-cache: true
+          # params must be in sync with `python-cache` job
+          working-directory: bindings/python
+
+      - name: Setup Java for HDFS build
+        if: matrix.cases.feature == 'services-hdfs'
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 11
+
       - name: Build with maturin
         shell: bash
         working-directory: "bindings/python"

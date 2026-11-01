@@ -24,7 +24,7 @@ edition = "2024"
 homepage = "https://opendal.apache.org/"
 license = "Apache-2.0"
 repository = "https://github.com/apache/opendal"
-rust-version = "1.85"
+rust-version = "1.91"
 
 [lib]
 crate-type = ["cdylib"]
@@ -32,15 +32,29 @@ doc = false
 
 [dependencies]
 # this crate won't be published, we always use the local version
+asyncband = { version = "0.7.1", features = ["mutex"] }
+bytes = "1.12.1"
+futures = "0.3"
 opendal = { version = ">=0", path = "../../core", features = [
   "blocking",
+  "http-transport-reqwest",
+  "executors-tokio",
 
-  # These are default features before v0.46. TODO: change to optional features
+  # enabled layers
+  "layers-concurrent-limit",
+  "layers-logging",
+  "layers-mime-guess",
+  "layers-retry",
+  "layers-throttle",
+  "layers-timeout",
+
+  # enabled services
   "services-azblob",
   "services-azdls",
   "services-cos",
   "services-fs",
   "services-gcs",
+  "services-gcs-grpc",
   "services-ghac",
   "services-http",
   "services-ipmfs",
@@ -48,8 +62,66 @@ opendal = { version = ">=0", path = "../../core", features = [
   "services-obs",
   "services-oss",
   "services-s3",
+  "services-tos",
   "services-webdav",
   "services-webhdfs",
+  "services-aliyun-drive",
+  "services-cacache",
+  "services-compfs",
+  "services-dashmap",
+  "services-dropbox",
+  "services-etcd",
+  # FIXME this requires a preinstalled fdb library
+  # "services-foundationdb",
+  # FIXME requires openssl.
+  # "services-ftp",
+  "services-gdrive",
+  # FIXME how to support HDFS services in bindings?
+  # "services-hdfs",
+  # "services-hdfs-native",
+  "services-hf",
+  "services-ipfs",
+  "services-memcached",
+  "services-mini-moka",
+  "services-moka",
+  "services-onedrive",
+  "services-persy",
+  "services-postgresql",
+  "services-koofr",
+  "services-mysql",
+  "services-redb",
+  "services-redis",
+  # FIXME: rocksdb will lead to "cannot allocate memory in static TLS block" while linking.
+  # "services-rocksdb",
+  "services-sled",
+  "services-tikv",
+  "services-vercel-artifacts",
+  "services-mongodb",
+  "services-gridfs",
+  "services-sqlite",
   "services-azfile",
+  "services-swift",
+  "services-alluxio",
+  "services-goosefs",
+  "services-b2",
+  "services-seafile",
+  "services-upyun",
+  "services-yandex-disk",
 ] }
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1.49.0", features = ["full"] }
+
+# This is not optimal. See also the Cargo issue:
+# https://github.com/rust-lang/cargo/issues/1197#issuecomment-1641086954
+[target.'cfg(unix)'.dependencies.opendal]
+features = [
+  # Depend on unix-only dependency stacks in current implementations.
+  "services-monoiofs",
+  "services-sftp",
+]
+path = "../../core"
+
+[profile.release]
+codegen-units = 1
+lto = "fat"
+panic = "abort"
+strip = true

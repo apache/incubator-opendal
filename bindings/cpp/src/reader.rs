@@ -15,30 +15,62 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::io::Read;
-use std::io::Seek;
-
 use anyhow::Result;
 use opendal as od;
 
 use super::ffi;
 
-pub struct Reader(pub od::blocking::StdReader);
+pub struct Reader {
+    reader: od::blocking::Reader,
+    position: u64,
+    content_length: u64,
+}
 
 impl Reader {
+    pub fn new(reader: od::blocking::Reader, content_length: u64) -> Self {
+        Self {
+            reader,
+            position: 0,
+            content_length,
+        }
+    }
+
     pub fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        let n = self.0.read(buf)?;
+        if self.position >= self.content_length || buf.is_empty() {
+            return Ok(0);
+        }
+
+        let remaining = self.content_length - self.position;
+        let len = u64::try_from(buf.len())?.min(remaining);
+        let n = self.read_at(&mut buf[..usize::try_from(len)?], self.position)?;
+        self.position = self
+            .position
+            .checked_add(u64::try_from(n)?)
+            .ok_or_else(|| anyhow::anyhow!("reader position overflow"))?;
         Ok(n)
     }
 
-    pub fn seek(&mut self, offset: u64, dir: ffi::SeekFrom) -> Result<u64> {
-        let pos = match dir {
-            ffi::SeekFrom::Start => std::io::SeekFrom::Start(offset),
-            ffi::SeekFrom::Current => std::io::SeekFrom::Current(offset as i64),
-            ffi::SeekFrom::End => std::io::SeekFrom::End(offset as i64),
+    pub fn read_at(&self, mut buf: &mut [u8], offset: u64) -> Result<usize> {
+        let len = u64::try_from(buf.len())?;
+        let end = offset
+            .checked_add(len)
+            .ok_or_else(|| anyhow::anyhow!("read range end overflow"))?;
+        Ok(self.reader.read_into(&mut buf, offset..end)?)
+    }
+
+    pub fn seek(&mut self, offset: i64, dir: ffi::SeekFrom) -> Result<u64> {
+        let base = match dir {
+            ffi::SeekFrom::Start => 0,
+            ffi::SeekFrom::Current => i128::from(self.position),
+            ffi::SeekFrom::End => i128::from(self.content_length),
             _ => return Err(anyhow::anyhow!("invalid seek dir")),
         };
+        let pos = base + i128::from(offset);
+        if pos < 0 {
+            return Err(anyhow::anyhow!("invalid seek to negative position"));
+        }
 
-        Ok(self.0.seek(pos)?)
+        self.position = u64::try_from(pos)?;
+        Ok(self.position)
     }
 }
