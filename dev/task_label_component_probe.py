@@ -34,7 +34,7 @@ def observed_selected(result, item, files):
 label.selected_labels = observed_selected
 cases = [
     (6836, "8641f2a9230b4806aa0706c9b3da744ac86bda65", "feat", []),
-    (8472, "0989d0adc1e4d9ce31759bd6a1838b27075aaa3b", "ci", ["bindings/java"]),
+    (8472, "0989d0adc1e4d9ce31759bd6a1838b27075aaa3b", "fix", ["bindings/java"]),
 ]
 for number, expected_head, category, expected_components in cases:
     item = github.call(f"/issues/{number}")
