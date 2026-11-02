@@ -69,5 +69,17 @@ for number, expected_head, expected in cases:
     assert (current["title"], current.get("body")) == (item["title"], item.get("body"))
     assert github.call(f"/pulls/{number}")["head"]["sha"] == expected_head
 
-print(json.dumps({"cases_passed": len(cases), "github_writes": 0, "model": label.MODEL}), flush=True)
+historical = github.call("/issues/8010")
+historical_head = github.call("/pulls/8010")["head"]["sha"]
+historical_files = github.pages("/pulls/8010/files")
+historical_result = label.classify(label.model_request(historical, historical_files))
+label.selected_labels(historical_result, historical, historical_files)
+assert historical_result["components"] == ["services/github"], historical_result
+print(json.dumps({"pr": 8010, "historical_control": True, "head": historical_head,
+                  "classification": historical_result}), flush=True)
+current_historical = github.call("/issues/8010")
+assert (current_historical["title"], current_historical.get("body")) == (historical["title"], historical.get("body"))
+assert github.call("/pulls/8010")["head"]["sha"] == historical_head
+
+print(json.dumps({"cases_passed": len(cases) + 1, "github_writes": 0, "model": label.MODEL}), flush=True)
 print("STRUCTURED_LABEL_PROBE_PASSED", flush=True)
