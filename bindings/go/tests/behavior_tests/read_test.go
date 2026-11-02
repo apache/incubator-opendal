@@ -116,7 +116,7 @@ func testReadWithIfModifiedSince(assert *require.Assertions, op *opendal.Operato
 	assert.Nil(err, "read with if-modified-since before last modified must succeed")
 	assert.Equal(content, bs, "read content")
 
-	_, err = op.Read(path, opendal.ReadWithIfModifiedSince(lastModified.Add(time.Second)))
+	_, err = op.Read(path, opendal.ReadWithIfModifiedSince(lastModified))
 	assert.NotNil(err)
 	assert.Equal(opendal.CodeConditionNotMatch, assertErrorCode(err))
 }
