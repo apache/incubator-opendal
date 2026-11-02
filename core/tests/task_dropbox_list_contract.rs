@@ -58,6 +58,7 @@ async fn dropbox_nested_list_paths_with_owned_cleanup() {
         ))
     }
     .await;
+    eprintln!("probe_observation={observed:?}");
 
     // Clean only known owned paths before asserting a possibly failing list result.
     let mut cleanup_ok = true;
