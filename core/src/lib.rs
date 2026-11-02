@@ -137,14 +137,14 @@ fn init_default_registry_inner(registry: &OperatorRegistry) {
     #[cfg(feature = "services-gcs-grpc")]
     opendal_service_gcs_grpc::register_gcs_grpc_service(registry);
 
-    #[cfg(feature = "services-git")]
-    opendal_service_git::register_git_service(registry);
-
     #[cfg(feature = "services-gdrive")]
     opendal_service_gdrive::register_gdrive_service(registry);
 
     #[cfg(feature = "services-ghac")]
     opendal_service_ghac::register_ghac_service(registry);
+
+    #[cfg(feature = "services-git")]
+    opendal_service_git::register_git_service(registry);
 
     #[cfg(feature = "services-github")]
     opendal_service_github::register_github_service(registry);
@@ -332,12 +332,12 @@ pub mod services {
     pub use opendal_service_gcs::*;
     #[cfg(feature = "services-gcs-grpc")]
     pub use opendal_service_gcs_grpc::*;
-    #[cfg(feature = "services-git")]
-    pub use opendal_service_git::*;
     #[cfg(feature = "services-gdrive")]
     pub use opendal_service_gdrive::*;
     #[cfg(feature = "services-ghac")]
     pub use opendal_service_ghac::*;
+    #[cfg(feature = "services-git")]
+    pub use opendal_service_git::*;
     #[cfg(feature = "services-github")]
     pub use opendal_service_github::*;
     #[cfg(feature = "services-goosefs")]

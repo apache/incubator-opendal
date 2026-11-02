@@ -41,7 +41,7 @@ impl GitBuilder {
     /// This is required.
     pub fn repository(mut self, repository: &str) -> Self {
         if !repository.is_empty() {
-            self.config.repository = Some(repository.to_string());
+            self.config.repository = repository.to_string();
         }
         self
     }
@@ -49,7 +49,7 @@ impl GitBuilder {
     /// Set the Git reference to resolve.
     ///
     /// The value may be a branch, tag, commit hash, or `HEAD`. It is resolved
-    /// once when the operator first reads the repository and remains fixed for
+    /// once when the operator first accesses the repository and remains fixed for
     /// the lifetime of that operator. The default is `HEAD`.
     pub fn reference(mut self, reference: &str) -> Self {
         if !reference.is_empty() {
@@ -103,10 +103,13 @@ impl Builder for GitBuilder {
     fn build(self) -> Result<impl Service> {
         debug!("git backend build started");
 
-        let repository = self.config.repository.clone().ok_or_else(|| {
-            Error::new(ErrorKind::ConfigInvalid, "repository is required")
-                .with_context("service", GIT_SCHEME)
-        })?;
+        let repository = self.config.repository.clone();
+        if repository.is_empty() {
+            return Err(
+                Error::new(ErrorKind::ConfigInvalid, "repository is required")
+                    .with_context("service", GIT_SCHEME),
+            );
+        }
         let reference = self
             .config
             .reference
@@ -286,7 +289,7 @@ mod tests {
     }
 
     fn file_url(dir: &Path) -> String {
-        format!("file://{}", dir.display())
+        url::Url::from_file_path(dir).unwrap().to_string()
     }
 
     #[tokio::test]
@@ -338,6 +341,35 @@ mod tests {
             .unwrap();
         let (_, data) = reader.read(BytesRange::new(0, Some(2))).await.unwrap();
         assert_eq!(data.to_bytes(), Bytes::from_static(b"he"));
+    }
+
+    #[tokio::test]
+    async fn head_snapshot_remains_fixed_after_first_read() {
+        let (_temp, dir) = init_repo();
+        std::fs::write(dir.join("state.txt"), b"one").unwrap();
+        commit_all(&dir, "initial");
+        let repository = file_url(&dir);
+        let ctx = OperationContext::new();
+        let service = GitBuilder::default()
+            .repository(&repository)
+            .build()
+            .unwrap();
+        let reader = service.read(&ctx, "state.txt", OpRead::default()).unwrap();
+        let (_, initial) = reader.read(BytesRange::default()).await.unwrap();
+        assert_eq!(initial.to_bytes(), Bytes::from_static(b"one"));
+
+        std::fs::write(dir.join("state.txt"), b"two").unwrap();
+        commit_all(&dir, "advance head");
+        let (_, retained) = reader.read(BytesRange::default()).await.unwrap();
+        assert_eq!(retained.to_bytes(), Bytes::from_static(b"one"));
+
+        let fresh = GitBuilder::default()
+            .repository(&repository)
+            .build()
+            .unwrap();
+        let reader = fresh.read(&ctx, "state.txt", OpRead::default()).unwrap();
+        let (_, current) = reader.read(BytesRange::default()).await.unwrap();
+        assert_eq!(current.to_bytes(), Bytes::from_static(b"two"));
     }
 
     #[tokio::test]

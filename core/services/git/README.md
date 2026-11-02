@@ -38,7 +38,7 @@ fn build_operator(builder: Git) -> Result<Operator> {
     Operator::new(builder)
 }
 
-fn register_for_uri() {
+fn register_service() {
     register_git_service(OperatorRegistry::get());
 }
 ```
@@ -46,6 +46,9 @@ fn register_for_uri() {
 Services that use HTTP also require an HTTP transport in `OperationContext`.
 The Git fetch uses the transport configured by gix; LFS batch and payload
 requests use the composed OpenDAL HTTP transport.
+
+Git fetch and object access use `tokio::task::spawn_blocking`. Run this service
+within a Tokio runtime.
 
 ## Notes
 

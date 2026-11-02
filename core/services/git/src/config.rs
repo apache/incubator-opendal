@@ -34,20 +34,26 @@ pub struct GitConfig {
     /// - `file:///path/to/repository.git`
     ///
     /// This is required.
-    pub repository: Option<String>,
+    ///
+    /// <!-- @example https://huggingface.co/hf-internal-testing/tiny-random-bert -->
+    pub repository: String,
 
     /// Git reference to resolve.
     ///
     /// The value can be a branch, tag, commit hash, or `HEAD`. The reference is
-    /// resolved once when the operator first reads the repository. Later
+    /// resolved once when the operator first accesses the repository. Later
     /// operations use the same immutable snapshot and do not refresh it.
     ///
     /// The default is `HEAD`.
+    ///
+    /// <!-- @default HEAD -->
     pub reference: Option<String>,
 
     /// Root path within the repository.
     ///
     /// All operations are relative to this path. The default is `/`.
+    ///
+    /// <!-- @default / -->
     pub root: Option<String>,
 
     /// Username used for the Git fetch and same-origin LFS requests.
@@ -68,6 +74,8 @@ pub struct GitConfig {
     /// When enabled, the service detects Git LFS pointers and streams the
     /// referenced object. When disabled, the pointer file itself is returned.
     /// The default is `true`.
+    ///
+    /// <!-- @default true -->
     pub resolve_lfs: Option<bool>,
 }
 

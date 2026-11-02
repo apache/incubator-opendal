@@ -39,6 +39,10 @@ pub use error::opendal_error;
 mod lister;
 pub use lister::opendal_lister;
 
+mod logging;
+pub use logging::opendal_log_callback;
+pub use logging::opendal_logging_init;
+
 mod layer;
 pub use layer::opendal_operator_layers;
 
