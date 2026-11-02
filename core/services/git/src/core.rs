@@ -37,6 +37,7 @@ const LFS_OID_PREFIX: &str = "oid sha256:";
 const LFS_SIZE_PREFIX: &str = "size ";
 const LFS_ACTION_REUSE_CAP: Duration = Duration::from_secs(60);
 const LFS_ACTION_EXPIRY_MARGIN: Duration = Duration::from_secs(5);
+const LFS_BATCH_BODY_LIMIT: usize = 1024 * 1024;
 
 /// Parsed Git LFS pointer.
 #[derive(Debug, Clone)]
@@ -151,6 +152,7 @@ impl GitCore {
                                     identity: gix::sec::identity::Account {
                                         username: username.clone(),
                                         password: password.clone(),
+                                        oauth_refresh_token: None,
                                     },
                                     next: ctx.into(),
                                 }))
@@ -514,10 +516,25 @@ impl GitCore {
         }
 
         let mut body = response.into_body();
-        let buffer = body
-            .read_all()
-            .await
-            .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to read LFS batch response"))?;
+        let mut bufs = Vec::new();
+        let mut total = 0;
+        loop {
+            let buf = body.read().await.map_err(|_| {
+                Error::new(ErrorKind::Unexpected, "failed to read LFS batch response")
+            })?;
+            if buf.is_empty() {
+                break;
+            }
+            total += buf.len();
+            if total > LFS_BATCH_BODY_LIMIT {
+                return Err(Error::new(
+                    ErrorKind::Unexpected,
+                    "LFS batch response too large",
+                ));
+            }
+            bufs.push(buf);
+        }
+        let buffer: Buffer = bufs.into_iter().flatten().collect();
         Self::parse_lfs_action(&buffer.to_bytes(), oid, size)
     }
 
