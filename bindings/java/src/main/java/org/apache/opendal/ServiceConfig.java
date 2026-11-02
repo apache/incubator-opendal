@@ -3128,6 +3128,11 @@ public interface ServiceConfig {
          */
         public final String defaultAcl;
         /**
+         * <p>Fallback signing region when neither <code>region</code>, <code>AWS_REGION</code>, nor
+         * <code>AWS_DEFAULT_REGION</code> supplies one.</p>
+         */
+        public final String defaultRegion;
+        /**
          * <p>default storage_class for this backend.</p>
          * <p>Available values:</p>
          * <ul>
@@ -3297,6 +3302,12 @@ public interface ServiceConfig {
          */
         public final String serverSideEncryptionAwsKmsKeyId;
         /**
+         * <p>Control S3 Bucket Keys for SSE-KMS writes and copies.</p>
+         * <p>Omit this option to inherit the bucket setting. <code>false</code> disables Bucket
+         * Keys for destination objects, and <code>true</code> enables them.</p>
+         */
+        public final Boolean serverSideEncryptionBucketKeyEnabled;
+        /**
          * <p>server_side_encryption_customer_algorithm for this backend.</p>
          * <p>Available values: <code>AES256</code>.</p>
          */
@@ -3368,6 +3379,9 @@ public interface ServiceConfig {
             if (defaultAcl != null) {
                 map.put("default_acl", defaultAcl);
             }
+            if (defaultRegion != null) {
+                map.put("default_region", defaultRegion);
+            }
             if (defaultStorageClass != null) {
                 map.put("default_storage_class", defaultStorageClass);
             }
@@ -3430,6 +3444,11 @@ public interface ServiceConfig {
             }
             if (serverSideEncryptionAwsKmsKeyId != null) {
                 map.put("server_side_encryption_aws_kms_key_id", serverSideEncryptionAwsKmsKeyId);
+            }
+            if (serverSideEncryptionBucketKeyEnabled != null) {
+                map.put(
+                        "server_side_encryption_bucket_key_enabled",
+                        String.valueOf(serverSideEncryptionBucketKeyEnabled));
             }
             if (serverSideEncryptionCustomerAlgorithm != null) {
                 map.put("server_side_encryption_customer_algorithm", serverSideEncryptionCustomerAlgorithm);
