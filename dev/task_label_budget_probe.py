@@ -68,9 +68,15 @@ if baseline["finish_reason"] != "length":
 if not any(count > 1 and token.strip('"') in label.component_labels() for token, count in baseline["quoted_items"]):
     raise RuntimeError("No repeated component was observed; inspect before changing array uniqueness")
 candidate_body = copy.deepcopy(body)
-del candidate_body["response_format"]["json_schema"]["properties"]["components"]["items"]["enum"]
+candidate_body["messages"][0]["content"] += (
+    "\nNew components can be absent from the current catalog. Leave such components "
+    "unlabeled until their exact label appears in Components; do not choose a "
+    "similar name or a related provider. If no directly affected catalogued "
+    "component remains, return an empty components array."
+)
 candidate = infer(candidate_body)
 assert candidate["finish_reason"] == "stop" and candidate["valid_json"] and "selected_labels" in candidate
+assert candidate["classification"] == {"category": "feat", "components": [], "breaking_change": False}
 current = github.call("/issues/6836")
 assert (current["title"], current.get("body")) == (item["title"], item.get("body"))
 assert github.call("/pulls/6836")["head"]["sha"] == head
