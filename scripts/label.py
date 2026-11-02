@@ -193,7 +193,7 @@ def model_request(item, files):
             {"role": "user", "content": json.dumps(data)},
         ],
         "temperature": 0,
-        "max_tokens": 512,
+        "max_tokens": 2048,
         "response_format": {
             "type": "json_schema",
             "json_schema": {
@@ -221,9 +221,17 @@ def classify(body):
         raise RuntimeError("Workers AI inference failed")
     result = response["result"]
     choice = result["choices"][0]
+    print(
+        json.dumps(
+            {
+                "model": MODEL,
+                "finish_reason": choice["finish_reason"],
+                "usage": result.get("usage"),
+            }
+        )
+    )
     if choice["finish_reason"] != "stop":
         raise ValueError("Incomplete model output")
-    print(json.dumps({"model": MODEL, "usage": result.get("usage")}))
     return json.loads(choice["message"]["content"])
 
 
