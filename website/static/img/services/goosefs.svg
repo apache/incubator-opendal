@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="128px" height="128px" viewBox="0 0 128 128" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <title>产品图标-128px</title>
+    <defs>
+        <linearGradient x1="73.162526%" y1="111.133148%" x2="26.837474%" y2="-11.1331481%" id="linearGradient-1">
+            <stop stop-color="#0063FF" offset="0%"></stop>
+            <stop stop-color="#00C8DE" offset="100%"></stop>
+        </linearGradient>
+        <linearGradient x1="70.4907889%" y1="100%" x2="20.7478164%" y2="-12.1707859%" id="linearGradient-2">
+            <stop stop-color="#0063FF" offset="0%"></stop>
+            <stop stop-color="#00C8DE" offset="100%"></stop>
+        </linearGradient>
+        <linearGradient x1="82.7359509%" y1="50%" x2="42.167435%" y2="0%" id="linearGradient-3">
+            <stop stop-color="#0063FF" offset="0%"></stop>
+            <stop stop-color="#00C8DE" offset="100%"></stop>
+        </linearGradient>
+    </defs>
+    <g id="产品图标-128px" stroke="none" stroke-width="1" fill="none" fill-rule="evenodd">
+        <g id="编组-2">
+            <rect id="矩形" stroke="#979797" fill="#D8D8D8" opacity="0" x="0.5" y="0.5" width="127" height="127"></rect>
+            <rect id="Rectangle-Copy" fill="#444444" opacity="0" x="0" y="0" width="128" height="128"></rect>
+            <polygon id="Path" fill="url(#linearGradient-1)" fill-rule="nonzero" points="116.155039 47.2310078 116.155039 93.6682171 63.5658915 123.634109 10.9767442 93.6682171 10.9767442 33.5379845 63.5658915 3.57209302 116.055814 33.5379845 119.032558 31.8511628 63.5658915 0.0992248062 8 31.8511628 8 95.3550388 63.5658915 127.106977 119.131783 95.3550388 119.131783 45.544186"></polygon>
+            <g id="编组" transform="translate(38.027244, 37.378606)" fill-rule="nonzero">
+                <path d="M24.3993247,-1.5 L8.26954429,-1.5 L1.02746431,9.21867337 L12.832,9.218 L-1.81952649,39.1066591 L14.6186772,55.5 L35.3260417,55.5 L50.4349378,25.5 L38.6239831,25.5 L29.493,44.555 L18.408,44.555 L10.882,36.768 L25.9575802,6.63303444 L24.3993247,-1.5 Z M21.919,1.5 L22.82,6.2 L7.24970129,37.3265875 L17.1362407,47.5556671 L31.3826924,47.5556671 L40.513,28.5 L45.565,28.5 L33.477,52.5 L15.86,52.5 L1.819,38.498 L17.6447206,6.21867337 L6.675,6.218 L9.862,1.5 L21.919,1.5 Z" id="路径-26备份" fill="url(#linearGradient-2)"></path>
+                <path d="M54.7684247,-0.5 L34.0725079,-0.5 L16.0388908,35.6056401 L25.201046,41.1274914 L40.604,9.859 L48.0151001,9.85951155 L54.7684247,-0.5 Z M49.231,2.5 L46.389,6.859 L38.7374983,6.85951155 L23.953,36.872 L19.96,34.466 L35.926,2.5 L49.231,2.5 Z" id="路径-27备份" fill="url(#linearGradient-3)"></path>
+            </g>
+        </g>
+    </g>
+</svg>

@@ -33,7 +33,7 @@ Add the following dependencies to your `Cargo.toml` with correct version:
 
 ```toml
 [dependencies]
-object_store = "0.11.0"
+object_store = "0.14.1"
 object_store_opendal =  "xxx"   # see the latest version above
 opendal = { version = "xxx", features = ["services-s3"] }  # see the latest version above
 ```
@@ -45,7 +45,7 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use object_store::path::Path;
-use object_store::ObjectStore;
+use object_store::ObjectStoreExt;
 use object_store_opendal::OpendalStore;
 use opendal::services::S3;
 use opendal::{Builder, Operator};
@@ -64,7 +64,7 @@ async fn main() {
     ).unwrap();
 
     // Create a new operator
-    let operator = Operator::new(builder).unwrap().finish();
+    let operator = Operator::new(builder).unwrap();
 
     // Create a new object store
     let object_store = Arc::new(OpendalStore::new(operator));
@@ -86,76 +86,20 @@ async fn main() {
 }
 ```
 
-### 2. querying data in a S3 bucket using DataFusion
+### Tune vectored reads
 
-Add the following dependencies to your `Cargo.toml` with correct version:
-
-```toml
-[dependencies]
-object_store = "0.11.0"
-object_store_opendal = "xxx" # see the latest version above
-opendal = { version = "xxx", features = ["services-s3"] } # see the latest version above
-datafusion = "44.0.0"
-url = "2.5.2"
-```
-
-Build `OpendalStore` via `opendal::Operator` and register it to `DataFusion`:
+`OpendalStore` coalesces ranges separated by up to 1 MiB by default, matching
+`object_store::OBJECT_STORE_COALESCE_DEFAULT`. Workloads that need to limit
+over-fetching can configure the gap when constructing the store:
 
 ```rust
-use datafusion::error::DataFusionError;
-use datafusion::error::Result;
-use datafusion::prelude::*;
-use opendal::services::S3;
-use opendal::Operator;
-use std::sync::Arc;
-use url::Url;
-
-
-#[tokio::main]
-async fn main() -> Result<()> {
-    let ctx = SessionContext::new();
-
-    // Configure OpenDAL for S3
-    let region = "my_region";
-    let bucket_name = "my_bucket";
-    let builder = S3::default()
-        .endpoint("my_endpoint")
-        .bucket(bucket_name)
-        .region(region)
-        .access_key_id("my_access_key")
-        .secret_access_key("my_secret_key");
-    let op = Operator::new(builder)
-        .map_err(|err| DataFusionError::External(Box::new(err)))?
-        .finish();
-    let store = object_store_opendal::OpendalStore::new(op);
-
-    // Register the object store
-    let path = format!("s3://{bucket_name}");
-    let s3_url = Url::parse(&path).unwrap();
-    ctx.register_object_store(&s3_url, Arc::new(store));
-
-    // Register CSV file as a table
-    let path = format!("s3://{bucket_name}/csv/data.csv");
-    ctx.register_csv("trips", &path, CsvReadOptions::default())
-        .await?;
-
-    // Execute the query
-    let df = ctx.sql("SELECT * FROM trips LIMIT 10").await?;
-    // Print the results
-    df.show().await?;
-
-    // Dynamic query using the file path directly
-    let ctx = ctx.enable_url_table();
-    let df = ctx
-        .sql(format!(r#"SELECT * FROM '{}' LIMIT 10"#, &path).as_str())
-        .await?;
-    // Print the results
-    df.show().await?;
-
-    Ok(())
-}
+let object_store = OpendalStore::new(operator).with_get_ranges_gap(0);
 ```
 
+A gap of `0` disables merging ranges separated by bytes. Overlapping or adjacent
+ranges are still merged without over-fetching. Set an intermediate value to trade
+fewer backend requests for additional bytes read. A gap of `0` can be useful for
+HDFS scans that are sensitive to retaining large coalesced backing buffers.
 
 ## WASM support
 

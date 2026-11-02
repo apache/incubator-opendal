@@ -23,18 +23,17 @@
 #![allow(rustdoc::bare_urls, reason = "YARD's syntax for documentation")]
 
 use std::collections::HashMap;
-use std::str::FromStr;
 
-use magnus::class;
-use magnus::method;
-use magnus::prelude::*;
-use magnus::scan_args::get_kwargs;
-use magnus::scan_args::scan_args;
 use magnus::Error;
+use magnus::RHash;
 use magnus::RModule;
 use magnus::RString;
 use magnus::Ruby;
 use magnus::Value;
+use magnus::method;
+use magnus::prelude::*;
+use magnus::scan_args::get_kwargs;
+use magnus::scan_args::scan_args;
 
 use crate::capability::Capability;
 use crate::io::Io;
@@ -45,7 +44,7 @@ use crate::*;
 
 /// @yard
 /// The entrypoint for operating with file services and files.
-#[magnus::wrap(class = "OpenDAL::Operator", free_immediately, size)]
+#[magnus::wrap(class = "OpenDal::Operator", free_immediately, size)]
 pub struct Operator {
     // We keep a reference to an `Operator` because:
     // 1. Some builder functions exist only with the `Operator` struct.
@@ -88,12 +87,6 @@ impl Operator {
         scheme: String,
         options: Option<HashMap<String, String>>,
     ) -> Result<Self, Error> {
-        let scheme = ocore::Scheme::from_str(&scheme)
-            .map_err(|err| {
-                ocore::Error::new(ocore::ErrorKind::Unexpected, "unsupported scheme")
-                    .set_source(err)
-            })
-            .map_err(|err| Error::new(ruby.exception_runtime_error(), err.to_string()))?;
         let options = options.unwrap_or_default();
 
         let op = ocore::Operator::via_iter(scheme, options)
@@ -147,7 +140,7 @@ impl Operator {
     /// Gets capabilities of the current operator
     /// @return [Capability]
     fn capability(&self) -> Result<Capability, Error> {
-        let capability = self.blocking_op.info().full_capability();
+        let capability = self.blocking_op.info().capability();
         Ok(Capability::new(capability))
     }
 
@@ -207,9 +200,16 @@ impl Operator {
     /// @param path [String]
     /// @return [nil]
     fn remove_all(ruby: &Ruby, rb_self: &Self, path: String) -> Result<(), Error> {
+        use ocore::options::DeleteOptions;
         rb_self
             .blocking_op
-            .remove_all(&path)
+            .delete_options(
+                &path,
+                DeleteOptions {
+                    recursive: true,
+                    ..Default::default()
+                },
+            )
             .map_err(|err| Error::new(ruby.exception_runtime_error(), err.to_string()))
     }
 
@@ -223,6 +223,7 @@ impl Operator {
         rb_self
             .blocking_op
             .copy(&from, &to)
+            .map(|_| ())
             .map_err(|err| Error::new(ruby.exception_runtime_error(), err.to_string()))
     }
 
@@ -232,10 +233,19 @@ impl Operator {
     /// @param path [String] file path
     /// @param mode [String] operation mode, e.g., `r`, `w`, or `rb`.
     /// @raise [ArgumentError] invalid mode, or when the mode is not unique
-    /// @return [OpenDAL::IO]
-    fn open(ruby: &Ruby, rb_self: &Self, path: String, mode: String) -> Result<Io, Error> {
+    /// @return [OpenDal::IO]
+    fn open(ruby: &Ruby, rb_self: &Self, args: &[Value]) -> Result<Io, Error> {
+        let args = scan_args::<(String,), (Option<Value>, Option<Value>), (), (), RHash, ()>(args)?;
+        let (path,) = args.required;
+        let (option_mode, option_permission) = args.optional;
+        let kwargs = args.keywords;
+
+        // Ruby handles Qnil safely (will not assign to Qnil)
+        let mode = option_mode.unwrap_or(ruby.str_new("r").as_value());
+        let permission = option_permission.unwrap_or(ruby.qnil().as_value());
+
         let operator = rb_self.blocking_op.clone();
-        Io::new(ruby, operator, path, mode)
+        Io::new(ruby, operator, path, mode, permission, kwargs)
     }
 
     /// @yard
@@ -280,8 +290,8 @@ impl Operator {
     }
 }
 
-pub fn include(gem_module: &RModule) -> Result<(), Error> {
-    let class = gem_module.define_class("Operator", class::object())?;
+pub fn include(ruby: &Ruby, gem_module: &RModule) -> Result<(), Error> {
+    let class = gem_module.define_class("Operator", ruby.class_object())?;
     class.define_singleton_method("new", function!(Operator::new, 2))?;
     class.define_method("read", method!(Operator::read, 1))?;
     class.define_method("write", method!(Operator::write, 2))?;
@@ -293,7 +303,7 @@ pub fn include(gem_module: &RModule) -> Result<(), Error> {
     class.define_method("rename", method!(Operator::rename, 2))?;
     class.define_method("remove_all", method!(Operator::remove_all, 1))?;
     class.define_method("copy", method!(Operator::copy, 2))?;
-    class.define_method("open", method!(Operator::open, 2))?;
+    class.define_method("open", method!(Operator::open, -1))?;
     class.define_method("list", method!(Operator::list, -1))?;
     class.define_method("info", method!(Operator::info, 0))?;
 

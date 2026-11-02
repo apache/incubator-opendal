@@ -72,5 +72,6 @@ public class OpenDALException extends RuntimeException {
         IsSameFile,
         ConditionNotMatch,
         RangeNotSatisfied,
+        Conflict,
     }
 }

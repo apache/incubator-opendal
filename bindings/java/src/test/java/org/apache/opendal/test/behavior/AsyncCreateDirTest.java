@@ -32,7 +32,7 @@ import org.junit.jupiter.api.TestInstance;
 class AsyncCreateDirTest extends BehaviorTestBase {
     @BeforeAll
     public void precondition() {
-        final Capability capability = asyncOp().info.fullCapability;
+        final Capability capability = asyncOp().info.capability;
         assumeTrue(capability.createDir);
     }
 

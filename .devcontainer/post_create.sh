@@ -72,3 +72,9 @@ sudo apt install -y ninja-build
 
 # Setup for D binding
 sudo apt install -y dmd dub
+
+# Setup just for development tasks
+cargo install just
+
+# Setup uv for python project management
+curl -LsSf https://astral.sh/uv/install.sh | sh

@@ -1,0 +1,240 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: Release Ruby Binding
+
+on:
+  push:
+    tags:
+      # Triggers on version tags (v0.54.0, v0.54.0-rc.1, etc.)
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-rc.[0-9]+"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/release_ruby.yml"
+  # Rubygems doesn't have a staging environment, and Rubygems don't provide a
+  # public registry. Most gems follow a pre-release tag convention. But
+  # OpenDAL doesn't want pre-releases to a publish registry beyond
+  # a release process. For now, we can rely on artifacts for testing pre-releases.
+  # In the future, we could consider a GitHub private registry for pre-releases.
+  #
+  # Manual dispatch builds candidates and publishes final tags.
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write # required for workflow to publish gem if releasing
+
+defaults:
+  run:
+    working-directory: bindings/ruby
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.summary.outputs.version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+          working-directory: bindings/ruby
+
+      - name: Build source gem (Ruby-only)
+        run: bundle exec rake build
+
+      - name: Show built gems
+        run: ls -la pkg/
+
+      - name: Upload artifact (source gem)
+        uses: actions/upload-artifact@v7
+        with:
+          name: opendal-ruby-gem-source
+          path: bindings/ruby/pkg/*.gem
+          retention-days: 30
+
+      - name: Log Build Summary
+        id: summary
+        run: |
+          # e.g. from `Cargo.toml` to released version:
+          # - 0.54.0 -> 0.54.0
+          # - 0.54.0-rc.1 -> 0.54.1.pre.rc.1
+          VERSION=$(bundle exec rake version)
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+          echo "## Ruby gem built successfully! 📦" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Ref:** ${{ github.ref_name || github.ref }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Version:** $VERSION" >> "$GITHUB_STEP_SUMMARY"
+
+  smoke-test:
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
+
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true # runs 'bundle install' and caches installed gems automatically
+          working-directory: bindings/ruby
+
+      - name: Download source gem artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: opendal-ruby-gem-source
+          path: bindings/ruby/pkg/
+
+      - name: Smoke test source gem
+        run: |
+          gem install --local pkg/opendal-*.gem --no-document
+          ruby -ropendal <<'EOF'
+          op = OpenDal::Operator.new("memory", {})
+          op.write("hello.txt", "hello")
+          raise "bad read" unless op.read("hello.txt") == "hello"
+          EOF
+
+  # We maintain multiple build targets for native gems.
+  # We only provide best-effort support for native gems. We could withdraw the support to these builds at any time.
+  build-native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            platform: x86_64-linux
+            rust_target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            platform: aarch64-linux
+            rust_target: aarch64-unknown-linux-gnu
+          # Publish a versionless macOS platform gem. RubyGems matches
+          # arm64-darwin against runtime platforms like arm64-darwin23/24/25,
+          # so separate Darwin-version gems only add release artifacts.
+          # Compatibility with older macOS is controlled by the binary's
+          # deployment target, not this platform suffix. For Rust ARM64 macOS,
+          # rustc defaults to macOS 11.0 unless MACOSX_DEPLOYMENT_TARGET is set.
+          #
+          # Read more https://doc.rust-lang.org/rustc/platform-support/apple-darwin.html
+          - os: macos-latest
+            platform: arm64-darwin
+            rust_target: aarch64-apple-darwin
+
+    runs-on: ${{ matrix.os }}
+    continue-on-error: true
+
+    env:
+      CARGO_BUILD_TARGET: ${{ matrix.rust_target }}
+      OPENDAL_RUBY_PLATFORM: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Setup Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add ${{ matrix.rust_target }}
+
+      - name: Setup Ruby and install dependencies
+        uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+          working-directory: bindings/ruby # must repeat because actions will not use defaults.run
+
+      - name: Show available rake tasks
+        run: bundle exec rake --tasks
+
+      - name: Build native gem
+        run: bundle exec rake native:opendal
+
+      - name: Collect built gem
+        run: |
+          echo "Built gem file:"
+          ls -la pkg/
+          echo ""
+
+          mkdir -p pkg_out
+          cp -r pkg/*.gem pkg_out/
+
+      - name: Upload gem artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: opendal-ruby-gem-${{ matrix.platform }}
+          path: bindings/ruby/pkg_out/*.gem
+          retention-days: 30
+
+  publish:
+    # RC tags only build artifacts for release verification. RubyGems does not
+    # provide a staging registry, so publish only from the final release tag.
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-')
+
+    needs: [build, smoke-test, build-native]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Ruby and install dependencies
+        uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+          working-directory: bindings/ruby
+
+      - name: Download gem artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: opendal-ruby-gem-*
+          path: bindings/ruby/pkg/
+          merge-multiple: true
+
+      - name: List downloaded artifacts
+        run: |
+          echo "Downloaded gems:"
+          ls -lh pkg/*.gem
+
+      - name: Release opendal gem
+        uses: rubygems/release-gem@052cc82692552de3ef2b81fd670e41d13cba8092 # v1.2.0
+        with:
+          working-directory: bindings/ruby
+
+      - name: Log Release
+        run: |
+          echo "## Ruby binding released! 🚀" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Version:** $(bundle exec rake version)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Check out the [RubyGems page](https://rubygems.org/gems/opendal) for more details." >> "$GITHUB_STEP_SUMMARY"

@@ -26,7 +26,7 @@ class ListerTest < ActiveSupport::TestCase
     File.write("#{@root}/sample", "Sample data for testing")
     Dir.mkdir("#{@root}/sub")
     File.write("#{@root}/sub/sample", "Sample data for testing")
-    @op = OpenDAL::Operator.new("fs", {"root" => @root})
+    @op = OpenDal::Operator.new("fs", {"root" => @root})
   end
 
   test "lists the directory" do
@@ -40,7 +40,7 @@ class ListerTest < ActiveSupport::TestCase
   test "list returns the entry" do
     entry = @op.list("/").first
 
-    assert entry.is_a?(OpenDAL::Entry)
+    assert entry.is_a?(OpenDal::Entry)
     assert entry.name.length > 0
   end
 

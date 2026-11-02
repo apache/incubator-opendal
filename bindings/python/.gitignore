@@ -12,7 +12,6 @@ __pycache__/
 .Python
 .venv/
 env/
-bin/
 build/
 develop-eggs/
 dist/
@@ -73,4 +72,6 @@ build/docs
 
 # Generated docs
 site/
+docs/examples/*.md
+docs/examples/*_files/
 Cargo.lock

@@ -20,11 +20,12 @@ name = "opendal-ruby"
 publish = false
 
 authors = ["Apache OpenDAL <dev@opendal.apache.org>"]
-edition = "2021"
+edition = "2024"
 homepage = "https://opendal.apache.org/"
 license = "Apache-2.0"
 repository = "https://github.com/apache/opendal"
-rust-version = "1.82"
+rust-version = "1.91"
+version = "0.1.16"
 
 [lib]
 crate-type = ["cdylib"]
@@ -32,8 +33,12 @@ doc = false
 name = "opendal_ruby"
 
 [dependencies]
-magnus = { version = "0.7.1", features = ["bytes"] }
-# this crate won't be published, we always use the local version
+magnus = { version = "0.8", features = ["bytes", "io"] }
+# 1. we don't use published core but a local copy
+# 2. for a source release, this path must be the local "./core".
+#   we set it via rake copy_core. Read more in:
+#     - Rakefile
+#     - opendal.gemspec
 opendal = { version = ">=0", path = "../../core", features = [
   "blocking",
   "layers-throttle",
@@ -60,4 +65,4 @@ bytes = "1.6"
 tokio = { version = "1", features = ["full"] }
 
 [build-dependencies]
-rb-sys-env = "0.1.2"
+rb-sys-env = "0.2.3"

@@ -86,6 +86,9 @@ target_link_libraries(basic opendal_c_shared)
 add_executable(error_handle examples/error_handle.c)
 target_link_libraries(error_handle opendal_c_shared)
 
+add_executable(getting_started examples/getting-started.c)
+target_link_libraries(getting_started opendal_c_shared)
+
 # test targets
 set(GTEST_SRCS
     tests/bdd.cpp
@@ -95,7 +98,10 @@ set(GTEST_SRCS
     tests/reader.cpp
 )
 add_executable(tests ${GTEST_SRCS})
-target_link_libraries(tests opendal_c_shared gtest_main uuid)
+target_link_libraries(tests PRIVATE opendal_c_shared gtest_main)
+if(UNIX AND NOT APPLE)
+    target_link_libraries(tests PRIVATE uuid)
+endif()
 if (TEST_ENABLE_ASAN)
     target_compile_options(tests PRIVATE -fsanitize=address)
     target_link_options(tests PRIVATE -fsanitize=address)

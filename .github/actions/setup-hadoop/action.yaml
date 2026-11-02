@@ -19,42 +19,126 @@ name: Setup Hadoop
 description: 'Prepare hadoop binary and env'
 
 inputs:
-  need-hadoop:
-    description: "This setup needs hadoop or not"
+  connector-aws:
+    description: 'Downloads AWS connector.'
+    required: false
+    default: 'false'
+  connector-gcs:
+    description: 'Downloads GCS connector.'
+    required: false
+    default: 'false'
+  connector-azurite:
+    description: 'Downloads azurite connector.'
+    required: false
+    default: 'false'
 
 runs:
   using: "composite"
   steps:
     - name: Setup java env
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@v5
       with:
-        distribution: temurin
-        java-version: "11"
+        distribution: zulu
+        java-version: 11
 
-    - name: Cache hadoop
+    - name: Restore hadoop cache
       id: cache-hadoop
-      uses: actions/cache@v4
-      if: inputs.need-hadoop == 'true'
+      uses: actions/cache/restore@v5
       with:
-        path: /home/runner/hadoop-3.3.5
-        key: cache-hadoop-3.3.5
+        path: ${{ runner.temp }}/hadoop-3.3.5
+        key: cache-hadoop-3.3.5-v1
 
     - name: Build hadoop if not cached
-      if: steps.cache-hadoop.outputs.cache-hit != 'true' && inputs.need-hadoop == 'true'
+      if: steps.cache-hadoop.outputs.cache-hit != 'true'
       shell: bash
       run: |
-        set -e
-        curl -LsSf https://dlcdn.apache.org/hadoop/common/hadoop-3.3.5/hadoop-3.3.5.tar.gz | tar zxf - -C /home/runner
+        curl --location --silent --show-error --fail \
+          https://dlcdn.apache.org/hadoop/common/hadoop-3.3.5/hadoop-3.3.5.tar.gz \
+          | tar --gzip --extract --file=- --directory=${{ runner.temp }}
+
+    - name: Store hadoop cache
+      if: steps.cache-hadoop.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v5
+      with:
+        path: ${{ runner.temp }}/hadoop-3.3.5
+        key: cache-hadoop-3.3.5-v1
+
+    - name: Cached hadoop connectors
+      id: cache-hadoop-connectors
+      uses: actions/cache@v5
+      with:
+        path: ${{ runner.temp }}/downloaded-connectors
+        key: cache-hadoop-connectors-${{ case(inputs.connector-aws == 'true', 'aws', '') }}-${{ case(inputs.connector-gcs == 'true', 'gcs', '') }}-${{ case(inputs.connector-azurite == 'true', 'azurite', '') }}-v1
+
+    - name: Prepare folders for hadoop connectors
+      if: steps.cache-hadoop-connectors.outputs.cache-hit != 'true'
+      shell: bash
+      run: mkdir -p ${{ runner.temp }}/downloaded-connectors
+
+    - name: Download Hadoop AWS connector
+      if: inputs.connector-aws == 'true' && steps.cache-hadoop-connectors.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        curl --location \
+          --silent \
+          --show-error \
+          --fail \
+          --output ${{ runner.temp }}/downloaded-connectors/hadoop-aws-3.3.5.jar \
+          https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.3.5/hadoop-aws-3.3.5.jar
+
+        curl --location \
+          --silent \
+          --show-error \
+          --fail \
+          --output ${{ runner.temp }}/downloaded-connectors/aws-java-sdk-bundle-1.12.653.jar \
+          https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.12.653/aws-java-sdk-bundle-1.12.653.jar
+
+    - name: Download Hadoop GCS connector
+      if: inputs.connector-gcs == 'true' && steps.cache-hadoop-connectors.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        curl --location \
+          --silent \
+          --show-error \
+          --fail \
+          --output ${{ runner.temp }}/downloaded-connectors/gcs-connector-hadoop3-2.2.19-shaded.jar \
+          https://github.com/GoogleCloudDataproc/hadoop-connectors/releases/download/v2.2.19/gcs-connector-hadoop3-2.2.19-shaded.jar
+
+    - name: Download Hadoop Azurite connector
+      if: inputs.connector-azurite == 'true' && steps.cache-hadoop-connectors.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        curl --location \
+          --silent \
+          --show-error \
+          --fail \
+          --output ${{ runner.temp }}/downloaded-connectors/hadoop-azure-3.3.5.jar \
+          https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-azure/3.3.5/hadoop-azure-3.3.5.jar
+
+        curl --location \
+          --silent \
+          --show-error \
+          --fail \
+          --output ${{ runner.temp }}/downloaded-connectors/azure-storage-7.0.1.jar \
+          https://repo1.maven.org/maven2/com/microsoft/azure/azure-storage/7.0.1/azure-storage-7.0.1.jar
+
+    - name: Examine downloaded connectors
+      shell: bash
+      run: |
+        # useful for debugging downloads or cache
+        ls -alh ${{ runner.temp }}/downloaded-connectors
 
     - name: Setup hadoop env
       shell: bash
       run: |
-        export HADOOP_HOME=/home/runner/hadoop-3.3.5
+        export HADOOP_HOME=${{ runner.temp }}/hadoop-3.3.5
+
+        if [ -n "$(ls -A "${{ runner.temp }}/downloaded-connectors" 2>/dev/null)" ]; then
+          cp "${{ runner.temp }}/downloaded-connectors"/* "${HADOOP_HOME}/share/hadoop/common/lib/"
+        fi
+
         echo "HADOOP_HOME=${HADOOP_HOME}" >> $GITHUB_ENV
-        echo "CLASSPATH=$(${HADOOP_HOME}/bin/hadoop classpath --glob)" >> $GITHUB_ENV 
+        echo "CLASSPATH=$(${HADOOP_HOME}/bin/hadoop classpath --glob)" >> $GITHUB_ENV
         echo "LD_LIBRARY_PATH=${{ env.JAVA_HOME }}/lib/server:${HADOOP_HOME}/lib/native" >> $GITHUB_ENV
+
         cp ${{ github.workspace }}/fixtures/hdfs/hdfs-site.xml ${HADOOP_HOME}/etc/hadoop/hdfs-site.xml
-
-
-
-

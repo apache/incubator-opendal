@@ -15,6 +15,35 @@
 # specific language governing permissions and limitations
 # under the License.
 
-from ._opendal import *
+# ruff: noqa: D104
+from __future__ import annotations
 
-__all__ = _opendal.__all__
+# `_opendal` registers the submodules in `sys.modules` on import (see
+# `register_submodules`), so import it before importing from them.
+from opendal import _opendal as _opendal
+from opendal._opendal import __version__ as __version__
+from opendal.operator import AsyncOperator, Operator
+
+from opendal import (  # isort: skip
+    capability as capability,
+    config as config,
+    exceptions as exceptions,
+    file as file,
+    layers as layers,
+    operator as operator,
+    services as services,
+    types as types,
+)
+
+__all__ = [
+    "AsyncOperator",
+    "Operator",
+    "capability",
+    "config",
+    "exceptions",
+    "file",
+    "layers",
+    "operator",
+    "services",
+    "types",
+]

@@ -1,9 +1,0 @@
-[backend]
-type = "s3"
-
-access_key_id = "access_key_id"
-secret_access_key = "secret_access_key"
-
-[frontends.s3]
-enable = true
-addr = "127.0.0.1:2000"

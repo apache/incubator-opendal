@@ -32,6 +32,7 @@
 #include <numeric>
 
 #include "gtest/gtest.h"
+#include "layer.hpp"
 #include "opendal.hpp"
 
 #ifdef OPENDAL_ENABLE_ASYNC
@@ -219,7 +220,8 @@ protected:
         rng_.seed(std::time(nullptr));
         
         try {
-            op_ = opendal::Operator(config.service_name(), config.config());
+            op_ = opendal::Operator(config.service_name(), config.config(),
+                                    opendal::DefaultBehaviorLayerOptions());
             ASSERT_TRUE(op_.Available()) << "Operator not available for service: " << config.service_name();
             capability_ = op_.Info();
         } catch (const std::exception& e) {

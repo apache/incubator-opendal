@@ -21,7 +21,7 @@ require "test_helper"
 
 class OperatorInfoTest < ActiveSupport::TestCase
   setup do
-    @op = OpenDAL::Operator.new("memory", {})
+    @op = OpenDal::Operator.new("memory", {})
   end
 
   test "returns meta information" do

@@ -42,7 +42,7 @@ public class BlockingListTest extends BehaviorTestBase {
 
     @BeforeAll
     public void precondition() {
-        final Capability capability = op().info.fullCapability;
+        final Capability capability = op().info.capability;
         assumeTrue(capability.read && capability.write && capability.copy && capability.list && capability.createDir);
     }
 
@@ -134,7 +134,7 @@ public class BlockingListTest extends BehaviorTestBase {
 
     @Test
     void testListWithLimitCollectsAllPages() {
-        assumeTrue(op().info.fullCapability.listWithLimit);
+        assumeTrue(op().info.capability.listWithLimit);
 
         String dir = String.format("%s/", UUID.randomUUID());
         op().createDir(dir);
@@ -152,7 +152,7 @@ public class BlockingListTest extends BehaviorTestBase {
 
     @Test
     void testListWithStartAfter() {
-        assumeTrue(op().info.fullCapability.listWithStartAfter);
+        assumeTrue(op().info.capability.listWithStartAfter);
 
         String dir = String.format("%s/", UUID.randomUUID());
         op().createDir(dir);
@@ -175,7 +175,7 @@ public class BlockingListTest extends BehaviorTestBase {
 
     @Test
     void testListWithVersions() {
-        assumeTrue(op().info.fullCapability.listWithVersions);
+        assumeTrue(op().info.capability.listWithVersions);
 
         String dir = String.format("%s/", UUID.randomUUID());
         String path = dir + "versioned-file";
@@ -193,7 +193,7 @@ public class BlockingListTest extends BehaviorTestBase {
 
     @Test
     void testListWithDeleted() {
-        assumeTrue(op().info.fullCapability.listWithDeleted);
+        assumeTrue(op().info.capability.listWithDeleted);
 
         String dir = String.format("%s/", UUID.randomUUID());
         String path = dir + "file";

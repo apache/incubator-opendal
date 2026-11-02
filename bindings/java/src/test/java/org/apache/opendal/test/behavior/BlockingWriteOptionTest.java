@@ -21,6 +21,8 @@ package org.apache.opendal.test.behavior;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
+import java.util.Collections;
+import java.util.Map;
 import java.util.UUID;
 import org.apache.opendal.WriteOptions;
 import org.junit.jupiter.api.Test;
@@ -29,7 +31,7 @@ public class BlockingWriteOptionTest extends BehaviorTestBase {
 
     @Test
     void testWriteWithCacheControl() {
-        assumeTrue(op().info.fullCapability.writeWithCacheControl);
+        assumeTrue(op().info.capability.writeWithCacheControl);
 
         final String path = UUID.randomUUID().toString();
         final byte[] content = generateBytes();
@@ -44,7 +46,7 @@ public class BlockingWriteOptionTest extends BehaviorTestBase {
 
     @Test
     void testWriteWithContentType() {
-        assumeTrue(op().info.fullCapability.writeWithContentType);
+        assumeTrue(op().info.capability.writeWithContentType);
 
         final String path = UUID.randomUUID().toString();
         final byte[] content = generateBytes();
@@ -59,7 +61,7 @@ public class BlockingWriteOptionTest extends BehaviorTestBase {
 
     @Test
     void testWriteWithContentDisposition() {
-        assumeTrue(op().info.fullCapability.writeWithContentDisposition);
+        assumeTrue(op().info.capability.writeWithContentDisposition);
 
         final String path = UUID.randomUUID().toString();
         final byte[] content = generateBytes();
@@ -74,8 +76,23 @@ public class BlockingWriteOptionTest extends BehaviorTestBase {
     }
 
     @Test
+    void testWriteWithUserMetadata() {
+        assumeTrue(op().info.capability.writeWithUserMetadata);
+
+        final String path = UUID.randomUUID().toString();
+        final byte[] content = generateBytes();
+        final Map<String, String> userMetadata = Collections.singletonMap("location", "everywhere");
+
+        WriteOptions options = WriteOptions.builder().userMetadata(userMetadata).build();
+        op().write(path, content, options);
+
+        Map<String, String> actualUserMetadata = op().stat(path).getUserMetadata();
+        assertThat(actualUserMetadata).isEqualTo(userMetadata);
+    }
+
+    @Test
     void testWriteWithAppend() {
-        assumeTrue(op().info.fullCapability.writeCanAppend);
+        assumeTrue(op().info.capability.writeCanAppend);
 
         final String path = UUID.randomUUID().toString();
         final byte[] contentOne = "Test".getBytes();
@@ -92,7 +109,7 @@ public class BlockingWriteOptionTest extends BehaviorTestBase {
 
     @Test
     void testWriteWithChunk() {
-        assumeTrue(op().info.fullCapability.writeCanMulti);
+        assumeTrue(op().info.capability.writeCanMulti);
 
         final String path = UUID.randomUUID().toString();
         final byte[] content = generateBytes(5 * 1024 * 1024);
@@ -107,7 +124,7 @@ public class BlockingWriteOptionTest extends BehaviorTestBase {
 
     @Test
     void testWriteWithConcurrentChunk() {
-        assumeTrue(op().info.fullCapability.writeCanMulti);
+        assumeTrue(op().info.capability.writeCanMulti);
 
         final String path = UUID.randomUUID().toString();
         final byte[] content = generateBytes(5 * 1024 * 1024);

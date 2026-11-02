@@ -1,0 +1,42 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: read_only
+description: 'Behavior test for github service in read-only mode'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup
+      shell: bash
+      run: |
+        # Run the read-only behavior tests against the fixtures in
+        # `core/tests/data` of the apache/opendal repository itself, so no
+        # extra backend or write permission is required.
+        cat << EOF >> $GITHUB_ENV
+        OPENDAL_GITHUB_OWNER=apache
+        OPENDAL_GITHUB_REPO=opendal
+        OPENDAL_GITHUB_ROOT=core/tests/data
+        OPENDAL_DISABLE_RANDOM_ROOT=true
+        OPENDAL_TEST_CAPABILITY_OVERRIDES=write=false,delete=false,create_dir=false
+        EOF
+
+        # GITHUB_TOKEN is injected by the caller workflow; forward it to raise
+        # the GitHub API rate limit for the read-only behavior tests.
+        if [ -n "${GITHUB_TOKEN:-}" ]; then
+          echo "OPENDAL_GITHUB_TOKEN=$GITHUB_TOKEN" >> $GITHUB_ENV
+        fi

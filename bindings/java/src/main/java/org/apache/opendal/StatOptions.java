@@ -40,6 +40,18 @@ public class StatOptions {
     private String ifNoneMatch;
 
     /**
+     * Sets if-version-match condition for this operation.
+     * If file exists and its version doesn't match, an error will be returned.
+     */
+    private String ifVersionMatch;
+
+    /**
+     * Sets if-version-not-match condition for this operation.
+     * If file exists and its version matches, an error will be returned.
+     */
+    private String ifVersionNotMatch;
+
+    /**
      * Sets if-modified-since condition for this operation.
      * If file exists and hasn't been modified since the specified time, an error will be returned.
      */

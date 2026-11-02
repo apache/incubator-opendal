@@ -20,17 +20,15 @@
     reason = "YARD's syntax for documentation"
 )]
 
-use magnus::class;
-use magnus::method;
-use magnus::prelude::*;
 use magnus::Error;
 use magnus::RModule;
+use magnus::method;
 
 use crate::capability::Capability;
 use crate::*;
 
 /// Metadata for operator, users can use this metadata to get information of operator.
-#[magnus::wrap(class = "OpenDAL::OperatorInfo", free_immediately, size)]
+#[magnus::wrap(class = "OpenDal::OperatorInfo", free_immediately, size)]
 pub struct OperatorInfo(pub ocore::OperatorInfo);
 
 impl OperatorInfo {
@@ -39,7 +37,7 @@ impl OperatorInfo {
     /// Returns the scheme string of the operator.
     /// @return [String]
     pub fn scheme(&self) -> &str {
-        self.0.scheme().into()
+        self.0.scheme()
     }
 
     /// @yard
@@ -69,12 +67,12 @@ impl OperatorInfo {
     /// Returns the [`Full Capability`] of the operator.
     /// @return [Capability]
     pub fn capability(&self) -> Capability {
-        Capability::new(self.0.full_capability())
+        Capability::new(self.0.capability())
     }
 }
 
-pub fn include(gem_module: &RModule) -> Result<(), Error> {
-    let class = gem_module.define_class("OperatorInfo", class::object())?;
+pub fn include(ruby: &Ruby, gem_module: &RModule) -> Result<(), Error> {
+    let class = gem_module.define_class("OperatorInfo", ruby.class_object())?;
     class.define_method("scheme", method!(OperatorInfo::scheme, 0))?;
     class.define_method("root", method!(OperatorInfo::root, 0))?;
     class.define_method("name", method!(OperatorInfo::name, 0))?;

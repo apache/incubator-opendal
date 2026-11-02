@@ -25,6 +25,7 @@
 //! use bytes::Bytes;
 //! use object_store::path::Path;
 //! use object_store::ObjectStore;
+//! use object_store::ObjectStoreExt;
 //! use object_store_opendal::OpendalStore;
 //! use opendal::services::S3;
 //! use opendal::{Builder, Operator};
@@ -38,7 +39,7 @@
 //!     .region("my_region");
 //!
 //!     // Create a new operator
-//!     let operator = Operator::new(builder).unwrap().finish();
+//!     let operator = Operator::new(builder).unwrap();
 //!
 //!     // Create a new object store
 //!     let object_store = Arc::new(OpendalStore::new(operator));
@@ -59,19 +60,36 @@
 //!     assert_eq!(content, bytes);
 //! }
 //! ```
+//!
+//! Use the re-exported future helper when an integration needs the same OpenDAL
+//! future wrapper used by this crate:
+//!
+//! ```no_run
+//! use object_store_opendal::IntoSendFuture;
+//! use opendal::Operator;
+//!
+//! async fn rename(op: Operator) -> opendal::Result<()> {
+//!     op.rename("from", "to").into_send().await
+//! }
+//! ```
 
 mod store;
 pub use store::OpendalStore;
 
 mod utils;
+pub use utils::IntoSendFuture;
 
 #[cfg(feature = "services-s3")]
 mod amazon_s3;
 
+mod service;
+
+pub use service::{ObjectStoreBuilder, ObjectStoreService};
+
 // Make sure `send_wrapper` works as expected
 #[cfg(all(feature = "send_wrapper", test))]
 mod assert_send {
-    use object_store::{ObjectStore, PutPayload};
+    use object_store::{ObjectStore, ObjectStoreExt, PutPayload};
     use opendal::Operator;
 
     #[allow(dead_code)]
@@ -79,9 +97,7 @@ mod assert_send {
 
     #[allow(dead_code)]
     fn assertion() {
-        let op = Operator::new(opendal::services::Memory::default())
-            .unwrap()
-            .finish();
+        let op = Operator::new(opendal::services::Memory::default()).unwrap();
         let store = super::OpendalStore::new(op);
         assert_send(store.put(&"test".into(), PutPayload::new()));
         assert_send(store.get(&"test".into()));
@@ -92,4 +108,16 @@ mod assert_send {
         assert_send(store.list_with_offset(None, &"test".into()));
         assert_send(store.list_with_delimiter(None));
     }
+}
+
+fn timestamp_to_datetime(ts: opendal::raw::Timestamp) -> Option<chrono::DateTime<chrono::Utc>> {
+    let jiff_ts = ts.into_inner();
+    chrono::DateTime::<chrono::Utc>::from_timestamp(
+        jiff_ts.as_second(),
+        jiff_ts.subsec_nanosecond() as u32,
+    )
+}
+
+fn datetime_to_timestamp(dt: chrono::DateTime<chrono::Utc>) -> Option<opendal::raw::Timestamp> {
+    opendal::raw::Timestamp::new(dt.timestamp(), dt.timestamp_subsec_nanos() as i32).ok()
 }

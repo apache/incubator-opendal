@@ -26,20 +26,48 @@ version (unittest)
 	@("Test basic Operator creation")
 	@safe unittest
 	{
-		/* Initialize a operator for "memory" backend, with no options */
-		OperatorOptions options = new OperatorOptions();
-		Operator op = Operator("memory", options);
+		import std.process: environment;
+
+		// Get test service from environment variable
+		auto testService = environment.get("OPENDAL_TEST", "memory");
+
+		/* Initialize operator with automatic configuration */
+		auto options = new OperatorOptions();
+
+		// Auto-configure based on environment variables with prefix OPENDAL_{SERVICE}_
+		import std.string: toUpper, startsWith, toLower;
+		auto prefix = "OPENDAL_" ~ testService.toUpper() ~ "_";
+		foreach (key, value; environment.toAA())
+		{
+			if (key.startsWith(prefix))
+			{
+				auto configKey = key[prefix.length .. $].toLower();
+				options.set(configKey, value);
+			}
+		}
+
+		Operator op = Operator(testService, options);
 
 		/* Prepare some data to be written */
 		string data = "this_string_length_is_24";
 
-		/* Write this into path "/testpath" */
-		op.write("/testpath", cast(ubyte[])data.dup);
+		/* Write this into path - use UUID-like path for uniqueness */
+		import std.uuid: randomUUID;
+		string testPath = randomUUID().toString();
+
+		/* Write this into path */
+		op.write(testPath, cast(ubyte[])data.dup);
 
 		/* We can read it out, make sure the data is the same */
-		auto read_bytes = op.read("/testpath");
+		auto read_bytes = op.read(testPath);
 		assert(read_bytes.length == 24);
 		assert(cast(string)read_bytes.idup == data);
+
+		/* Clean up */
+		if (op.exists(testPath))
+		{
+			op.remove(testPath);
+		}
 	}
 
 	@("Benchmark parallel and normal functions")
@@ -50,12 +78,31 @@ version (unittest)
 		import std.path: buildPath;
 		import std.datetime.stopwatch: StopWatch;
 		import std.stdio: writeln;
+		import std.process: environment;
 
+		// Get test service from environment variable
+		auto testService = environment.get("OPENDAL_TEST", "memory");
+
+		/* Initialize operator with automatic configuration */
 		auto options = new OperatorOptions();
-		options.set("root", tempDir);
-		auto op = Operator("fs", options, true);
 
-		auto testPath = buildPath(tempDir, "benchmark_test.txt");
+		// Auto-configure based on environment variables with prefix OPENDAL_{SERVICE}_
+		import std.string: toUpper, startsWith, toLower;
+		auto prefix = "OPENDAL_" ~ testService.toUpper() ~ "_";
+		foreach (key, value; environment.toAA())
+		{
+			if (key.startsWith(prefix))
+			{
+				auto configKey = key[prefix.length .. $].toLower();
+				options.set(configKey, value);
+			}
+		}
+
+		auto op = Operator(testService, options, true);
+
+		/* Use UUID for unique test path */
+		import std.uuid: randomUUID;
+		string testPath = randomUUID().toString();
 		auto testData = cast(ubyte[])"Benchmarking OpenDAL async and normal functions".dup;
 
 		// Benchmark write operations
@@ -85,18 +132,32 @@ version (unittest)
 		sw.stop();
 		auto parallelReadTime = sw.peek();
 
-		// Benchmark list operations
+		// Benchmark list operations - create a test directory first
+		import std.uuid: randomUUID;
+		string dirPath = randomUUID().toString() ~ "/";
+
+		// Create directory and a file in it for meaningful list operation
+		op.createDir(dirPath);
+		string fileInDir = dirPath ~ randomUUID().toString();
+		op.write(fileInDir, cast(ubyte[])"test file in directory".dup);
+
 		sw.reset();
 		sw.start();
-		op.list(tempDir);
+		op.list(dirPath);
 		sw.stop();
 		auto normalListTime = sw.peek();
 
 		sw.reset();
 		sw.start();
-		op.listParallel(tempDir);
+		op.listParallel(dirPath);
 		sw.stop();
 		auto parallelListTime = sw.peek();
+
+		// Clean up the directory and file
+		if (op.exists(fileInDir))
+		{
+			op.remove(fileInDir);
+		}
 
 		// Print benchmark results
 		writeln("Write benchmark:");
@@ -116,8 +177,11 @@ version (unittest)
 		assert(parallelReadData == testData);
 
 		// Clean up
-		op.remove(testPath);
-		assert(!op.exists(testPath));
+		if (op.exists(testPath))
+		{
+			op.remove(testPath);
+			assert(!op.exists(testPath));
+		}
 	}
 
 }

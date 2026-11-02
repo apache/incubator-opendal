@@ -19,8 +19,8 @@ use std::sync::LazyLock;
 use std::time::Duration;
 
 use divan::Bencher;
-use opendal::raw::ConcurrentTasks;
 use opendal::Executor;
+use opendal::raw::ConcurrentTasks;
 
 pub static TOKIO: LazyLock<tokio::runtime::Runtime> =
     LazyLock::new(|| tokio::runtime::Runtime::new().expect("build tokio runtime"));

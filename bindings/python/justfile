@@ -1,0 +1,173 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+# Default recipe to 'help' to display this help screen
+default: help
+
+# ==============================================================================
+# Configuration & Variables
+# ==============================================================================
+
+set ignore-comments
+
+# ==============================================================================
+# Setup & Maintenance
+# ==============================================================================
+
+# Install/refresh all Python dependencies using uv.
+[group('maintenance')]
+setup:
+    @echo "{{ BOLD }}--- Installing/ validating dependencies ---{{ NORMAL }}"
+    @uv sync --managed-python --all-groups --all-extras --compile-bytecode
+
+# Clean up all caches, build artifacts, and the venv
+[group('maintenance')]
+clean:
+    @echo "{{ BOLD }}--- Cleaning Rust build artifacts (Cargo) ---{{ NORMAL }}"
+    @cargo clean
+    @echo "{{ BOLD }}--- Removing .venv/, build/, dist/ directories, and other caches ---{{ NORMAL }}"
+    @rm -rf .venv/ build/ dist/ .pytest_cache/ .mypy_cache/ .hypothesis/ .ruff_cache/
+    @echo "{{ BOLD }}--- Removing Python bytecode and compiled extensions ---{{ NORMAL }}"
+    @find . -type f -name '*.py[co]' -delete \
+        -o -type d -name __pycache__ -exec rm -rf {} + \
+        -o -type f -name '_opendal*.so' -delete
+
+# ==============================================================================
+# Dev & Build
+# ==============================================================================
+
+# Generate Python type stubs
+[group('build')]
+stub-gen: setup
+    @echo "{{ BOLD }}--- Generating Python type stubs ---{{ NORMAL }}"
+    @cargo run --quiet --manifest-path=../../dev/Cargo.toml -- generate -l python
+    @uv run maturin develop --generate-stubs
+    ## This is temporary till the functionalities land in pyo3-introspection. ref: https://github.com/PyO3/pyo3/issues/5137
+    @echo "{{ BOLD }}--- Post processing generated stubs ---{{ NORMAL }}"
+    @uv run python scripts/postprocess_stubs.py
+    @just fmt
+
+# Compile and produce a release wheel with optimizations
+[group('release')]
+build-release *args: stub-gen
+    @echo "{{ BOLD }}--- Building release wheel ---{{ NORMAL }}"
+    @uv run maturin build --manifest-path ./Cargo.toml --profile release --strip --release --out dist {{ args }}
+    @just docs-build
+
+# Build and install the release wheel in the current venv
+[group('release')]
+install-release *args: stub-gen
+    @echo "{{ BOLD }}--- Installing release wheel ---{{ NORMAL }}"
+    @uv run maturin develop --manifest-path ./Cargo.toml --profile release --strip --release {{ args }}
+
+# Build and install the release wheel in the current venv
+[group('release')]
+[working-directory('benchmark')]
+bench: install-release
+    @echo "{{ BOLD }}--- Bench release ---{{ NORMAL }}"
+    @uv run async_opendal_benchmark.py
+    @uv run async_origin_s3_benchmark_with_threads.py
+
+# Build only a source distribution (sdist) without compiling
+[group('release')]
+sdist *args: stub-gen
+    @echo "{{ BOLD }}--- Building source distribution without compiling ---{{ NORMAL }}"
+    @uv run maturin sdist --manifest-path ./Cargo.toml --out dist {{ args }}
+
+# Compile and produce a development wheel
+[group('dev')]
+build-dev *args: stub-gen
+    @echo "{{ BOLD }}--- Building development wheel ---{{ NORMAL }}"
+    @uv run maturin build --manifest-path ./Cargo.toml --out dist {{ args }}
+    @just docs-build
+
+# Build and install the development wheel in the current venv
+[group('dev')]
+install-dev *args: stub-gen
+    @echo "{{ BOLD }}--- Installing development wheel ---{{ NORMAL }}"
+    @uv run maturin develop --manifest-path ./Cargo.toml {{ args }}
+
+# Run tests
+[group('dev')]
+test *args: install-dev
+    @echo "{{ BOLD }}--- Running tests ---{{ NORMAL }}"
+    @uv run pytest -v {{ args }}
+
+# ==============================================================================
+# Documentation
+# ==============================================================================
+
+# Convert the example notebooks to Markdown so Zensical can render them
+[group('docs')]
+docs-notebooks: setup
+    @echo "{{ BOLD }}--- Converting example notebooks to Markdown ---{{ NORMAL }}"
+    @uv run jupyter nbconvert --to markdown docs/examples/*.ipynb
+
+# Build the documentation site into site/
+[group('docs')]
+docs-build *args: docs-notebooks
+    @echo "{{ BOLD }}--- Building docs ---{{ NORMAL }}"
+    @uv run zensical build {{ args }}
+
+# Serve the documentation site locally with live reload
+[group('docs')]
+docs-serve *args: docs-notebooks
+    @echo "{{ BOLD }}--- Serving docs ---{{ NORMAL }}"
+    @uv run zensical serve {{ args }}
+
+# ==============================================================================
+# Code Quality & Formatting
+# ==============================================================================
+
+# Run all lint checks for Rust and Python
+[group('lint')]
+lint: setup
+    @echo "{{ BOLD }}--- Running Rust linter (Clippy) ---{{ NORMAL }}"
+    ## remove `-A clippy::incompatible_msrv` until https://github.com/rust-lang/rust-clippy/issues/15792 is fixed and released
+    @cargo clippy -- -D warnings -D clippy::dbg_macro -A clippy::incompatible_msrv
+    @echo "{{ BOLD }}--- Running Python linter (Ruff) ---{{ NORMAL }}"
+    @uv run ruff check
+    @echo "{{ BOLD }}--- Running Python type checker (ty) ---{{ NORMAL }}"
+    @uv run ty check
+
+# Format all code (Rust, Python, etc.)
+[group('lint')]
+fmt: setup
+    @echo "{{ BOLD }}--- Formatting Rust ---{{ NORMAL }}"
+    @cargo fmt --all
+    @echo "{{ BOLD }}--- Formatting Python ---{{ NORMAL }}"
+    @uv run ruff format --quiet
+    ## Fixes generated stubs
+    @uv run ruff check --unsafe-fixes --fix --silent
+    @echo "{{ BOLD }}--- Checking license headers (Hawkeye) ---{{ NORMAL }}"
+    @hawkeye format --config ../../licenserc.toml .
+    @echo "{{ BOLD }}--- Formatting Misc ---{{ NORMAL }}"
+    @taplo fmt --config ../../.taplo.toml
+    @just --fmt --unstable
+
+# Run all code formatting and quality checks
+[group('lint')]
+pre-commit: fmt lint
+    @echo "{{ BOLD }}--- Checking license headers (Hawkeye) ---{{ NORMAL }}"
+    @hawkeye check --config ../../licenserc.toml .
+    @echo "{{ BOLD }}--- Running Misc checks ---{{ NORMAL }}"
+    @taplo lint --config ../../.taplo.toml
+    @just --fmt --unstable --check
+
+# Display this help screen
+help:
+    @just --list

@@ -47,12 +47,12 @@ runs:
               fi
               cp bindings/go/Makefile .
               make tests
-              if [ "${{ inputs.setup }}" == "0_minio_s3" ]; then
+              if [ "${{ inputs.setup }}" == "0_silo_s3" ]; then
                 make bench
               fi
             env:
               OPENDAL_TEST: ${{ inputs.service }}
-              CGO_ENABLE: 0
+              CGO_ENABLED: "0"
         EOF
     - name: Run
       uses: ./dynamic_test_binding_go

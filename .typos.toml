@@ -25,6 +25,8 @@
 "thw" = "thw"
 # Showed up in test.
 "hsa" = "hsa"
+# GnuPG machine-readable fingerprint record.
+"fpr" = "fpr"
 # Tech words
 "WRONLY" = "WRONLY"
 "typ" = "typ"

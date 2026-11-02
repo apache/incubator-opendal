@@ -1,0 +1,300 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+services:
+  # ==========================================================================
+  # GooseFS fixture for OpenDAL behavior tests.
+  #
+  # Two deployment shapes are available via compose profiles:
+  #
+  #   (default) `local`    : single container running master + worker +
+  #                          job_master + job_worker + table_master. Fastest
+  #                          to boot, matches CI expectation.
+  #   `distributed`        : separate master and worker containers. Closer
+  #                          to production, useful for multi-node diagnostics.
+  #
+  # Usage:
+  #   # single-container (default profile)
+  #   docker compose -f fixtures/goosefs/docker-compose-goosefs.yml up -d
+  #
+  #   # master + worker split
+  #   docker compose -f fixtures/goosefs/docker-compose-goosefs.yml \
+  #       --profile distributed up -d
+  #
+  # OpenDAL services-goosefs tests should point at:
+  #   OPENDAL_GOOSEFS_MASTER_ADDR=127.0.0.1:9200
+  #   OPENDAL_GOOSEFS_ROOT=/
+  #
+  # Ports (host:container) are mapped on 127.0.0.1 so the fixture can
+  # coexist with other fixtures on a dev machine.
+  #
+  # Image source: ghcr.io/tencent/tencent-goosefs-rust-sdk/goosefs:v2.0.0
+  # linux/amd64, public, no auth required. Override with GOOSEFS_IMAGE
+  # (TCR fallback: goosefs.tencentcloudcr.com/goosefs/repo:v2.1.0.1).
+  #
+  # The tag is intentionally pinned (never `latest`) so behavior tests
+  # stay reproducible and cannot silently break when a new image is
+  # published. GitHub-hosted runners can pull GHCR without credentials
+  # and without hitting TCR timeouts.
+  # ==========================================================================
+
+  # --------------------------------------------------------------------------
+  # Default profile: single container running ONLY the two GooseFS
+  # processes OpenDAL actually uses — master (9200, metadata) and worker
+  # (9203, block I/O). The image's stock `local` entrypoint also starts
+  # job_master + job_worker + table_master, which cost ~1.1 GiB RSS and
+  # extra JVM start-up CPU but are never touched by OpenDAL
+  # (see `core/services/goosefs/src/core.rs`). Under the GitHub Actions
+  # ubuntu-latest runner's resource constraints, the unused JVMs
+  # competing with `cargo build` / `dotnet test-compile` have been
+  # empirically correlated with data-plane `transport error:
+  # Connection refused` failures a few minutes after container start
+  # (even though the healthcheck still passes).
+  #
+  # The default launcher reuses the same `goosefs-site.properties`
+  # overrides the image entrypoint would apply (see
+  # `fixtures/goosefs/bin/start-default.sh`), so the externally visible
+  # configuration is unchanged. If you want the full `local` flavour
+  # (e.g. to reproduce a distributed-copy bug), opt in explicitly with
+  # `--profile local-full`.
+  # --------------------------------------------------------------------------
+  goosefs:
+    image: ${GOOSEFS_IMAGE:-ghcr.io/tencent/tencent-goosefs-rust-sdk/goosefs:v2.0.0}
+    container_name: opendal-goosefs
+    profiles: ["", "local"]
+    # Bypass the image's stock `docker-entrypoint.sh` and run the
+    # default launcher instead. The script is bind-mounted via `volumes`
+    # below (we don't rebuild the image so public Docker Hub consumers
+    # keep pulling the same artifact).
+    entrypoint: ["/bin/bash", "/opt/opendal/bin/start-default.sh"]
+    environment:
+      # Bind the master to the IPv4 loopback literal (not the name
+      # `localhost`). The master's client-facing RPC on 9200 is bound
+      # to whatever `goosefs.master.hostname` resolves to, and there
+      # is no separate `*.client.rpc.bind.host` knob in GooseFS 2.x.
+      # On runners where `/etc/hosts` maps `localhost` to BOTH `::1`
+      # and `127.0.0.1`, the JVM ends up binding `[::1]:9200` while
+      # the in-container worker (and the `fs` CLI used by the
+      # healthcheck) dials `127.0.0.1:9200` over IPv4 -- yielding
+      # `Connection refused` in a tight retry loop, no worker
+      # registration, and the data-plane healthcheck eventually
+      # timing out. The previous `-Djava.net.preferIPv4Stack=true`
+      # only fixed the v6/v4 issue for ports the launcher binds
+      # explicitly to `0.0.0.0` (9202 / 9212); 9200 still followed
+      # the hostname. Using the literal `127.0.0.1` here removes the
+      # name-resolution ambiguity entirely.
+      GOOSEFS_MASTER_HOSTNAME: 127.0.0.1
+      # The worker must register itself with the master using an address
+      # that OpenDAL, running on the Docker *host*, can resolve AND reach —
+      # because OpenDAL first talks to the master over 9200 to locate a
+      # worker, then opens a *second* gRPC stream to the address master
+      # handed back, on 9203, for block I/O.
+      #
+      # Without this override, the worker falls back to the container's
+      # own hostname (e.g. the random 12-char container id like
+      # `8df081e5eb3e`), which is reachable from inside the container but
+      # unresolvable from the host. Symptom:
+      #   * Master metadata RPCs (check / create_dir / list) succeed.
+      #   * Every data-plane write fails immediately with
+      #       "transport error, written: 0 / gRPC transport error".
+      #   * `goosefs fs copyFromLocal` run *inside* the container still
+      #     works (it uses the in-container hostname), which is why the
+      #     healthcheck can pass while OpenDAL tests still fail.
+      #
+      # We advertise the IPv4 literal `127.0.0.1` (not the name
+      # `localhost`) on purpose. Docker's `ports:` section below only
+      # binds the IPv4 loopback (`127.0.0.1:9203:9203`); it does *not*
+      # bind `[::1]:9203`. On CI runners (Ubuntu 24.04) and many Linux
+      # dev boxes, `/etc/hosts` resolves `localhost` to **both** `::1`
+      # and `127.0.0.1`, and tonic/hyper's happy-eyeballs DNS tries the
+      # IPv6 address first. That SYN gets an RST ("Connection refused,
+      # os error 111") because nothing is listening on `[::1]:9203`, and
+      # the whole write fails with `tcp connect error` before v4 is ever
+      # attempted. Using the literal `127.0.0.1` bypasses name resolution
+      # entirely and forces the SDK straight to the IPv4 loopback that
+      # Docker actually exposes.
+      GOOSEFS_WORKER_HOSTNAME: 127.0.0.1
+    ports:
+      - "127.0.0.1:9200:9200"   # Master RPC (gRPC, used by OpenDAL)
+      - "127.0.0.1:9201:9201"   # Master Web UI
+      - "127.0.0.1:9203:9203"   # Worker RPC (gRPC, used by OpenDAL)
+      - "127.0.0.1:9204:9204"   # Worker Web UI
+    networks:
+      - goosefs_network
+    # Docker's default `/dev/shm` is only 64MB. The GooseFS worker (and
+    # the Arrow/Lance libraries shipped in the image) uses shared memory
+    # for gRPC/Netty buffers and block transfers; under a 5 MiB streaming
+    # write the default shm quickly fills, the worker process dies, and
+    # subsequent writes return `transport error` while metadata reads
+    # still succeed (because the master is a separate process). Matching
+    # the distributed worker's 1 GiB keeps the data path stable.
+    shm_size: 1gb
+    # Persist the worker block store and the UFS root to named volumes so
+    # that (a) writes don't live on the container's overlay filesystem,
+    # which can behave unpredictably for multi-MiB streaming, and
+    # (b) each `docker compose up -d` starts from a clean, fresh volume
+    # (the volumes are recreated on `down -v`, matching how CI runs the
+    # fixture).
+    #
+    # Paths match the image's built-in `goosefs-site.properties`:
+    #   goosefs.worker.file.store.dirs.path =
+    #       /mnt/datadisk0/goosefs-worker/mono-block
+    #   goosefs.worker.page.store.dirs =
+    #       /mnt/datadisk0/goosefs-worker/paged-block
+    #   goosefs.master.mount.table.root.ufs =
+    #       /usr/local/service/goosesfs/underFSStorage
+    volumes:
+      - goosefs_worker_data:/mnt/datadisk0/goosefs-worker
+      - goosefs_ufs_data:/usr/local/service/goosesfs/underFSStorage
+      # Read-only bind-mount of the default launcher so we don't have
+      # to rebuild and republish the Docker Hub image. We mount the
+      # *directory* (not the file) on purpose: Docker's short-form
+      # bind-mount, when pointed at a single file path whose mount
+      # target does not yet exist inside the container, silently
+      # creates an empty DIRECTORY at the target — turning any
+      # subsequent `bash <target>` into `Is a directory` (exit 126).
+      # Mounting the whole `bin/` directory side-steps that race: the
+      # target `/opt/opendal/bin/` is always created as a dir, and
+      # every file within it (currently only start-default.sh) is
+      # exposed as-is from the host, read-only.
+      - ./bin:/opt/opendal/bin:ro
+    healthcheck:
+      # End-to-end *data plane* probe.
+      #
+      # Why the extra steps over the previous mkdir+rm?
+      #   - `mkdir` / `rm` exercise only master metadata. A worker that
+      #     has registered with the master but whose data path is broken
+      #     (e.g. RAMDISK/shm exhausted, block store directory read-only)
+      #     will still let `mkdir` succeed, and the container is then
+      #     reported "healthy" even though every subsequent OpenDAL write
+      #     will fail with `gRPC transport error` / `written: 0`.
+      #   - Writing a tiny file via `fs copyFromLocal`, reading it back,
+      #     and comparing forces the master AND at least one worker to
+      #     serve a real block round-trip. Only then do we publish the
+      #     container as healthy.
+      #
+      # The script is structured so that:
+      #   1. A pre-cleanup step (before `set -e`) removes any leftover
+      #      probe file/tmp files from a crashed previous tick. These
+      #      `rm` calls are allowed to fail silently.
+      #   2. `set -e` guards the real probe: any failure (write, read,
+      #      content mismatch) exits non-zero and the tick is reported
+      #      as unhealthy.
+      #   3. A `trap` always runs the post-cleanup (removing tmp files
+      #      and the probe file in GooseFS) so the next tick starts
+      #      from a clean slate, regardless of success or failure.
+      #
+      # The probe path and local tmp files are *fixed* so a crashed
+      # previous tick cannot leave stale state that the pre-cleanup
+      # can't reach. No `$` expansion reaches compose (the whole script
+      # is a single-quoted shell string), so compose's `$$`-escaping
+      # rules don't apply.
+      test: ["CMD-SHELL", "/opt/goosefs/bin/goosefs fs rm -R /.__opendal_healthcheck >/dev/null 2>&1 || true; rm -f /tmp/.__opendal_healthcheck.src /tmp/.__opendal_healthcheck.dst 2>/dev/null || true; trap 'rm -f /tmp/.__opendal_healthcheck.src /tmp/.__opendal_healthcheck.dst 2>/dev/null; /opt/goosefs/bin/goosefs fs rm -R /.__opendal_healthcheck >/dev/null 2>&1 || true' EXIT; set -e; printf 'ok' > /tmp/.__opendal_healthcheck.src; /opt/goosefs/bin/goosefs fs copyFromLocal /tmp/.__opendal_healthcheck.src /.__opendal_healthcheck >/dev/null 2>&1; /opt/goosefs/bin/goosefs fs copyToLocal /.__opendal_healthcheck /tmp/.__opendal_healthcheck.dst >/dev/null 2>&1; [ \"$(cat /tmp/.__opendal_healthcheck.dst)\" = 'ok' ]"]
+      interval: 5s
+      timeout: 15s
+      retries: 60
+      start_period: 60s
+
+  # --------------------------------------------------------------------------
+  # Distributed profile: master and worker in separate containers.
+  # Opt-in via `--profile distributed`.
+  # --------------------------------------------------------------------------
+  goosefs-master:
+    image: ${GOOSEFS_IMAGE:-ghcr.io/tencent/tencent-goosefs-rust-sdk/goosefs:v2.0.0}
+    container_name: opendal-goosefs-master
+    profiles: ["distributed"]
+    command: master
+    environment:
+      GOOSEFS_MASTER_HOSTNAME: goosefs-master
+    ports:
+      - "127.0.0.1:9200:9200"
+      - "127.0.0.1:9201:9201"
+    networks:
+      - goosefs_network
+    healthcheck:
+      # NOTE: the distributed master intentionally keeps a *read-only*
+      # probe. In the distributed profile the worker container declares
+      # `depends_on: goosefs-master: condition: service_healthy`, so if
+      # the master required a worker to become healthy we would deadlock.
+      # `fs ls /` here is therefore the correct semantic: "master RPC is
+      # up and reachable". End-to-end write readiness is then established
+      # by the worker coming online afterwards.
+      test: ["CMD-SHELL", "/opt/goosefs/bin/goosefs fs ls / >/dev/null 2>&1"]
+      interval: 5s
+      timeout: 10s
+      retries: 60
+      start_period: 60s
+
+  goosefs-job-master:
+    image: ${GOOSEFS_IMAGE:-ghcr.io/tencent/tencent-goosefs-rust-sdk/goosefs:v2.0.0}
+    container_name: opendal-goosefs-job-master
+    profiles: ["distributed"]
+    command: job_master
+    environment:
+      GOOSEFS_MASTER_HOSTNAME: goosefs-master
+    networks:
+      - goosefs_network
+    depends_on:
+      goosefs-master:
+        condition: service_healthy
+
+  goosefs-worker:
+    image: ${GOOSEFS_IMAGE:-ghcr.io/tencent/tencent-goosefs-rust-sdk/goosefs:v2.0.0}
+    container_name: opendal-goosefs-worker
+    profiles: ["distributed"]
+    command: worker
+    environment:
+      GOOSEFS_MASTER_HOSTNAME: goosefs-master
+      GOOSEFS_WORKER_HOSTNAME: goosefs-worker
+    shm_size: 1gb
+    ports:
+      - "127.0.0.1:9203:9203"
+      - "127.0.0.1:9204:9204"
+    networks:
+      - goosefs_network
+    depends_on:
+      goosefs-master:
+        condition: service_healthy
+
+  goosefs-job-worker:
+    image: ${GOOSEFS_IMAGE:-ghcr.io/tencent/tencent-goosefs-rust-sdk/goosefs:v2.0.0}
+    container_name: opendal-goosefs-job-worker
+    profiles: ["distributed"]
+    command: job_worker
+    environment:
+      GOOSEFS_MASTER_HOSTNAME: goosefs-master
+      GOOSEFS_WORKER_HOSTNAME: goosefs-worker
+    networks:
+      - goosefs_network
+    depends_on:
+      goosefs-worker:
+        condition: service_started
+      goosefs-job-master:
+        condition: service_started
+
+networks:
+  goosefs_network:
+    driver: bridge
+
+# Named volumes used by the `local` profile's single-container fixture.
+# `docker compose down -v` removes them, which is what CI does between
+# runs; on dev machines the volumes persist across `up -d` / `down` so
+# diagnostic state (e.g. UFS files the tests left behind) can be
+# inspected after a failing run.
+volumes:
+  goosefs_worker_data:
+  goosefs_ufs_data:

@@ -22,6 +22,10 @@ package org.apache.opendal;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.UncheckedIOException;
+import java.nio.file.DirectoryStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Properties;
 
 /**
@@ -60,6 +64,9 @@ public enum Environment {
         } else {
             classifier.append("x86_64");
         }
+        if (classifier.indexOf("linux-") == 0 && isMuslRuntime()) {
+            classifier.append("-musl");
+        }
         INSTANCE.classifier = classifier.toString();
     }
 
@@ -79,5 +86,17 @@ public enum Environment {
      */
     public static String getVersion() {
         return INSTANCE.projectVersion;
+    }
+
+    private static boolean isMuslRuntime() {
+        return hasMuslLoader(Paths.get("/lib")) || hasMuslLoader(Paths.get("/usr/lib"));
+    }
+
+    private static boolean hasMuslLoader(Path dir) {
+        try (DirectoryStream<Path> stream = Files.newDirectoryStream(dir, "ld-musl-*.so.1")) {
+            return stream.iterator().hasNext();
+        } catch (IOException | SecurityException e) {
+            return false;
+        }
     }
 }

@@ -32,7 +32,7 @@ import org.junit.jupiter.api.TestInstance;
 class BlockingCreateDirTest extends BehaviorTestBase {
     @BeforeAll
     public void precondition() {
-        final Capability capability = op().info.fullCapability;
+        final Capability capability = op().info.capability;
         assumeTrue(capability.createDir);
     }
 

@@ -33,6 +33,6 @@ runs:
         OPENDAL_WEBDAV_ENDPOINT=http://127.0.0.1:8081/artifactory/example-repo-local
         OPENDAL_WEBDAV_USERNAME=admin
         OPENDAL_WEBDAV_PASSWORD=password
-        OPENDAL_WEBDAV_DISABLE_COPY=true
+        OPENDAL_TEST_CAPABILITY_OVERRIDES=copy=false,write_with_user_metadata=false
         RUST_TEST_THREADS=1
         EOF

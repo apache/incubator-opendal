@@ -19,7 +19,7 @@ use crate::utils::{build_trail, new_file_path};
 use anyhow::Result;
 use bytes::Bytes;
 use libtest_mimic::Trial;
-use object_store::{GetOptions, GetRange, ObjectStore};
+use object_store::{GetOptions, GetRange, ObjectStore, ObjectStoreExt};
 use object_store_opendal::OpendalStore;
 
 pub fn tests(store: &OpendalStore, tests: &mut Vec<Trial>) {
@@ -185,7 +185,7 @@ pub async fn test_get_opts_with_invalid_range(store: OpendalStore) -> Result<()>
 }
 
 pub async fn test_get_opts_with_version(store: OpendalStore) -> Result<()> {
-    if !store.info().full_capability().read_with_version {
+    if !store.info().capability().read_with_version {
         return Ok(());
     }
 
@@ -228,7 +228,7 @@ pub async fn test_get_opts_with_version(store: OpendalStore) -> Result<()> {
 }
 
 async fn test_get_ops_with_if_match(store: OpendalStore) -> Result<()> {
-    if !store.info().full_capability().read_with_if_match {
+    if !store.info().capability().read_with_if_match {
         return Ok(());
     }
 
@@ -261,7 +261,7 @@ async fn test_get_ops_with_if_match(store: OpendalStore) -> Result<()> {
 }
 
 async fn test_get_ops_with_if_none_match(store: OpendalStore) -> Result<()> {
-    if !store.info().full_capability().read_with_if_none_match {
+    if !store.info().capability().read_with_if_none_match {
         return Ok(());
     }
 
@@ -294,7 +294,7 @@ async fn test_get_ops_with_if_none_match(store: OpendalStore) -> Result<()> {
 }
 
 async fn test_get_opts_with_if_modified_since(store: OpendalStore) -> Result<()> {
-    if !store.info().full_capability().read_with_if_modified_since {
+    if !store.info().capability().read_with_if_modified_since {
         return Ok(());
     }
 
@@ -327,7 +327,7 @@ async fn test_get_opts_with_if_modified_since(store: OpendalStore) -> Result<()>
 }
 
 async fn test_get_opts_with_if_unmodified_since(store: OpendalStore) -> Result<()> {
-    if !store.info().full_capability().read_with_if_unmodified_since {
+    if !store.info().capability().read_with_if_unmodified_since {
         return Ok(());
     }
 

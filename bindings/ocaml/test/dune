@@ -22,5 +22,13 @@
 
 (rule
  (alias runtest)
+ (deps ../src/libopendal_core.so)
  (action
-  (run ./test.exe)))
+  (progn
+   (setenv
+    LD_LIBRARY_PATH
+    "../src:%{env:LD_LIBRARY_PATH=}"
+    (setenv
+     DYLD_LIBRARY_PATH
+     "../src:%{env:DYLD_LIBRARY_PATH=}"
+     (run ./test.exe))))))

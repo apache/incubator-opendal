@@ -22,6 +22,8 @@ package org.apache.opendal.test.behavior;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
+import java.util.Collections;
+import java.util.Map;
 import java.util.UUID;
 import org.apache.opendal.OpenDALException.Code;
 import org.apache.opendal.WriteOptions;
@@ -32,7 +34,7 @@ public class AsyncWriteOptionsTest extends BehaviorTestBase {
 
     @Test
     void testIfNotExists() {
-        assumeTrue(asyncOp().info.fullCapability.writeWithIfNotExists);
+        assumeTrue(asyncOp().info.capability.writeWithIfNotExists);
         final String path = UUID.randomUUID().toString();
         final byte[] content = generateBytes();
         WriteOptions options = WriteOptions.builder().ifNotExists(true).build();
@@ -44,7 +46,7 @@ public class AsyncWriteOptionsTest extends BehaviorTestBase {
 
     @Test
     void testWriteWithChunk() {
-        assumeTrue(asyncOp().info.fullCapability.writeCanMulti);
+        assumeTrue(asyncOp().info.capability.writeCanMulti);
 
         final String path = UUID.randomUUID().toString();
         final byte[] content = generateBytes(5 * 1024 * 1024);
@@ -59,7 +61,7 @@ public class AsyncWriteOptionsTest extends BehaviorTestBase {
 
     @Test
     void testWriteWithConcurrentChunk() {
-        assumeTrue(asyncOp().info.fullCapability.writeCanMulti);
+        assumeTrue(asyncOp().info.capability.writeCanMulti);
 
         final String path = UUID.randomUUID().toString();
         final byte[] content = generateBytes(5 * 1024 * 1024);
@@ -75,7 +77,7 @@ public class AsyncWriteOptionsTest extends BehaviorTestBase {
 
     @Test
     void testWriteWithCacheControl() {
-        assumeTrue(asyncOp().info.fullCapability.writeWithCacheControl);
+        assumeTrue(asyncOp().info.capability.writeWithCacheControl);
         final String path = UUID.randomUUID().toString();
         final byte[] content = generateBytes();
         final String cacheControl = "max-age=3600";
@@ -89,8 +91,23 @@ public class AsyncWriteOptionsTest extends BehaviorTestBase {
     }
 
     @Test
+    void testWriteWithUserMetadata() {
+        assumeTrue(asyncOp().info.capability.writeWithUserMetadata);
+        final String path = UUID.randomUUID().toString();
+        final byte[] content = generateBytes();
+        final Map<String, String> userMetadata = Collections.singletonMap("location", "everywhere");
+
+        WriteOptions options = WriteOptions.builder().userMetadata(userMetadata).build();
+
+        asyncOp().write(path, content, options).join();
+
+        Map<String, String> actualUserMetadata = asyncOp().stat(path).join().getUserMetadata();
+        assertThat(actualUserMetadata).isEqualTo(userMetadata);
+    }
+
+    @Test
     void testWriteWithIfNoneMatch() {
-        assumeTrue(asyncOp().info.fullCapability.writeWithIfNoneMatch);
+        assumeTrue(asyncOp().info.capability.writeWithIfNoneMatch);
         final String path = UUID.randomUUID().toString();
         final byte[] content = generateBytes();
 
@@ -105,7 +122,7 @@ public class AsyncWriteOptionsTest extends BehaviorTestBase {
 
     @Test
     void testWriteWithIfMatch() {
-        assumeTrue(asyncOp().info.fullCapability.writeWithIfMatch);
+        assumeTrue(asyncOp().info.capability.writeWithIfMatch);
 
         final String pathA = UUID.randomUUID().toString();
         final String pathB = UUID.randomUUID().toString();
@@ -130,7 +147,7 @@ public class AsyncWriteOptionsTest extends BehaviorTestBase {
 
     @Test
     void testWriteWithAppend() {
-        assumeTrue(asyncOp().info.fullCapability.writeCanAppend);
+        assumeTrue(asyncOp().info.capability.writeCanAppend);
 
         final String path = UUID.randomUUID().toString();
         final byte[] contentOne = "Test".getBytes();

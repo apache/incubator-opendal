@@ -15,11 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::utils::format_object_store_error;
 use crate::OpendalStore;
+use crate::utils::format_object_store_error;
 use object_store::aws::{AmazonS3Builder, AmazonS3ConfigKey};
-use opendal::services::S3;
 use opendal::Operator;
+use opendal::services::S3;
 
 impl OpendalStore {
     /// Create OpendalStore from object_store Amazon S3 builder.
@@ -66,13 +66,11 @@ impl OpendalStore {
                     source: Box::new(err),
                 })?;
             if r {
-                s3 = s3.allow_anonymous();
+                s3 = s3.skip_signature();
             }
         }
 
-        let op = Operator::new(s3)
-            .map_err(|err| format_object_store_error(err, ""))?
-            .finish();
+        let op = Operator::new(s3).map_err(|err| format_object_store_error(err, ""))?;
         Ok(OpendalStore::new(op))
     }
 }

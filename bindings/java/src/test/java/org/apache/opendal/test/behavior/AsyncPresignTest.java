@@ -47,7 +47,7 @@ public class AsyncPresignTest extends BehaviorTestBase {
 
     @BeforeAll
     public void precondition() {
-        final Capability capability = asyncOp().info.fullCapability;
+        final Capability capability = asyncOp().info.capability;
         assumeTrue(capability.list && capability.write && capability.presign);
     }
 

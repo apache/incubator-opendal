@@ -24,7 +24,6 @@ use std::ffi::CStr;
 use std::ffi::CString;
 use std::mem;
 use std::os::raw::c_char;
-use std::str::FromStr;
 use std::sync::LazyLock;
 
 use ::opendal as od;
@@ -58,7 +57,7 @@ static RUNTIME: LazyLock<tokio::runtime::Runtime> = LazyLock::new(|| {
 /// * If `log_level` is not a valid value passed by haskell.
 /// * If `callback` is not a valid function pointer.
 /// * If `result` is not a valid pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn via_map_ffi(
     scheme: *const c_char,
     keys: *const *const c_char,
@@ -67,39 +66,32 @@ pub unsafe extern "C" fn via_map_ffi(
     callback: Option<extern "C" fn(u32, *const c_char)>,
     result: *mut FFIResult<od::blocking::Operator>,
 ) {
-    let scheme_str = match CStr::from_ptr(scheme).to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            *result = FFIResult::err("Failed to convert scheme to string");
-            return;
-        }
-    };
+    unsafe {
+        let scheme = match CStr::from_ptr(scheme).to_str() {
+            Ok(s) => s,
+            Err(_) => {
+                *result = FFIResult::err("Failed to convert scheme to string");
+                return;
+            }
+        };
 
-    let scheme = match od::Scheme::from_str(scheme_str) {
-        Ok(s) => s,
-        Err(_) => {
-            *result = FFIResult::err("Failed to parse scheme");
-            return;
-        }
-    };
+        let keys_vec = std::slice::from_raw_parts(keys, len);
+        let values_vec = std::slice::from_raw_parts(values, len);
 
-    let keys_vec = std::slice::from_raw_parts(keys, len);
-    let values_vec = std::slice::from_raw_parts(values, len);
+        let map = keys_vec
+            .iter()
+            .zip(values_vec.iter())
+            .map(|(&k, &v)| {
+                (
+                    CStr::from_ptr(k).to_string_lossy().into_owned(),
+                    CStr::from_ptr(v).to_string_lossy().into_owned(),
+                )
+            })
+            .collect::<HashMap<String, String>>();
 
-    let map = keys_vec
-        .iter()
-        .zip(values_vec.iter())
-        .map(|(&k, &v)| {
-            (
-                CStr::from_ptr(k).to_string_lossy().into_owned(),
-                CStr::from_ptr(v).to_string_lossy().into_owned(),
-            )
-        })
-        .collect::<HashMap<String, String>>();
-
-    if let Some(callback) = callback {
-        if let Err(e) = log::set_boxed_logger(Box::new(HsLogger { callback }))
-            .map(|()| log::set_max_level(log::LevelFilter::Debug))
+        if let Some(callback) = callback
+            && let Err(e) = log::set_boxed_logger(Box::new(HsLogger { callback }))
+                .map(|()| log::set_max_level(log::LevelFilter::Debug))
         {
             *result = FFIResult::err_with_source(
                 "Failed to register logger",
@@ -107,24 +99,24 @@ pub unsafe extern "C" fn via_map_ffi(
             );
             return;
         }
-    }
 
-    let res = match od::Operator::via_iter(scheme, map) {
-        Ok(mut operator) => {
-            operator = operator.layer(RetryLayer::new());
-            if callback.is_some() {
-                operator = operator.layer(LoggingLayer::default());
+        let res = match od::Operator::via_iter(scheme, map) {
+            Ok(mut operator) => {
+                operator = operator.layer(RetryLayer::new());
+                if callback.is_some() {
+                    operator = operator.layer(LoggingLayer::default());
+                }
+
+                let handle = RUNTIME.handle();
+                let _enter = handle.enter();
+                let op = od::blocking::Operator::new(operator).unwrap();
+                FFIResult::ok(op)
             }
+            Err(e) => FFIResult::err_with_source("Failed to create Operator", e),
+        };
 
-            let handle = RUNTIME.handle();
-            let _enter = handle.enter();
-            let op = od::blocking::Operator::new(operator).unwrap();
-            FFIResult::ok(op)
-        }
-        Err(e) => FFIResult::err_with_source("Failed to create Operator", e),
-    };
-
-    *result = res;
+        *result = res;
+    }
 }
 
 /// # Safety
@@ -134,10 +126,12 @@ pub unsafe extern "C" fn via_map_ffi(
 /// # Panics
 ///
 /// * If `operator` is not a valid pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn free_operator(operator: *mut od::blocking::Operator) {
-    if !operator.is_null() {
-        drop(Box::from_raw(operator));
+    unsafe {
+        if !operator.is_null() {
+            drop(Box::from_raw(operator));
+        }
     }
 }
 
@@ -151,33 +145,35 @@ pub unsafe extern "C" fn free_operator(operator: *mut od::blocking::Operator) {
 ///
 /// * If `op` is not a valid pointer.
 /// * If `result` is not a valid pointer, or does not have available memory to write to.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn blocking_read(
     op: *mut od::blocking::Operator,
     path: *const c_char,
     result: *mut FFIResult<ByteSlice>,
 ) {
-    let op = if op.is_null() {
-        *result = FFIResult::err("Operator is null");
-        return;
-    } else {
-        &mut *op
-    };
-
-    let path_str = match CStr::from_ptr(path).to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            *result = FFIResult::err("Failed to convert path to string");
+    unsafe {
+        let op = if op.is_null() {
+            *result = FFIResult::err("Operator is null");
             return;
-        }
-    };
+        } else {
+            &mut *op
+        };
 
-    let res = match op.read(path_str) {
-        Ok(bytes) => FFIResult::ok(ByteSlice::from_vec(bytes.to_vec())),
-        Err(e) => FFIResult::err_with_source("Failed to read", e),
-    };
+        let path_str = match CStr::from_ptr(path).to_str() {
+            Ok(s) => s,
+            Err(_) => {
+                *result = FFIResult::err("Failed to convert path to string");
+                return;
+            }
+        };
 
-    *result = res;
+        let res = match op.read(path_str) {
+            Ok(bytes) => FFIResult::ok(ByteSlice::from_vec(bytes.to_vec())),
+            Err(e) => FFIResult::err_with_source("Failed to read", e),
+        };
+
+        *result = res;
+    }
 }
 
 /// # Safety
@@ -193,7 +189,7 @@ pub unsafe extern "C" fn blocking_read(
 /// * If `op` is not a valid pointer.
 /// * If `bytes` is not a valid pointer, or `len` is more than the length of `bytes`.
 /// * If `result` is not a valid pointer, or does not have available memory to write to.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn blocking_write(
     op: *mut od::blocking::Operator,
     path: *const c_char,
@@ -201,32 +197,34 @@ pub unsafe extern "C" fn blocking_write(
     len: usize,
     result: *mut FFIResult<()>,
 ) {
-    let op = if op.is_null() {
-        *result = FFIResult::err("Operator is null");
-        return;
-    } else {
-        &mut *op
-    };
-
-    let path_str = match CStr::from_ptr(path).to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            *result = FFIResult::err("Failed to convert path to string");
+    unsafe {
+        let op = if op.is_null() {
+            *result = FFIResult::err("Operator is null");
             return;
-        }
-    };
+        } else {
+            &mut *op
+        };
 
-    let bytes = Vec::from_raw_parts(bytes as *mut u8, len, len);
+        let path_str = match CStr::from_ptr(path).to_str() {
+            Ok(s) => s,
+            Err(_) => {
+                *result = FFIResult::err("Failed to convert path to string");
+                return;
+            }
+        };
 
-    let res = match op.write(path_str, bytes.clone()) {
-        Ok(_) => FFIResult::ok(()),
-        Err(e) => FFIResult::err_with_source("Failed to write", e),
-    };
+        let bytes = Vec::from_raw_parts(bytes as *mut u8, len, len);
 
-    *result = res;
+        let res = match op.write(path_str, bytes.clone()) {
+            Ok(_) => FFIResult::ok(()),
+            Err(e) => FFIResult::err_with_source("Failed to write", e),
+        };
 
-    // bytes memory is controlled by Haskell, we can't drop it here
-    mem::forget(bytes);
+        *result = res;
+
+        // bytes memory is controlled by Haskell, we can't drop it here
+        mem::forget(bytes);
+    }
 }
 
 /// # Safety
@@ -239,33 +237,35 @@ pub unsafe extern "C" fn blocking_write(
 ///
 /// * If `op` is not a valid pointer.
 /// * If `result` is not a valid pointer, or does not have available memory to write to.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn blocking_is_exist(
     op: *mut od::blocking::Operator,
     path: *const c_char,
     result: *mut FFIResult<bool>,
 ) {
-    let op = if op.is_null() {
-        *result = FFIResult::err("Operator is null");
-        return;
-    } else {
-        &mut *op
-    };
-
-    let path_str = match CStr::from_ptr(path).to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            *result = FFIResult::err("Failed to convert path to string");
+    unsafe {
+        let op = if op.is_null() {
+            *result = FFIResult::err("Operator is null");
             return;
-        }
-    };
+        } else {
+            &mut *op
+        };
 
-    let res = match op.exists(path_str) {
-        Ok(exist) => FFIResult::ok(exist),
-        Err(e) => FFIResult::err_with_source("Failed to check if path exists", e),
-    };
+        let path_str = match CStr::from_ptr(path).to_str() {
+            Ok(s) => s,
+            Err(_) => {
+                *result = FFIResult::err("Failed to convert path to string");
+                return;
+            }
+        };
 
-    *result = res;
+        let res = match op.exists(path_str) {
+            Ok(exist) => FFIResult::ok(exist),
+            Err(e) => FFIResult::err_with_source("Failed to check if path exists", e),
+        };
+
+        *result = res;
+    }
 }
 
 /// # Safety
@@ -278,33 +278,35 @@ pub unsafe extern "C" fn blocking_is_exist(
 ///
 /// * If `op` is not a valid pointer.
 /// * If `result` is not a valid pointer, or does not have available memory to write to.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn blocking_create_dir(
     op: *mut od::blocking::Operator,
     path: *const c_char,
     result: *mut FFIResult<()>,
 ) {
-    let op = if op.is_null() {
-        *result = FFIResult::err("Operator is null");
-        return;
-    } else {
-        &mut *op
-    };
-
-    let path_str = match CStr::from_ptr(path).to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            *result = FFIResult::err("Failed to convert path to string");
+    unsafe {
+        let op = if op.is_null() {
+            *result = FFIResult::err("Operator is null");
             return;
-        }
-    };
+        } else {
+            &mut *op
+        };
 
-    let res = match op.create_dir(path_str) {
-        Ok(()) => FFIResult::ok(()),
-        Err(e) => FFIResult::err_with_source("Failed to create directory", e),
-    };
+        let path_str = match CStr::from_ptr(path).to_str() {
+            Ok(s) => s,
+            Err(_) => {
+                *result = FFIResult::err("Failed to convert path to string");
+                return;
+            }
+        };
 
-    *result = res;
+        let res = match op.create_dir(path_str) {
+            Ok(()) => FFIResult::ok(()),
+            Err(e) => FFIResult::err_with_source("Failed to create directory", e),
+        };
+
+        *result = res;
+    }
 }
 
 /// # Safety
@@ -318,42 +320,44 @@ pub unsafe extern "C" fn blocking_create_dir(
 ///
 /// * If `op` is not a valid pointer.
 /// * If `result` is not a valid pointer, or does not have available memory to write to.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn blocking_copy(
     op: *mut od::blocking::Operator,
     path_from: *const c_char,
     path_to: *const c_char,
     result: *mut FFIResult<()>,
 ) {
-    let op = if op.is_null() {
-        *result = FFIResult::err("Operator is null");
-        return;
-    } else {
-        &mut *op
-    };
-
-    let path_from_str = match CStr::from_ptr(path_from).to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            *result = FFIResult::err("Failed to convert source path to string");
+    unsafe {
+        let op = if op.is_null() {
+            *result = FFIResult::err("Operator is null");
             return;
-        }
-    };
+        } else {
+            &mut *op
+        };
 
-    let path_to_str = match CStr::from_ptr(path_to).to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            *result = FFIResult::err("Failed to convert destination path to string");
-            return;
-        }
-    };
+        let path_from_str = match CStr::from_ptr(path_from).to_str() {
+            Ok(s) => s,
+            Err(_) => {
+                *result = FFIResult::err("Failed to convert source path to string");
+                return;
+            }
+        };
 
-    let res = match op.copy(path_from_str, path_to_str) {
-        Ok(()) => FFIResult::ok(()),
-        Err(e) => FFIResult::err_with_source("Failed to copy", e),
-    };
+        let path_to_str = match CStr::from_ptr(path_to).to_str() {
+            Ok(s) => s,
+            Err(_) => {
+                *result = FFIResult::err("Failed to convert destination path to string");
+                return;
+            }
+        };
 
-    *result = res;
+        let res = match op.copy(path_from_str, path_to_str) {
+            Ok(_) => FFIResult::ok(()),
+            Err(e) => FFIResult::err_with_source("Failed to copy", e),
+        };
+
+        *result = res;
+    }
 }
 
 /// # Safety
@@ -367,42 +371,44 @@ pub unsafe extern "C" fn blocking_copy(
 ///
 /// * If `op` is not a valid pointer.
 /// * If `result` is not a valid pointer, or does not have available memory to write to.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn blocking_rename(
     op: *mut od::blocking::Operator,
     path_from: *const c_char,
     path_to: *const c_char,
     result: *mut FFIResult<()>,
 ) {
-    let op = if op.is_null() {
-        *result = FFIResult::err("Operator is null");
-        return;
-    } else {
-        &mut *op
-    };
-
-    let path_from_str = match CStr::from_ptr(path_from).to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            *result = FFIResult::err("Failed to convert source path to string");
+    unsafe {
+        let op = if op.is_null() {
+            *result = FFIResult::err("Operator is null");
             return;
-        }
-    };
+        } else {
+            &mut *op
+        };
 
-    let path_to_str = match CStr::from_ptr(path_to).to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            *result = FFIResult::err("Failed to convert destination path to string");
-            return;
-        }
-    };
+        let path_from_str = match CStr::from_ptr(path_from).to_str() {
+            Ok(s) => s,
+            Err(_) => {
+                *result = FFIResult::err("Failed to convert source path to string");
+                return;
+            }
+        };
 
-    let res = match op.rename(path_from_str, path_to_str) {
-        Ok(()) => FFIResult::ok(()),
-        Err(e) => FFIResult::err_with_source("Failed to rename", e),
-    };
+        let path_to_str = match CStr::from_ptr(path_to).to_str() {
+            Ok(s) => s,
+            Err(_) => {
+                *result = FFIResult::err("Failed to convert destination path to string");
+                return;
+            }
+        };
 
-    *result = res;
+        let res = match op.rename(path_from_str, path_to_str) {
+            Ok(()) => FFIResult::ok(()),
+            Err(e) => FFIResult::err_with_source("Failed to rename", e),
+        };
+
+        *result = res;
+    }
 }
 
 /// # Safety
@@ -415,33 +421,35 @@ pub unsafe extern "C" fn blocking_rename(
 ///
 /// * If `op` is not a valid pointer.
 /// * If `result` is not a valid pointer, or does not have available memory to write to.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn blocking_delete(
     op: *mut od::blocking::Operator,
     path: *const c_char,
     result: *mut FFIResult<()>,
 ) {
-    let op = if op.is_null() {
-        *result = FFIResult::err("Operator is null");
-        return;
-    } else {
-        &mut *op
-    };
-
-    let path_str = match CStr::from_ptr(path).to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            *result = FFIResult::err("Failed to convert path to string");
+    unsafe {
+        let op = if op.is_null() {
+            *result = FFIResult::err("Operator is null");
             return;
-        }
-    };
+        } else {
+            &mut *op
+        };
 
-    let res = match op.delete(path_str) {
-        Ok(()) => FFIResult::ok(()),
-        Err(e) => FFIResult::err_with_source("Failed to delete", e),
-    };
+        let path_str = match CStr::from_ptr(path).to_str() {
+            Ok(s) => s,
+            Err(_) => {
+                *result = FFIResult::err("Failed to convert path to string");
+                return;
+            }
+        };
 
-    *result = res;
+        let res = match op.delete(path_str) {
+            Ok(()) => FFIResult::ok(()),
+            Err(e) => FFIResult::err_with_source("Failed to delete", e),
+        };
+
+        *result = res;
+    }
 }
 
 /// # Safety
@@ -454,33 +462,35 @@ pub unsafe extern "C" fn blocking_delete(
 ///
 /// * If `op` is not a valid pointer.
 /// * If `result` is not a valid pointer, or does not have available memory to write to.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn blocking_stat(
     op: *mut od::blocking::Operator,
     path: *const c_char,
     result: *mut FFIResult<Metadata>,
 ) {
-    let op = if op.is_null() {
-        *result = FFIResult::err("Operator is null");
-        return;
-    } else {
-        &mut *op
-    };
-
-    let path_str = match CStr::from_ptr(path).to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            *result = FFIResult::err("Failed to convert path to string");
+    unsafe {
+        let op = if op.is_null() {
+            *result = FFIResult::err("Operator is null");
             return;
-        }
-    };
+        } else {
+            &mut *op
+        };
 
-    let res = match op.stat(path_str) {
-        Ok(meta) => FFIResult::ok(meta.into()),
-        Err(e) => FFIResult::err_with_source("Failed to stat", e),
-    };
+        let path_str = match CStr::from_ptr(path).to_str() {
+            Ok(s) => s,
+            Err(_) => {
+                *result = FFIResult::err("Failed to convert path to string");
+                return;
+            }
+        };
 
-    *result = res;
+        let res = match op.stat(path_str) {
+            Ok(meta) => FFIResult::ok(meta.into()),
+            Err(e) => FFIResult::err_with_source("Failed to stat", e),
+        };
+
+        *result = res;
+    }
 }
 
 /// # Safety
@@ -493,33 +503,35 @@ pub unsafe extern "C" fn blocking_stat(
 ///
 /// * If `op` is not a valid pointer.
 /// * If `result` is not a valid pointer, or does not have available memory to write to.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn blocking_list(
     op: *mut od::blocking::Operator,
     path: *const c_char,
     result: *mut FFIResult<*mut blocking::Lister>,
 ) {
-    let op = if op.is_null() {
-        *result = FFIResult::err("Operator is null");
-        return;
-    } else {
-        &mut *op
-    };
-
-    let path_str = match CStr::from_ptr(path).to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            *result = FFIResult::err("Failed to convert path to string");
+    unsafe {
+        let op = if op.is_null() {
+            *result = FFIResult::err("Operator is null");
             return;
-        }
-    };
+        } else {
+            &mut *op
+        };
 
-    let res = match op.lister(path_str) {
-        Ok(lister) => FFIResult::ok(Box::into_raw(Box::new(lister))),
-        Err(e) => FFIResult::err_with_source("Failed to list", e),
-    };
+        let path_str = match CStr::from_ptr(path).to_str() {
+            Ok(s) => s,
+            Err(_) => {
+                *result = FFIResult::err("Failed to convert path to string");
+                return;
+            }
+        };
 
-    *result = res;
+        let res = match op.lister(path_str) {
+            Ok(lister) => FFIResult::ok(Box::into_raw(Box::new(lister))),
+            Err(e) => FFIResult::err_with_source("Failed to list", e),
+        };
+
+        *result = res;
+    }
 }
 
 /// # Safety
@@ -532,39 +544,41 @@ pub unsafe extern "C" fn blocking_list(
 ///
 /// * If `op` is not a valid pointer.
 /// * If `result` is not a valid pointer, or does not have available memory to write to.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn blocking_scan(
     op: *mut od::blocking::Operator,
     path: *const c_char,
     result: *mut FFIResult<*mut blocking::Lister>,
 ) {
-    let op = if op.is_null() {
-        *result = FFIResult::err("Operator is null");
-        return;
-    } else {
-        &mut *op
-    };
-
-    let path_str = match CStr::from_ptr(path).to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            *result = FFIResult::err("Failed to convert path to string");
+    unsafe {
+        let op = if op.is_null() {
+            *result = FFIResult::err("Operator is null");
             return;
-        }
-    };
+        } else {
+            &mut *op
+        };
 
-    let res = match op.lister_options(
-        path_str,
-        options::ListOptions {
-            recursive: true,
-            ..Default::default()
-        },
-    ) {
-        Ok(lister) => FFIResult::ok(Box::into_raw(Box::new(lister))),
-        Err(e) => FFIResult::err_with_source("Failed to scan", e),
-    };
+        let path_str = match CStr::from_ptr(path).to_str() {
+            Ok(s) => s,
+            Err(_) => {
+                *result = FFIResult::err("Failed to convert path to string");
+                return;
+            }
+        };
 
-    *result = res;
+        let res = match op.lister_options(
+            path_str,
+            options::ListOptions {
+                recursive: true,
+                ..Default::default()
+            },
+        ) {
+            Ok(lister) => FFIResult::ok(Box::into_raw(Box::new(lister))),
+            Err(e) => FFIResult::err_with_source("Failed to scan", e),
+        };
+
+        *result = res;
+    }
 }
 
 /// # Safety
@@ -576,28 +590,30 @@ pub unsafe extern "C" fn blocking_scan(
 ///
 /// * If `lister` is not a valid pointer.
 /// * If `result` is not a valid pointer, or does not have available memory to write to.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn lister_next(
     lister: *mut blocking::Lister,
     result: *mut FFIResult<*const c_char>,
 ) {
-    let lister = if lister.is_null() {
-        *result = FFIResult::err("Lister is null");
-        return;
-    } else {
-        &mut *lister
-    };
+    unsafe {
+        let lister = if lister.is_null() {
+            *result = FFIResult::err("Lister is null");
+            return;
+        } else {
+            &mut *lister
+        };
 
-    let res = match lister.next() {
-        Some(Ok(item)) => {
-            let res = types::leak_str(item.path());
-            FFIResult::ok(res)
-        }
-        Some(Err(e)) => FFIResult::err_with_source("Failed to get next item", e),
-        None => FFIResult::ok(std::ptr::null()),
-    };
+        let res = match lister.next() {
+            Some(Ok(item)) => {
+                let res = types::leak_str(item.path());
+                FFIResult::ok(res)
+            }
+            Some(Err(e)) => FFIResult::err_with_source("Failed to get next item", e),
+            None => FFIResult::ok(std::ptr::null()),
+        };
 
-    *result = res;
+        *result = res;
+    }
 }
 
 /// # Safety
@@ -607,10 +623,12 @@ pub unsafe extern "C" fn lister_next(
 /// # Panics
 ///
 /// * If `lister` is not a valid pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn free_lister(lister: *mut blocking::Lister) {
-    if !lister.is_null() {
-        drop(Box::from_raw(lister));
+    unsafe {
+        if !lister.is_null() {
+            drop(Box::from_raw(lister));
+        }
     }
 }
 
@@ -625,30 +643,32 @@ pub unsafe extern "C" fn free_lister(lister: *mut blocking::Lister) {
 ///
 /// * If `op` is not a valid pointer.
 /// * If `result` is not a valid pointer, or does not have available memory to write to.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn operator_info(
     op: *mut od::blocking::Operator,
     result: *mut FFIResult<*const c_char>,
 ) {
-    let op = if op.is_null() {
-        *result = FFIResult::err("Operator is null");
-        return;
-    } else {
-        &mut *op
-    };
+    unsafe {
+        let op = if op.is_null() {
+            *result = FFIResult::err("Operator is null");
+            return;
+        } else {
+            &mut *op
+        };
 
-    let info = op.info();
-    let scheme_str = info.scheme().to_string();
+        let info = op.info();
+        let scheme_str = info.scheme().to_string();
 
-    let res = match CString::new(scheme_str) {
-        Ok(c_string) => {
-            let ptr = c_string.into_raw() as *const c_char;
-            FFIResult::ok(ptr)
-        }
-        Err(_) => FFIResult::err("Failed to convert scheme to C string"),
-    };
+        let res = match CString::new(scheme_str) {
+            Ok(c_string) => {
+                let ptr = c_string.into_raw() as *const c_char;
+                FFIResult::ok(ptr)
+            }
+            Err(_) => FFIResult::err("Failed to convert scheme to C string"),
+        };
 
-    *result = res;
+        *result = res;
+    }
 }
 
 /// Remove all files and directories recursively
@@ -663,33 +683,44 @@ pub unsafe extern "C" fn operator_info(
 ///
 /// * If `op` is not a valid pointer.
 /// * If `result` is not a valid pointer, or does not have available memory to write to.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn blocking_remove_all(
     op: *mut od::blocking::Operator,
     path: *const c_char,
     result: *mut FFIResult<()>,
 ) {
-    let op = if op.is_null() {
-        *result = FFIResult::err("Operator is null");
-        return;
-    } else {
-        &mut *op
-    };
-
-    let path_str = match CStr::from_ptr(path).to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            *result = FFIResult::err("Failed to convert path to string");
+    unsafe {
+        let op = if op.is_null() {
+            *result = FFIResult::err("Operator is null");
             return;
-        }
-    };
+        } else {
+            &mut *op
+        };
 
-    let res = match op.remove_all(path_str) {
-        Ok(()) => FFIResult::ok(()),
-        Err(e) => FFIResult::err_with_source("Failed to remove all", e),
-    };
+        let path_str = match CStr::from_ptr(path).to_str() {
+            Ok(s) => s,
+            Err(_) => {
+                *result = FFIResult::err("Failed to convert path to string");
+                return;
+            }
+        };
 
-    *result = res;
+        let res = {
+            use od::options::DeleteOptions;
+            match op.delete_options(
+                path_str,
+                DeleteOptions {
+                    recursive: true,
+                    ..Default::default()
+                },
+            ) {
+                Ok(()) => FFIResult::ok(()),
+                Err(e) => FFIResult::err_with_source("Failed to remove all", e),
+            }
+        };
+
+        *result = res;
+    }
 }
 
 /// Creates a blocking writer for the given path
@@ -704,33 +735,35 @@ pub unsafe extern "C" fn blocking_remove_all(
 ///
 /// * If `op` is not a valid pointer.
 /// * If `result` is not a valid pointer, or does not have available memory to write to.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn blocking_writer(
     op: *mut od::blocking::Operator,
     path: *const c_char,
     result: *mut FFIResult<*mut blocking::Writer>,
 ) {
-    let op = if op.is_null() {
-        *result = FFIResult::err("Operator is null");
-        return;
-    } else {
-        &mut *op
-    };
-
-    let path_str = match CStr::from_ptr(path).to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            *result = FFIResult::err("Failed to convert path to string");
+    unsafe {
+        let op = if op.is_null() {
+            *result = FFIResult::err("Operator is null");
             return;
-        }
-    };
+        } else {
+            &mut *op
+        };
 
-    let res = match op.writer(path_str) {
-        Ok(writer) => FFIResult::ok(Box::into_raw(Box::new(writer))),
-        Err(e) => FFIResult::err_with_source("Failed to create writer", e),
-    };
+        let path_str = match CStr::from_ptr(path).to_str() {
+            Ok(s) => s,
+            Err(_) => {
+                *result = FFIResult::err("Failed to convert path to string");
+                return;
+            }
+        };
 
-    *result = res;
+        let res = match op.writer(path_str) {
+            Ok(writer) => FFIResult::ok(Box::into_raw(Box::new(writer))),
+            Err(e) => FFIResult::err_with_source("Failed to create writer", e),
+        };
+
+        *result = res;
+    }
 }
 
 /// Creates a blocking writer for the given path with append mode
@@ -745,39 +778,41 @@ pub unsafe extern "C" fn blocking_writer(
 ///
 /// * If `op` is not a valid pointer.
 /// * If `result` is not a valid pointer, or does not have available memory to write to.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn blocking_writer_append(
     op: *mut od::blocking::Operator,
     path: *const c_char,
     result: *mut FFIResult<*mut blocking::Writer>,
 ) {
-    let op = if op.is_null() {
-        *result = FFIResult::err("Operator is null");
-        return;
-    } else {
-        &mut *op
-    };
-
-    let path_str = match CStr::from_ptr(path).to_str() {
-        Ok(s) => s,
-        Err(_) => {
-            *result = FFIResult::err("Failed to convert path to string");
+    unsafe {
+        let op = if op.is_null() {
+            *result = FFIResult::err("Operator is null");
             return;
-        }
-    };
+        } else {
+            &mut *op
+        };
 
-    // Create writer with append option
-    let opts = od::options::WriteOptions {
-        append: true,
-        ..Default::default()
-    };
+        let path_str = match CStr::from_ptr(path).to_str() {
+            Ok(s) => s,
+            Err(_) => {
+                *result = FFIResult::err("Failed to convert path to string");
+                return;
+            }
+        };
 
-    let res = match op.writer_options(path_str, opts) {
-        Ok(writer) => FFIResult::ok(Box::into_raw(Box::new(writer))),
-        Err(e) => FFIResult::err_with_source("Failed to create append writer", e),
-    };
+        // Create writer with append option
+        let opts = od::options::WriteOptions {
+            append: true,
+            ..Default::default()
+        };
 
-    *result = res;
+        let res = match op.writer_options(path_str, opts) {
+            Ok(writer) => FFIResult::ok(Box::into_raw(Box::new(writer))),
+            Err(e) => FFIResult::err_with_source("Failed to create append writer", e),
+        };
+
+        *result = res;
+    }
 }
 
 /// Write data using a blocking writer
@@ -794,31 +829,33 @@ pub unsafe extern "C" fn blocking_writer_append(
 /// * If `writer` is not a valid pointer.
 /// * If `bytes` is not a valid pointer, or `len` is more than the length of `bytes`.
 /// * If `result` is not a valid pointer, or does not have available memory to write to.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn writer_write(
     writer: *mut blocking::Writer,
     bytes: *const c_char,
     len: usize,
     result: *mut FFIResult<()>,
 ) {
-    let writer = if writer.is_null() {
-        *result = FFIResult::err("Writer is null");
-        return;
-    } else {
-        &mut *writer
-    };
+    unsafe {
+        let writer = if writer.is_null() {
+            *result = FFIResult::err("Writer is null");
+            return;
+        } else {
+            &mut *writer
+        };
 
-    let bytes = Vec::from_raw_parts(bytes as *mut u8, len, len);
+        let bytes = Vec::from_raw_parts(bytes as *mut u8, len, len);
 
-    let res = match writer.write(bytes.clone()) {
-        Ok(_) => FFIResult::ok(()),
-        Err(e) => FFIResult::err_with_source("Failed to write with writer", e),
-    };
+        let res = match writer.write(bytes.clone()) {
+            Ok(_) => FFIResult::ok(()),
+            Err(e) => FFIResult::err_with_source("Failed to write with writer", e),
+        };
 
-    *result = res;
+        *result = res;
 
-    // bytes memory is controlled by Haskell, we can't drop it here
-    mem::forget(bytes);
+        // bytes memory is controlled by Haskell, we can't drop it here
+        mem::forget(bytes);
+    }
 }
 
 /// Close a blocking writer
@@ -832,24 +869,26 @@ pub unsafe extern "C" fn writer_write(
 ///
 /// * If `writer` is not a valid pointer.
 /// * If `result` is not a valid pointer, or does not have available memory to write to.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn writer_close(
     writer: *mut blocking::Writer,
     result: *mut FFIResult<Metadata>,
 ) {
-    let writer = if writer.is_null() {
-        *result = FFIResult::err("Writer is null");
-        return;
-    } else {
-        &mut *writer
-    };
+    unsafe {
+        let writer = if writer.is_null() {
+            *result = FFIResult::err("Writer is null");
+            return;
+        } else {
+            &mut *writer
+        };
 
-    let res = match writer.close() {
-        Ok(meta) => FFIResult::ok(meta.into()),
-        Err(e) => FFIResult::err_with_source("Failed to close writer", e),
-    };
+        let res = match writer.close() {
+            Ok(meta) => FFIResult::ok(meta.into()),
+            Err(e) => FFIResult::err_with_source("Failed to close writer", e),
+        };
 
-    *result = res;
+        *result = res;
+    }
 }
 
 /// Free a blocking writer
@@ -861,9 +900,11 @@ pub unsafe extern "C" fn writer_close(
 /// # Panics
 ///
 /// * If `writer` is not a valid pointer.
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn free_writer(writer: *mut blocking::Writer) {
-    if !writer.is_null() {
-        drop(Box::from_raw(writer));
+    unsafe {
+        if !writer.is_null() {
+            drop(Box::from_raw(writer));
+        }
     }
 }

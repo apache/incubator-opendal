@@ -1,30 +1,67 @@
-# Apache OpenDAL™ Ruby Binding (WIP)
+# Apache OpenDAL™ Ruby Binding
 
-[![](https://img.shields.io/badge/status-unreleased-red)](https://opendal.apache.org/bindings/ruby/)
+[![Gem Version](https://img.shields.io/gem/v/opendal)](https://rubygems.org/gems/opendal)
+[![Gem Downloads (for latest version)](https://img.shields.io/gem/dtv/opendal)](https://rubygems.org/gems/opendal)
 
-This crate intends to build a native ruby binding.
+OpenDAL's Ruby [gem](https://rubygems.org/gems/opendal): access S3, GCS, Azure Blob, the local filesystem, and 50+ more services through one API.
 
-![](https://github.com/apache/opendal/assets/5351546/87bbf6e5-f19e-449a-b368-3e283016c887)
+![OpenDAL Architecture](https://opendal.apache.org/img/architectural.png)
 
-## Development
+We release the OpenDAL Ruby binding independently of the
+[`opendal` crate](https://crates.io/crates/opendal) (Rust core). For updates
+and compatibility, use the Ruby binding version instead of the `opendal` crate
+version.
 
-Install gems:
+## Useful Links
+
+- [User guide](https://opendal.apache.org/docs/bindings/ruby)
+- [Services & configuration](https://opendal.apache.org/services)
+- [API reference](https://opendal.apache.org/docs/ruby/)
+- [Rust core documentation](https://docs.rs/opendal/latest/opendal/index.html)
+
+## Installation
 
 ```shell
-bundle
+gem install opendal
 ```
 
-Build bindings:
+Or add it to your `Gemfile`:
 
-```shell
-bundle exec rake compile
+```ruby
+# Gemfile
+gem "opendal"
 ```
 
-Run tests:
+## Quickstart
 
-```shell
-bundle exec rake test
+```ruby
+require "opendal"
+
+op = OpenDal::Operator.new("memory", {})
+op.write("hello.txt", "Hello, World!")
+puts op.read("hello.txt") # => "Hello, World!"
+
+op.list("").each do |entry|
+  puts entry.path
+end
+
+op.delete("hello.txt")
 ```
+
+Point it at a real backend by changing the scheme and passing its configuration:
+
+```ruby
+op = OpenDal::Operator.new("s3", {
+  "bucket" => "my-bucket",
+  "region" => "us-east-1",
+})
+```
+
+See the [user guide](https://opendal.apache.org/docs/bindings/ruby) for connecting to storage, common tasks, middlewares, and error handling.
+
+## Contributing
+
+Development setup and contribution instructions live in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License and Trademarks
 

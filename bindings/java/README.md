@@ -4,41 +4,28 @@
 [![Maven Central](https://img.shields.io/maven-central/v/org.apache.opendal/opendal.svg?logo=Apache+Maven&logoColor=blue)](https://central.sonatype.com/search?q=opendal&smo=true)
 [![Website](https://img.shields.io/badge/opendal-OpenDAL_Website-red?logo=Apache&logoColor=red)](https://opendal.apache.org/docs/java/)
 
-![](https://github.com/apache/opendal/assets/5351546/87bbf6e5-f19e-449a-b368-3e283016c887)
+A native Java binding for Apache OpenDAL™: access S3, GCS, Azure Blob, HDFS, the
+local filesystem, and many more services through one API.
+
+We release the OpenDAL Java binding independently of the
+[`opendal` crate](https://crates.io/crates/opendal) (Rust core). For updates
+and compatibility, use the Java binding version instead of the `opendal` crate
+version.
 
 ## Useful Links
 
-- [Documentation](https://opendal.apache.org/docs/java/)
-- [Upgrade Guide](./upgrade.md)
+- **User guide**: [opendal.apache.org/docs/bindings/java](https://opendal.apache.org/docs/bindings/java) — install, connect, common tasks, and going to production.
+- **API reference**: [opendal.apache.org/docs/java](https://opendal.apache.org/docs/java/)
+- **Services & configuration**: [opendal.apache.org/services](https://opendal.apache.org/services)
+- **Upgrade guide**: [`upgrade.md`](./upgrade.md)
 
-## Example
+## Installation
 
-```java
-import java.util.HashMap;
-import java.util.Map;
-import org.apache.opendal.AsyncOperator;
-import org.apache.opendal.Operator;
-
-public class Main {
-  public static void main(String[] args) {
-    final Map<String, String> conf = new HashMap<>();
-    conf.put("root", "/tmp");
-
-    try (AsyncOperator op = AsyncOperator.of("fs", conf)) {
-      op.write("/path/to/data", "Hello world").join();
-      System.out.println(new String(op.read("/path/to/data").join()));
-    }
-  }
-}
-```
-
-## Getting Started
-
-This project is built upon the native OpenDAL lib. And it is released for multiple platforms that you can use a classifier to specify the platform you are building the application on.
+The binding ships a platform-specific native library, so you depend on the main
+artifact plus a classifier for your platform. An OS detector plugin fills in the
+classifier automatically.
 
 ### Maven
-
-Generally, you can first add the `os-maven-plugin` for automatically detect the classifier based on your platform:
 
 ```xml
 <build>
@@ -50,11 +37,7 @@ Generally, you can first add the `os-maven-plugin` for automatically detect the 
   </extension>
 </extensions>
 </build>
-```
 
-Then add the dependency to `opendal` as following:
-
-```xml
 <dependencies>
   <dependency>
     <groupId>org.apache.opendal</groupId>
@@ -72,96 +55,77 @@ Then add the dependency to `opendal` as following:
 
 ### Gradle
 
-For Gradle, you can first add the `com.google.osdetector` for automatically detect the classifier based on your platform:
-
 ```groovy
 plugins {
     id "com.google.osdetector" version "1.7.3"
 }
-```
 
-Then add the dependency to `opendal as following:
-
-```groovy
 dependencies {
     implementation "org.apache.opendal:opendal:$opendalVersion"
     implementation "org.apache.opendal:opendal:$opendalVersion:$osdetector.classifier"
 }
 ```
 
-### Classified library
+On musl-based Linux distributions such as Alpine, use the `linux-x86_64-musl` or
+`linux-aarch_64-musl` classifier instead of the detected one.
 
-Note that the dependency without classifier ships all classes and resources except the "opendal_java" shared library. And those with classifier bundle only the shared library.
+## Quickstart
 
-For downstream usage, it's recommended:
+```java
+import java.util.HashMap;
+import java.util.Map;
+import org.apache.opendal.AsyncOperator;
 
-* Depend on the one without classifier to write code;
-* Depend on the classified ones with "test" for testing.
+public class Main {
+  public static void main(String[] args) {
+    final Map<String, String> conf = new HashMap<>();
+    conf.put("root", "/tmp");
 
-To load the shared library correctly, you can choose one of the following approaches:
-
-* Append the classified JARs to the classpath at the runtime;
-* Depend on the classified JARs and build a fat JAR (You may need to depend on all the provided classified JARs for running on multiple platforms);
-* Build your own "opendal_java" shared library and specify "-Djava.library.path" to the folder containing that shared library.
-
-## Build
-
-This project provides OpenDAL Java bindings with artifact name `opendal`. It depends on JDK 8 or later.
-
-You can use Maven to build both Rust dynamic lib and JAR files with one command now:
-
-```shell
-./mvnw clean package -DskipTests=true
+    try (AsyncOperator op = AsyncOperator.of("fs", conf)) {
+      op.write("/path/to/data", "Hello world").join();
+      System.out.println(new String(op.read("/path/to/data").join()));
+    }
+  }
+}
 ```
 
-## Run tests
+Use the synchronous `Operator` for blocking calls, or `AsyncOperator` for
+`CompletableFuture`-based calls.
 
-Currently, all tests are written in Java.
+## Reuse a reader
 
-You can run the base tests with the following command:
+`Operator.createReader(path, readerOptions)` creates an `OperatorReader` for repeated
+reads. `ReaderOptions` selects versions, conditions, and execution controls;
+each call selects its own byte range.
 
-```shell
-./mvnw clean verify
+```java
+ReaderOptions options = ReaderOptions.builder().chunk(8 * 1024 * 1024L).build();
+try (OperatorReader reader = op.createReader("large.bin", options)) {
+    byte[] first = reader.read(0, 1024);
+    byte[] next = reader.read(1024, 1024);
+}
 ```
 
-## Code style
+The [Java task guide](../../website/docs/20-bindings/java/04-tasks.md#read-part-of-a-file)
+covers streams and resource lifetimes.
+See [ReaderOptions](src/main/java/org/apache/opendal/ReaderOptions.java) for all
+supported options, defaults, and constraints.
 
-This project uses [spotless](https://github.com/diffplug/spotless) for code formatting so that all developers share a consistent code style without bikeshedding on it.
+## Documentation
 
-You can apply the code style with the following command::
+The full user guide — getting started, connecting to services, common tasks, and
+going to production — lives at
+[opendal.apache.org/docs/bindings/java](https://opendal.apache.org/docs/bindings/java).
 
-```shell
-./mvnw spotless:apply
-```
+## Contributing
 
-## Run behavior tests
+The Maven `source-release.zip` includes `bindings/java` and the Rust `core`
+workspace. After extracting it, run `./mvnw package` from `bindings/java`.
+The wrapper downloads its JAR on first use; the source archive does not bundle it.
 
-Services behavior tests read necessary configs from env vars or the `.env` file.
-
-You can copy [.env.example](/.env.example) to `${project.rootdir}/.env` and change the values on need, or directly set env vars with `export KEY=VALUE`.
-
-Take `fs` for example, we need to enable bench on `fs` on `/tmp/`:
-
-```properties
-OPENDAL_TEST=fs
-OPENDAL_FS_ROOT=/tmp/
-```
-
-You can run service behavior tests of enabled with the following command:
-
-```shell
-./mvnw test -Dtest="behavior.*Test"
-```
-
-Remember to enable the necessary features via `-Dcargo-build.features=services-xxx` when running specific service test:
-
-```shell
-export OPENDAL_TEST=redis
-export OPENDAL_REDIS_ENDPOINT=tcp://127.0.0.1:6379
-export OPENDAL_REDIS_ROOT=/
-export OPENDAL_REDIS_DB=0
-./mvnw test -Dtest="behavior.*Test" -Dcargo-build.features=services-redis
-```
+This project is built upon the native OpenDAL library and depends on JDK 8 or
+later. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to build the binding, run
+tests, and apply the code style.
 
 ## Used by
 
@@ -172,3 +136,15 @@ Check out the [users](./users.md) list for more details on who is using OpenDAL.
 Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 
 Apache OpenDAL, OpenDAL, and Apache are either registered trademarks or trademarks of the Apache Software Foundation.
+
+Compiled distributions include the following Mozilla Public License 2.0
+components. Their source code is available from the linked project pages:
+
+### Third-party software
+
+- `colored` 3.1.1 ([source](https://crates.io/crates/colored/3.1.1), [homepage](https://github.com/mackwic/colored)), licensed under MPL-2.0.
+- `option-ext` 0.2.0 ([source](https://crates.io/crates/option-ext/0.2.0), [homepage](https://github.com/soc/option-ext)), licensed under MPL-2.0.
+- `persy` 1.8.1 ([source](https://crates.io/crates/persy/1.8.1), [homepage](https://persy.rs)), licensed under MPL-2.0.
+
+The distribution includes the MPL-2.0 text in `META-INF/LICENSE-MPL-2.0.txt`.
+</content>

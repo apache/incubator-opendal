@@ -19,8 +19,10 @@
 
 import { randomUUID } from 'node:crypto'
 import { test, describe, expect } from 'vitest'
+import { setTimeout } from 'node:timers/promises'
+
 import { EntryMode } from '../../index.mjs'
-import { generateFixedBytes, sleep } from '../utils.mjs'
+import { generateFixedBytes } from '../utils.mjs'
 
 /**
  * @param {import("../../index").Operator} op
@@ -90,7 +92,7 @@ export function run(op) {
       const metaMinus = await op.stat(filename, { ifModifiedSince: sinceMinus.toISOString() })
       expect(metaMinus.lastModified).toBe(meta.lastModified)
 
-      await sleep(1000)
+      await setTimeout(1000)
 
       const sinceAdd = new Date(meta.lastModified)
       sinceAdd.setSeconds(sinceAdd.getSeconds() + 1)
@@ -120,7 +122,7 @@ export function run(op) {
         'ConditionNotMatch',
       )
 
-      await sleep(1000)
+      await setTimeout(1000)
 
       const sinceAdd = new Date(meta.lastModified)
       sinceAdd.setSeconds(sinceAdd.getSeconds() + 1)

@@ -24,6 +24,8 @@ inputs:
     description: "The service to test"
   target:
     description: "The fuzz target to test"
+  toolchain:
+    description: "The rust toolchain to use"
 
 runs:
   using: "composite"
@@ -41,7 +43,7 @@ runs:
           - name: Run Fuzz Test
             shell: bash
             working-directory: core/fuzz
-            run: cargo +nightly-2024-11-22 fuzz run ${{ inputs.target }} --features services-${{ inputs.service }} -- -max_total_time=120
+            run: cargo +${{ inputs.toolchain }} fuzz run ${{ inputs.target }} --features services-${{ inputs.service }} -- -max_total_time=120
             env:
               OPENDAL_TEST: ${{ inputs.service }}
         EOF

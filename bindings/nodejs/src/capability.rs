@@ -329,6 +329,12 @@ impl Capability {
         self.0.presign_write
     }
 
+    /// If operator supports presign delete.
+    #[napi(getter)]
+    pub fn presign_delete(&self) -> bool {
+        self.0.presign_delete
+    }
+
     /// If operator supports shared.
     #[napi(getter)]
     pub fn shared(&self) -> bool {

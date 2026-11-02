@@ -20,6 +20,8 @@ use std::os::raw::c_char;
 
 use ::opendal as core;
 
+use super::opendal_metadata;
+
 /// \brief opendal_list_entry is the entry under a path, which is listed from the opendal_lister
 ///
 /// For examples, please see the comment section of opendal_operator_list()
@@ -53,7 +55,7 @@ impl opendal_entry {
     ///
     /// Path is relative to operator's root. Only valid in current operator.
     ///
-    /// \note To free the string, you can directly call free()
+    /// \note Free the returned string with opendal_string_free()
     #[no_mangle]
     pub unsafe extern "C" fn opendal_entry_path(&self) -> *mut c_char {
         let s = self.deref().path();
@@ -67,7 +69,7 @@ impl opendal_entry {
     /// If this entry is a dir, `Name` MUST endswith `/`
     /// Otherwise, `Name` MUST NOT endswith `/`.
     ///
-    /// \note To free the string, you can directly call free()
+    /// \note Free the returned string with opendal_string_free()
     #[no_mangle]
     pub unsafe extern "C" fn opendal_entry_name(&self) -> *mut c_char {
         let s = self.deref().name();
@@ -75,12 +77,24 @@ impl opendal_entry {
         c_str.into_raw()
     }
 
+    /// \brief Return the metadata associated with this entry.
+    ///
+    /// The returned metadata is heap-allocated and must be freed
+    /// by the caller via opendal_metadata_free().
+    #[no_mangle]
+    pub unsafe extern "C" fn opendal_entry_metadata(&self) -> *mut opendal_metadata {
+        let metadata = self.deref().metadata().clone();
+        Box::into_raw(Box::new(opendal_metadata::new(metadata)))
+    }
+
     /// \brief Frees the heap memory used by the opendal_list_entry
     #[no_mangle]
     pub unsafe extern "C" fn opendal_entry_free(ptr: *mut opendal_entry) {
-        if !ptr.is_null() {
-            drop(Box::from_raw((*ptr).inner as *mut core::Entry));
-            drop(Box::from_raw(ptr));
+        unsafe {
+            if !ptr.is_null() {
+                drop(Box::from_raw((*ptr).inner as *mut core::Entry));
+                drop(Box::from_raw(ptr));
+            }
         }
     }
 }

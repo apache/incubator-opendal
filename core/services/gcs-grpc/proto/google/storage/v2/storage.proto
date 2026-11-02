@@ -1,0 +1,170 @@
+// Copyright 2026 Google LLC
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+// Modified by the Apache Software Foundation: retain the wire-compatible subset
+// used by OpenDAL, with unused definitions, annotations, and imports removed.
+// Source: https://github.com/googleapis/googleapis/blob/2e9c5681901a2eebf7f547f0b60c895b1732415e/google/storage/v2/storage.proto
+
+syntax = "proto3";
+
+package google.storage.v2;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/timestamp.proto";
+
+// Storage contains the object operations used by OpenDAL's GCS gRPC service.
+// The package, method signatures, streaming modes, message names, field
+// numbers, and field types match googleapis commit
+// 2e9c5681901a2eebf7f547f0b60c895b1732415e.
+service Storage {
+  rpc DeleteObject(DeleteObjectRequest) returns (google.protobuf.Empty);
+  rpc CancelResumableWrite(CancelResumableWriteRequest)
+      returns (CancelResumableWriteResponse);
+  rpc GetObject(GetObjectRequest) returns (Object);
+  rpc ReadObject(ReadObjectRequest) returns (stream ReadObjectResponse);
+  rpc WriteObject(stream WriteObjectRequest) returns (WriteObjectResponse);
+  rpc ListObjects(ListObjectsRequest) returns (ListObjectsResponse);
+  rpc RewriteObject(RewriteObjectRequest) returns (RewriteResponse);
+  rpc StartResumableWrite(StartResumableWriteRequest)
+      returns (StartResumableWriteResponse);
+  rpc QueryWriteStatus(QueryWriteStatusRequest)
+      returns (QueryWriteStatusResponse);
+}
+
+message DeleteObjectRequest {
+  string bucket = 1;
+  string object = 2;
+  int64 generation = 4;
+}
+
+message CancelResumableWriteRequest {
+  string upload_id = 1;
+}
+
+message CancelResumableWriteResponse {}
+
+message GetObjectRequest {
+  string bucket = 1;
+  string object = 2;
+  int64 generation = 3;
+}
+
+message ReadObjectRequest {
+  string bucket = 1;
+  string object = 2;
+  int64 generation = 3;
+  int64 read_offset = 4;
+  int64 read_limit = 5;
+}
+
+message ReadObjectResponse {
+  ChecksummedData checksummed_data = 1;
+}
+
+message WriteObjectSpec {
+  Object resource = 1;
+  optional int64 if_generation_match = 3;
+}
+
+message WriteObjectRequest {
+  oneof first_message {
+    string upload_id = 1;
+    WriteObjectSpec write_object_spec = 2;
+  }
+
+  int64 write_offset = 3;
+
+  oneof data {
+    ChecksummedData checksummed_data = 4;
+  }
+
+  bool finish_write = 7;
+}
+
+message WriteObjectResponse {
+  oneof write_status {
+    int64 persisted_size = 1;
+    Object resource = 2;
+  }
+}
+
+message ListObjectsRequest {
+  string parent = 1;
+  int32 page_size = 2;
+  string page_token = 3;
+  string delimiter = 4;
+  string prefix = 6;
+  string lexicographic_start = 10;
+}
+
+message ListObjectsResponse {
+  repeated Object objects = 1;
+  repeated string prefixes = 2;
+  string next_page_token = 3;
+}
+
+message RewriteObjectRequest {
+  Object destination = 1;
+  string source_bucket = 2;
+  string source_object = 3;
+  int64 source_generation = 4;
+  string rewrite_token = 5;
+  optional int64 if_generation_match = 7;
+  string destination_name = 24;
+  string destination_bucket = 25;
+}
+
+message RewriteResponse {
+  bool done = 3;
+  string rewrite_token = 4;
+  Object resource = 5;
+}
+
+message StartResumableWriteRequest {
+  WriteObjectSpec write_object_spec = 1;
+}
+
+message StartResumableWriteResponse {
+  string upload_id = 1;
+}
+
+message QueryWriteStatusRequest {
+  string upload_id = 1;
+}
+
+message QueryWriteStatusResponse {
+  oneof write_status {
+    int64 persisted_size = 1;
+    Object resource = 2;
+  }
+}
+
+message ChecksummedData {
+  bytes content = 1;
+}
+
+message Object {
+  string name = 1;
+  string bucket = 2;
+  int64 generation = 3;
+  int64 size = 6;
+  string content_encoding = 7;
+  string content_disposition = 8;
+  string cache_control = 9;
+  string content_type = 13;
+  google.protobuf.Timestamp create_time = 14;
+  google.protobuf.Timestamp update_time = 17;
+  map<string, string> metadata = 22;
+  string etag = 27;
+}

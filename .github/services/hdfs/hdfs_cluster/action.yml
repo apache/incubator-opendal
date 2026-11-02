@@ -24,16 +24,15 @@ runs:
     - name: Setup HDFS cluster
       shell: bash
       working-directory: fixtures/hdfs
-      run: docker compose -f docker-compose-hdfs-cluster.yml up -d --wait
+      run: docker compose --file docker-compose-hdfs-cluster.yml up --quiet-pull --detach --wait
+
     - name: Setup hadoop
       uses: ./.github/actions/setup-hadoop
-      with:
-        need-hadoop: true
+
     - name: Setup opendal env
       shell: bash
       run: |
         cat << EOF >> $GITHUB_ENV
         OPENDAL_HDFS_ROOT=/tmp/opendal/
         OPENDAL_HDFS_NAME_NODE=hdfs://localhost:8020
-        OPENDAL_HDFS_ENABLE_APPEND=true
         EOF

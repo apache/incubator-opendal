@@ -1,0 +1,83 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+.tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: var(--tabs-gap, 0.25rem);
+  margin-bottom: var(--tabs-margin-bottom, 1rem);
+  padding: var(--tabs-padding, 0);
+  padding-right: var(--tabs-padding-right, 0);
+  border-bottom: 1px solid
+    var(--tabs-border-color, var(--ifm-color-emphasis-200));
+  background: var(--tabs-bg, transparent);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: var(--tabs-scrollbar-width, thin);
+  -webkit-overflow-scrolling: touch;
+}
+.tabs::-webkit-scrollbar {
+  display: var(--tabs-scrollbar-display, initial);
+}
+.tab {
+  flex: var(--tabs-tab-flex, 0 0 auto);
+  appearance: none;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  padding: var(--tabs-tab-padding, 0.5rem 0.9rem);
+  font-family: var(--tabs-tab-font-family, inherit);
+  font-size: var(--tabs-tab-font-size, 0.95rem);
+  font-weight: var(--tabs-tab-font-weight, 500);
+  color: var(--tabs-tab-color, var(--ifm-color-emphasis-600));
+  cursor: pointer;
+  white-space: var(--tabs-tab-white-space, nowrap);
+  transition: color var(--odl-dur) var(--odl-ease),
+    border-color var(--odl-dur) var(--odl-ease);
+}
+.tab:hover {
+  color: var(--tabs-tab-hover-color, var(--ifm-color-primary));
+}
+.tabActive {
+  color: var(--tabs-tab-active-color, var(--ifm-color-primary));
+  border-bottom-color: var(
+    --tabs-tab-active-border-color,
+    var(--ifm-color-primary)
+  );
+}
+
+@media (max-width: 996px) {
+  .tabs {
+    flex-wrap: var(--tabs-mobile-flex-wrap, wrap);
+    overflow-x: var(--tabs-mobile-overflow-x, visible);
+    overflow-y: var(--tabs-mobile-overflow-y, visible);
+    gap: var(--tabs-mobile-gap, 0 0.25rem);
+    padding: var(--tabs-mobile-padding, var(--tabs-padding, 0));
+    scrollbar-width: var(--tabs-mobile-scrollbar-width, auto);
+  }
+  .tab {
+    flex: var(--tabs-mobile-tab-flex, 0 1 auto);
+    padding: var(--tabs-mobile-tab-padding, var(--tabs-tab-padding, 0.5rem 0.9rem));
+    text-align: var(--tabs-mobile-tab-text-align, left);
+    white-space: var(
+      --tabs-mobile-tab-white-space,
+      var(--tabs-tab-white-space, nowrap)
+    );
+  }
+}

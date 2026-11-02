@@ -27,35 +27,68 @@ create_exception!(
     PyException,
     "OpenDAL Base Exception"
 );
-create_exception!(opendal.exceptions, Unexpected, Error, "Unexpected errors");
+create_exception!(
+    opendal.exceptions,
+    Unexpected,
+    PyException,
+    "Unexpected errors"
+);
 create_exception!(
     opendal.exceptions,
     Unsupported,
-    Error,
+    PyException,
     "Unsupported operation"
 );
 create_exception!(
     opendal.exceptions,
     ConfigInvalid,
-    Error,
+    PyException,
     "Config is invalid"
 );
-create_exception!(opendal.exceptions, NotFound, Error, "Not found");
+create_exception!(opendal.exceptions, NotFound, PyException, "Not found");
 create_exception!(
     opendal.exceptions,
     PermissionDenied,
-    Error,
+    PyException,
     "Permission denied"
 );
-create_exception!(opendal.exceptions, IsADirectory, Error, "Is a directory");
-create_exception!(opendal.exceptions, NotADirectory, Error, "Not a directory");
-create_exception!(opendal.exceptions, AlreadyExists, Error, "Already exists");
-create_exception!(opendal.exceptions, IsSameFile, Error, "Is same file");
+create_exception!(
+    opendal.exceptions,
+    IsADirectory,
+    PyException,
+    "Is a directory"
+);
+create_exception!(
+    opendal.exceptions,
+    NotADirectory,
+    PyException,
+    "Not a directory"
+);
+create_exception!(
+    opendal.exceptions,
+    AlreadyExists,
+    PyException,
+    "Already exists"
+);
+create_exception!(opendal.exceptions, IsSameFile, PyException, "Is same file");
 create_exception!(
     opendal.exceptions,
     ConditionNotMatch,
-    Error,
+    PyException,
     "Condition not match"
+);
+create_exception!(opendal.exceptions, RateLimited, PyException, "Rate limited");
+create_exception!(
+    opendal.exceptions,
+    RangeNotSatisfied,
+    PyException,
+    "Range not satisfied"
+);
+create_exception!(
+    opendal.exceptions,
+    Conflict,
+    PyException,
+    "Operation conflicts with the current resource state"
 );
 
 fn format_pyerr_impl(err: &ocore::Error) -> PyErr {
@@ -71,6 +104,9 @@ fn format_pyerr_impl(err: &ocore::Error) -> PyErr {
         ocore::ErrorKind::AlreadyExists => AlreadyExists::new_err(e),
         ocore::ErrorKind::IsSameFile => IsSameFile::new_err(e),
         ocore::ErrorKind::ConditionNotMatch => ConditionNotMatch::new_err(e),
+        ocore::ErrorKind::RateLimited => RateLimited::new_err(e),
+        ocore::ErrorKind::RangeNotSatisfied => RangeNotSatisfied::new_err(e),
+        ocore::ErrorKind::Conflict => Conflict::new_err(e),
         _ => Unexpected::new_err(e),
     }
 }

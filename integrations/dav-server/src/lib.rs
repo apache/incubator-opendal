@@ -24,12 +24,12 @@
 //! use dav_server::davpath::DavPath;
 //! use dav_server::fs::DavFileSystem;
 //! use dav_server_opendalfs::OpendalFs;
-//! use opendal::services::Memory;
-//! use opendal::Operator;
+//! use opendal_core::services::Memory;
+//! use opendal_core::Operator;
 //!
 //! #[tokio::test]
 //! async fn test() -> Result<()> {
-//!     let op = Operator::new(Memory::default())?.finish();
+//!     let op = Operator::new(Memory::default())?;
 //!
 //!     let webdavfs = OpendalFs::new(op);
 //!

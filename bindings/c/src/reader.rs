@@ -96,7 +96,7 @@ impl opendal_reader {
                         core::ErrorKind::Unexpected,
                         "undefined whence",
                     )),
-                }
+                };
             }
         };
 
@@ -118,11 +118,13 @@ impl opendal_reader {
     /// \brief Frees the heap memory used by the opendal_reader.
     #[no_mangle]
     pub unsafe extern "C" fn opendal_reader_free(ptr: *mut opendal_reader) {
-        if !ptr.is_null() {
-            drop(Box::from_raw(
-                (*ptr).inner as *mut core::blocking::StdReader,
-            ));
-            drop(Box::from_raw(ptr));
+        unsafe {
+            if !ptr.is_null() {
+                drop(Box::from_raw(
+                    (*ptr).inner as *mut core::blocking::StdReader,
+                ));
+                drop(Box::from_raw(ptr));
+            }
         }
     }
 }

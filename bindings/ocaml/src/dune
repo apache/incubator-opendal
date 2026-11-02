@@ -16,16 +16,16 @@
 ; under the License.
 
 (rule
- (targets libopendal_core.a dllopendal_core.so)
+ (targets libopendal_core.a dllopendal_core.so libopendal_core.so)
  (deps
   (glob_files *.rs))
  (action
   (progn
    (run sh -c "cd %{project_root}/../.. && cargo build --release")
    (run sh -c
-     "mv %{project_root}/../../target/release/libopendal_ocaml.so ./dllopendal_core.so 2> /dev/null || mv %{project_root}/../../target/release/libopendal_ocaml.dylib ./dllopendal_core.so")
-   (run mv %{project_root}/../../target/release/libopendal_ocaml.a
-     libopendal_core.a))))
+     "if [ -f %{project_root}/../../target/release/libopendal_ocaml.so ]; then cp %{project_root}/../../target/release/libopendal_ocaml.so ./dllopendal_core.so; cp %{project_root}/../../target/release/libopendal_ocaml.so ./libopendal_core.so; else cp %{project_root}/../../target/release/libopendal_ocaml.dylib ./dllopendal_core.so; cp %{project_root}/../../target/release/libopendal_ocaml.dylib ./libopendal_core.so; fi")
+   (run sh -c
+     "echo 'void __opendal_core_dummy(void) {}' | cc -c -x c - -o opendal_core_dummy.o && ar crs libopendal_core.a opendal_core_dummy.o && rm opendal_core_dummy.o"))))
 
 (library
  (name opendal_core)
@@ -33,3 +33,9 @@
  (foreign_archives opendal_core)
  (c_library_flags
   (-lpthread -lc -lm)))
+
+(install
+ (section lib)
+ (package opendal)
+ (files
+  (libopendal_core.so as opendal_core/libopendal_core.so)))

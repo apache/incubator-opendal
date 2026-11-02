@@ -17,7 +17,7 @@
 
 # frozen_string_literal: true
 
-module OpenDAL
+module OpenDal
   class OperatorInfo
     def inspect
       "#<#{self.class.name} scheme: \"#{scheme}\", root: \"#{root}\">"

@@ -39,7 +39,7 @@ For example, OpenDAL uses Capability to describe the capabilities of different s
 
 OpenDAL SHOULD be an **object storage first** library.
 
-OpenDAL does support all storage services, but it is usually optimized for modern storage services. At the time of writing, we can say OpenDAL is object storage first. When designing features, OpenDAL tends to prioritize optimization for object storage.
+OpenDAL supports many storage services, but it is usually optimized for modern storage services. At the time of writing, we can say OpenDAL is object storage first. When designing features, OpenDAL tends to prioritize optimization for object storage.
 
 For example, OpenDAL's Buffer design is primarily optimized for HTTP-based services, helping to reduce extra allocation, in-memory copying, and memory usage.
 
@@ -118,4 +118,4 @@ Primary Concerns:
 
 ---
 
-*This documentation is inpisred a lot by [hyper’s VISION document](https://hyper.rs/contrib/vision/).*
+*This documentation is inspired a lot by [hyper’s VISION document](https://hyper.rs/contrib/vision/).*

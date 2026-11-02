@@ -1,0 +1,37 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+services:
+  memcached:
+    image: bitnami/memcached:latest
+    environment:
+      # memcache's max item size is 1MiB, But opendal's behavior tests
+      # will produce larger file.
+      #
+      # Specify the setting here to make our test happy.
+      MEMCACHED_MAX_ITEM_SIZE: 16777216
+      # Enable Unix socket with extra flags
+      # -s: socket path
+      # -a: socket access mask (0777 for world-readable/writable)
+      MEMCACHED_EXTRA_FLAGS: "-s /tmp/memcached/memcached.sock -a 0777"
+    volumes:
+      - /tmp/memcached:/tmp/memcached
+    healthcheck:
+      test: ["CMD-SHELL", "test -S /tmp/memcached/memcached.sock"]
+      interval: 5s
+      timeout: 5s
+      retries: 5

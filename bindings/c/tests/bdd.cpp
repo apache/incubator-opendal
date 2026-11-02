@@ -138,3 +138,111 @@ TEST_F(OpendalBddTest, FeatureTest)
     error = opendal_operator_delete(this->p, "tmpdir/");
     EXPECT_EQ(error, nullptr);
 }
+
+TEST_F(OpendalBddTest, WriteEmptyNullBytes)
+{
+    const opendal_bytes empty = {
+        .data = nullptr,
+        .len = 0,
+        .capacity = 0,
+    };
+
+    opendal_error* error = opendal_operator_write(this->p, "empty", &empty);
+    EXPECT_EQ(error, nullptr);
+
+    opendal_result_read read = opendal_operator_read(this->p, "empty");
+    EXPECT_EQ(read.error, nullptr);
+    EXPECT_EQ(read.data.len, 0);
+    opendal_bytes_free(&read.data);
+
+    // Cover the separate write_with entry point that shares this validation.
+    error = opendal_operator_write_with(this->p, "empty-with-options", &empty, nullptr);
+    EXPECT_EQ(error, nullptr);
+
+    read = opendal_operator_read(this->p, "empty-with-options");
+    EXPECT_EQ(read.error, nullptr);
+    EXPECT_EQ(read.data.len, 0);
+    opendal_bytes_free(&read.data);
+
+    opendal_result_operator_writer writer = opendal_operator_writer(this->p, "empty-writer");
+    EXPECT_EQ(writer.error, nullptr);
+    ASSERT_NE(writer.writer, nullptr);
+
+    opendal_result_writer_write write = opendal_writer_write(writer.writer, &empty);
+    EXPECT_EQ(write.error, nullptr);
+    EXPECT_EQ(write.size, 0);
+
+    error = opendal_writer_close(writer.writer);
+    EXPECT_EQ(error, nullptr);
+    opendal_writer_free(writer.writer);
+
+    read = opendal_operator_read(this->p, "empty-writer");
+    EXPECT_EQ(read.error, nullptr);
+    EXPECT_EQ(read.data.len, 0);
+    opendal_bytes_free(&read.data);
+
+    EXPECT_EQ(opendal_operator_delete(this->p, "empty"), nullptr);
+    EXPECT_EQ(opendal_operator_delete(this->p, "empty-with-options"), nullptr);
+    EXPECT_EQ(opendal_operator_delete(this->p, "empty-writer"), nullptr);
+}
+
+TEST_F(OpendalBddTest, RejectNonEmptyNullBytes)
+{
+    const opendal_bytes invalid = {
+        .data = nullptr,
+        .len = 1,
+        .capacity = 0,
+    };
+
+    opendal_error* error = opendal_operator_write(this->p, "invalid", &invalid);
+    ASSERT_NE(error, nullptr);
+    EXPECT_EQ(error->code, OPENDAL_UNEXPECTED);
+    opendal_error_free(error);
+
+    error = opendal_operator_write_with(this->p, "invalid-with-options", &invalid, nullptr);
+    ASSERT_NE(error, nullptr);
+    EXPECT_EQ(error->code, OPENDAL_UNEXPECTED);
+    opendal_error_free(error);
+
+    opendal_result_operator_writer writer = opendal_operator_writer(this->p, "invalid-writer");
+    EXPECT_EQ(writer.error, nullptr);
+    ASSERT_NE(writer.writer, nullptr);
+
+    opendal_result_writer_write write = opendal_writer_write(writer.writer, &invalid);
+    EXPECT_EQ(write.size, 0);
+    ASSERT_NE(write.error, nullptr);
+    EXPECT_EQ(write.error->code, OPENDAL_UNEXPECTED);
+    opendal_error_free(write.error);
+    opendal_writer_free(writer.writer);
+}
+
+TEST_F(OpendalBddTest, RejectEmptyNonNullBytes)
+{
+    uint8_t sentinel = 0;
+    const opendal_bytes invalid = {
+        .data = &sentinel,
+        .len = 0,
+        .capacity = 0,
+    };
+
+    opendal_error* error = opendal_operator_write(this->p, "invalid-empty", &invalid);
+    ASSERT_NE(error, nullptr);
+    EXPECT_EQ(error->code, OPENDAL_UNEXPECTED);
+    opendal_error_free(error);
+
+    error = opendal_operator_write_with(this->p, "invalid-empty-with-options", &invalid, nullptr);
+    ASSERT_NE(error, nullptr);
+    EXPECT_EQ(error->code, OPENDAL_UNEXPECTED);
+    opendal_error_free(error);
+
+    opendal_result_operator_writer writer = opendal_operator_writer(this->p, "invalid-empty-writer");
+    EXPECT_EQ(writer.error, nullptr);
+    ASSERT_NE(writer.writer, nullptr);
+
+    opendal_result_writer_write write = opendal_writer_write(writer.writer, &invalid);
+    EXPECT_EQ(write.size, 0);
+    ASSERT_NE(write.error, nullptr);
+    EXPECT_EQ(write.error->code, OPENDAL_UNEXPECTED);
+    opendal_error_free(write.error);
+    opendal_writer_free(writer.writer);
+}

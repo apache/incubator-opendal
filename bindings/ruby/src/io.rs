@@ -23,22 +23,24 @@
 #![allow(rustdoc::bare_urls, reason = "YARD's syntax for documentation")]
 
 use std::cell::RefCell;
-use std::collections::HashSet;
 use std::io::BufRead;
 use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
 use std::io::Write;
 
-use magnus::class;
-use magnus::method;
-use magnus::prelude::*;
 use magnus::Error;
+use magnus::RHash;
 use magnus::RModule;
+use magnus::RString;
+use magnus::Value;
+use magnus::io::FMode;
+use magnus::method;
+use magnus::scan_args::scan_args;
 
 use crate::*;
 
-// `Io` is the rust implementation for `OpenDAL::IO`. `Io` follows similar Ruby IO classes, such as:
+// `Io` is the rust implementation for `OpenDal::IO`. `Io` follows similar Ruby IO classes, such as:
 // - IO
 // - StringIO
 //
@@ -46,66 +48,83 @@ use crate::*;
 // TODO: implement encoding.
 //
 /// @yard
-/// `OpenDAL::IO` is similar to Ruby's `IO` and `StringIO` for accessing files.
+/// `OpenDal::IO` is similar to Ruby's `IO` and `StringIO` for accessing files.
 ///
-/// You can't create an instance of `OpenDAL::IO` except using {OpenDAL::Operator#open}.
-#[magnus::wrap(class = "OpenDAL::IO", free_immediately, size)]
-pub struct Io(RefCell<FileState>);
+/// You can't create an instance of `OpenDal::IO` except using {OpenDal::Operator#open}.
+///
+/// Constraints:
+/// - Only available for reading and writing
+/// - Writing doesn't support seek.
+#[magnus::wrap(class = "OpenDal::IO", free_immediately, size)]
+pub struct Io(RefCell<IoHandle>);
 
 enum FileState {
-    Reader(ocore::blocking::StdReader, bool), // bool indicates binary mode
-    Writer(ocore::blocking::StdWriter, bool), // bool indicates binary mode
+    Reader(ocore::blocking::StdReader),
+    Writer(ocore::blocking::StdWriter),
     Closed,
 }
 
-pub fn format_io_error(err: std::io::Error) -> Error {
-    Error::new(exception::runtime_error(), err.to_string())
+struct IoHandle {
+    state: FileState,
+    fmode: FMode,
+    #[allow(dead_code)]
+    external_encoding_name: Option<String>,
+    #[allow(dead_code)]
+    internal_encoding_name: Option<String>,
+    #[allow(dead_code)]
+    encoding_flags: i32,
+}
+
+pub fn format_io_error(ruby: &Ruby, err: std::io::Error) -> Error {
+    Error::new(ruby.exception_runtime_error(), err.to_string())
 }
 
 impl Io {
-    /// Creates a new `OpenDAL::IO` object in Ruby.
+    /// Creates a new `OpenDal::IO` object in Ruby.
     ///
     /// See [`Operator::open`] for more information.
     pub fn new(
         ruby: &Ruby,
         operator: ocore::blocking::Operator,
         path: String,
-        mode: String,
+        mut mode: Value,
+        mut permission: Value,
+        kwargs: RHash,
     ) -> Result<Self, Error> {
-        let mut mode_flags = HashSet::new();
-        let is_unique = mode.chars().all(|c| mode_flags.insert(c));
-        if !is_unique {
-            return Err(Error::new(
-                ruby.exception_arg_error(),
-                format!("Invalid access mode {mode}"),
-            ));
-        }
+        let (_open_flags, fmode, encoding) =
+            ruby.io_extract_modeenc(&mut mode, &mut permission, &kwargs)?;
 
-        let binary_mode = mode_flags.contains(&'b');
-
-        if mode_flags.contains(&'r') {
-            Ok(Self(RefCell::new(FileState::Reader(
-                operator
-                    .reader(&path)
-                    .map_err(format_magnus_error)?
-                    .into_std_read(..)
-                    .map_err(format_magnus_error)?,
-                binary_mode,
-            ))))
-        } else if mode_flags.contains(&'w') {
-            Ok(Self(RefCell::new(FileState::Writer(
+        let state =
+            // Create reader if mode supports reading
+            if fmode.contains(FMode::READ) {
+                FileState::Reader(
+                    operator
+                        .reader(&path)
+                        .map_err(|err| format_magnus_error(ruby, err))?
+                        .into_std_read(..)
+                        .map_err(|err| format_magnus_error(ruby, err))?,
+                )
+            } else if fmode.contains(FMode::WRITE) {
+                FileState::Writer(
                 operator
                     .writer(&path)
-                    .map_err(format_magnus_error)?
+                    .map_err(|err| format_magnus_error(ruby, err))?
                     .into_std_write(),
-                binary_mode,
-            ))))
+            )
         } else {
-            Err(Error::new(
-                ruby.exception_runtime_error(),
-                format!("OpenDAL doesn't support mode: {mode}"),
-            ))
-        }
+            return Err(Error::new(
+                ruby.exception_arg_error(),
+                "Invalid mode: must open for reading or writing",
+            ));
+        };
+
+        Ok(Self(RefCell::new(IoHandle {
+            state,
+            fmode,
+            external_encoding_name: encoding.external.map(|e| e.to_string()),
+            internal_encoding_name: encoding.internal.map(|e| e.to_string()),
+            encoding_flags: encoding.flags,
+        })))
     }
 
     /// @yard
@@ -114,18 +133,12 @@ impl Io {
     /// @return [nil]
     /// @raise [IOError] when operate on a closed stream
     fn binary_mode(ruby: &Ruby, rb_self: &Self) -> Result<(), Error> {
-        let mut cell = rb_self.0.borrow_mut();
-        match &mut *cell {
-            FileState::Reader(_, ref mut is_binary_mode) => {
-                *is_binary_mode = true;
-                Ok(())
-            }
-            FileState::Writer(_, ref mut is_binary_mode) => {
-                *is_binary_mode = true;
-                Ok(())
-            }
-            FileState::Closed => Err(Error::new(ruby.exception_io_error(), "closed stream")),
+        let mut handle = rb_self.0.borrow_mut();
+        if let FileState::Closed = handle.state {
+            return Err(Error::new(ruby.exception_io_error(), "closed stream"));
         }
+        handle.fmode = FMode::new(handle.fmode.bits() | FMode::BINARY_MODE);
+        Ok(())
     }
 
     /// @yard
@@ -134,24 +147,23 @@ impl Io {
     /// @return [Boolean]
     /// @raise [IOError] when operate on a closed stream
     fn is_binary_mode(ruby: &Ruby, rb_self: &Self) -> Result<bool, Error> {
-        match *rb_self.0.borrow() {
-            FileState::Reader(_, is_binary_mode) => Ok(is_binary_mode),
-            FileState::Writer(_, is_binary_mode) => Ok(is_binary_mode),
-            FileState::Closed => Err(Error::new(ruby.exception_io_error(), "closed stream")),
+        let handle = rb_self.0.borrow();
+        if let FileState::Closed = handle.state {
+            return Err(Error::new(ruby.exception_io_error(), "closed stream"));
         }
+        Ok(handle.fmode.contains(FMode::BINARY_MODE))
     }
 
     /// @yard
     /// @def close
     /// Close streams.
     /// @return [nil]
-    fn close(&self) -> Result<(), Error> {
-        // skips closing reader because `StdReader` doesn't have `close()`.
-        let mut cell = self.0.borrow_mut();
-        if let FileState::Writer(writer, _) = &mut *cell {
-            writer.close().map_err(format_io_error)?;
+    fn close(ruby: &Ruby, rb_self: &Self) -> Result<(), Error> {
+        let mut handle = rb_self.0.borrow_mut();
+        if let FileState::Writer(writer) = &mut handle.state {
+            writer.close().map_err(|err| format_io_error(ruby, err))?;
         }
-        *cell = FileState::Closed;
+        handle.state = FileState::Closed;
         Ok(())
     }
 
@@ -160,7 +172,10 @@ impl Io {
     /// Closes the read stream.
     /// @return [nil]
     fn close_read(&self) -> Result<(), Error> {
-        *self.0.borrow_mut() = FileState::Closed;
+        let mut handle = self.0.borrow_mut();
+        if let FileState::Reader(_) = &handle.state {
+            handle.state = FileState::Closed;
+        }
         Ok(())
     }
 
@@ -168,12 +183,12 @@ impl Io {
     /// @def close_write
     /// Closes the write stream.
     /// @return [nil]
-    fn close_write(&self) -> Result<(), Error> {
-        let mut cell = self.0.borrow_mut();
-        if let FileState::Writer(writer, _) = &mut *cell {
-            writer.close().map_err(format_io_error)?;
+    fn close_write(ruby: &Ruby, rb_self: &Self) -> Result<(), Error> {
+        let mut handle = rb_self.0.borrow_mut();
+        if let FileState::Writer(writer) = &mut handle.state {
+            writer.close().map_err(|err| format_io_error(ruby, err))?;
+            handle.state = FileState::Closed;
         }
-        *cell = FileState::Closed;
         Ok(())
     }
 
@@ -182,7 +197,8 @@ impl Io {
     /// Returns if streams are closed.
     /// @return [Boolean]
     fn is_closed(&self) -> Result<bool, Error> {
-        Ok(matches!(*self.0.borrow(), FileState::Closed))
+        let handle = self.0.borrow();
+        Ok(matches!(handle.state, FileState::Closed))
     }
 
     /// @yard
@@ -190,7 +206,8 @@ impl Io {
     /// Returns if the read stream is closed.
     /// @return [Boolean]
     fn is_closed_read(&self) -> Result<bool, Error> {
-        Ok(!matches!(*self.0.borrow(), FileState::Reader(_, _)))
+        let handle = self.0.borrow();
+        Ok(!matches!(handle.state, FileState::Reader(_)))
     }
 
     /// @yard
@@ -198,39 +215,67 @@ impl Io {
     /// Returns if the write stream is closed.
     /// @return [Boolean]
     fn is_closed_write(&self) -> Result<bool, Error> {
-        Ok(!matches!(*self.0.borrow(), FileState::Writer(_, _)))
+        let handle = self.0.borrow();
+        Ok(!matches!(handle.state, FileState::Writer(_)))
     }
 }
 
 impl Io {
     /// Reads data from the stream.
     /// TODO:
-    ///   - support default parameters
     ///   - support encoding
     ///
-    /// @param size The maximum number of bytes to read. Reads all data if `None`.
-    fn read(ruby: &Ruby, rb_self: &Self, size: Option<usize>) -> Result<bytes::Bytes, Error> {
-        // FIXME: consider what to return exactly
-        if let FileState::Reader(reader, _) = &mut *rb_self.0.borrow_mut() {
-            let buffer = match size {
+    /// @param size [Integer, nil] The maximum number of bytes to read. Reads all data when not provided.
+    /// @param buffer [String, nil] The output buffer to append to.
+    fn read(ruby: &Ruby, rb_self: &Self, args: &[Value]) -> Result<Option<bytes::Bytes>, Error> {
+        let args = scan_args::<(), (Option<Option<i64>>, Option<RString>), (), (), (), ()>(args)?;
+        let (option_size, mut option_output_buffer) = args.optional;
+        let size = option_size.unwrap_or_default(); // allow nil
+
+        let mut handle = rb_self.0.borrow_mut();
+
+        if let FileState::Reader(reader) = &mut handle.state {
+            let buffer: Option<bytes::Bytes> = match size {
                 Some(size) => {
-                    let mut bs = vec![0; size];
-                    let n = reader.read(&mut bs).map_err(format_io_error)?;
-                    bs.truncate(n);
-                    bs
+                    if size <= 0 {
+                        return Err(Error::new(
+                            ruby.exception_arg_error(),
+                            format!("negative length {} given", size),
+                        ));
+                    }
+                    let mut bs = vec![0; size as usize];
+                    let n = reader
+                        .read(&mut bs)
+                        .map_err(|err| format_io_error(ruby, err))?;
+                    if n == 0 && size > 0 {
+                        // when called at end of file, read(positive_integer) returns nil.
+                        None
+                    } else {
+                        bs.truncate(n);
+                        Some(bs.into())
+                    }
                 }
                 None => {
                     let mut buffer = Vec::new();
-                    reader.read_to_end(&mut buffer).map_err(format_io_error)?;
-                    buffer
+                    reader
+                        .read_to_end(&mut buffer)
+                        .map_err(|err| format_io_error(ruby, err))?;
+                    Some(buffer.into())
                 }
             };
 
-            Ok(buffer.into())
+            // when provided the buffer parameter, append read buffer
+            if let (Some(output_buffer), Some(inner)) =
+                (option_output_buffer.as_mut(), buffer.as_ref())
+            {
+                output_buffer.cat(inner);
+            }
+
+            Ok(buffer)
         } else {
             Err(Error::new(
                 ruby.exception_runtime_error(),
-                "I/O operation failed for reading on closed file.",
+                "I/O operation failed for reading on write-only file.",
             ))
         }
     }
@@ -241,9 +286,13 @@ impl Io {
     /// @return [String]
     // TODO: extend readline with parameters
     fn readline(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
-        if let FileState::Reader(reader, _) = &mut *rb_self.0.borrow_mut() {
+        let mut handle = rb_self.0.borrow_mut();
+
+        if let FileState::Reader(reader) = &mut handle.state {
             let mut buffer = String::new();
-            let size = reader.read_line(&mut buffer).map_err(format_io_error)?;
+            let size = reader
+                .read_line(&mut buffer)
+                .map_err(|err| format_io_error(ruby, err))?;
             if size == 0 {
                 return Err(Error::new(
                     ruby.exception_eof_error(),
@@ -255,7 +304,7 @@ impl Io {
         } else {
             Err(Error::new(
                 ruby.exception_runtime_error(),
-                "I/O operation failed for reading on closed file.",
+                "I/O operation failed for reading on write-only file.",
             ))
         }
     }
@@ -266,15 +315,18 @@ impl Io {
     /// @param buffer [String]
     /// @return [Integer] the written byte size
     fn write(ruby: &Ruby, rb_self: &Self, bs: String) -> Result<usize, Error> {
-        if let FileState::Writer(writer, _) = &mut *rb_self.0.borrow_mut() {
-            Ok(writer
+        let mut handle = rb_self.0.borrow_mut();
+
+        if let FileState::Writer(writer) = &mut handle.state {
+            let bytes_written = bs.len();
+            writer
                 .write_all(bs.as_bytes())
-                .map(|_| bs.len())
-                .map_err(format_io_error)?)
+                .map_err(|err| format_io_error(ruby, err))?;
+            Ok(bytes_written)
         } else {
             Err(Error::new(
                 ruby.exception_runtime_error(),
-                "I/O operation failed for reading on write only file.",
+                "I/O operation failed for writing on read-only file.",
             ))
         }
     }
@@ -289,49 +341,83 @@ impl Io {
     ///   - 0 = IO:SEEK_SET (Start)
     ///   - 1 = IO:SEEK_CUR (Current position)
     ///   - 2 = IO:SEEK_END (From the end)
-    ///     @return [Integer] always 0 if the seek operation is successful
+    ///
+    /// @return [Integer] always 0 if the seek operation is successful
     fn seek(ruby: &Ruby, rb_self: &Self, offset: i64, whence: u8) -> Result<u8, Error> {
-        match &mut *rb_self.0.borrow_mut() {
-            FileState::Reader(reader, _) => {
-                let whence = match whence {
-                    0 => SeekFrom::Start(offset as u64),
-                    1 => SeekFrom::Current(offset),
-                    2 => SeekFrom::End(offset),
-                    _ => return Err(Error::new(ruby.exception_arg_error(), "invalid whence")),
-                };
+        let mut handle = rb_self.0.borrow_mut();
 
-                reader.seek(whence).map_err(format_io_error)?;
+        if let FileState::Reader(reader) = &mut handle.state {
+            // Calculate the new position first
+            let new_reader_position = match whence {
+                0 => {
+                    // SEEK_SET - absolute position
+                    if offset < 0 {
+                        return Err(Error::new(
+                            ruby.exception_runtime_error(),
+                            "Cannot seek to negative reader_position.",
+                        ));
+                    }
+                    offset as u64
+                }
+                1 => {
+                    // SEEK_CUR - relative to current position
+                    let position = reader
+                        .stream_position()
+                        .map_err(|err| format_io_error(ruby, err))?;
+                    if offset < 0 && (-offset as u64) > position {
+                        return Err(Error::new(
+                            ruby.exception_runtime_error(),
+                            "Cannot seek before start of stream.",
+                        ));
+                    }
+                    (position as i64 + offset) as u64
+                }
+                2 => {
+                    // SEEK_END
+                    let end_pos = reader
+                        .seek(SeekFrom::End(0))
+                        .map_err(|err| format_io_error(ruby, err))?;
+                    if offset < 0 && (-offset as u64) > end_pos {
+                        return Err(Error::new(
+                            ruby.exception_runtime_error(),
+                            "Cannot seek before start of stream.",
+                        ));
+                    }
+                    (end_pos as i64 + offset) as u64
+                }
+                _ => return Err(Error::new(ruby.exception_arg_error(), "invalid whence")),
+            };
 
-                Ok(0)
-            }
-            FileState::Writer(_, _) => Err(Error::new(
+            let _ = reader.seek(std::io::SeekFrom::Start(new_reader_position));
+        } else {
+            return Err(Error::new(
                 ruby.exception_runtime_error(),
-                "I/O operation failed for reading on write only file.",
-            )),
-            FileState::Closed => Err(Error::new(
-                ruby.exception_runtime_error(),
-                "I/O operation failed for reading on closed file.",
-            )),
+                "Cannot seek from end on write-only stream.",
+            ));
         }
+
+        Ok(0)
     }
 
     /// @yard
     /// @def tell
-    /// Returns the current position of the file pointer in the stream.
-    /// @return [Integer] the current position in bytes
+    /// Returns the current reader_position of the file pointer in the stream.
+    /// @return [Integer] the current reader_position in bytes
     /// @raise [IOError] when cannot operate on the operation mode
     fn tell(ruby: &Ruby, rb_self: &Self) -> Result<u64, Error> {
-        match &mut *rb_self.0.borrow_mut() {
-            FileState::Reader(reader, _) => {
-                Ok(reader.stream_position().map_err(format_io_error)?)
-            }
-            FileState::Writer(_, _) => Err(Error::new(
+        let mut handle = rb_self.0.borrow_mut();
+
+        match &mut handle.state {
+            FileState::Reader(reader) => Ok(reader
+                .stream_position()
+                .map_err(|err| format_io_error(ruby, err))?),
+            FileState::Writer(_) => Err(Error::new(
                 ruby.exception_runtime_error(),
                 "I/O operation failed for reading on write only file.",
             )),
             FileState::Closed => Err(Error::new(
                 ruby.exception_runtime_error(),
-                "I/O operation failed for reading on closed file.",
+                "I/O operation failed for tell on closed stream.",
             )),
         }
     }
@@ -345,10 +431,10 @@ impl Io {
     // - puts
 }
 
-/// Defines the `OpenDAL::IO` class in the given Ruby module and binds its methods.
+/// Defines the `OpenDal::IO` class in the given Ruby module and binds its methods.
 ///
 /// This function uses Magnus's built-in Ruby thread-safety features to define the
-/// `OpenDAL::IO` class and its methods in the provided Ruby module (`gem_module`).
+/// `OpenDal::IO` class and its methods in the provided Ruby module (`gem_module`).
 ///
 /// # Ruby Object Lifetime and Safety
 ///
@@ -357,8 +443,8 @@ impl Io {
 /// automatically track such objects. Therefore, it is critical to work within Magnus's safety
 /// guidelines when integrating Rust objects with Ruby. Read more in the Magnus documentation:
 /// [Magnus Safety Documentation](https://github.com/matsadler/magnus#safety).
-pub fn include(gem_module: &RModule) -> Result<(), Error> {
-    let class = gem_module.define_class("IO", class::object())?;
+pub fn include(ruby: &Ruby, gem_module: &RModule) -> Result<(), Error> {
+    let class = gem_module.define_class("IO", ruby.class_object())?;
     class.define_method("binmode", method!(Io::binary_mode, 0))?;
     class.define_method("binmode?", method!(Io::is_binary_mode, 0))?;
     class.define_method("close", method!(Io::close, 0))?;
@@ -367,7 +453,7 @@ pub fn include(gem_module: &RModule) -> Result<(), Error> {
     class.define_method("closed?", method!(Io::is_closed, 0))?;
     class.define_method("closed_read?", method!(Io::is_closed_read, 0))?;
     class.define_method("closed_write?", method!(Io::is_closed_write, 0))?;
-    class.define_method("read", method!(Io::read, 1))?;
+    class.define_method("read", method!(Io::read, -1))?;
     class.define_method("write", method!(Io::write, 1))?;
     class.define_method("readline", method!(Io::readline, 0))?;
     class.define_method("seek", method!(Io::seek, 2))?;
