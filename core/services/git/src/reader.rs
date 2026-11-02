@@ -226,10 +226,11 @@ impl oio::ReadStream for LfsRangeStream {
 impl oio::StreamRead for GitReader {
     async fn open(&self, range: BytesRange) -> Result<(RpRead, Box<dyn oio::ReadStreamDyn>)> {
         let content = self.read_blob().await?;
-        if self.core.resolve_lfs() && GitCore::is_lfs_pointer(&content) {
-            if let Ok(pointer) = GitCore::parse_lfs_pointer(&content) {
-                return self.open_lfs(range, &pointer).await;
-            }
+        if self.core.resolve_lfs()
+            && GitCore::is_lfs_pointer(&content)
+            && let Ok(pointer) = GitCore::parse_lfs_pointer(&content)
+        {
+            return self.open_lfs(range, &pointer).await;
         }
 
         let (rp, body) = GitCore::slice_blob(content, range)?;

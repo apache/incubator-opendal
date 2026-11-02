@@ -146,7 +146,11 @@ impl GitCore {
             prepare = prepare.configure_connection(
                 move |conn| -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     if let (Some(username), Some(password)) = (username.clone(), password.clone()) {
-                        conn.set_credentials(move |action| match action {
+                        #[expect(
+                            clippy::result_large_err,
+                            reason = "gix fixes the credential callback's error type"
+                        )]
+                        let credentials = move |action| match action {
                             gix::credentials::helper::Action::Get(ctx) => {
                                 Ok(Some(gix::credentials::protocol::Outcome {
                                     identity: gix::sec::identity::Account {
@@ -158,7 +162,8 @@ impl GitCore {
                                 }))
                             }
                             _ => Ok(None),
-                        });
+                        };
+                        conn.set_credentials(credentials);
                     }
                     Ok(())
                 },
@@ -277,10 +282,11 @@ impl GitCore {
             .try_into_blob()
             .map_err(|_| Error::new(ErrorKind::Unsupported, "git entry is not a blob"))?;
         let mut size = blob.data.len() as u64;
-        if self.resolve_lfs && Self::is_lfs_pointer(&blob.data) {
-            if let Ok(pointer) = Self::parse_lfs_pointer(&blob.data) {
-                size = pointer.size;
-            }
+        if self.resolve_lfs
+            && Self::is_lfs_pointer(&blob.data)
+            && let Ok(pointer) = Self::parse_lfs_pointer(&blob.data)
+        {
+            size = pointer.size;
         }
 
         Ok((size, false, commit_time))
@@ -336,10 +342,11 @@ impl GitCore {
                 .try_into_blob()
                 .map_err(|_| Error::new(ErrorKind::Unsupported, "git entry is not a blob"))?;
             let mut size = blob.data.len() as u64;
-            if self.resolve_lfs && Self::is_lfs_pointer(&blob.data) {
-                if let Ok(pointer) = Self::parse_lfs_pointer(&blob.data) {
-                    size = pointer.size;
-                }
+            if self.resolve_lfs
+                && Self::is_lfs_pointer(&blob.data)
+                && let Ok(pointer) = Self::parse_lfs_pointer(&blob.data)
+            {
+                size = pointer.size;
             }
             entries.push((name, false, size, commit_time));
         }
@@ -626,12 +633,11 @@ impl GitCore {
 
     pub(super) fn action_headers(&self, action: &LfsAction) -> HeaderMap {
         let mut headers = action.headers.clone();
-        if !headers.contains_key(header::AUTHORIZATION) {
-            if let Some(auth) = self.basic_authorization_for(&action.url) {
-                if let Ok(value) = HeaderValue::from_str(&auth) {
-                    headers.insert(header::AUTHORIZATION, value);
-                }
-            }
+        if !headers.contains_key(header::AUTHORIZATION)
+            && let Some(auth) = self.basic_authorization_for(&action.url)
+            && let Ok(value) = HeaderValue::from_str(&auth)
+        {
+            headers.insert(header::AUTHORIZATION, value);
         }
         headers
     }
@@ -654,18 +660,18 @@ fn compute_reuse_until(
     now_system: SystemTime,
 ) -> Instant {
     let mut advertised = expires_in.map(Duration::from_secs);
-    if let Some(expires_at) = expires_at {
-        if let Ok(timestamp) = expires_at.parse::<Timestamp>() {
-            let expires_at: SystemTime = timestamp.into();
-            let duration = expires_at
-                .duration_since(now_system)
-                .unwrap_or(Duration::ZERO);
-            advertised = Some(
-                advertised
-                    .map(|current| current.min(duration))
-                    .unwrap_or(duration),
-            );
-        }
+    if let Some(expires_at) = expires_at
+        && let Ok(timestamp) = expires_at.parse::<Timestamp>()
+    {
+        let expires_at: SystemTime = timestamp.into();
+        let duration = expires_at
+            .duration_since(now_system)
+            .unwrap_or(Duration::ZERO);
+        advertised = Some(
+            advertised
+                .map(|current| current.min(duration))
+                .unwrap_or(duration),
+        );
     }
 
     let lifetime = advertised
