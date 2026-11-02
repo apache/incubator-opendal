@@ -22,6 +22,7 @@ package org.apache.opendal;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.Arrays;
+import java.util.Objects;
 
 public class OperatorOutputStream extends OutputStream {
     private static class Writer extends NativeObject {
@@ -47,7 +48,13 @@ public class OperatorOutputStream extends OutputStream {
         this(operator, path, DEFAULT_MAX_BYTES, options);
     }
 
+    /**
+     * @throws IllegalArgumentException if maxBytes is not positive
+     */
     public OperatorOutputStream(Operator operator, String path, int maxBytes, WriteOptions options) {
+        if (maxBytes <= 0) {
+            throw new IllegalArgumentException("maxBytes must be positive");
+        }
         final long op = operator.nativeHandle;
         this.writer = new Writer(constructWriter(op, path, options));
         this.maxBytes = maxBytes;
@@ -61,6 +68,24 @@ public class OperatorOutputStream extends OutputStream {
             return;
         }
         flush();
+    }
+
+    @Override
+    public void write(byte[] b, int off, int len) throws IOException {
+        Objects.requireNonNull(b);
+        if (off < 0 || len < 0 || off > b.length - len) {
+            throw new IndexOutOfBoundsException();
+        }
+        while (len > 0) {
+            final int count = Math.min(len, maxBytes - offset);
+            System.arraycopy(b, off, bytes, offset, count);
+            offset += count;
+            off += count;
+            len -= count;
+            if (offset == maxBytes) {
+                flush();
+            }
+        }
     }
 
     @Override
