@@ -3446,7 +3446,9 @@ public interface ServiceConfig {
                 map.put("server_side_encryption_aws_kms_key_id", serverSideEncryptionAwsKmsKeyId);
             }
             if (serverSideEncryptionBucketKeyEnabled != null) {
-                map.put("server_side_encryption_bucket_key_enabled", String.valueOf(serverSideEncryptionBucketKeyEnabled));
+                map.put(
+                        "server_side_encryption_bucket_key_enabled",
+                        String.valueOf(serverSideEncryptionBucketKeyEnabled));
             }
             if (serverSideEncryptionCustomerAlgorithm != null) {
                 map.put("server_side_encryption_customer_algorithm", serverSideEncryptionCustomerAlgorithm);
