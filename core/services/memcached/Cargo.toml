@@ -37,7 +37,10 @@ opendal-core = { path = "../../core", version = "0.59.5", default-features = fal
 rustls-native-certs = "0.8"
 serde = { workspace = true, features = ["derive"] }
 tokio = { workspace = true, features = ["io-util", "macros", "net", "time"] }
-tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = [
+  "ring",
+  "tls12",
+] }
 url = { workspace = true }
 
 [dev-dependencies]
