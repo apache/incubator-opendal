@@ -21,21 +21,27 @@ use http::StatusCode;
 use opendal_core::raw::*;
 use opendal_core::*;
 
-use super::core::UpyunCore;
 use super::core::constants::X_UPYUN_MULTI_UUID;
-use super::error::parse_error;
+use super::core::parse_error;
+use super::core::{ErrorContext, UpyunCore};
 
 pub type UpyunWriters = oio::MultipartWriter<UpyunWriter>;
 
 pub struct UpyunWriter {
     core: Arc<UpyunCore>,
+    ctx: OperationContext,
     op: OpWrite,
     path: String,
 }
 
 impl UpyunWriter {
-    pub fn new(core: Arc<UpyunCore>, op: OpWrite, path: String) -> Self {
-        UpyunWriter { core, op, path }
+    pub fn new(core: Arc<UpyunCore>, ctx: OperationContext, op: OpWrite, path: String) -> Self {
+        UpyunWriter {
+            core,
+            ctx,
+            op,
+            path,
+        }
     }
 }
 
@@ -43,20 +49,23 @@ impl oio::MultipartWrite for UpyunWriter {
     async fn write_once(&self, size: u64, body: Buffer) -> Result<Metadata> {
         let req = self.core.upload(&self.path, Some(size), &self.op, body)?;
 
-        let resp = self.core.send(req).await?;
+        let resp = self.core.send(&self.ctx, req).await?;
 
         let status = resp.status();
 
         match status {
-            StatusCode::OK => Ok(Metadata::default()),
-            _ => Err(parse_error(resp)),
+            StatusCode::OK => Ok(MetadataBuilder::unknown().build()),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("UploadFile")),
+                resp,
+            )),
         }
     }
 
     async fn initiate_part(&self) -> Result<String> {
         let resp = self
             .core
-            .initiate_multipart_upload(&self.path, &self.op)
+            .initiate_multipart_upload(&self.ctx, &self.path, &self.op)
             .await?;
 
         let status = resp.status();
@@ -71,7 +80,10 @@ impl oio::MultipartWrite for UpyunWriter {
 
                 Ok(id.to_string())
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("InitiateMultipartUpload")),
+                resp,
+            )),
         }
     }
 
@@ -86,7 +98,7 @@ impl oio::MultipartWrite for UpyunWriter {
             .core
             .upload_part(&self.path, upload_id, part_number, size, body)?;
 
-        let resp = self.core.send(req).await?;
+        let resp = self.core.send(&self.ctx, req).await?;
 
         let status = resp.status();
 
@@ -95,8 +107,12 @@ impl oio::MultipartWrite for UpyunWriter {
                 part_number,
                 etag: "".to_string(),
                 checksum: None,
+                size: None,
             }),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("UploadPart")),
+                resp,
+            )),
         }
     }
 
@@ -107,14 +123,17 @@ impl oio::MultipartWrite for UpyunWriter {
     ) -> Result<Metadata> {
         let resp = self
             .core
-            .complete_multipart_upload(&self.path, upload_id)
+            .complete_multipart_upload(&self.ctx, &self.path, upload_id)
             .await?;
 
         let status = resp.status();
 
         match status {
-            StatusCode::NO_CONTENT => Ok(Metadata::default()),
-            _ => Err(parse_error(resp)),
+            StatusCode::NO_CONTENT => Ok(MetadataBuilder::unknown().build()),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("CompleteMultipartUpload")),
+                resp,
+            )),
         }
     }
 

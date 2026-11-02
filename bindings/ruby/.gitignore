@@ -9,6 +9,5 @@
 *.bundle
 *.so
 Gemfile.lock
-Cargo.lock
 
 /core/

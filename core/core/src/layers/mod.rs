@@ -15,10 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! `Layer` is the mechanism to intercept operations.
-
-mod type_eraser;
-pub(crate) use type_eraser::TypeEraseLayer;
+//! Core layers used by `opendal-core`.
+//!
+//! A [`crate::raw::Layer`] wraps an access implementation to intercept or adjust
+//! operations. Optional reusable layers such as retry, timeout, logging, and
+//! metrics live in `opendal-layer-*` crates and are re-exported by the
+//! `opendal` facade behind `layers-*` Cargo features.
 
 mod error_context;
 pub(crate) use error_context::ErrorContextLayer;
@@ -29,8 +31,8 @@ pub(crate) use complete::CompleteLayer;
 mod simulate;
 pub use simulate::SimulateLayer;
 
+mod capability_override;
+pub use capability_override::CapabilityOverrideLayer;
+
 mod correctness_check;
 pub(crate) use correctness_check::CorrectnessCheckLayer;
-
-mod http_client;
-pub use http_client::HttpClientLayer;

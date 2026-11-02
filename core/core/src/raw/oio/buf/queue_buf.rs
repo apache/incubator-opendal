@@ -24,8 +24,10 @@ use crate::*;
 
 /// QueueBuf is a queue of [`Buffer`].
 ///
-/// It's designed to allow storing multiple buffers without copying underlying bytes and consume them
-/// in order.
+/// QueueBuf allows:
+///
+/// - Storing multiple buffers without copying bytes.
+/// - Consuming buffers in order.
 ///
 /// QueueBuf mainly provides the following operations:
 ///

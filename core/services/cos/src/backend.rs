@@ -18,28 +18,30 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use http::Response;
+use bytes::Buf;
 use http::StatusCode;
 use http::Uri;
 use log::debug;
-use reqsign::TencentCosConfig;
-use reqsign::TencentCosCredentialLoader;
-use reqsign::TencentCosSigner;
+use reqsign_core::Context;
+use reqsign_core::OsEnv;
+use reqsign_core::Signer;
+use reqsign_file_read_tokio::TokioFileRead;
+use reqsign_tencent_cos::DefaultCredentialProvider;
+use reqsign_tencent_cos::RequestSigner;
+use reqsign_tencent_cos::StaticCredentialProvider;
 
 use super::COS_SCHEME;
 use super::config::CosConfig;
+use super::core::parse_error;
 use super::core::*;
 use super::deleter::CosDeleter;
-use super::error::parse_error;
 use super::lister::CosLister;
 use super::lister::CosListers;
 use super::lister::CosObjectVersionsLister;
+use super::reader::*;
 use super::writer::CosWriter;
 use super::writer::CosWriters;
 use opendal_core::raw::*;
-use std::sync::LazyLock;
-
-static GLOBAL_REQWEST_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(reqwest::Client::new);
 use opendal_core::*;
 
 /// Tencent-Cloud COS services support.
@@ -108,6 +110,29 @@ impl CosBuilder {
         self
     }
 
+    /// Set security_token (a.k.a. session token) of this backend.
+    ///
+    /// This is used when authenticating via Tencent Cloud STS temporary
+    /// credentials (e.g. obtained from `GetFederationToken` or
+    /// `AssumeRole`). When provided, it will be combined with `secret_id`
+    /// and `secret_key` to sign requests, and the `x-cos-security-token`
+    /// header will be attached automatically.
+    ///
+    /// - If this is set along with `secret_id` and `secret_key`, a static
+    ///   credential provider with the token will be used.
+    /// - If this is not set, the default credential chain in reqsign will
+    ///   try to load credentials (including the token) from environment
+    ///   variables such as `TENCENTCLOUD_TOKEN`,
+    ///   `TENCENTCLOUD_SECURITY_TOKEN`, and `QCLOUD_SECRET_TOKEN`
+    ///   (unless `disable_config_load` is enabled).
+    pub fn security_token(mut self, security_token: &str) -> Self {
+        if !security_token.is_empty() {
+            self.config.security_token = Some(security_token.to_string());
+        }
+
+        self
+    }
+
     /// Set bucket of this backend.
     /// The param is required.
     pub fn bucket(mut self, bucket: &str) -> Self {
@@ -118,10 +143,12 @@ impl CosBuilder {
         self
     }
 
-    /// Set bucket versioning status for this backend
-    pub fn enable_versioning(mut self, enabled: bool) -> Self {
-        self.config.enable_versioning = enabled;
-
+    /// Deprecated: COS versioning capability is enabled by default.
+    #[deprecated(
+        since = "0.57.0",
+        note = "COS versioning capability is enabled by default and this option is no longer needed."
+    )]
+    pub fn enable_versioning(self, _enabled: bool) -> Self {
         self
     }
 
@@ -140,8 +167,8 @@ impl CosBuilder {
 impl Builder for CosBuilder {
     type Config = CosConfig;
 
-    fn build(self) -> Result<impl Access> {
-        debug!("backend build started: {:?}", &self);
+    fn build(self) -> Result<impl Service> {
+        debug!("backend build started: {:?}", self);
 
         let root = normalize_root(&self.config.root.unwrap_or_default());
         debug!("backend use root {root}");
@@ -153,7 +180,7 @@ impl Builder for CosBuilder {
                     .with_context("service", COS_SCHEME),
             ),
         }?;
-        debug!("backend use bucket {}", &bucket);
+        debug!("backend use bucket {}", bucket);
 
         let uri = match &self.config.endpoint {
             Some(endpoint) => endpoint.parse::<Uri>().map_err(|err| {
@@ -166,101 +193,107 @@ impl Builder for CosBuilder {
                 .with_context("service", COS_SCHEME)),
         }?;
 
-        let scheme = match uri.scheme_str() {
-            Some(scheme) => scheme.to_string(),
-            None => "https".to_string(),
+        let endpoint = build_endpoint(&uri, &bucket)?;
+        debug!("backend use endpoint {}", endpoint);
+
+        let os_env = OsEnv;
+        let ctx = Context::new()
+            .with_file_read(TokioFileRead)
+            .with_env(os_env);
+
+        let mut credential = if self.config.disable_config_load {
+            DefaultCredentialProvider::builder()
+                .no_env()
+                .no_web_identity()
+                .build()
+        } else {
+            DefaultCredentialProvider::new()
         };
 
-        // If endpoint contains bucket name, we should trim them.
-        let endpoint = uri.host().unwrap().replace(&format!("//{bucket}."), "//");
-        debug!("backend use endpoint {}", &endpoint);
+        if let (Some(secret_id), Some(secret_key)) = (
+            self.config.secret_id.as_deref(),
+            self.config.secret_key.as_deref(),
+        ) {
+            let static_provider = if let Some(token) = self.config.security_token.as_deref() {
+                StaticCredentialProvider::with_security_token(secret_id, secret_key, token)
+            } else {
+                StaticCredentialProvider::new(secret_id, secret_key)
+            };
 
-        let mut cfg = TencentCosConfig::default();
-        if !self.config.disable_config_load {
-            cfg = cfg.from_env();
+            credential = credential.push_front(static_provider);
         }
 
-        if let Some(v) = self.config.secret_id {
-            cfg.secret_id = Some(v);
-        }
-        if let Some(v) = self.config.secret_key {
-            cfg.secret_key = Some(v);
-        }
+        let signer = Signer::new(ctx, credential, RequestSigner::new());
 
-        let cred_loader = TencentCosCredentialLoader::new(GLOBAL_REQWEST_CLIENT.clone(), cfg);
+        let info = ServiceInfo::new(COS_SCHEME, &root, &bucket);
+        let capability = Capability {
+            stat: true,
+            stat_with_if_match: true,
+            stat_with_if_none_match: true,
+            stat_with_version: true,
 
-        let signer = TencentCosSigner::new();
+            read: true,
+            read_with_suffix: true,
+
+            read_with_if_match: true,
+            read_with_if_none_match: true,
+            read_with_if_modified_since: true,
+            read_with_if_unmodified_since: true,
+            read_with_version: true,
+
+            write: true,
+            write_can_empty: true,
+            write_can_append: true,
+            write_can_multi: true,
+            write_with_content_type: true,
+            write_with_cache_control: true,
+            write_with_content_disposition: true,
+            write_with_if_not_exists: true,
+            copy_with_if_not_exists: true,
+            copy_with_source_version: true,
+            restore: true,
+            restore_with_version: true,
+            // The min multipart size of COS is 1 MiB.
+            //
+            // ref: <https://www.tencentcloud.com/document/product/436/14112>
+            write_multi_min_size: Some(1024 * 1024),
+            // The max multipart size of COS is 5 GiB.
+            //
+            // ref: <https://www.tencentcloud.com/document/product/436/14112>
+            write_multi_max_size: if cfg!(target_pointer_width = "64") {
+                Some(5 * 1024 * 1024 * 1024)
+            } else {
+                Some(usize::MAX)
+            },
+            write_with_user_metadata: true,
+
+            delete: true,
+            delete_with_version: true,
+            copy: true,
+
+            list: true,
+            list_with_recursive: true,
+            list_with_versions: true,
+            list_with_deleted: true,
+
+            presign: true,
+            presign_stat: true,
+            presign_read: true,
+            presign_write: true,
+
+            shared: true,
+
+            ..Default::default()
+        };
 
         Ok(CosBackend {
             core: Arc::new(CosCore {
-                info: {
-                    let am = AccessorInfo::default();
-                    am.set_scheme(COS_SCHEME)
-                        .set_root(&root)
-                        .set_name(&bucket)
-                        .set_native_capability(Capability {
-                            stat: true,
-                            stat_with_if_match: true,
-                            stat_with_if_none_match: true,
-                            stat_with_version: self.config.enable_versioning,
-
-                            read: true,
-
-                            read_with_if_match: true,
-                            read_with_if_none_match: true,
-                            read_with_if_modified_since: true,
-                            read_with_if_unmodified_since: true,
-                            read_with_version: self.config.enable_versioning,
-
-                            write: true,
-                            write_can_empty: true,
-                            write_can_append: true,
-                            write_can_multi: true,
-                            write_with_content_type: true,
-                            write_with_cache_control: true,
-                            write_with_content_disposition: true,
-                            // Cos doesn't support forbid overwrite while version has been enabled.
-                            write_with_if_not_exists: !self.config.enable_versioning,
-                            // The min multipart size of COS is 1 MiB.
-                            //
-                            // ref: <https://www.tencentcloud.com/document/product/436/14112>
-                            write_multi_min_size: Some(1024 * 1024),
-                            // The max multipart size of COS is 5 GiB.
-                            //
-                            // ref: <https://www.tencentcloud.com/document/product/436/14112>
-                            write_multi_max_size: if cfg!(target_pointer_width = "64") {
-                                Some(5 * 1024 * 1024 * 1024)
-                            } else {
-                                Some(usize::MAX)
-                            },
-                            write_with_user_metadata: true,
-
-                            delete: true,
-                            delete_with_version: self.config.enable_versioning,
-                            copy: true,
-
-                            list: true,
-                            list_with_recursive: true,
-                            list_with_versions: self.config.enable_versioning,
-                            list_with_deleted: self.config.enable_versioning,
-
-                            presign: true,
-                            presign_stat: true,
-                            presign_read: true,
-                            presign_write: true,
-
-                            shared: true,
-
-                            ..Default::default()
-                        });
-
-                    am.into()
-                },
+                info,
+                capability,
                 bucket: bucket.clone(),
                 root,
-                endpoint: format!("{}://{}.{}", &scheme, &bucket, &endpoint),
+                endpoint,
                 signer,
-                loader: cred_loader,
             }),
         })
     }
@@ -269,123 +302,303 @@ impl Builder for CosBuilder {
 /// Backend for Tencent-Cloud COS services.
 #[derive(Debug, Clone)]
 pub struct CosBackend {
-    core: Arc<CosCore>,
+    pub(crate) core: Arc<CosCore>,
 }
 
-impl Access for CosBackend {
-    type Reader = HttpBody;
+impl Service for CosBackend {
+    type Reader = oio::StreamReader<CosReader>;
     type Writer = CosWriters;
     type Lister = CosListers;
     type Deleter = oio::OneShotDeleter<CosDeleter>;
+    type Copier = oio::OneShotCopier;
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
+    fn info(&self) -> ServiceInfo {
         self.core.info.clone()
     }
 
-    async fn stat(&self, path: &str, args: OpStat) -> Result<RpStat> {
-        let resp = self.core.cos_head_object(path, &args).await?;
+    fn capability(&self) -> Capability {
+        self.core.capability
+    }
+
+    async fn create_dir(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn stat(&self, ctx: &OperationContext, path: &str, args: OpStat) -> Result<RpStat> {
+        let resp = self.core.cos_head_object(ctx, path, &args).await?;
 
         let status = resp.status();
 
         match status {
             StatusCode::OK => {
                 let headers = resp.headers();
-                let mut meta = parse_into_metadata(path, headers)?;
+                let mut meta = parse_into_metadata(path, headers)?.into_builder();
 
                 let user_meta = parse_prefixed_headers(headers, "x-cos-meta-");
                 if !user_meta.is_empty() {
-                    meta = meta.with_user_metadata(user_meta);
+                    meta.user_metadata(user_meta);
                 }
 
-                if let Some(v) = parse_header_to_str(headers, constants::X_COS_VERSION_ID)? {
-                    if v != "null" {
-                        meta.set_version(v);
-                    }
+                if let Some(v) = parse_header_to_str(headers, constants::X_COS_VERSION_ID)?
+                    && v != "null"
+                {
+                    meta.version(v);
                 }
 
-                Ok(RpStat::new(meta))
+                Ok(RpStat::new(meta.build()))
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("HeadObject"))
+                    .with_caller_condition(args.is_conditional()),
+                resp,
+            )),
         }
     }
-
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let resp = self.core.cos_get_object(path, args.range(), &args).await?;
-
-        let status = resp.status();
-
-        match status {
-            StatusCode::OK | StatusCode::PARTIAL_CONTENT => {
-                Ok((RpRead::default(), resp.into_body()))
-            }
-            _ => {
-                let (part, mut body) = resp.into_parts();
-                let buf = body.to_buffer().await?;
-                Err(parse_error(Response::from_parts(part, buf)))
-            }
-        }
-    }
-
-    async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        let writer = CosWriter::new(self.core.clone(), path, args.clone());
-
-        let w = if args.append() {
-            CosWriters::Two(oio::AppendWriter::new(writer))
-        } else {
-            CosWriters::One(oio::MultipartWriter::new(
-                self.core.info.clone(),
-                writer,
-                args.concurrent(),
-            ))
-        };
-
-        Ok((RpWrite::default(), w))
-    }
-
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        Ok((
-            RpDelete::default(),
-            oio::OneShotDeleter::new(CosDeleter::new(self.core.clone())),
-        ))
-    }
-
-    async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
-        let l = if args.versions() || args.deleted() {
-            TwoWays::Two(oio::PageLister::new(CosObjectVersionsLister::new(
-                self.core.clone(),
+    fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
+        let output: oio::StreamReader<CosReader> = {
+            Ok(oio::StreamReader::new(CosReader::new(
+                self.clone(),
+                ctx.clone(),
                 path,
                 args,
             )))
-        } else {
-            TwoWays::One(oio::PageLister::new(CosLister::new(
-                self.core.clone(),
-                path,
-                args.recursive(),
-                args.limit(),
-            )))
-        };
+        }?;
 
-        Ok((RpList::default(), l))
+        Ok(output)
     }
 
-    async fn copy(&self, from: &str, to: &str, _args: OpCopy) -> Result<RpCopy> {
-        let resp = self.core.cos_copy_object(from, to).await?;
+    fn write(&self, ctx: &OperationContext, path: &str, args: OpWrite) -> Result<Self::Writer> {
+        let output: CosWriters = {
+            let writer = CosWriter::new(self.core.clone(), ctx.clone(), path, args.clone());
 
-        let status = resp.status();
+            let w = if args.append() {
+                CosWriters::Two(oio::AppendWriter::new(writer))
+            } else {
+                CosWriters::One(oio::MultipartWriter::new(
+                    ctx.executor().clone(),
+                    writer,
+                    args.concurrent(),
+                ))
+            };
 
-        match status {
-            StatusCode::OK => Ok(RpCopy::default()),
-            _ => Err(parse_error(resp)),
+            Ok(w)
+        }?;
+
+        Ok(output)
+    }
+
+    fn delete(&self, ctx: &OperationContext) -> Result<Self::Deleter> {
+        let output: oio::OneShotDeleter<CosDeleter> = {
+            Ok(oio::OneShotDeleter::new(CosDeleter::new(
+                self.core.clone(),
+                ctx.clone(),
+            )))
+        }?;
+
+        Ok(output)
+    }
+
+    fn list(&self, ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
+        let output: CosListers = {
+            let l = if args.versions() || args.deleted() {
+                TwoWays::Two(oio::PageLister::new(CosObjectVersionsLister::new(
+                    self.core.clone(),
+                    ctx.clone(),
+                    path,
+                    args,
+                )))
+            } else {
+                TwoWays::One(oio::PageLister::new(CosLister::new(
+                    self.core.clone(),
+                    ctx.clone(),
+                    path,
+                    args.recursive(),
+                    args.limit(),
+                )))
+            };
+
+            Ok(l)
+        }?;
+
+        Ok(output)
+    }
+
+    fn copy(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpCopy,
+    ) -> Result<Self::Copier> {
+        let core = self.core.clone();
+        let ctx = ctx.clone();
+        let from = from.to_string();
+        let to = to.to_string();
+        Ok(oio::OneShotCopier::new(async move {
+            let source_size = match args.source_content_length_hint() {
+                Some(size) => size,
+                None => {
+                    let stat_args = options::StatOptions {
+                        version: args.source_version().map(str::to_owned),
+                        ..Default::default()
+                    }
+                    .into();
+                    let resp = core.cos_head_object(&ctx, &from, &stat_args).await?;
+                    match resp.status() {
+                        StatusCode::OK => {
+                            parse_into_metadata(&from, resp.headers())?.content_length()
+                        }
+                        _ => {
+                            return Err(parse_error(
+                                ErrorContext::new(ServiceOperation("HeadObject")),
+                                resp,
+                            ));
+                        }
+                    }
+                }
+            };
+            let resp = core.cos_copy_object(&ctx, &from, &to, &args).await?;
+
+            let status = resp.status();
+
+            match status {
+                StatusCode::OK => Ok(MetadataBuilder::file(source_size).build()),
+                _ => Err(parse_error(
+                    ErrorContext::new(ServiceOperation("CopyObject"))
+                        .with_if_not_exists(args.if_not_exists()),
+                    resp,
+                )),
+            }
+        }))
+    }
+
+    async fn rename(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpRename,
+    ) -> Result<RpRename> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn restore(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpRestore,
+    ) -> Result<RpRestore> {
+        if let Some(version) = args.version() {
+            let copy_args = OpCopy::from_options(
+                &self.capability(),
+                options::CopyOptions {
+                    source_version: Some(version.to_owned()),
+                    ..Default::default()
+                },
+            )?;
+            let resp = self
+                .core
+                .cos_copy_object(ctx, path, path, &copy_args)
+                .await?;
+            return match resp.status() {
+                StatusCode::OK => Ok(RpRestore::new()),
+                _ => Err(parse_error(
+                    ErrorContext::new(ServiceOperation("CopyObject")),
+                    resp,
+                )),
+            };
+        }
+
+        let resp = self
+            .core
+            .cos_list_object_versions(ctx, path, "", Some(1), "", "")
+            .await?;
+        if resp.status() != StatusCode::OK {
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListObjectVersions")),
+                resp,
+            ));
+        }
+
+        let output: ListObjectVersionsOutput =
+            quick_xml::de::from_reader(resp.into_body().reader())
+                .map_err(new_xml_deserialize_error)
+                .map_err(Error::set_temporary)?;
+        let abs_path = build_abs_path(&self.core.root, path);
+
+        if output
+            .version
+            .iter()
+            .any(|version| version.key == abs_path && version.is_latest)
+        {
+            return Ok(RpRestore::new());
+        }
+
+        let Some(marker) = output
+            .delete_marker
+            .into_iter()
+            .find(|marker| marker.key == abs_path && marker.is_latest)
+        else {
+            return Err(Error::new(
+                ErrorKind::NotFound,
+                "no live object or current delete marker exists",
+            ));
+        };
+
+        let delete_args = OpDelete::from_options(
+            &self.capability(),
+            options::DeleteOptions {
+                version: Some(marker.version_id),
+                ..Default::default()
+            },
+        )?;
+        let resp = self.core.cos_delete_object(ctx, path, &delete_args).await?;
+        match resp.status() {
+            StatusCode::NO_CONTENT => {
+                // COS can still list a marker after it was deleted. Only a
+                // deletion of an existing marker returns this response header.
+                if resp
+                    .headers()
+                    .get("x-cos-delete-marker")
+                    .is_some_and(|v| v == "true")
+                {
+                    Ok(RpRestore::new())
+                } else {
+                    Err(Error::new(
+                        ErrorKind::Unexpected,
+                        "the listed delete marker no longer exists; retry after the version listing updates",
+                    )
+                    .set_temporary())
+                }
+            }
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("DeleteObject")),
+                resp,
+            )),
         }
     }
 
-    async fn presign(&self, path: &str, args: OpPresign) -> Result<RpPresign> {
+    async fn presign(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpPresign,
+    ) -> Result<RpPresign> {
         let req = match args.operation() {
             PresignOperation::Stat(v) => self.core.cos_head_object_request(path, v),
-            PresignOperation::Read(v) => {
-                self.core
-                    .cos_get_object_request(path, BytesRange::default(), v)
-            }
+            PresignOperation::Read(range, v) => self.core.cos_get_object_request(path, *range, v),
             PresignOperation::Write(v) => {
                 self.core
                     .cos_put_object_request(path, None, v, Buffer::new())
@@ -399,8 +612,8 @@ impl Access for CosBackend {
                 "operation is not supported",
             )),
         };
-        let mut req = req?;
-        self.core.sign_query(&mut req, args.expire()).await?;
+        let req = req?;
+        let req = self.core.sign_query(ctx, req, args.expire()).await?;
 
         // We don't need this request anymore, consume it directly.
         let (parts, _) = req.into_parts();
@@ -410,5 +623,94 @@ impl Access for CosBackend {
             parts.uri,
             parts.headers,
         )))
+    }
+}
+
+/// Compose the request endpoint for a bucket, as `scheme://bucket.host[:port]`.
+///
+/// Extracted so it can be unit tested, mirroring `S3Builder::build_endpoint`.
+fn build_endpoint(uri: &Uri, bucket: &str) -> Result<String> {
+    let scheme = uri.scheme_str().unwrap_or("https");
+
+    let host = uri.host().ok_or_else(|| {
+        Error::new(ErrorKind::ConfigInvalid, "endpoint host is empty")
+            .with_context("service", COS_SCHEME)
+            .with_context("endpoint", uri.to_string())
+    })?;
+
+    // If the endpoint already carries the bucket as its leftmost label, don't add it twice.
+    let host = host.strip_prefix(&format!("{bucket}.")).unwrap_or(host);
+
+    // Keep the port. `Uri::host` omits it, so composing from the host alone silently sent every
+    // request to the scheme default.
+    Ok(match uri.port_u16() {
+        Some(port) => format!("{scheme}://{bucket}.{host}:{port}"),
+        None => format!("{scheme}://{bucket}.{host}"),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn endpoint_of(raw: &str, bucket: &str) -> String {
+        build_endpoint(&raw.parse::<Uri>().unwrap(), bucket).unwrap()
+    }
+
+    #[test]
+    fn build_endpoint_keeps_a_custom_port() {
+        assert_eq!(
+            endpoint_of(
+                "https://cos.internal.example.com:8443",
+                "examplebucket-1250000000"
+            ),
+            "https://examplebucket-1250000000.cos.internal.example.com:8443"
+        );
+    }
+
+    #[test]
+    fn build_endpoint_prefixes_the_bucket() {
+        assert_eq!(
+            endpoint_of(
+                "https://cos.ap-guangzhou.myqcloud.com",
+                "examplebucket-1250000000"
+            ),
+            "https://examplebucket-1250000000.cos.ap-guangzhou.myqcloud.com"
+        );
+    }
+
+    #[test]
+    fn build_endpoint_does_not_repeat_a_bucket_already_in_the_host() {
+        // The previous `replace("//{bucket}.", "//")` could never match, because Uri::host never
+        // contains "//", so this doubled the bucket label.
+        assert_eq!(
+            endpoint_of(
+                "https://examplebucket-1250000000.cos.ap-guangzhou.myqcloud.com",
+                "examplebucket-1250000000"
+            ),
+            "https://examplebucket-1250000000.cos.ap-guangzhou.myqcloud.com"
+        );
+    }
+
+    #[test]
+    fn build_endpoint_defaults_the_scheme_to_https() {
+        // A bare host parses with no scheme; "//host" parses with no host at all, which is why
+        // the missing-host case below is a real input rather than a contrived one.
+        assert_eq!(
+            endpoint_of("cos.ap-guangzhou.myqcloud.com", "b"),
+            "https://b.cos.ap-guangzhou.myqcloud.com"
+        );
+    }
+
+    #[test]
+    fn build_endpoint_reports_a_missing_host_instead_of_panicking() {
+        // Both of these parse to host = None. The previous code called .unwrap() on that.
+        for raw in ["/just/a/path", "//cos.ap-guangzhou.myqcloud.com"] {
+            let uri = raw.parse::<Uri>().unwrap();
+            assert!(
+                build_endpoint(&uri, "b").is_err(),
+                "expected an error for {raw}"
+            );
+        }
     }
 }

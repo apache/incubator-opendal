@@ -25,8 +25,7 @@ use super::config::HdfsConfig;
 use super::core::HdfsCore;
 use super::deleter::HdfsDeleter;
 use super::lister::HdfsLister;
-use super::reader::HdfsReader;
-use super::writer::HdfsWriter;
+use super::reader::*;
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -82,11 +81,12 @@ impl HdfsBuilder {
         self
     }
 
-    /// Enable append capacity of this backend.
-    ///
-    /// This should be disabled when HDFS runs in non-distributed mode.
-    pub fn enable_append(mut self, enable_append: bool) -> Self {
-        self.config.enable_append = enable_append;
+    /// Deprecated: HDFS append capability is enabled by default.
+    #[deprecated(
+        since = "0.57.0",
+        note = "HDFS append capability is enabled by default and this option is no longer needed."
+    )]
+    pub fn enable_append(self, _enable_append: bool) -> Self {
         self
     }
 
@@ -109,8 +109,8 @@ impl HdfsBuilder {
 impl Builder for HdfsBuilder {
     type Config = HdfsConfig;
 
-    fn build(self) -> Result<impl Access> {
-        debug!("backend build started: {:?}", &self);
+    fn build(self) -> Result<impl Service> {
+        debug!("backend build started: {:?}", self);
 
         let name_node = match &self.config.name_node {
             Some(v) => v,
@@ -134,53 +134,49 @@ impl Builder for HdfsBuilder {
         let client = builder.connect().map_err(new_std_io_error)?;
 
         // Create root dir if not exist.
-        if let Err(e) = client.metadata(&root) {
-            if e.kind() == io::ErrorKind::NotFound {
-                debug!("root {root} is not exist, creating now");
+        if let Err(e) = client.metadata(&root)
+            && e.kind() == io::ErrorKind::NotFound
+        {
+            debug!("root {root} is not exist, creating now");
 
-                client.create_dir(&root).map_err(new_std_io_error)?
-            }
+            client.create_dir(&root).map_err(new_std_io_error)?
         }
 
         let atomic_write_dir = self.config.atomic_write_dir;
 
         // If atomic write dir is not exist, we must create it.
-        if let Some(d) = &atomic_write_dir {
-            if let Err(e) = client.metadata(d) {
-                if e.kind() == io::ErrorKind::NotFound {
-                    client.create_dir(d).map_err(new_std_io_error)?
-                }
-            }
+        if let Some(d) = &atomic_write_dir
+            && let Err(e) = client.metadata(d)
+            && e.kind() == io::ErrorKind::NotFound
+        {
+            client.create_dir(d).map_err(new_std_io_error)?
         }
 
         Ok(HdfsBackend {
             core: Arc::new(HdfsCore {
-                info: {
-                    let am = AccessorInfo::default();
-                    am.set_scheme(HDFS_SCHEME)
-                        .set_root(&root)
-                        .set_native_capability(Capability {
-                            stat: true,
+                info: ServiceInfo::new(HDFS_SCHEME, &root, ""),
+                capability: Capability {
+                    stat: true,
 
-                            read: true,
+                    read: true,
 
-                            write: true,
-                            write_can_append: self.config.enable_append,
+                    write: true,
+                    write_can_append: true,
 
-                            create_dir: true,
-                            delete: true,
-                            delete_with_recursive: true,
+                    create_dir: true,
+                    delete: true,
+                    delete_with_recursive: true,
 
-                            list: true,
+                    list: true,
 
-                            rename: true,
+                    copy: true,
 
-                            shared: true,
+                    rename: true,
+                    rename_with_if_not_exists: true,
 
-                            ..Default::default()
-                        });
+                    shared: true,
 
-                    am.into()
+                    ..Default::default()
                 },
                 root,
                 atomic_write_dir,
@@ -193,74 +189,113 @@ impl Builder for HdfsBuilder {
 /// Backend for hdfs services.
 #[derive(Debug, Clone)]
 pub struct HdfsBackend {
-    core: Arc<HdfsCore>,
+    pub(crate) core: Arc<HdfsCore>,
 }
 
-impl Access for HdfsBackend {
-    type Reader = HdfsReader<hdrs::AsyncFile>;
-    type Writer = HdfsWriter<hdrs::AsyncFile>;
+impl Service for HdfsBackend {
+    type Reader = oio::PositionReader<HdfsReader>;
+    type Writer = HdfsLazyWriter;
     type Lister = Option<HdfsLister>;
     type Deleter = oio::OneShotDeleter<HdfsDeleter>;
+    type Copier = oio::OneShotCopier;
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
+    fn info(&self) -> ServiceInfo {
         self.core.info.clone()
     }
 
-    async fn create_dir(&self, path: &str, _: OpCreateDir) -> Result<RpCreateDir> {
+    fn capability(&self) -> Capability {
+        self.core.capability
+    }
+
+    async fn create_dir(
+        &self,
+        _ctx: &OperationContext,
+        path: &str,
+        _: OpCreateDir,
+    ) -> Result<RpCreateDir> {
         self.core.hdfs_create_dir(path)?;
         Ok(RpCreateDir::default())
     }
 
-    async fn stat(&self, path: &str, _: OpStat) -> Result<RpStat> {
+    async fn stat(&self, _ctx: &OperationContext, path: &str, _: OpStat) -> Result<RpStat> {
         let m = self.core.hdfs_stat(path)?;
         Ok(RpStat::new(m))
     }
-
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let f = self.core.hdfs_read(path, &args).await?;
-
-        Ok((
-            RpRead::new(),
-            HdfsReader::new(f, args.range().size().unwrap_or(u64::MAX) as _),
-        ))
+    fn read(&self, _ctx: &OperationContext, path: &str, _: OpRead) -> Result<Self::Reader> {
+        Ok(oio::PositionReader::new(HdfsReader::new(
+            self.core.clone(),
+            path,
+        )))
     }
 
-    async fn write(&self, path: &str, op: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        let (target_path, tmp_path, f, target_exists, initial_size) =
-            self.core.hdfs_write(path, &op).await?;
-
-        Ok((
-            RpWrite::new(),
-            HdfsWriter::new(
-                target_path,
-                tmp_path,
-                f,
-                Arc::clone(&self.core.client),
-                target_exists,
-                initial_size,
-            ),
-        ))
+    fn write(&self, _ctx: &OperationContext, path: &str, op: OpWrite) -> Result<Self::Writer> {
+        Ok(HdfsLazyWriter::new(self.core.clone(), path, op))
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        Ok((
-            RpDelete::default(),
-            oio::OneShotDeleter::new(HdfsDeleter::new(Arc::clone(&self.core))),
-        ))
+    fn delete(&self, _ctx: &OperationContext) -> Result<Self::Deleter> {
+        let output: oio::OneShotDeleter<HdfsDeleter> = {
+            Ok(oio::OneShotDeleter::new(HdfsDeleter::new(Arc::clone(
+                &self.core,
+            ))))
+        }?;
+
+        Ok(output)
     }
 
-    async fn list(&self, path: &str, _: OpList) -> Result<(RpList, Self::Lister)> {
-        match self.core.hdfs_list(path)? {
-            Some(f) => {
-                let rd = HdfsLister::new(&self.core.root, f, path);
-                Ok((RpList::default(), Some(rd)))
+    fn list(&self, _ctx: &OperationContext, path: &str, _: OpList) -> Result<Self::Lister> {
+        let output: Option<HdfsLister> = {
+            match self.core.hdfs_list(path)? {
+                Some(f) => {
+                    let rd = HdfsLister::new(&self.core.root, f, path);
+                    Ok(Some(rd))
+                }
+                None => Ok(None),
             }
-            None => Ok((RpList::default(), None)),
-        }
+        }?;
+
+        Ok(output)
     }
 
-    async fn rename(&self, from: &str, to: &str, _args: OpRename) -> Result<RpRename> {
-        self.core.hdfs_rename(from, to)?;
+    fn copy(
+        &self,
+        _ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        _args: OpCopy,
+    ) -> Result<Self::Copier> {
+        let core = self.core.clone();
+        let from = from.to_string();
+        let to = to.to_string();
+        // Recreate the future so retry layers can rerun the copy after a temporary error.
+        Ok(oio::OneShotCopier::new_with(move || {
+            let core = core.clone();
+            let from = from.clone();
+            let to = to.clone();
+            async move { core.hdfs_copy(&from, &to).await }
+        }))
+    }
+
+    async fn rename(
+        &self,
+        _ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpRename,
+    ) -> Result<RpRename> {
+        self.core.hdfs_rename(from, to, &args)?;
         Ok(RpRename::new())
+    }
+
+    async fn presign(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpPresign,
+    ) -> Result<RpPresign> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
     }
 }

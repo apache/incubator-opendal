@@ -2,142 +2,81 @@
 
 [![](https://img.shields.io/badge/status-unreleased-red)](https://opendal.apache.org/bindings/c/)
 
-![](https://github.com/apache/opendal/assets/5351546/87bbf6e5-f19e-449a-b368-3e283016c887)
+A C binding for OpenDAL, providing blocking access to S3, GCS, Azure Blob, the
+local filesystem, and 50+ more storage backends through a single C API.
 
-> **Note**: This binding has its own independent version number, which may differ from the Rust core version. When checking for updates or compatibility, always refer to this binding's version rather than the core version.
+We release the OpenDAL C binding independently of the
+[`opendal` crate](https://crates.io/crates/opendal) (Rust core). For updates
+and compatibility, use the C binding version instead of the `opendal` crate
+version.
+
+**User guide**: https://opendal.apache.org/docs/bindings/c
+
+## Building
+
+Requirements: C11/C++14 compiler, CMake, Rust toolchain.
+
+```shell
+mkdir -p build && cd build
+
+# Default build (memory + fs services)
+cmake ..
+make
+
+# Enable additional services
+cmake .. -DFEATURES="opendal/services-s3,opendal/services-gcs"
+make
+```
+
+The header is at `include/opendal.h`. The shared library is written to
+`../../target/debug/` after building.
 
 ## Example
 
-A simple read and write example
-
-```C
-#include "assert.h"
+```c
+#include <assert.h>
+#include <stdio.h>
 #include "opendal.h"
-#include "stdio.h"
 
-int main()
+int main(void)
 {
-    /* Initialize a operator for "memory" backend, with no options */
-    opendal_result_operator_new result = opendal_operator_new("memory", 0);
-    assert(result.op != NULL);
-    assert(result.error == NULL);
+    /* Build an operator for the "memory" service. */
+    opendal_result_operator_new result = opendal_operator_new("memory", NULL);
+    assert(result.op != NULL && result.error == NULL);
+    opendal_operator *op = result.op;
 
-    opendal_operator* op = result.op;
+    /* Write bytes. */
+    const char *msg = "Hello, OpenDAL!";
+    opendal_bytes data = { .data = (uint8_t *)msg, .len = 15 };
+    opendal_error *err = opendal_operator_write(op, "/hello.txt", &data);
+    assert(err == NULL);
 
-    /* Prepare some data to be written */
-    opendal_bytes data = {
-        .data = (uint8_t*)"this_string_length_is_24",
-        .len = 24,
-    };
-
-    /* Write this into path "/testpath" */
-    opendal_error *error = opendal_operator_write(op, "/testpath", &data);
-    assert(error == NULL);
-
-    /* We can read it out, make sure the data is the same */
-    opendal_result_read r = opendal_operator_read(op, "/testpath");
-    opendal_bytes read_bytes = r.data;
+    /* Read them back. */
+    opendal_result_read r = opendal_operator_read(op, "/hello.txt");
     assert(r.error == NULL);
-    assert(read_bytes.len == 24);
+    printf("%.*s\n", (int)r.data.len, r.data.data);
+    opendal_bytes_free(&r.data);
 
-    /* Lets print it out */
-    for (int i = 0; i < 24; ++i) {
-        printf("%c", read_bytes.data[i]);
-    }
-    printf("\n");
-
-    /* the opendal_bytes read is heap allocated, please free it */
-    opendal_bytes_free(&read_bytes);
-
-    /* the operator_ptr is also heap allocated */
-    opendal_operator_free(&op);
+    opendal_operator_free(op);
+    return 0;
 }
 ```
 
-For more examples, please refer to `./examples`
+See `examples/` for more, including error handling patterns.
 
-## Prerequisites
+Full documentation is at https://opendal.apache.org/docs/bindings/c.
 
-To build OpenDAL C binding, the following is all you need:
+## Contributing
 
-- A compiler that supports **C11** and **C++14**, _e.g._ clang and gcc
-
-- To format the code, you need to install **clang-format**
-
-  - The `opendal.h` is not formatted by hands when you contribute, please do not format the file. **Use `make format` only.**
-  - If your contribution is related to the files under `./tests`, you may format it before submitting your pull request. But notice that different versions of `clang-format` may format the files differently.
-
-- (optional) **Doxygen** need to be installed to generate documentations.
-
-For Ubuntu and Debian:
+See [`CONTRIBUTING.md`](../../CONTRIBUTING.md) at the repository root. To run
+tests you need Valgrind and GTest:
 
 ```shell
-# install C/C++ toolchain
-sudo apt install -y build-essential
-
-# install clang-format
-sudo apt install clang-format
-
-# install and build GTest library under /usr/lib and softlink to /usr/local/lib
-sudo apt-get install libgtest-dev
-
-# install CMake
-sudo apt-get install cmake
-
-# install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+cd build && make tests && ./tests
 ```
 
-## Makefile
-
-- To **build the library and header file**.
-
-  ```sh
-  mkdir -p build && cd build
-  cmake ..
-  make
-  ```
-
-  - The header file `opendal.h` is under `./include`
-
-  - The library is under `../../target/debug` after building.
-
-  - use `FEATURES` to enable services, like `cmake .. -DFEATURES="opendal/services-memory,opendal/services-fs"`
-
-- To **clean** the build results.
-
-  ```sh
-  cargo clean
-  cd build && make clean
-  ```
-
-- To build and run the **tests**. (Note that you need to install Valgrind and GTest)
-
-  ```sh
-  cd build
-  make tests && ./tests
-  ```
-
-- To build the **examples**
-
-  ```sh
-  cd build
-  make basic error_handle
-  ```
-
-## Documentation
-
-The documentation index page source is under `./docs/doxygen/html/index.html`.
-If you want to build the documentations yourself, you could use
-
-```sh
-# this requires you to install doxygen
-make doc
-```
-
-## Used by
-
-Check out the [users](./users.md) list for more details on who is using OpenDAL.
+Format C sources with `make format` (requires `clang-format`). Do not manually
+format `include/opendal.h`.
 
 ## License and Trademarks
 

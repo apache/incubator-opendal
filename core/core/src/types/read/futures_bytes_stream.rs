@@ -16,7 +16,6 @@
 // under the License.
 
 use std::io;
-use std::ops::RangeBounds;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::task::Context;
@@ -46,13 +45,22 @@ unsafe impl Sync for FuturesBytesStream {}
 
 impl FuturesBytesStream {
     /// NOTE: don't allow users to create FuturesStream directly.
-    pub(crate) async fn new(ctx: Arc<ReadContext>, range: impl RangeBounds<u64>) -> Result<Self> {
+    pub(crate) async fn new(ctx: Arc<ReadContext>, range: impl Into<BytesRange>) -> Result<Self> {
         let stream = BufferStream::create(ctx, range).await?;
 
         Ok(FuturesBytesStream {
             stream,
             buf: Buffer::new(),
         })
+    }
+
+    /// Get metadata for this stream.
+    ///
+    /// Calling this method opens the underlying read request if needed.
+    /// Returns [`ErrorKind::Unsupported`] if the underlying service doesn't
+    /// return metadata while opening the read operation.
+    pub async fn metadata(&mut self) -> Result<Metadata> {
+        self.stream.metadata().await
     }
 }
 
@@ -87,15 +95,30 @@ mod tests {
 
     use super::*;
 
+    fn new_read_context(
+        ctx: OperationContext,
+        srv: Servicer,
+        path: &str,
+        options: crate::raw::OpReader,
+    ) -> crate::Result<ReadContext> {
+        let args = crate::raw::OpRead::new();
+        let reader = srv.read(&ctx, path, args.clone())?;
+        Ok(ReadContext::new(
+            ctx,
+            srv,
+            path.to_string(),
+            args,
+            options,
+            reader,
+        ))
+    }
+
     #[tokio::test]
     async fn test_trait() -> Result<()> {
-        let acc = Operator::via_iter(services::MEMORY_SCHEME, [])?.into_inner();
-        let ctx = Arc::new(ReadContext::new(
-            acc,
-            "test".to_string(),
-            OpRead::new(),
-            OpReader::new(),
-        ));
+        let op = Operator::via_iter(services::MEMORY_SCHEME, [])?;
+        let ctx = op.context().clone();
+        let srv = op.service().clone();
+        let ctx = Arc::new(new_read_context(ctx, srv, "test", OpReader::new())?);
         let v = FuturesBytesStream::new(ctx, 4..8).await?;
 
         let _: Box<dyn Unpin + MaybeSend + Sync + 'static> = Box::new(v);
@@ -112,13 +135,9 @@ mod tests {
         )
         .await?;
 
-        let acc = op.into_inner();
-        let ctx = Arc::new(ReadContext::new(
-            acc,
-            "test".to_string(),
-            OpRead::new(),
-            OpReader::new(),
-        ));
+        let ctx = op.context().clone();
+        let srv = op.service().clone();
+        let ctx = Arc::new(new_read_context(ctx, srv, "test", OpReader::new())?);
 
         let s = FuturesBytesStream::new(ctx, 4..8).await?;
         let bufs: Vec<Bytes> = s.try_collect().await.unwrap();
@@ -137,13 +156,14 @@ mod tests {
         )
         .await?;
 
-        let acc = op.into_inner();
-        let ctx = Arc::new(ReadContext::new(
-            acc,
-            "test".to_string(),
-            OpRead::new(),
+        let ctx = op.context().clone();
+        let srv = op.service().clone();
+        let ctx = Arc::new(new_read_context(
+            ctx,
+            srv,
+            "test",
             OpReader::new().with_concurrent(3).with_chunk(1),
-        ));
+        )?);
 
         let s = FuturesBytesStream::new(ctx, 4..8).await?;
         let bufs: Vec<Bytes> = s.try_collect().await.unwrap();

@@ -19,29 +19,33 @@ use std::sync::Arc;
 
 use http::StatusCode;
 
-use super::core::WebhdfsCore;
-use super::error::parse_error;
+use super::core::parse_error;
+use super::core::{ErrorContext, WebhdfsCore};
 use opendal_core::raw::oio;
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct WebhdfsDeleter {
     core: Arc<WebhdfsCore>,
+    ctx: OperationContext,
 }
 
 impl WebhdfsDeleter {
-    pub fn new(core: Arc<WebhdfsCore>) -> Self {
-        Self { core }
+    pub fn new(core: Arc<WebhdfsCore>, ctx: OperationContext) -> Self {
+        Self { core, ctx }
     }
 }
 
 impl oio::OneShotDelete for WebhdfsDeleter {
     async fn delete_once(&self, path: String, _: OpDelete) -> Result<()> {
-        let resp = self.core.webhdfs_delete(&path).await?;
+        let resp = self.core.webhdfs_delete(&self.ctx, &path).await?;
 
         match resp.status() {
             StatusCode::OK => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Delete")),
+                resp,
+            )),
         }
     }
 }

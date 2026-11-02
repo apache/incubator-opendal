@@ -1,6 +1,6 @@
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [ ] create_dir
 - [x] stat
@@ -12,15 +12,14 @@ This service can be used to:
 - [ ] rename
 - [x] presign
 
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
+
 ## Configuration
 
-- `root`: Set the work dir for backend.
-- `container`: Set the container name for backend.
-- `endpoint`: Set the endpoint for backend.
-- `account_name`: Set the account_name for backend.
-- `account_key`: Set the account_key for backend.
-
-Refer to public API docs for more information.
+Use [`crate::AzblobConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
 ## Examples
 
@@ -66,8 +65,8 @@ async fn main() -> Result<()> {
         .account_name("devstoreaccount1")
         .account_key("Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==");
 
-    // `Accessor` provides the low level APIs, we will use `Operator` normally.
-    let op: Operator = Operator::new(builder)?.finish();
+    // `Service` provides the low level APIs, we will use `Operator` normally.
+    let op: Operator = Operator::new(builder)?;
     Ok(())
 }
 ```

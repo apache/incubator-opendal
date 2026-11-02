@@ -15,11 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Metrics layer (using the [prometheus](https://docs.rs/prometheus) crate) implementation for Apache OpenDAL.
-
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
-
 use opendal_core::raw::*;
 use opendal_core::*;
 use opendal_layer_observe_metrics_common as observe;
@@ -33,11 +32,12 @@ use prometheus::register_histogram_vec_with_registry;
 use prometheus::register_int_counter_vec_with_registry;
 use prometheus::register_int_gauge_vec_with_registry;
 
-/// Add [prometheus](https://docs.rs/prometheus) for every operation.
+/// `PrometheusLayer` records OpenDAL operation and HTTP fetch metrics with
+/// [prometheus](https://docs.rs/prometheus).
 ///
 /// # Prometheus Metrics
 ///
-/// We provide several metrics, please see the documentation of [`observe`] module.
+/// This layer registers operation metrics and HTTP fetch metrics. Please see the documentation of [`observe`] module for metric details.
 /// For a more detailed explanation of these metrics and how they are used, please refer to the [Prometheus documentation](https://prometheus.io/docs/introduction/overview/).
 ///
 /// # Examples
@@ -61,8 +61,7 @@ use prometheus::register_int_gauge_vec_with_registry;
 ///         PrometheusLayer::builder()
 ///             .register(registry)
 ///             .expect("register metrics successfully"),
-///     )
-///     .finish();
+///     );
 ///
 /// // Write data into object test.
 /// op.write("test", "Hello, World!").await?;
@@ -116,8 +115,7 @@ use prometheus::register_int_gauge_vec_with_registry;
 /// # #[tokio::main]
 /// # async fn main() -> Result<()> {
 /// let op = Operator::new(services::Memory::default())?
-///     .layer(global_prometheus_layer().clone())
-///     .finish();
+///     .layer(global_prometheus_layer().clone());
 ///
 /// // Write data into object test.
 /// op.write("test", "Hello, World!").await?;
@@ -139,7 +137,7 @@ use prometheus::register_int_gauge_vec_with_registry;
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PrometheusLayer {
     interceptor: PrometheusInterceptor,
 }
@@ -170,8 +168,7 @@ impl PrometheusLayer {
     ///             .bytes_buckets(bytes_buckets)
     ///             .register(registry)
     ///             .expect("register metrics successfully"),
-    ///     )
-    ///     .finish();
+    ///     );
     /// # Ok(())
     /// # }
     /// ```
@@ -180,11 +177,14 @@ impl PrometheusLayer {
     }
 }
 
-impl<A: Access> Layer<A> for PrometheusLayer {
-    type LayeredAccess = observe::MetricsAccessor<A, PrometheusInterceptor>;
+impl Layer for PrometheusLayer {
+    fn apply_service(&self, inner: Servicer) -> Servicer {
+        observe::MetricsLayer::new(self.interceptor.clone()).apply_service(inner)
+    }
 
-    fn layer(&self, inner: A) -> Self::LayeredAccess {
-        observe::MetricsLayer::new(self.interceptor.clone()).layer(inner)
+    // Reuse the same interceptor because this layer registers both operation and HTTP metrics.
+    fn apply_context(&self, srv: Servicer, inner: OperationContext) -> OperationContext {
+        observe::MetricsLayer::new(self.interceptor.clone()).apply_context(srv, inner)
     }
 }
 
@@ -279,8 +279,7 @@ impl PrometheusLayerBuilder {
     ///         PrometheusLayer::builder()
     ///             .register(prometheus::default_registry())
     ///             .expect("register metrics successfully"),
-    ///     )
-    ///     .finish();
+    ///     );
     /// # Ok(())
     /// # }
     /// ```
@@ -375,12 +374,13 @@ impl PrometheusLayerBuilder {
             .map_err(parse_prometheus_error)?
         };
 
+        let http_labels = OperationLabels::names().with_service_operation();
         let http_executing = {
             let metric = observe::MetricValue::HttpExecuting(0);
             register_int_gauge_vec_with_registry!(
                 metric.name(),
                 metric.help(),
-                labels.as_ref(),
+                http_labels.as_ref(),
                 registry
             )
             .map_err(parse_prometheus_error)?
@@ -390,7 +390,7 @@ impl PrometheusLayerBuilder {
             register_histogram_vec_with_registry!(
                 metric.name(),
                 metric.help(),
-                labels.as_ref(),
+                http_labels.as_ref(),
                 self.bytes_buckets.clone(),
                 registry
             )
@@ -401,7 +401,7 @@ impl PrometheusLayerBuilder {
             register_histogram_vec_with_registry!(
                 metric.name(),
                 metric.help(),
-                labels.as_ref(),
+                http_labels.as_ref(),
                 self.bytes_rate_buckets.clone(),
                 registry
             )
@@ -412,7 +412,7 @@ impl PrometheusLayerBuilder {
             register_histogram_vec_with_registry!(
                 metric.name(),
                 metric.help(),
-                labels.as_ref(),
+                http_labels.as_ref(),
                 self.duration_seconds_buckets.clone(),
                 registry
             )
@@ -423,7 +423,7 @@ impl PrometheusLayerBuilder {
             register_histogram_vec_with_registry!(
                 metric.name(),
                 metric.help(),
-                labels.as_ref(),
+                http_labels.as_ref(),
                 self.bytes_buckets,
                 registry
             )
@@ -434,7 +434,7 @@ impl PrometheusLayerBuilder {
             register_histogram_vec_with_registry!(
                 metric.name(),
                 metric.help(),
-                labels.as_ref(),
+                http_labels.as_ref(),
                 self.bytes_rate_buckets,
                 registry
             )
@@ -445,7 +445,7 @@ impl PrometheusLayerBuilder {
             register_histogram_vec_with_registry!(
                 metric.name(),
                 metric.help(),
-                labels.as_ref(),
+                http_labels.as_ref(),
                 self.duration_seconds_buckets,
                 registry
             )
@@ -456,19 +456,21 @@ impl PrometheusLayerBuilder {
             register_int_counter_vec_with_registry!(
                 metric.name(),
                 metric.help(),
-                labels.as_ref(),
+                http_labels.as_ref(),
                 registry
             )
             .map_err(parse_prometheus_error)?
         };
 
-        let labels_with_status_code = OperationLabels::names().with_status_code();
+        let http_labels_with_status_code = OperationLabels::names()
+            .with_service_operation()
+            .with_status_code();
         let http_status_errors_total = {
             let metric = observe::MetricValue::HttpStatusErrorsTotal;
             register_int_counter_vec_with_registry!(
                 metric.name(),
                 metric.help(),
-                labels_with_status_code.as_ref(),
+                http_labels_with_status_code.as_ref(),
                 registry
             )
             .map_err(parse_prometheus_error)?
@@ -517,8 +519,7 @@ impl PrometheusLayerBuilder {
     ///         PrometheusLayer::builder()
     ///             .register_default()
     ///             .expect("register metrics successfully"),
-    ///     )
-    ///     .finish();
+    ///     );
     /// # Ok(())
     /// # }
     /// ```
@@ -562,72 +563,72 @@ impl observe::MetricsIntercept for PrometheusInterceptor {
         match value {
             observe::MetricValue::OperationBytes(v) => self
                 .operation_bytes
-                .with_label_values(&labels.values())
+                .with_label_values(&labels.op_values())
                 .observe(v as f64),
             observe::MetricValue::OperationBytesRate(v) => self
                 .operation_bytes_rate
-                .with_label_values(&labels.values())
+                .with_label_values(&labels.op_values())
                 .observe(v),
             observe::MetricValue::OperationEntries(v) => self
                 .operation_entries
-                .with_label_values(&labels.values())
+                .with_label_values(&labels.op_values())
                 .observe(v as f64),
             observe::MetricValue::OperationEntriesRate(v) => self
                 .operation_entries_rate
-                .with_label_values(&labels.values())
+                .with_label_values(&labels.op_values())
                 .observe(v),
             observe::MetricValue::OperationDurationSeconds(v) => self
                 .operation_duration_seconds
-                .with_label_values(&labels.values())
+                .with_label_values(&labels.op_values())
                 .observe(v.as_secs_f64()),
             observe::MetricValue::OperationErrorsTotal => self
                 .operation_errors_total
-                .with_label_values(&labels.values())
+                .with_label_values(&labels.op_values())
                 .inc(),
             observe::MetricValue::OperationExecuting(v) => self
                 .operation_executing
-                .with_label_values(&labels.values())
+                .with_label_values(&labels.op_values())
                 .add(v as i64),
             observe::MetricValue::OperationTtfbSeconds(v) => self
                 .operation_ttfb_seconds
-                .with_label_values(&labels.values())
+                .with_label_values(&labels.op_values())
                 .observe(v.as_secs_f64()),
 
             observe::MetricValue::HttpExecuting(v) => self
                 .http_executing
-                .with_label_values(&labels.values())
+                .with_label_values(&labels.http_values())
                 .add(v as i64),
             observe::MetricValue::HttpRequestBytes(v) => self
                 .http_request_bytes
-                .with_label_values(&labels.values())
+                .with_label_values(&labels.http_values())
                 .observe(v as f64),
             observe::MetricValue::HttpRequestBytesRate(v) => self
                 .http_request_bytes_rate
-                .with_label_values(&labels.values())
+                .with_label_values(&labels.http_values())
                 .observe(v),
             observe::MetricValue::HttpRequestDurationSeconds(v) => self
                 .http_request_duration_seconds
-                .with_label_values(&labels.values())
+                .with_label_values(&labels.http_values())
                 .observe(v.as_secs_f64()),
             observe::MetricValue::HttpResponseBytes(v) => self
                 .http_response_bytes
-                .with_label_values(&labels.values())
+                .with_label_values(&labels.http_values())
                 .observe(v as f64),
             observe::MetricValue::HttpResponseBytesRate(v) => self
                 .http_response_bytes_rate
-                .with_label_values(&labels.values())
+                .with_label_values(&labels.http_values())
                 .observe(v),
             observe::MetricValue::HttpResponseDurationSeconds(v) => self
                 .http_response_duration_seconds
-                .with_label_values(&labels.values())
+                .with_label_values(&labels.http_values())
                 .observe(v.as_secs_f64()),
             observe::MetricValue::HttpConnectionErrorsTotal => self
                 .http_connection_errors_total
-                .with_label_values(&labels.values())
+                .with_label_values(&labels.http_values())
                 .inc(),
             observe::MetricValue::HttpStatusErrorsTotal => self
                 .http_status_errors_total
-                .with_label_values(&labels.values())
+                .with_label_values(&labels.http_values())
                 .inc(),
             _ => {}
         }
@@ -652,6 +653,11 @@ impl OperationLabelNames {
         self.0.push(observe::LABEL_STATUS_CODE);
         self
     }
+
+    fn with_service_operation(mut self) -> Self {
+        self.0.push(observe::LABEL_SERVICE_OPERATION);
+        self
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
@@ -667,15 +673,29 @@ impl OperationLabels {
         ])
     }
 
-    fn values(&self) -> Vec<&str> {
-        let mut labels = Vec::with_capacity(6);
-
-        labels.extend([
+    fn op_values(&self) -> Vec<&str> {
+        let mut labels = vec![
             self.0.scheme,
             self.0.namespace.as_ref(),
             self.0.root.as_ref(),
             self.0.operation,
-        ]);
+        ];
+
+        if let Some(error) = self.0.error {
+            labels.push(error.into_static());
+        }
+
+        labels
+    }
+
+    fn http_values(&self) -> Vec<&str> {
+        let mut labels = vec![
+            self.0.scheme,
+            self.0.namespace.as_ref(),
+            self.0.root.as_ref(),
+            self.0.operation,
+            self.0.service_operation.unwrap_or("unknown"),
+        ];
 
         if let Some(error) = self.0.error {
             labels.push(error.into_static());

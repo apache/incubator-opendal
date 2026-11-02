@@ -27,7 +27,8 @@ use super::config::EtcdConfig;
 use super::core::EtcdCore;
 use super::core::constants::DEFAULT_ETCD_ENDPOINTS;
 use super::deleter::EtcdDeleter;
-use super::lister::EtcdLister;
+use super::lister::EtcdLazyLister;
+use super::reader::*;
 use super::writer::EtcdWriter;
 use opendal_core::raw::*;
 use opendal_core::*;
@@ -83,9 +84,12 @@ impl EtcdBuilder {
         self
     }
 
-    /// Set the certificate authority file path.
+    /// Set the PEM certificate authority file used to verify the server.
     ///
-    /// default is None
+    /// This enables TLS without requiring a client certificate or private key.
+    /// Use HTTPS endpoints when configuring TLS.
+    ///
+    /// No custom certificate authority is configured by default.
     pub fn ca_path(mut self, ca_path: &str) -> Self {
         if !ca_path.is_empty() {
             self.config.ca_path = Some(ca_path.to_string())
@@ -93,9 +97,12 @@ impl EtcdBuilder {
         self
     }
 
-    /// Set the certificate file path.
+    /// Set the PEM client certificate file used for mutual TLS.
     ///
-    /// default is None
+    /// Set this together with [`Self::key_path`]. Building an operator with
+    /// only one of these paths returns [`ErrorKind::ConfigInvalid`].
+    ///
+    /// No client certificate is configured by default.
     pub fn cert_path(mut self, cert_path: &str) -> Self {
         if !cert_path.is_empty() {
             self.config.cert_path = Some(cert_path.to_string())
@@ -103,13 +110,24 @@ impl EtcdBuilder {
         self
     }
 
-    /// Set the key file path.
+    /// Set the PEM client private key file used for mutual TLS.
     ///
-    /// default is None
+    /// Set this together with [`Self::cert_path`]. Building an operator with
+    /// only one of these paths returns [`ErrorKind::ConfigInvalid`].
+    ///
+    /// No client private key is configured by default.
     pub fn key_path(mut self, key_path: &str) -> Self {
         if !key_path.is_empty() {
             self.config.key_path = Some(key_path.to_string())
         }
+        self
+    }
+
+    /// Set the maximum size in bytes of a gRPC response that the etcd client decodes.
+    ///
+    /// default is None, which keeps the etcd client default of 4 MiB
+    pub fn max_decoding_message_size(mut self, size: usize) -> Self {
+        self.config.max_decoding_message_size = Some(size);
         self
     }
 }
@@ -117,7 +135,7 @@ impl EtcdBuilder {
 impl Builder for EtcdBuilder {
     type Config = EtcdConfig;
 
-    fn build(self) -> Result<impl Access> {
+    fn build(self) -> Result<impl Service> {
         let endpoints = self
             .config
             .endpoints
@@ -128,17 +146,28 @@ impl Builder for EtcdBuilder {
 
         let mut options = ConnectOptions::new();
 
-        if self.config.ca_path.is_some()
-            && self.config.cert_path.is_some()
-            && self.config.key_path.is_some()
-        {
-            let ca = self.load_pem(self.config.ca_path.clone().unwrap().as_str())?;
-            let key = self.load_pem(self.config.key_path.clone().unwrap().as_str())?;
-            let cert = self.load_pem(self.config.cert_path.clone().unwrap().as_str())?;
+        if self.config.cert_path.is_some() != self.config.key_path.is_some() {
+            return Err(Error::new(
+                ErrorKind::ConfigInvalid,
+                "cert_path and key_path must be configured together",
+            )
+            .with_operation("Builder::build")
+            .with_context("service", ETCD_SCHEME));
+        }
 
-            let tls_options = TlsOptions::default()
-                .ca_certificate(Certificate::from_pem(ca))
-                .identity(Identity::from_pem(cert, key));
+        if self.config.ca_path.is_some() || self.config.cert_path.is_some() {
+            let mut tls_options = TlsOptions::default();
+            if let Some(path) = &self.config.ca_path {
+                let ca = self.load_pem(path)?;
+                tls_options = tls_options.ca_certificate(Certificate::from_pem(ca));
+            }
+            if let (Some(cert_path), Some(key_path)) =
+                (&self.config.cert_path, &self.config.key_path)
+            {
+                let cert = self.load_pem(cert_path)?;
+                let key = self.load_pem(key_path)?;
+                tls_options = tls_options.identity(Identity::from_pem(cert, key));
+            }
             options = options.with_tls(tls_options);
         }
 
@@ -157,7 +186,7 @@ impl Builder for EtcdBuilder {
                 .as_str(),
         );
 
-        let core = EtcdCore::new(endpoints, options);
+        let core = EtcdCore::new(endpoints, options, self.config.max_decoding_message_size);
         Ok(EtcdBackend::new(core, &root))
     }
 }
@@ -169,19 +198,42 @@ impl EtcdBuilder {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn incomplete_client_identity_is_rejected() {
+        for ca_path in [None, Some("ca.pem")] {
+            for (cert_path, key_path) in
+                [(Some("client.pem"), None), (None, Some("client-key.pem"))]
+            {
+                let config = EtcdConfig {
+                    ca_path: ca_path.map(str::to_owned),
+                    cert_path: cert_path.map(str::to_owned),
+                    key_path: key_path.map(str::to_owned),
+                    ..Default::default()
+                };
+                let err = Operator::from_config(config).expect_err(
+                    "incomplete client identity must fail before reading certificate files",
+                );
+                assert_eq!(err.kind(), ErrorKind::ConfigInvalid);
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct EtcdBackend {
-    core: Arc<EtcdCore>,
-    info: Arc<AccessorInfo>,
+    pub(crate) core: Arc<EtcdCore>,
+    pub(crate) info: ServiceInfo,
+    pub(crate) capability: Capability,
 }
 
 impl EtcdBackend {
     fn new(core: EtcdCore, root: &str) -> Self {
-        let info = AccessorInfo::default();
-        info.set_scheme(ETCD_SCHEME);
-        info.set_name("etcd");
-        info.set_root(root);
-        info.set_native_capability(Capability {
+        let info = ServiceInfo::new(ETCD_SCHEME, root, "etcd");
+        let capability = Capability {
             read: true,
 
             write: true,
@@ -194,26 +246,38 @@ impl EtcdBackend {
             shared: true,
 
             ..Default::default()
-        });
+        };
 
         Self {
             core: Arc::new(core),
-            info: Arc::new(info),
+            info,
+            capability,
         }
     }
 }
 
-impl Access for EtcdBackend {
-    type Reader = Buffer;
+impl Service for EtcdBackend {
+    type Reader = oio::StreamReader<EtcdReader>;
     type Writer = EtcdWriter;
-    type Lister = oio::HierarchyLister<EtcdLister>;
+    type Lister = oio::HierarchyLister<EtcdLazyLister>;
     type Deleter = oio::OneShotDeleter<EtcdDeleter>;
+    type Copier = ();
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
+    fn info(&self) -> ServiceInfo {
         self.info.clone()
     }
 
-    async fn create_dir(&self, path: &str, _args: OpCreateDir) -> Result<RpCreateDir> {
+    fn capability(&self) -> Capability {
+        self.capability
+    }
+
+    async fn create_dir(
+        &self,
+        _ctx: &OperationContext,
+        path: &str,
+        _args: OpCreateDir,
+    ) -> Result<RpCreateDir> {
         let abs_path = build_abs_path(&self.info.root(), path);
 
         // In etcd, we simulate directory creation by storing an empty value
@@ -230,15 +294,18 @@ impl Access for EtcdBackend {
         Ok(RpCreateDir::default())
     }
 
-    async fn stat(&self, path: &str, _: OpStat) -> Result<RpStat> {
+    async fn stat(&self, _ctx: &OperationContext, path: &str, _: OpStat) -> Result<RpStat> {
         let abs_path = build_abs_path(&self.info.root(), path);
 
         // First check if it's a direct key
         match self.core.get(&abs_path).await? {
             Some(buffer) => {
-                let mut metadata = Metadata::new(EntryMode::from_path(&abs_path));
-                metadata.set_content_length(buffer.len() as u64);
-                Ok(RpStat::new(metadata))
+                let metadata = if abs_path.ends_with('/') {
+                    MetadataBuilder::dir()
+                } else {
+                    MetadataBuilder::file(buffer.len() as u64)
+                };
+                Ok(RpStat::new(metadata.build()))
             }
             None => {
                 // Check if it's a directory by looking for keys with this prefix
@@ -252,7 +319,7 @@ impl Access for EtcdBackend {
                 let has_children = self.core.has_prefix(&prefix).await?;
                 if has_children {
                     // Has children, it's a directory
-                    let metadata = Metadata::new(EntryMode::DIR);
+                    let metadata = MetadataBuilder::dir().build();
                     Ok(RpStat::new(metadata))
                 } else {
                     Err(Error::new(ErrorKind::NotFound, "path not found"))
@@ -260,60 +327,89 @@ impl Access for EtcdBackend {
             }
         }
     }
+    fn read(&self, _ctx: &OperationContext, path: &str, op: OpRead) -> Result<Self::Reader> {
+        let output: oio::StreamReader<EtcdReader> = {
+            Ok(oio::StreamReader::new(EtcdReader::new(
+                self.clone(),
+                path,
+                op,
+            )))
+        }?;
 
-    async fn read(&self, path: &str, op: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let abs_path = build_abs_path(&self.info.root(), path);
-
-        match self.core.get(&abs_path).await? {
-            Some(buffer) => {
-                let range = op.range();
-
-                // If range is full, return the buffer directly
-                if range.is_full() {
-                    return Ok((RpRead::new(), buffer));
-                }
-
-                // Handle range requests
-                let offset = range.offset() as usize;
-                if offset >= buffer.len() {
-                    return Err(Error::new(
-                        ErrorKind::RangeNotSatisfied,
-                        "range start offset exceeds content length",
-                    ));
-                }
-
-                let size = range.size().map(|s| s as usize);
-                let end = size.map_or(buffer.len(), |s| (offset + s).min(buffer.len()));
-                let sliced_buffer = buffer.slice(offset..end);
-
-                Ok((RpRead::new(), sliced_buffer))
-            }
-            None => Err(Error::new(ErrorKind::NotFound, "path not found")),
-        }
+        Ok(output)
     }
 
-    async fn write(&self, path: &str, _op: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        let abs_path = build_abs_path(&self.info.root(), path);
-        let writer = EtcdWriter::new(self.core.clone(), abs_path);
-        Ok((RpWrite::new(), writer))
+    fn write(&self, _ctx: &OperationContext, path: &str, _op: OpWrite) -> Result<Self::Writer> {
+        let output: EtcdWriter = {
+            let abs_path = build_abs_path(&self.info.root(), path);
+            let writer = EtcdWriter::new(self.core.clone(), abs_path);
+            Ok(writer)
+        }?;
+
+        Ok(output)
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        let deleter = oio::OneShotDeleter::new(EtcdDeleter::new(
-            self.core.clone(),
-            self.info.root().to_string(),
-        ));
-        Ok((RpDelete::default(), deleter))
+    fn delete(&self, _ctx: &OperationContext) -> Result<Self::Deleter> {
+        let output: oio::OneShotDeleter<EtcdDeleter> = {
+            let deleter = oio::OneShotDeleter::new(EtcdDeleter::new(
+                self.core.clone(),
+                self.info.root().to_string(),
+            ));
+            Ok(deleter)
+        }?;
+
+        Ok(output)
     }
 
-    async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
-        let lister = EtcdLister::new(
-            self.core.clone(),
-            self.info.root().to_string(),
-            path.to_string(),
-        )
-        .await?;
-        let lister = oio::HierarchyLister::new(lister, path, args.recursive());
-        Ok((RpList::default(), lister))
+    fn list(&self, _ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
+        let output: oio::HierarchyLister<EtcdLazyLister> = {
+            let lister = EtcdLazyLister::new(
+                self.core.clone(),
+                self.info.root().to_string(),
+                path.to_string(),
+            );
+            let lister = oio::HierarchyLister::new(lister, path, args.recursive());
+            Ok(lister)
+        }?;
+
+        Ok(output)
+    }
+
+    fn copy(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpCopy,
+    ) -> Result<Self::Copier> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn rename(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpRename,
+    ) -> Result<RpRename> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn presign(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpPresign,
+    ) -> Result<RpPresign> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
     }
 }

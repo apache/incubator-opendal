@@ -44,14 +44,14 @@ use crate::*;
 
 /// Buffer is a wrapper of contiguous `Bytes` and non-contiguous `[Bytes]`.
 ///
-/// We designed buffer to allow underlying storage to return non-contiguous bytes. For example,
-/// http based storage like s3 could generate non-contiguous bytes by stream.
+/// Buffer supports non-contiguous bytes that a storage service returns. For example,
+/// HTTP-based services such as S3 can produce non-contiguous bytes while streaming.
 ///
 /// ## Features
 ///
 /// - [`Buffer`] can be used as [`Buf`], [`Iterator`], [`Stream`] directly.
 /// - [`Buffer`] is cheap to clone like [`Bytes`], only update reference count, no allocation.
-/// - [`Buffer`] is vectorized write friendly, you can convert it to [`IoSlice`] for vectored write.
+/// - Convert [`Buffer`] to [`IoSlice`] for vectored writes.
 ///
 /// ## Examples
 ///
@@ -246,7 +246,7 @@ impl Buffer {
 
     /// Returns a slice of self for the provided range.
     ///
-    /// This will increment the reference count for the underlying memory and return a new Buffer handle set to the slice.
+    /// This increments the reference count for the underlying memory and returns a new Buffer handle for the slice.
     ///
     /// This operation is O(1).
     pub fn slice(&self, range: impl RangeBounds<usize>) -> Self {
@@ -323,17 +323,86 @@ impl Buffer {
         match &self.0 {
             Inner::Contiguous(bs) => vec![IoSlice::new(bs.chunk())],
             Inner::NonContiguous {
-                parts, idx, offset, ..
+                parts,
+                size,
+                idx,
+                offset,
             } => {
                 let mut ret = Vec::with_capacity(parts.len() - *idx);
                 let mut new_offset = *offset;
+                let mut remaining = *size;
                 for part in parts.iter().skip(*idx) {
-                    ret.push(IoSlice::new(&part[new_offset..]));
+                    if remaining == 0 {
+                        break;
+                    }
+                    let n = (part.len() - new_offset).min(remaining);
+                    ret.push(IoSlice::new(&part[new_offset..new_offset + n]));
+                    remaining -= n;
                     new_offset = 0;
                 }
                 ret
             }
         }
+    }
+
+    /// Splits the buffer into two at the given index.
+    ///
+    /// Returns a new `Buffer` containing the bytes in the range `[0, at)`.
+    /// Afterwards, `self` contains the bytes in the range `[at, len)`.
+    ///
+    /// This is an O(1) operation that just updates internal offsets and reference counts.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `at > len`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use opendal_core::Buffer;
+    ///
+    /// let mut buf = Buffer::from(vec![0u8, 1, 2, 3, 4, 5]);
+    /// let head = buf.split_to(3);
+    /// assert_eq!(head.to_vec(), vec![0, 1, 2]);
+    /// assert_eq!(buf.to_vec(), vec![3, 4, 5]);
+    /// ```
+    pub fn split_to(&mut self, at: usize) -> Self {
+        let len = self.len();
+        assert!(at <= len, "split_to out of bounds: {at:?} <= {len:?}",);
+
+        let head = self.slice(..at);
+        self.advance(at);
+        head
+    }
+
+    /// Splits the buffer into two at the given index.
+    ///
+    /// Returns a new `Buffer` containing the bytes in the range `[at, len)`.
+    /// Afterwards, `self` contains the bytes in the range `[0, at)`.
+    ///
+    /// This is an O(1) operation that just updates internal offsets and reference counts.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `at > len`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use opendal_core::Buffer;
+    ///
+    /// let mut buf = Buffer::from(vec![0u8, 1, 2, 3, 4, 5]);
+    /// let tail = buf.split_off(3);
+    /// assert_eq!(buf.to_vec(), vec![0, 1, 2]);
+    /// assert_eq!(tail.to_vec(), vec![3, 4, 5]);
+    /// ```
+    pub fn split_off(&mut self, at: usize) -> Self {
+        let len = self.len();
+        assert!(at <= len, "split_off out of bounds: {at:?} <= {len:?}",);
+
+        let tail = self.slice(at..);
+        self.truncate(at);
+        tail
     }
 
     /// Split the buffer into an iterator of chunks, each with at most `chunk_size` bytes.
@@ -493,22 +562,29 @@ impl Buf for Buffer {
                 1
             }
             Inner::NonContiguous {
-                parts, idx, offset, ..
+                parts,
+                size,
+                idx,
+                offset,
             } => {
                 if dst.is_empty() {
                     return 0;
                 }
 
                 let mut new_offset = *offset;
-                parts
-                    .iter()
-                    .skip(*idx)
-                    .zip(dst.iter_mut())
-                    .map(|(part, dst)| {
-                        *dst = IoSlice::new(&part[new_offset..]);
-                        new_offset = 0;
-                    })
-                    .count()
+                let mut remaining = *size;
+                let mut count = 0;
+                for (part, dst) in parts.iter().skip(*idx).zip(dst.iter_mut()) {
+                    if remaining == 0 {
+                        break;
+                    }
+                    let n = (part.len() - new_offset).min(remaining);
+                    *dst = IoSlice::new(&part[new_offset..new_offset + n]);
+                    remaining -= n;
+                    new_offset = 0;
+                    count += 1;
+                }
+                count
             }
         }
     }
@@ -741,6 +817,113 @@ impl ExactSizeIterator for BufferChunks {
 
 impl FusedIterator for BufferChunks {}
 
+/// `BufferCursor` is a [`Read`] + [`Seek`] cursor for `Buffer`, analogous to [`std::io::Cursor`].
+///
+/// `BufferCursor` supports seeking over potentially non-contiguous bytes in a Buffer. It is useful when
+/// seekability is required, such as when interfacing with archiving and compression libraries, while
+/// maintaining zero-copy semantics.
+///
+/// ## Notes
+/// - [`BufferCursor`] does not implement [`std::io::Write`], because [`Buffer`] instances are immutable.
+///
+/// ## Features
+/// - [`BufferCursor`] can be used as a [`Read`], [`BufRead`], and [`Seek`] directly.
+/// - [`BufferCursor`] is cheap to read and seek, as it only updates the [`Buffer`] reference count
+///   without additional allocations.
+///
+/// # Examples
+///
+/// ```rust
+/// use bytes::Bytes;
+/// use opendal_core::{Buffer, BufferCursor};
+/// use std::io::{Read, Seek, SeekFrom};
+///
+/// fn test() -> std::io::Result<()> {
+///     let mut cur = BufferCursor::new(Buffer::from(vec![
+///         Bytes::from("abc"),
+///         Bytes::from("def"),
+///     ]));
+///
+///     cur.seek(SeekFrom::Start(3))?;
+///
+///     let mut out = vec![];
+///     cur.read_to_end(&mut out); // def
+///
+///     cur.seek(SeekFrom::Start(0))?;
+///
+///     let mut out = vec![];
+///     cur.read_to_end(&mut out); // abcdef
+///
+///     Ok(())
+/// }
+/// ```
+///
+pub struct BufferCursor {
+    data: Buffer,
+    view: Buffer,
+    pos: u64,
+}
+
+impl BufferCursor {
+    /// Create a BufferCursor for a Buffer.
+    #[inline]
+    pub fn new(buffer: Buffer) -> Self {
+        Self {
+            view: buffer.slice(..),
+            data: buffer,
+            pos: 0,
+        }
+    }
+}
+
+impl Read for BufferCursor {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let size = self.view.read(buf)?;
+        self.seek(SeekFrom::Current(size as i64))?;
+        Ok(size)
+    }
+}
+
+impl BufRead for BufferCursor {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        self.view.fill_buf()
+    }
+
+    fn consume(&mut self, amount: usize) {
+        self.pos = self
+            .pos
+            .saturating_add(amount as u64)
+            .min(self.data.len() as u64);
+    }
+}
+
+impl Seek for BufferCursor {
+    fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+        let end = self.data.len() as u64;
+        match pos {
+            SeekFrom::Start(pos) => {
+                self.pos = pos.min(end);
+            }
+            SeekFrom::Current(pos) => {
+                if pos.is_negative() {
+                    self.pos = self.pos.saturating_sub(pos.unsigned_abs());
+                } else {
+                    self.pos = self.pos.saturating_add(pos as u64).min(end);
+                }
+            }
+            SeekFrom::End(pos) => {
+                if pos.is_negative() {
+                    self.pos = end.saturating_sub(pos.unsigned_abs());
+                } else {
+                    self.pos = end.saturating_add(pos as u64).min(end);
+                }
+            }
+        }
+        self.view = self.data.slice(self.pos as usize..);
+        Ok(self.pos)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::BufRead;
@@ -750,6 +933,7 @@ mod tests {
 
     use pretty_assertions::assert_eq;
     use rand::prelude::*;
+    use rand::rng;
 
     use super::*;
 
@@ -900,11 +1084,11 @@ mod tests {
     /// - Total size of this buffer.
     /// - Total content of this buffer.
     fn setup_buffer() -> (Buffer, usize, Bytes) {
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         let bs = (0..100)
             .map(|_| {
-                let len = rng.gen_range(1..100);
+                let len = rng.random_range(1..100);
                 let mut buf = vec![0; len];
                 rng.fill(&mut buf[..]);
                 Bytes::from(buf)
@@ -920,7 +1104,7 @@ mod tests {
 
     #[test]
     fn fuzz_buffer_advance() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         let (mut buf, total_size, total_content) = setup_buffer();
         assert_eq!(buf.remaining(), total_size);
@@ -932,7 +1116,7 @@ mod tests {
         while !buf.is_empty() && times > 0 {
             times -= 1;
 
-            let cnt = rng.gen_range(0..total_size - cur);
+            let cnt = rng.random_range(0..total_size - cur);
             cur += cnt;
             buf.advance(cnt);
 
@@ -943,7 +1127,7 @@ mod tests {
 
     #[test]
     fn fuzz_buffer_iter() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         let (mut buf, total_size, total_content) = setup_buffer();
         assert_eq!(buf.remaining(), total_size);
@@ -951,7 +1135,7 @@ mod tests {
 
         let mut cur = 0;
         while buf.is_empty() {
-            let cnt = rng.gen_range(0..total_size - cur);
+            let cnt = rng.random_range(0..total_size - cur);
             cur += cnt;
             buf.advance(cnt);
 
@@ -972,7 +1156,7 @@ mod tests {
 
     #[test]
     fn fuzz_buffer_truncate() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
         let (mut buf, total_size, total_content) = setup_buffer();
         assert_eq!(buf.remaining(), total_size);
@@ -980,7 +1164,7 @@ mod tests {
 
         let mut cur = 0;
         while buf.is_empty() {
-            let cnt = rng.gen_range(0..total_size - cur);
+            let cnt = rng.random_range(0..total_size - cur);
             cur += cnt;
             buf.advance(cnt);
 
@@ -988,7 +1172,7 @@ mod tests {
             assert_eq!(buf.remaining(), total_size - cur);
             assert_eq!(buf.to_bytes(), total_content.slice(cur..));
 
-            let truncate_size = rng.gen_range(0..total_size - cur);
+            let truncate_size = rng.random_range(0..total_size - cur);
             buf.truncate(truncate_size);
 
             // After truncate
@@ -1089,5 +1273,261 @@ mod tests {
         let mut buffer = Buffer::from(vec![Bytes::from("OutOfBounds")]);
         let result = buffer.seek(SeekFrom::Start(100));
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_split_to_contiguous() {
+        let mut buf = Buffer::from(Bytes::from("HelloWorld"));
+        let head = buf.split_to(5);
+        assert_eq!(head.to_bytes(), Bytes::from("Hello"));
+        assert_eq!(buf.to_bytes(), Bytes::from("World"));
+    }
+
+    #[test]
+    fn test_split_to_non_contiguous() {
+        let mut buf = Buffer::from(vec![
+            Bytes::from("ab"),
+            Bytes::from("cd"),
+            Bytes::from("ef"),
+        ]);
+        let head = buf.split_to(3);
+        assert_eq!(head.to_bytes(), Bytes::from("abc"));
+        assert_eq!(buf.to_bytes(), Bytes::from("def"));
+    }
+
+    #[test]
+    fn test_split_to_at_zero() {
+        let mut buf = Buffer::from(Bytes::from("Hello"));
+        let head = buf.split_to(0);
+        assert!(head.is_empty());
+        assert_eq!(buf.to_bytes(), Bytes::from("Hello"));
+    }
+
+    #[test]
+    fn test_split_to_at_len() {
+        let mut buf = Buffer::from(Bytes::from("Hello"));
+        let head = buf.split_to(5);
+        assert_eq!(head.to_bytes(), Bytes::from("Hello"));
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "split_to out of bounds")]
+    fn test_split_to_out_of_bounds() {
+        let mut buf = Buffer::from(Bytes::from("Hello"));
+        buf.split_to(10);
+    }
+
+    #[test]
+    fn test_split_off_contiguous() {
+        let mut buf = Buffer::from(Bytes::from("HelloWorld"));
+        let tail = buf.split_off(5);
+        assert_eq!(buf.to_bytes(), Bytes::from("Hello"));
+        assert_eq!(tail.to_bytes(), Bytes::from("World"));
+    }
+
+    #[test]
+    fn test_split_off_non_contiguous() {
+        let mut buf = Buffer::from(vec![
+            Bytes::from("ab"),
+            Bytes::from("cd"),
+            Bytes::from("ef"),
+        ]);
+        let tail = buf.split_off(3);
+        assert_eq!(buf.to_bytes(), Bytes::from("abc"));
+        assert_eq!(tail.to_bytes(), Bytes::from("def"));
+    }
+
+    #[test]
+    fn test_split_off_at_zero() {
+        let mut buf = Buffer::from(Bytes::from("Hello"));
+        let tail = buf.split_off(0);
+        assert!(buf.is_empty());
+        assert_eq!(tail.to_bytes(), Bytes::from("Hello"));
+    }
+
+    #[test]
+    fn test_split_off_at_len() {
+        let mut buf = Buffer::from(Bytes::from("Hello"));
+        let tail = buf.split_off(5);
+        assert_eq!(buf.to_bytes(), Bytes::from("Hello"));
+        assert!(tail.is_empty());
+    }
+
+    #[test]
+    #[should_panic(expected = "split_off out of bounds")]
+    fn test_split_off_out_of_bounds() {
+        let mut buf = Buffer::from(Bytes::from("Hello"));
+        buf.split_off(10);
+    }
+
+    #[test]
+    fn test_split_to_split_off_composition() {
+        // Verify split_to and split_off can be composed correctly
+        let mut buf = Buffer::from(Bytes::from("0123456789"));
+
+        // Split off tail
+        let tail = buf.split_off(7); // buf=[0-6], tail=[7-9]
+        assert_eq!(buf.to_bytes(), Bytes::from("0123456"));
+        assert_eq!(tail.to_bytes(), Bytes::from("789"));
+
+        // Split head from remaining
+        let head = buf.split_to(3); // head=[0-2], buf=[3-6]
+        assert_eq!(head.to_bytes(), Bytes::from("012"));
+        assert_eq!(buf.to_bytes(), Bytes::from("3456"));
+    }
+
+    #[test]
+    fn test_split_preserves_underlying_storage() {
+        // Verify that split operations share underlying storage
+        let original = Bytes::from("HelloWorld");
+        let mut buf = Buffer::from(original.clone());
+
+        let head = buf.split_to(5);
+
+        // Both should reference the same underlying storage
+        // (This is implicit in Bytes behavior, but good to document)
+        assert_eq!(head.to_bytes(), Bytes::from("Hello"));
+        assert_eq!(buf.to_bytes(), Bytes::from("World"));
+    }
+
+    #[test]
+    fn fuzz_buffer_split_to() {
+        let mut rng = rng();
+
+        let (mut buf, total_size, total_content) = setup_buffer();
+        assert_eq!(buf.remaining(), total_size);
+
+        let mut cur = 0;
+        let mut times = 100;
+        while !buf.is_empty() && times > 0 {
+            times -= 1;
+            let remaining = buf.len();
+            let at = rng.random_range(0..=remaining);
+            let head = buf.split_to(at);
+            assert_eq!(head.to_bytes(), total_content.slice(cur..cur + at));
+            cur += at;
+            assert_eq!(buf.to_bytes(), total_content.slice(cur..total_size));
+        }
+    }
+
+    #[test]
+    fn fuzz_buffer_split_off() {
+        let mut rng = rng();
+
+        let (mut buf, total_size, total_content) = setup_buffer();
+        assert_eq!(buf.remaining(), total_size);
+
+        let mut end = total_size;
+        let mut times = 100;
+        let cur = 0;
+        while !buf.is_empty() && times > 0 {
+            times -= 1;
+            let remaining = buf.len();
+            let at = rng.random_range(0..=remaining);
+            let tail = buf.split_off(at);
+            assert_eq!(buf.to_bytes(), total_content.slice(cur..cur + at));
+            assert_eq!(tail.to_bytes(), total_content.slice(cur + at..end));
+            end = cur + at;
+            // Continue with the head part
+        }
+    }
+
+    /// Returns the bytes exposed by `to_io_slice` and by `Buf::chunks_vectored`.
+    fn vectored_bytes(buf: &Buffer) -> (Bytes, Bytes) {
+        let from_io_slice = buf
+            .to_io_slice()
+            .iter()
+            .flat_map(|s| s.iter())
+            .copied()
+            .collect::<Bytes>();
+
+        let mut dst = [IoSlice::new(EMPTY_SLICE); 8];
+        let n = buf.chunks_vectored(&mut dst);
+        let from_chunks_vectored = dst[..n]
+            .iter()
+            .flat_map(|s| s.iter())
+            .copied()
+            .collect::<Bytes>();
+
+        (from_io_slice, from_chunks_vectored)
+    }
+
+    #[test]
+    fn test_vectored_views_after_slice() {
+        let buf = Buffer::from(vec![Bytes::from("abc"), Bytes::from("def")]);
+
+        let view = buf.slice(0..2);
+        assert_eq!(view.remaining(), 2);
+        assert_eq!(view.to_bytes(), Bytes::from("ab"));
+        assert_eq!(
+            vectored_bytes(&view),
+            (Bytes::from("ab"), Bytes::from("ab"))
+        );
+
+        let view = buf.slice(1..4);
+        assert_eq!(view.remaining(), 3);
+        assert_eq!(view.to_bytes(), Bytes::from("bcd"));
+        assert_eq!(
+            vectored_bytes(&view),
+            (Bytes::from("bcd"), Bytes::from("bcd"))
+        );
+    }
+
+    #[test]
+    fn test_vectored_views_after_split_to() {
+        let mut buf = Buffer::from(vec![Bytes::from("abc"), Bytes::from("def")]);
+        let head = buf.split_to(2);
+
+        assert_eq!(head.remaining(), 2);
+        assert_eq!(
+            vectored_bytes(&head),
+            (Bytes::from("ab"), Bytes::from("ab"))
+        );
+
+        assert_eq!(buf.remaining(), 4);
+        assert_eq!(
+            vectored_bytes(&buf),
+            (Bytes::from("cdef"), Bytes::from("cdef"))
+        );
+    }
+
+    #[test]
+    fn test_vectored_views_after_split_off() {
+        let mut buf = Buffer::from(vec![Bytes::from("abc"), Bytes::from("def")]);
+        let tail = buf.split_off(2);
+
+        assert_eq!(buf.remaining(), 2);
+        assert_eq!(vectored_bytes(&buf), (Bytes::from("ab"), Bytes::from("ab")));
+
+        assert_eq!(tail.remaining(), 4);
+        assert_eq!(
+            vectored_bytes(&tail),
+            (Bytes::from("cdef"), Bytes::from("cdef"))
+        );
+    }
+
+    #[test]
+    fn fuzz_buffer_cursor_seek_and_read() -> io::Result<()> {
+        let (buf, total_size, total_content) = setup_buffer();
+        let mut buf = BufferCursor::new(buf);
+
+        let mut rng = rng();
+        for _ in 0..100 {
+            let pos = match rng.random_range(0..3) {
+                0 => buf.seek(SeekFrom::Start(rng.random_range(0..=total_size as u64)))?,
+                1 => buf.seek(SeekFrom::Current(rng.random_range(
+                    -(buf.pos as i64)..=(total_size as i64 - buf.pos as i64),
+                )))?,
+                _ => buf.seek(SeekFrom::End(rng.random_range(-(total_size as i64)..=0)))?,
+            };
+
+            let mut out = vec![];
+            buf.read_to_end(&mut out)?;
+
+            assert_eq!(&out[..], &total_content[pos as usize..]);
+        }
+
+        Ok(())
     }
 }

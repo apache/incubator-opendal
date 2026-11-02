@@ -16,7 +16,6 @@
 // under the License.
 
 use std::fmt::Debug;
-use std::sync::Arc;
 
 use bytes::Bytes;
 use constants::X_OSS_META_PREFIX;
@@ -27,6 +26,7 @@ use http::Request;
 use http::Response;
 use http::header::CACHE_CONTROL;
 use http::header::CONTENT_DISPOSITION;
+use http::header::CONTENT_ENCODING;
 use http::header::CONTENT_LENGTH;
 use http::header::CONTENT_TYPE;
 use http::header::IF_MATCH;
@@ -34,13 +34,12 @@ use http::header::IF_MODIFIED_SINCE;
 use http::header::IF_NONE_MATCH;
 use http::header::IF_UNMODIFIED_SINCE;
 use http::header::RANGE;
-use reqsign::AliyunCredential;
-use reqsign::AliyunLoader;
-use reqsign::AliyunOssSigner;
+use reqsign_aliyun_oss::Credential;
+use reqsign_core::{Context, Signer};
 use serde::Deserialize;
 use serde::Serialize;
 
-use crate::core::constants::X_OSS_FORBID_OVERWRITE;
+use constants::X_OSS_FORBID_OVERWRITE;
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -61,7 +60,8 @@ pub mod constants {
 }
 
 pub struct OssCore {
-    pub info: Arc<AccessorInfo>,
+    pub info: ServiceInfo,
+    pub capability: Capability,
 
     pub root: String,
     pub bucket: String,
@@ -71,13 +71,13 @@ pub struct OssCore {
     pub host: String,
     pub endpoint: String,
     pub presign_endpoint: String,
-    pub allow_anonymous: bool,
+    pub skip_signature: bool,
 
     pub server_side_encryption: Option<HeaderValue>,
     pub server_side_encryption_key_id: Option<HeaderValue>,
 
-    pub loader: AliyunLoader,
-    pub signer: AliyunOssSigner,
+    pub signer: Signer<Credential>,
+    pub sign_ctx: Context,
 }
 
 impl Debug for OssCore {
@@ -92,53 +92,56 @@ impl Debug for OssCore {
 }
 
 impl OssCore {
-    async fn load_credential(&self) -> Result<Option<AliyunCredential>> {
-        let cred = self
-            .loader
-            .load()
-            .await
-            .map_err(new_request_credential_error)?;
+    fn signer(&self, ctx: &OperationContext) -> Signer<Credential> {
+        self.signer.clone().with_context(
+            self.sign_ctx
+                .clone()
+                .with_http_send(ctx.http_transport().clone()),
+        )
+    }
 
-        if let Some(cred) = cred {
-            Ok(Some(cred))
-        } else if self.allow_anonymous {
-            // If allow_anonymous has been set, we will not sign the request.
-            Ok(None)
-        } else {
-            // Mark this error as temporary since it could be caused by Aliyun STS.
-            Err(Error::new(
-                ErrorKind::PermissionDenied,
-                "no valid credential found, please check configuration or try again",
-            )
-            .set_temporary())
+    pub async fn sign<T>(&self, ctx: &OperationContext, req: Request<T>) -> Result<Request<T>> {
+        if self.skip_signature {
+            return Ok(req);
         }
+
+        let (mut parts, body) = req.into_parts();
+
+        self.signer(ctx)
+            .sign(&mut parts, None)
+            .await
+            .map_err(|e| new_request_sign_error(e.into()))?;
+
+        Ok(Request::from_parts(parts, body))
     }
 
-    pub async fn sign<T>(&self, req: &mut Request<T>) -> Result<()> {
-        let cred = if let Some(cred) = self.load_credential().await? {
-            cred
-        } else {
-            return Ok(());
-        };
+    pub async fn sign_query<T>(
+        &self,
+        ctx: &OperationContext,
+        req: Request<T>,
+        duration: Duration,
+    ) -> Result<Request<T>> {
+        if self.skip_signature {
+            return Ok(req);
+        }
 
-        self.signer.sign(req, &cred).map_err(new_request_sign_error)
-    }
+        let (mut parts, body) = req.into_parts();
 
-    pub async fn sign_query<T>(&self, req: &mut Request<T>, duration: Duration) -> Result<()> {
-        let cred = if let Some(cred) = self.load_credential().await? {
-            cred
-        } else {
-            return Ok(());
-        };
+        self.signer(ctx)
+            .sign(&mut parts, Some(duration))
+            .await
+            .map_err(|e| new_request_sign_error(e.into()))?;
 
-        self.signer
-            .sign_query(req, duration, &cred)
-            .map_err(new_request_sign_error)
+        Ok(Request::from_parts(parts, body))
     }
 
     #[inline]
-    pub async fn send(&self, req: Request<Buffer>) -> Result<Response<Buffer>> {
-        self.info.http_client().send(req).await
+    pub async fn send(
+        &self,
+        ctx: &OperationContext,
+        req: Request<Buffer>,
+    ) -> Result<Response<Buffer>> {
+        ctx.http_transport().send(req).await
     }
 
     /// Set sse headers
@@ -180,6 +183,10 @@ impl OssCore {
 
         if let Some(pos) = args.content_disposition() {
             req = req.header(CONTENT_DISPOSITION, pos);
+        }
+
+        if let Some(encoding) = args.content_encoding() {
+            req = req.header(CONTENT_ENCODING, encoding);
         }
 
         if let Some(cache_control) = args.cache_control() {
@@ -233,13 +240,13 @@ impl OssCore {
     ///
     /// before return the user defined metadata, we'll strip the user_metadata_prefix from the key
     pub fn parse_metadata(&self, path: &str, headers: &HeaderMap) -> Result<Metadata> {
-        let mut m = parse_into_metadata(path, headers)?;
+        let mut m = parse_into_metadata(path, headers)?.into_builder();
         let user_meta = parse_prefixed_headers(headers, X_OSS_META_PREFIX);
         if !user_meta.is_empty() {
-            m = m.with_user_metadata(user_meta);
+            m.user_metadata(user_meta);
         }
 
-        Ok(m)
+        Ok(m.build())
     }
 }
 
@@ -264,7 +271,9 @@ impl OssCore {
         // set sse headers
         req = self.insert_sse_headers(req);
 
-        let req = req.extension(Operation::Write);
+        let req = req
+            .extension(Operation::Write)
+            .extension(ServiceOperation("PutObject"));
 
         let req = req.body(body).map_err(new_request_build_error)?;
         Ok(req)
@@ -294,7 +303,9 @@ impl OssCore {
         // set sse headers
         req = self.insert_sse_headers(req);
 
-        let req = req.extension(Operation::Write);
+        let req = req
+            .extension(Operation::Write)
+            .extension(ServiceOperation("AppendObject"));
 
         let req = req.body(body).map_err(new_request_build_error)?;
         Ok(req)
@@ -304,11 +315,11 @@ impl OssCore {
         &self,
         path: &str,
         is_presign: bool,
+        range: BytesRange,
         args: &OpRead,
     ) -> Result<Request<Buffer>> {
         let p = build_abs_path(&self.root, path);
         let endpoint = self.get_endpoint(is_presign);
-        let range = args.range();
         let mut url = format!("{}/{}", endpoint, percent_encode_path(&p));
 
         // Add query arguments to the URL based on response overrides
@@ -356,7 +367,9 @@ impl OssCore {
             req = req.header(IF_UNMODIFIED_SINCE, if_unmodified_since.format_http_date());
         }
 
-        let req = req.extension(Operation::Read);
+        let req = req
+            .extension(Operation::Read)
+            .extension(ServiceOperation("GetObject"));
 
         let req = req.body(Buffer::new()).map_err(new_request_build_error)?;
 
@@ -384,7 +397,9 @@ impl OssCore {
 
         let req = Request::delete(&url);
 
-        let req = req.extension(Operation::Delete);
+        let req = req
+            .extension(Operation::Delete)
+            .extension(ServiceOperation("DeleteObject"));
 
         let req = req.body(Buffer::new()).map_err(new_request_build_error)?;
 
@@ -423,7 +438,9 @@ impl OssCore {
             req = req.header(IF_NONE_MATCH, if_none_match);
         }
 
-        let req = req.extension(Operation::Stat);
+        let req = req
+            .extension(Operation::Stat)
+            .extension(ServiceOperation("HeadObject"));
 
         let req = req.body(Buffer::new()).map_err(new_request_build_error)?;
 
@@ -469,25 +486,41 @@ impl OssCore {
 
         let req = Request::get(url.finish())
             .extension(Operation::List)
+            .extension(ServiceOperation("ListObjectsV2"))
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
         Ok(req)
     }
 
-    pub async fn oss_get_object(&self, path: &str, args: &OpRead) -> Result<Response<HttpBody>> {
-        let mut req = self.oss_get_object_request(path, false, args)?;
-        self.sign(&mut req).await?;
-        self.info.http_client().fetch(req).await
+    pub async fn oss_get_object(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        range: BytesRange,
+        args: &OpRead,
+    ) -> Result<Response<HttpBody>> {
+        let req = self.oss_get_object_request(path, false, range, args)?;
+        let req = self.sign(ctx, req).await?;
+        ctx.http_transport().fetch(req).await
     }
 
-    pub async fn oss_head_object(&self, path: &str, args: &OpStat) -> Result<Response<Buffer>> {
-        let mut req = self.oss_head_object_request(path, false, args)?;
-
-        self.sign(&mut req).await?;
-        self.send(req).await
+    pub async fn oss_head_object(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: &OpStat,
+    ) -> Result<Response<Buffer>> {
+        let req = self.oss_head_object_request(path, false, args)?;
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 
-    pub async fn oss_copy_object(&self, from: &str, to: &str) -> Result<Response<Buffer>> {
+    pub async fn oss_copy_object(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+    ) -> Result<Response<Buffer>> {
         let source = build_abs_path(&self.root, from);
         let target = build_abs_path(&self.root, to);
 
@@ -504,30 +537,32 @@ impl OssCore {
 
         req = req.header("x-oss-copy-source", source);
 
-        let req = req.extension(Operation::Copy);
+        let req = req
+            .extension(Operation::Copy)
+            .extension(ServiceOperation("CopyObject"));
 
-        let mut req = req.body(Buffer::new()).map_err(new_request_build_error)?;
-
-        self.sign(&mut req).await?;
-        self.send(req).await
+        let req = req.body(Buffer::new()).map_err(new_request_build_error)?;
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 
     pub async fn oss_list_object(
         &self,
+        ctx: &OperationContext,
         path: &str,
         token: &str,
         delimiter: &str,
         limit: Option<usize>,
         start_after: Option<String>,
     ) -> Result<Response<Buffer>> {
-        let mut req = self.oss_list_object_request(path, token, delimiter, limit, start_after)?;
-
-        self.sign(&mut req).await?;
-        self.send(req).await
+        let req = self.oss_list_object_request(path, token, delimiter, limit, start_after)?;
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 
     pub async fn oss_list_object_versions(
         &self,
+        ctx: &OperationContext,
         prefix: &str,
         delimiter: &str,
         limit: Option<usize>,
@@ -556,24 +591,29 @@ impl OssCore {
             url = url.push("version-id-marker", &percent_encode_path(version_id_marker));
         }
 
-        let mut req = Request::get(url.finish())
+        let req = Request::get(url.finish())
             .extension(Operation::List)
+            .extension(ServiceOperation("ListObjectVersions"))
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
-
-        self.sign(&mut req).await?;
-
-        self.send(req).await
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 
-    pub async fn oss_delete_object(&self, path: &str, args: &OpDelete) -> Result<Response<Buffer>> {
-        let mut req = self.oss_delete_object_request(path, args)?;
-        self.sign(&mut req).await?;
-        self.send(req).await
+    pub async fn oss_delete_object(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: &OpDelete,
+    ) -> Result<Response<Buffer>> {
+        let req = self.oss_delete_object_request(path, args)?;
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 
     pub async fn oss_delete_objects(
         &self,
+        ctx: &OperationContext,
         paths: Vec<(String, OpDelete)>,
     ) -> Result<Response<Buffer>> {
         let url = format!("{}/?delete", self.endpoint);
@@ -598,15 +638,15 @@ impl OssCore {
         // Set content-md5 as required by API.
         let req = req.header("CONTENT-MD5", format_content_md5(content.as_bytes()));
 
-        let req = req.extension(Operation::Delete);
+        let req = req
+            .extension(Operation::Delete)
+            .extension(ServiceOperation("DeleteMultipleObjects"));
 
-        let mut req = req
+        let req = req
             .body(Buffer::from(Bytes::from(content)))
             .map_err(new_request_build_error)?;
-
-        self.sign(&mut req).await?;
-
-        self.send(req).await
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 
     fn get_endpoint(&self, is_presign: bool) -> &str {
@@ -619,37 +659,50 @@ impl OssCore {
 
     pub async fn oss_initiate_upload(
         &self,
+        ctx: &OperationContext,
         path: &str,
-        content_type: Option<&str>,
-        content_disposition: Option<&str>,
-        cache_control: Option<&str>,
+        args: &OpWrite,
         is_presign: bool,
     ) -> Result<Response<Buffer>> {
         let path = build_abs_path(&self.root, path);
         let endpoint = self.get_endpoint(is_presign);
         let url = format!("{}/{}?uploads", endpoint, percent_encode_path(&path));
         let mut req = Request::post(&url);
-        if let Some(mime) = content_type {
+        if let Some(mime) = args.content_type() {
             req = req.header(CONTENT_TYPE, mime);
         }
-        if let Some(disposition) = content_disposition {
+        if let Some(disposition) = args.content_disposition() {
             req = req.header(CONTENT_DISPOSITION, disposition);
         }
-        if let Some(cache_control) = cache_control {
+        if let Some(cache_control) = args.cache_control() {
             req = req.header(CACHE_CONTROL, cache_control);
+        }
+        if let Some(encoding) = args.content_encoding() {
+            req = req.header(CONTENT_ENCODING, encoding);
+        }
+        // OSS evaluates x-oss-forbid-overwrite on both InitiateMultipartUpload and
+        // CompleteMultipartUpload. Setting it only on one of them is not enough.
+        //
+        // ref: https://www.alibabacloud.com/help/en/oss/developer-reference/initiatemultipartupload
+        if args.if_not_exists() {
+            req = req.header(X_OSS_FORBID_OVERWRITE, "true");
         }
         req = self.insert_sse_headers(req);
 
-        let req = req.extension(Operation::Write);
+        let req = req
+            .extension(Operation::Write)
+            .extension(ServiceOperation("InitiateMultipartUpload"));
 
-        let mut req = req.body(Buffer::new()).map_err(new_request_build_error)?;
-        self.sign(&mut req).await?;
-        self.send(req).await
+        let req = req.body(Buffer::new()).map_err(new_request_build_error)?;
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 
     /// Creates a request to upload a part
+    #[allow(clippy::too_many_arguments)]
     pub async fn oss_upload_part_request(
         &self,
+        ctx: &OperationContext,
         path: &str,
         upload_id: &str,
         part_number: usize,
@@ -671,19 +724,23 @@ impl OssCore {
         let mut req = Request::put(&url);
         req = req.header(CONTENT_LENGTH, size);
 
-        let req = req.extension(Operation::Write);
+        let req = req
+            .extension(Operation::Write)
+            .extension(ServiceOperation("UploadPart"));
 
-        let mut req = req.body(body).map_err(new_request_build_error)?;
-        self.sign(&mut req).await?;
-        self.send(req).await
+        let req = req.body(body).map_err(new_request_build_error)?;
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 
     pub async fn oss_complete_multipart_upload_request(
         &self,
+        ctx: &OperationContext,
         path: &str,
         upload_id: &str,
         is_presign: bool,
         parts: Vec<MultipartUploadPart>,
+        args: &OpWrite,
     ) -> Result<Response<Buffer>> {
         let p = build_abs_path(&self.root, path);
         let endpoint = self.get_endpoint(is_presign);
@@ -694,31 +751,40 @@ impl OssCore {
             percent_encode_path(upload_id)
         );
 
-        let req = Request::post(&url);
+        let mut req = Request::post(&url);
 
         let content = quick_xml::se::to_string(&CompleteMultipartUploadRequest {
             part: parts.to_vec(),
         })
         .map_err(new_xml_serialize_error)?;
         // Make sure content length has been set to avoid post with chunked encoding.
-        let req = req.header(CONTENT_LENGTH, content.len());
+        req = req.header(CONTENT_LENGTH, content.len());
         // Set content-type to `application/xml` to avoid mixed with form post.
-        let req = req.header(CONTENT_TYPE, "application/xml");
+        req = req.header(CONTENT_TYPE, "application/xml");
+        // CompleteMultipartUpload is the request that commits the object, so
+        // if_not_exists must also be enforced here.
+        //
+        // ref: https://www.alibabacloud.com/help/en/oss/developer-reference/completemultipartupload
+        if args.if_not_exists() {
+            req = req.header(X_OSS_FORBID_OVERWRITE, "true");
+        }
 
-        let req = req.extension(Operation::Write);
+        let req = req
+            .extension(Operation::Write)
+            .extension(ServiceOperation("CompleteMultipartUpload"));
 
-        let mut req = req
+        let req = req
             .body(Buffer::from(Bytes::from(content)))
             .map_err(new_request_build_error)?;
-
-        self.sign(&mut req).await?;
-        self.send(req).await
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 
     /// Abort an ongoing multipart upload.
     /// reference docs https://www.alibabacloud.com/help/zh/oss/developer-reference/abortmultipartupload
     pub async fn oss_abort_multipart_upload(
         &self,
+        ctx: &OperationContext,
         path: &str,
         upload_id: &str,
     ) -> Result<Response<Buffer>> {
@@ -731,12 +797,13 @@ impl OssCore {
             percent_encode_path(upload_id)
         );
 
-        let mut req = Request::delete(&url)
+        let req = Request::delete(&url)
             .extension(Operation::Write)
+            .extension(ServiceOperation("AbortMultipartUpload"))
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
-        self.sign(&mut req).await?;
-        self.send(req).await
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 }
 
@@ -1076,5 +1143,191 @@ mod tests {
                 }
             ]
         )
+    }
+
+    /// Error response example is from https://www.alibabacloud.com/help/en/object-storage-service/latest/error-responses
+    #[test]
+    fn test_parse_error() {
+        let bs = bytes::Bytes::from(
+            r#"
+<?xml version="1.0" ?>
+<Error xmlns="http://doc.oss-cn-hangzhou.aliyuncs.com">
+    <Code>
+        AccessDenied
+    </Code>
+    <Message>
+        Query-string authentication requires the Signature, Expires and OSSAccessKeyId parameters
+    </Message>
+    <RequestId>
+        1D842BC54255****
+    </RequestId>
+    <HostId>
+        oss-cn-hangzhou.aliyuncs.com
+    </HostId>
+</Error>
+"#,
+        );
+
+        let out: OssError = de::from_reader(bs.reader()).expect("must success");
+        println!("{out:?}");
+
+        assert_eq!(out.code.trim(), "AccessDenied");
+        assert_eq!(
+            out.message.trim(),
+            "Query-string authentication requires the Signature, Expires and OSSAccessKeyId parameters"
+        );
+        assert_eq!(out.request_id.trim(), "1D842BC54255****");
+        assert_eq!(out.host_id.trim(), "oss-cn-hangzhou.aliyuncs.com");
+    }
+}
+
+use bytes::Buf;
+use http::StatusCode;
+use quick_xml::de;
+
+/// OssError is the error returned by oss service.
+#[derive(Default, Debug, Deserialize)]
+#[serde(default, rename_all = "PascalCase")]
+struct OssError {
+    code: String,
+    message: String,
+    request_id: String,
+    host_id: String,
+}
+
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+    caller_condition: bool,
+    if_not_exists: bool,
+}
+
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self {
+            service_operation,
+            caller_condition: false,
+            if_not_exists: false,
+        }
+    }
+
+    pub(crate) const fn with_caller_condition(mut self, caller_condition: bool) -> Self {
+        self.caller_condition = caller_condition;
+        self
+    }
+
+    pub(crate) const fn with_if_not_exists(mut self, if_not_exists: bool) -> Self {
+        self.caller_condition = self.caller_condition || if_not_exists;
+        self.if_not_exists = if_not_exists;
+        self
+    }
+}
+
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
+    let (parts, body) = resp.into_parts();
+    let bs = body.to_bytes();
+
+    let oss_error = de::from_reader::<_, OssError>(bs.clone().reader()).ok();
+
+    let (mut kind, mut retryable) = match parts.status {
+        StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
+        StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, false),
+        StatusCode::PRECONDITION_FAILED | StatusCode::NOT_MODIFIED if ctx.caller_condition => {
+            (ErrorKind::ConditionNotMatch, false)
+        }
+        StatusCode::TOO_MANY_REQUESTS => (ErrorKind::RateLimited, true),
+        StatusCode::INTERNAL_SERVER_ERROR
+        | StatusCode::BAD_GATEWAY
+        | StatusCode::SERVICE_UNAVAILABLE
+        | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
+        _ => (ErrorKind::Unexpected, false),
+    };
+
+    if let Some(oss_error) = &oss_error {
+        match oss_error.code.as_str() {
+            "PreconditionFailed" if ctx.caller_condition => {
+                (kind, retryable) = (ErrorKind::ConditionNotMatch, false);
+            }
+            "FileAlreadyExists" if ctx.if_not_exists => {
+                (kind, retryable) = (ErrorKind::ConditionNotMatch, false);
+            }
+            "FileAlreadyExists" | "FileImmutable" => {
+                (kind, retryable) = (ErrorKind::Conflict, false);
+            }
+            _ if matches!(
+                parts.status,
+                StatusCode::CONFLICT | StatusCode::PRECONDITION_FAILED
+            ) =>
+            {
+                (kind, retryable) = (ErrorKind::Unexpected, false);
+            }
+            _ => {}
+        }
+    }
+
+    let message = match oss_error {
+        Some(oss_err) => format!("{oss_err:?}"),
+        None => String::from_utf8_lossy(&bs).into_owned(),
+    };
+
+    let mut err = Error::new(kind, message);
+
+    err = err.with_context("service_operation", ctx.service_operation.0);
+    err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
+
+    err
+}
+
+#[cfg(test)]
+mod error_tests {
+    use super::*;
+
+    fn parse_oss_error(ctx: ErrorContext, status: StatusCode, code: &str) -> Error {
+        let body = Buffer::from(format!(
+            "<Error><Code>{code}</Code><Message>test</Message></Error>"
+        ));
+        let resp = Response::builder()
+            .status(status)
+            .body(body)
+            .expect("response must build");
+        parse_error(ctx, resp)
+    }
+
+    #[test]
+    fn conflict_classification_uses_native_code_and_condition() {
+        let conditional = ErrorContext::new(ServiceOperation("PutObject")).with_if_not_exists(true);
+        assert_eq!(
+            parse_oss_error(conditional, StatusCode::CONFLICT, "FileAlreadyExists").kind(),
+            ErrorKind::ConditionNotMatch
+        );
+        assert_eq!(
+            parse_oss_error(
+                conditional,
+                StatusCode::PRECONDITION_FAILED,
+                "PreconditionFailed"
+            )
+            .kind(),
+            ErrorKind::ConditionNotMatch
+        );
+
+        let unconditional = ErrorContext::new(ServiceOperation("PutObject"));
+        assert_eq!(
+            parse_oss_error(unconditional, StatusCode::CONFLICT, "FileAlreadyExists").kind(),
+            ErrorKind::Conflict
+        );
+        assert_eq!(
+            parse_oss_error(unconditional, StatusCode::CONFLICT, "FileImmutable").kind(),
+            ErrorKind::Conflict
+        );
+        assert_eq!(
+            parse_oss_error(unconditional, StatusCode::CONFLICT, "UnknownConflict").kind(),
+            ErrorKind::Unexpected
+        );
     }
 }

@@ -54,7 +54,7 @@ pub fn parse_op_stat(args: &OpStat) -> Result<GetOptions> {
 }
 
 /// Parse OpRead arguments to object_store GetOptions
-pub fn parse_op_read(args: &OpRead) -> Result<GetOptions> {
+pub fn parse_op_read(args: &OpRead, range: BytesRange) -> Result<GetOptions> {
     let mut options = GetOptions::default();
 
     if let Some(version) = args.version() {
@@ -77,15 +77,26 @@ pub fn parse_op_read(args: &OpRead) -> Result<GetOptions> {
         options.if_unmodified_since = timestamp_to_datetime(if_unmodified_since);
     }
 
-    if !args.range().is_full() {
-        let range = args.range();
-        match range.size() {
+    match range {
+        BytesRange::Range {
+            offset: 0,
+            size: None,
+        } => {}
+        BytesRange::Range { offset, size } => match size {
             Some(size) => {
-                options.range = Some(GetRange::Bounded(range.offset()..range.offset() + size));
+                let end = offset.checked_add(size).ok_or_else(|| {
+                    Error::new(ErrorKind::RangeNotSatisfied, "range exceeds content length")
+                        .with_context("offset", offset)
+                        .with_context("size", size)
+                })?;
+                options.range = Some(GetRange::Bounded(offset..end));
             }
             None => {
-                options.range = Some(GetRange::Offset(range.offset()));
+                options.range = Some(GetRange::Offset(offset));
             }
+        },
+        BytesRange::Suffix { size } => {
+            options.range = Some(GetRange::Suffix(size));
         }
     }
 
@@ -138,28 +149,40 @@ pub fn format_put_multipart_options(opts: PutOptions) -> object_store::PutMultip
 
 /// Format PutResult to OpenDAL Metadata
 pub fn format_put_result(result: PutResult) -> Metadata {
-    let mut metadata = Metadata::new(EntryMode::FILE);
+    let mut metadata = MetadataBuilder::unknown();
     if let Some(etag) = &result.e_tag {
-        metadata.set_etag(etag);
+        metadata.etag(etag);
     }
     if let Some(version) = &result.version {
-        metadata.set_version(version);
+        metadata.version(version);
     }
-    metadata
+    metadata.build()
 }
 
 /// Format `object_store::ObjectMeta` to `opendal::Metadata`.
 pub fn format_metadata(meta: &ObjectMeta) -> Metadata {
-    let mut metadata = Metadata::new(EntryMode::FILE);
-    metadata.set_content_length(meta.size);
+    let mut metadata = MetadataBuilder::file(meta.size);
     if let Some(last_modified) = datetime_to_timestamp(meta.last_modified) {
-        metadata.set_last_modified(last_modified);
+        metadata.last_modified(last_modified);
     }
     if let Some(etag) = &meta.e_tag {
-        metadata.set_etag(etag);
+        metadata.etag(etag);
     }
     if let Some(version) = &meta.version {
-        metadata.set_version(version);
+        metadata.version(version);
     }
-    metadata
+    metadata.build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_op_read_suffix_range() -> Result<()> {
+        let opts = parse_op_read(&OpRead::new(), BytesRange::suffix(8))?;
+
+        assert_eq!(opts.range, Some(GetRange::Suffix(8)));
+        Ok(())
+    }
 }

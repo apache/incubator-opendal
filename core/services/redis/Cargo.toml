@@ -18,6 +18,7 @@
 [package]
 description = "Apache OpenDAL Redis service implementation"
 name = "opendal-service-redis"
+readme = "README.md"
 
 authors = { workspace = true }
 edition = { workspace = true }
@@ -36,11 +37,11 @@ native-tls = ["redis/tokio-native-tls-comp"]
 rustls = ["redis/tokio-rustls-comp"]
 
 [dependencies]
+asyncband = { workspace = true, features = ["pool"] }
 bytes = { workspace = true }
-fastpool = "1.0.2"
 http = { workspace = true }
-opendal-core = { path = "../../core", version = "0.55.0", default-features = false }
-redis = { version = "1.0", features = [
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false }
+redis = { version = "1.2", features = [
   "cluster-async",
   "tokio-comp",
   "connection-manager",

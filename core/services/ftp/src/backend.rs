@@ -30,11 +30,9 @@ use super::FTP_SCHEME;
 use super::config::FtpConfig;
 use super::core::FtpCore;
 use super::core::Manager;
+use super::core::format_ftp_error;
 use super::deleter::FtpDeleter;
-use super::err::format_ftp_error;
-use super::lister::FtpLister;
-use super::reader::FtpReader;
-use super::writer::FtpWriter;
+use super::reader::*;
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -94,8 +92,8 @@ impl FtpBuilder {
 impl Builder for FtpBuilder {
     type Config = FtpConfig;
 
-    fn build(self) -> Result<impl Access> {
-        debug!("ftp backend build started: {:?}", &self);
+    fn build(self) -> Result<impl Service> {
+        debug!("ftp backend build started: {:?}", self);
         let endpoint = match &self.config.endpoint {
             None => return Err(Error::new(ErrorKind::ConfigInvalid, "endpoint is empty")),
             Some(v) => v,
@@ -142,46 +140,43 @@ impl Builder for FtpBuilder {
             Some(v) => v.clone(),
         };
 
-        let accessor_info = AccessorInfo::default();
-        accessor_info
-            .set_scheme(FTP_SCHEME)
-            .set_root(&root)
-            .set_native_capability(Capability {
-                stat: true,
+        let info = ServiceInfo::new(FTP_SCHEME, &root, "");
+        let capability = Capability {
+            stat: true,
 
-                read: true,
+            read: true,
 
-                write: true,
-                write_can_multi: true,
-                write_can_append: true,
+            write: true,
+            write_can_multi: true,
+            write_can_append: true,
 
-                delete: true,
-                create_dir: true,
+            delete: true,
+            create_dir: true,
 
-                list: true,
+            list: true,
 
-                shared: true,
+            shared: true,
 
-                ..Default::default()
-            });
+            ..Default::default()
+        };
 
         let manager = Manager {
             endpoint: endpoint.clone(),
+            host: host.to_string(),
             root: root.clone(),
             user: user.clone(),
             password: password.clone(),
             enable_secure,
         };
 
-        let core = Arc::new(FtpCore::new(accessor_info.into(), manager.clone()));
+        let core = Arc::new(FtpCore::new(info, capability, manager.clone()));
         Ok(FtpBackend { core })
     }
 }
 
-// Backend is used to serve `Accessor` support for ftp.
 #[derive(Clone)]
 pub struct FtpBackend {
-    core: Arc<FtpCore>,
+    pub(crate) core: Arc<FtpCore>,
 }
 
 impl Debug for FtpBackend {
@@ -190,17 +185,28 @@ impl Debug for FtpBackend {
     }
 }
 
-impl Access for FtpBackend {
-    type Reader = FtpReader;
-    type Writer = FtpWriter;
-    type Lister = FtpLister;
+impl Service for FtpBackend {
+    type Reader = oio::StreamReader<FtpReader>;
+    type Writer = FtpLazyWriter;
+    type Lister = FtpLazyLister;
     type Deleter = oio::OneShotDeleter<FtpDeleter>;
+    type Copier = ();
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
+    fn info(&self) -> ServiceInfo {
         self.core.info()
     }
 
-    async fn create_dir(&self, path: &str, _: OpCreateDir) -> Result<RpCreateDir> {
+    fn capability(&self) -> Capability {
+        self.core.capability()
+    }
+
+    async fn create_dir(
+        &self,
+        _ctx: &OperationContext,
+        path: &str,
+        _: OpCreateDir,
+    ) -> Result<RpCreateDir> {
         let mut ftp_stream = self.core.ftp_connect(Operation::CreateDir).await?;
 
         let paths: Vec<&str> = path.split_inclusive('/').collect();
@@ -225,7 +231,7 @@ impl Access for FtpBackend {
         Ok(RpCreateDir::default())
     }
 
-    async fn stat(&self, path: &str, _: OpStat) -> Result<RpStat> {
+    async fn stat(&self, _ctx: &OperationContext, path: &str, _: OpStat) -> Result<RpStat> {
         let file = self.ftp_stat(path).await?;
 
         let mode = if file.is_file() {
@@ -236,70 +242,77 @@ impl Access for FtpBackend {
             EntryMode::Unknown
         };
 
-        let mut meta = Metadata::new(mode);
-        meta.set_content_length(file.size() as u64);
-        meta.set_last_modified(Timestamp::try_from(file.modified())?);
+        let mut meta = match mode {
+            EntryMode::FILE => MetadataBuilder::file(file.size() as u64),
+            EntryMode::DIR => MetadataBuilder::dir(),
+            EntryMode::Unknown => MetadataBuilder::unknown(),
+        };
+        meta.last_modified(Timestamp::try_from(file.modified())?);
 
-        Ok(RpStat::new(meta))
+        Ok(RpStat::new(meta.build()))
+    }
+    fn read(&self, _ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
+        let output: oio::StreamReader<FtpReader> = {
+            Ok(oio::StreamReader::new(FtpReader::new(
+                self.clone(),
+                path,
+                args,
+            )))
+        }?;
+
+        Ok(output)
     }
 
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let ftp_stream = self.core.ftp_connect(Operation::Read).await?;
-
-        let reader = FtpReader::new(ftp_stream, path.to_string(), args).await?;
-        Ok((RpRead::new(), reader))
+    fn write(&self, _ctx: &OperationContext, path: &str, op: OpWrite) -> Result<Self::Writer> {
+        Ok(FtpLazyWriter::new(self.core.clone(), path, op))
     }
 
-    async fn write(&self, path: &str, op: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        // Ensure the parent dir exists.
-        let parent = get_parent(path);
-        let paths: Vec<&str> = parent.split('/').collect();
+    fn delete(&self, _ctx: &OperationContext) -> Result<Self::Deleter> {
+        let output: oio::OneShotDeleter<FtpDeleter> =
+            { Ok(oio::OneShotDeleter::new(FtpDeleter::new(self.core.clone()))) }?;
 
-        // TODO: we can optimize this by checking dir existence first.
-        let mut ftp_stream = self.core.ftp_connect(Operation::Write).await?;
-        let mut curr_path = String::new();
-
-        for path in paths {
-            if path.is_empty() {
-                continue;
-            }
-            curr_path.push_str(path);
-            curr_path.push('/');
-            match ftp_stream.mkdir(&curr_path).await {
-                // Do nothing if status is FileUnavailable or OK(()) is return.
-                Err(FtpError::UnexpectedResponse(Response {
-                    status: Status::FileUnavailable,
-                    ..
-                }))
-                | Ok(()) => (),
-                Err(e) => {
-                    return Err(format_ftp_error(e));
-                }
-            }
-        }
-
-        let tmp_path = (!op.append()).then_some(build_tmp_path_of(path));
-        let w = FtpWriter::new(ftp_stream, path.to_string(), tmp_path);
-
-        Ok((RpWrite::new(), w))
+        Ok(output)
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        Ok((
-            RpDelete::default(),
-            oio::OneShotDeleter::new(FtpDeleter::new(self.core.clone())),
+    fn list(&self, _ctx: &OperationContext, path: &str, _: OpList) -> Result<Self::Lister> {
+        Ok(FtpLazyLister::new(self.core.clone(), path))
+    }
+
+    fn copy(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpCopy,
+    ) -> Result<Self::Copier> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
         ))
     }
 
-    async fn list(&self, path: &str, _: OpList) -> Result<(RpList, Self::Lister)> {
-        let mut ftp_stream = self.core.ftp_connect(Operation::List).await?;
+    async fn rename(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpRename,
+    ) -> Result<RpRename> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
 
-        let pathname = if path == "/" { None } else { Some(path) };
-        let files = ftp_stream.list(pathname).await.map_err(format_ftp_error)?;
-
-        Ok((
-            RpList::default(),
-            FtpLister::new(if path == "/" { "" } else { path }, files),
+    async fn presign(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpPresign,
+    ) -> Result<RpPresign> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
         ))
     }
 }

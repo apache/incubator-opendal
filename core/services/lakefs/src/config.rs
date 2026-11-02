@@ -115,10 +115,10 @@ impl Configurator for LakefsConfig {
                     map.insert("branch".to_string(), branch.to_string());
                 }
 
-                if let Some(root_part) = maybe_root {
-                    if !root_part.is_empty() {
-                        map.insert("root".to_string(), root_part.to_string());
-                    }
+                if let Some(root_part) = maybe_root
+                    && !root_part.is_empty()
+                {
+                    map.insert("root".to_string(), root_part.to_string());
                 }
             }
         }

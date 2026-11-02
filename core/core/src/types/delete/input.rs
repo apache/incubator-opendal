@@ -16,88 +16,46 @@
 // under the License.
 
 use crate::Entry;
-use crate::raw::OpDelete;
+use crate::options::DeleteOptions;
 
-/// DeleteInput is the input for delete operations.
-#[non_exhaustive]
-#[derive(Default, Debug)]
-pub struct DeleteInput {
-    /// The path of the path to delete.
-    pub path: String,
-    /// The version of the path to delete.
-    pub version: Option<String>,
-    /// Whether to perform recursive deletion.
-    pub recursive: bool,
-}
-
-/// IntoDeleteInput is a helper trait that makes it easier for users to play with `Deleter`.
+/// Converts a value into an owned path and logical delete options.
+///
+/// [`Deleter`](crate::Deleter) lowers the returned options against the composed
+/// service capability immediately before passing raw arguments to the service.
 pub trait IntoDeleteInput: Send + Sync + Unpin {
-    /// Convert `self` into a `DeleteInput`.
-    fn into_delete_input(self) -> DeleteInput;
+    /// Convert `self` into an owned path and delete options.
+    fn into_delete_input(self) -> (String, DeleteOptions);
 }
 
-/// Implement `IntoDeleteInput` for `DeleteInput` self.
-impl IntoDeleteInput for DeleteInput {
-    fn into_delete_input(self) -> DeleteInput {
+/// Implement `IntoDeleteInput` for `&str` so path streams can borrow their items.
+impl IntoDeleteInput for &str {
+    fn into_delete_input(self) -> (String, DeleteOptions) {
+        (self.to_owned(), DeleteOptions::default())
+    }
+}
+
+/// Implement `IntoDeleteInput` for `String` so `Vec<String>` can be deleted directly.
+impl IntoDeleteInput for String {
+    fn into_delete_input(self) -> (String, DeleteOptions) {
+        (self, DeleteOptions::default())
+    }
+}
+
+/// Implement `IntoDeleteInput` for an owned path with logical delete options.
+impl IntoDeleteInput for (String, DeleteOptions) {
+    fn into_delete_input(self) -> (String, DeleteOptions) {
         self
     }
 }
 
-/// Implement `IntoDeleteInput` for `&str` so we can use `&str` as a DeleteInput.
-impl IntoDeleteInput for &str {
-    fn into_delete_input(self) -> DeleteInput {
-        DeleteInput {
-            path: self.to_string(),
-            recursive: false,
-            ..Default::default()
-        }
-    }
-}
-
-/// Implement `IntoDeleteInput` for `String` so we can use `Vec<String>` as a DeleteInput stream.
-impl IntoDeleteInput for String {
-    fn into_delete_input(self) -> DeleteInput {
-        DeleteInput {
-            path: self,
-            recursive: false,
-            ..Default::default()
-        }
-    }
-}
-
-/// Implement `IntoDeleteInput` for `(String, OpDelete)` so we can use `(String, OpDelete)`
-/// as a DeleteInput stream.
-impl IntoDeleteInput for (String, OpDelete) {
-    fn into_delete_input(self) -> DeleteInput {
-        let (path, args) = self;
-
-        let mut input = DeleteInput {
-            path,
-            recursive: args.recursive(),
-            ..Default::default()
-        };
-
-        if let Some(version) = args.version() {
-            input.version = Some(version.to_string());
-        }
-        input
-    }
-}
-
-/// Implement `IntoDeleteInput` for `Entry` so we can use `Lister` as a DeleteInput stream.
+/// Implement `IntoDeleteInput` for `Entry` so a lister can feed a deleter.
 impl IntoDeleteInput for Entry {
-    fn into_delete_input(self) -> DeleteInput {
+    fn into_delete_input(self) -> (String, DeleteOptions) {
         let (path, meta) = self.into_parts();
-
-        let mut input = DeleteInput {
-            path,
-            recursive: false,
+        let options = DeleteOptions {
+            version: meta.version().map(str::to_owned),
             ..Default::default()
         };
-
-        if let Some(version) = meta.version() {
-            input.version = Some(version.to_string());
-        }
-        input
+        (path, options)
     }
 }

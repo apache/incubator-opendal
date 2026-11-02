@@ -21,22 +21,23 @@ use http::StatusCode;
 use opendal_core::raw::*;
 use opendal_core::*;
 
+use super::core::parse_error;
 use super::core::*;
-use super::error::parse_error;
 
 pub struct UpyunDeleter {
     core: Arc<UpyunCore>,
+    ctx: OperationContext,
 }
 
 impl UpyunDeleter {
-    pub fn new(core: Arc<UpyunCore>) -> Self {
-        Self { core }
+    pub fn new(core: Arc<UpyunCore>, ctx: OperationContext) -> Self {
+        Self { core, ctx }
     }
 }
 
 impl oio::OneShotDelete for UpyunDeleter {
     async fn delete_once(&self, path: String, _: OpDelete) -> Result<()> {
-        let resp = self.core.delete(&path).await?;
+        let resp = self.core.delete(&self.ctx, &path).await?;
 
         let status = resp.status();
 
@@ -44,7 +45,10 @@ impl oio::OneShotDelete for UpyunDeleter {
             StatusCode::OK => Ok(()),
             // Allow 404 when deleting a non-existing object
             StatusCode::NOT_FOUND => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("DeleteFile")),
+                resp,
+            )),
         }
     }
 }

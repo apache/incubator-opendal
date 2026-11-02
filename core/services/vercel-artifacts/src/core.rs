@@ -16,7 +16,6 @@
 // under the License.
 
 use std::fmt::Debug;
-use std::sync::Arc;
 
 use http::Request;
 use http::Response;
@@ -26,8 +25,11 @@ use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct VercelArtifactsCore {
-    pub info: Arc<AccessorInfo>,
+    pub info: ServiceInfo,
+    pub capability: Capability,
     pub(crate) access_token: String,
+    pub(crate) endpoint: String,
+    pub(crate) query_string: String,
 }
 
 impl Debug for VercelArtifactsCore {
@@ -40,13 +42,16 @@ impl Debug for VercelArtifactsCore {
 impl VercelArtifactsCore {
     pub(crate) async fn vercel_artifacts_get(
         &self,
+        ctx: &OperationContext,
         hash: &str,
         range: BytesRange,
         _: &OpRead,
     ) -> Result<Response<HttpBody>> {
         let url: String = format!(
-            "https://api.vercel.com/v8/artifacts/{}",
-            percent_encode_path(hash)
+            "{}/v8/artifacts/{}{}",
+            self.endpoint,
+            percent_encode_path(hash),
+            self.query_string
         );
 
         let mut req = Request::get(&url);
@@ -58,22 +63,27 @@ impl VercelArtifactsCore {
         let auth_header_content = format!("Bearer {}", self.access_token);
         req = req.header(header::AUTHORIZATION, auth_header_content);
 
-        req = req.extension(Operation::Read);
+        req = req
+            .extension(Operation::Read)
+            .extension(ServiceOperation("DownloadArtifact"));
 
         let req = req.body(Buffer::new()).map_err(new_request_build_error)?;
 
-        self.info.http_client().fetch(req).await
+        ctx.http_transport().fetch(req).await
     }
 
     pub(crate) async fn vercel_artifacts_put(
         &self,
+        ctx: &OperationContext,
         hash: &str,
         size: u64,
         body: Buffer,
     ) -> Result<Response<Buffer>> {
         let url = format!(
-            "https://api.vercel.com/v8/artifacts/{}",
-            percent_encode_path(hash)
+            "{}/v8/artifacts/{}{}",
+            self.endpoint,
+            percent_encode_path(hash),
+            self.query_string
         );
 
         let mut req = Request::put(&url);
@@ -83,17 +93,25 @@ impl VercelArtifactsCore {
         req = req.header(header::AUTHORIZATION, auth_header_content);
         req = req.header(header::CONTENT_LENGTH, size);
 
-        req = req.extension(Operation::Write);
+        req = req
+            .extension(Operation::Write)
+            .extension(ServiceOperation("UploadArtifact"));
 
         let req = req.body(body).map_err(new_request_build_error)?;
 
-        self.info.http_client().send(req).await
+        ctx.http_transport().send(req).await
     }
 
-    pub(crate) async fn vercel_artifacts_stat(&self, hash: &str) -> Result<Response<Buffer>> {
+    pub(crate) async fn vercel_artifacts_stat(
+        &self,
+        ctx: &OperationContext,
+        hash: &str,
+    ) -> Result<Response<Buffer>> {
         let url = format!(
-            "https://api.vercel.com/v8/artifacts/{}",
-            percent_encode_path(hash)
+            "{}/v8/artifacts/{}{}",
+            self.endpoint,
+            percent_encode_path(hash),
+            self.query_string
         );
 
         let mut req = Request::head(&url);
@@ -102,10 +120,55 @@ impl VercelArtifactsCore {
         req = req.header(header::AUTHORIZATION, auth_header_content);
         req = req.header(header::CONTENT_LENGTH, 0);
 
-        req = req.extension(Operation::Stat);
+        req = req
+            .extension(Operation::Stat)
+            .extension(ServiceOperation("ArtifactExists"));
 
         let req = req.body(Buffer::new()).map_err(new_request_build_error)?;
 
-        self.info.http_client().send(req).await
+        ctx.http_transport().send(req).await
     }
+}
+
+use http::StatusCode;
+
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+}
+
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self { service_operation }
+    }
+}
+
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, response: Response<Buffer>) -> Error {
+    let (parts, body) = response.into_parts();
+    let bs = body.to_bytes();
+
+    let (kind, retryable) = match parts.status {
+        StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
+        StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, false),
+        StatusCode::INTERNAL_SERVER_ERROR
+        | StatusCode::BAD_GATEWAY
+        | StatusCode::SERVICE_UNAVAILABLE
+        | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
+        _ => (ErrorKind::Unexpected, false),
+    };
+
+    let message = String::from_utf8_lossy(&bs);
+
+    let mut err = Error::new(kind, message);
+
+    err = err.with_context("service_operation", ctx.service_operation.0);
+    err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
+
+    err
 }

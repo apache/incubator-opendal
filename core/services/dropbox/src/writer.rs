@@ -20,46 +20,52 @@ use std::sync::Arc;
 use bytes::Buf;
 use http::StatusCode;
 
-use super::core::{DropboxCore, DropboxMetadataResponse};
-use super::error::parse_error;
+use super::core::parse_error;
+use super::core::{DropboxCore, DropboxMetadataResponse, ErrorContext};
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct DropboxWriter {
     core: Arc<DropboxCore>,
+    ctx: OperationContext,
     op: OpWrite,
     path: String,
 }
 
 impl DropboxWriter {
-    pub fn new(core: Arc<DropboxCore>, op: OpWrite, path: String) -> Self {
-        DropboxWriter { core, op, path }
+    pub fn new(core: Arc<DropboxCore>, ctx: OperationContext, op: OpWrite, path: String) -> Self {
+        DropboxWriter {
+            core,
+            ctx,
+            op,
+            path,
+        }
     }
 
-    fn parse_metadata(decoded_response: DropboxMetadataResponse) -> Result<Metadata> {
-        let mut metadata = Metadata::default();
+    pub(crate) fn parse_metadata(decoded_response: DropboxMetadataResponse) -> Result<Metadata> {
+        let mut metadata = MetadataBuilder::unknown();
 
         if let Some(size) = decoded_response.size {
-            metadata.set_content_length(size);
+            metadata.set_file(size);
         }
 
         if let Some(content_hash) = decoded_response.content_hash {
-            metadata.set_etag(&content_hash);
+            metadata.etag(&content_hash);
         }
 
         if let Some(rev) = decoded_response.rev {
-            metadata.set_version(&rev);
+            metadata.version(&rev);
         }
 
         if let Some(server_modified) = decoded_response.server_modified {
             let date_utc = server_modified.parse::<Timestamp>()?;
-            metadata.set_last_modified(date_utc);
+            metadata.last_modified(date_utc);
         } else {
             let date_utc = decoded_response.client_modified.parse::<Timestamp>()?;
-            metadata.set_last_modified(date_utc);
+            metadata.last_modified(date_utc);
         }
 
-        Ok(metadata)
+        Ok(metadata.build())
     }
 }
 
@@ -67,7 +73,7 @@ impl oio::OneShotWrite for DropboxWriter {
     async fn write_once(&self, bs: Buffer) -> Result<Metadata> {
         let resp = self
             .core
-            .dropbox_update(&self.path, Some(bs.len()), &self.op, bs)
+            .dropbox_update(&self.ctx, &self.path, Some(bs.len()), &self.op, bs)
             .await?;
         let status = resp.status();
         match status {
@@ -78,7 +84,10 @@ impl oio::OneShotWrite for DropboxWriter {
                 let metadata = DropboxWriter::parse_metadata(decoded_response)?;
                 Ok(metadata)
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("UploadFile")),
+                resp,
+            )),
         }
     }
 }

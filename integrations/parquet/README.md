@@ -47,7 +47,7 @@ async fn main() {
     cfg.bucket = "my_bucket".to_string();
 
     // Create a new operator
-    let operator = Operator::from_config(cfg).unwrap().finish();
+    let operator = Operator::from_config(cfg).unwrap();
     let path = "/path/to/file.parquet";
 
     // Create an async writer

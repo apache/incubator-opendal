@@ -23,31 +23,26 @@ use crate::raw::MaybeSend;
 use crate::raw::OpDelete;
 use crate::*;
 
-/// Deleter is a type erased [`Delete`]
+/// Deleter is a type erased [`Delete`].
 pub type Deleter = Box<dyn DeleteDyn>;
 
 /// The Delete trait defines interfaces for performing deletion operations.
+///
+/// Implementations may execute each request immediately or buffer requests for
+/// batch deletion. Callers must always call [`Delete::close`] to flush pending
+/// work before dropping the deleter.
 pub trait Delete: Unpin + Send + Sync {
-    /// Requests deletion of a resource at the specified path with optional arguments
+    /// Request deletion of a resource at the specified path with optional arguments.
     ///
-    /// # Parameters
-    /// - `path`: The path of the resource to delete
-    /// - `args`: Additional arguments for the delete operation
-    ///
-    /// # Returns
-    /// - `Ok(())`: The deletion request has been successfully queued (does not guarantee actual deletion)
-    /// - `Err(err)`: An error occurred and the deletion request was not queued
-    ///
-    /// # Notes
-    /// This method just queues the delete request. The actual deletion will be
-    /// performed when `close` is called.
+    /// A successful return means the deleter has accepted the request. It does
+    /// not guarantee that all backend work has completed.
     fn delete<'a>(
         &'a mut self,
         path: &'a str,
         args: OpDelete,
     ) -> impl Future<Output = Result<()>> + MaybeSend + 'a;
 
-    /// Close the deleter and ensure all queued deletions are executed.
+    /// Flush pending requests and wait until all accepted deletions are complete.
     fn close(&mut self) -> impl Future<Output = Result<()>> + MaybeSend;
 }
 
@@ -67,12 +62,12 @@ impl Delete for () {
     }
 }
 
-/// The dyn version of [`Delete`]
+/// The dyn version of [`Delete`].
 pub trait DeleteDyn: Unpin + Send + Sync {
-    /// The dyn version of [`Delete::delete`]
+    /// The dyn version of [`Delete::delete`].
     fn delete_dyn<'a>(&'a mut self, path: &'a str, args: OpDelete) -> BoxedFuture<'a, Result<()>>;
 
-    /// The dyn version of [`Delete::close`]
+    /// The dyn version of [`Delete::close`].
     fn close_dyn(&mut self) -> BoxedFuture<'_, Result<()>>;
 }
 

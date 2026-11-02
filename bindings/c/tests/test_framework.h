@@ -212,6 +212,15 @@ inline opendal_required_capability make_capability_create_dir_list() {
     return cap;
 }
 
+inline opendal_required_capability make_capability_write_create_dir_list_recursive() {
+    opendal_required_capability cap = NO_CAPABILITY;
+    cap.write = true;
+    cap.create_dir = true;
+    cap.list = true;
+    cap.list_with_recursive = true;
+    return cap;
+}
+
 inline opendal_required_capability make_capability_presign() {
     opendal_required_capability cap = NO_CAPABILITY;
     cap.read = true;

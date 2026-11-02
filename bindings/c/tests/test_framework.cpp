@@ -164,7 +164,7 @@ bool opendal_check_capability(const opendal_operator* op,
     if (!info)
         return false;
 
-    opendal_capability cap = opendal_operator_info_get_full_capability(info);
+    opendal_capability cap = opendal_operator_info_get_capability(info);
 
     bool result = true;
     if (required.stat && !cap.stat)

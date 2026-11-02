@@ -19,44 +19,58 @@ use std::sync::Arc;
 
 use http::StatusCode;
 
+use super::core::parse_error;
 use super::core::*;
-use super::error::parse_error;
 use opendal_core::raw::oio::BatchDeleteResult;
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct AzblobDeleter {
     core: Arc<AzblobCore>,
+    ctx: OperationContext,
 }
 
 impl AzblobDeleter {
-    pub fn new(core: Arc<AzblobCore>) -> Self {
-        Self { core }
+    pub fn new(core: Arc<AzblobCore>, ctx: OperationContext) -> Self {
+        Self { core, ctx }
     }
 }
 
 impl oio::BatchDelete for AzblobDeleter {
-    async fn delete_once(&self, path: String, _: OpDelete) -> Result<()> {
-        let resp = self.core.azblob_delete_blob(&path).await?;
+    async fn delete_once(&self, path: String, args: OpDelete) -> Result<()> {
+        let resp = self
+            .core
+            .azblob_delete_blob(&self.ctx, &path, &args)
+            .await?;
 
         let status = resp.status();
 
         match status {
-            StatusCode::ACCEPTED | StatusCode::NOT_FOUND => Ok(()),
-            _ => Err(parse_error(resp)),
+            StatusCode::ACCEPTED => Ok(()),
+            StatusCode::NOT_FOUND if args.if_match().is_some() => Err(Error::new(
+                ErrorKind::ConditionNotMatch,
+                "delete precondition requires a live target",
+            )),
+            StatusCode::NOT_FOUND => Ok(()),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("DeleteBlob"))
+                    .with_caller_condition(args.is_conditional()),
+                resp,
+            )),
         }
     }
 
     async fn delete_batch(&self, batch: Vec<(String, OpDelete)>) -> Result<BatchDeleteResult> {
         // TODO: Add remove version support.
-        let paths = batch.into_iter().map(|(p, _)| p).collect::<Vec<_>>();
-
         // construct and complete batch request
-        let resp = self.core.azblob_batch_delete(&paths).await?;
+        let resp = self.core.azblob_batch_delete(&self.ctx, &batch).await?;
 
         // check response status
         if resp.status() != StatusCode::ACCEPTED {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("BatchDeleteBlobs")),
+                resp,
+            ));
         }
 
         // get boundary from response header
@@ -74,26 +88,36 @@ impl oio::BatchDelete for AzblobDeleter {
             Multipart::new().with_boundary(&boundary).parse(bs)?;
         let parts = multipart.into_parts();
 
-        if paths.len() != parts.len() {
+        if batch.len() != parts.len() {
             return Err(Error::new(
                 ErrorKind::Unexpected,
-                "invalid batch response, paths and response parts don't match",
+                "invalid batch response, requests and response parts don't match",
             ));
         }
 
         let mut batched_result = BatchDeleteResult::default();
 
-        for (i, part) in parts.into_iter().enumerate() {
+        for (part, (path, args)) in parts.into_iter().zip(batch) {
             let resp = part.into_response();
-            let path = paths[i].clone();
 
-            // deleting not existing objects is ok
-            if resp.status() == StatusCode::ACCEPTED || resp.status() == StatusCode::NOT_FOUND {
-                batched_result.succeeded.push((path, OpDelete::default()));
+            if resp.status() == StatusCode::NOT_FOUND && args.if_match().is_some() {
+                batched_result.failed.push((
+                    path,
+                    args,
+                    Error::new(
+                        ErrorKind::ConditionNotMatch,
+                        "delete precondition requires a live target",
+                    ),
+                ));
+            } else if resp.status() == StatusCode::ACCEPTED
+                || resp.status() == StatusCode::NOT_FOUND
+            {
+                batched_result.succeeded.push((path, args));
             } else {
-                batched_result
-                    .failed
-                    .push((path, OpDelete::default(), parse_error(resp)));
+                let error_ctx = ErrorContext::new(ServiceOperation("BatchDeleteBlobs"))
+                    .with_caller_condition(args.is_conditional());
+                let err = parse_error(error_ctx, resp);
+                batched_result.failed.push((path, args, err));
             }
         }
 

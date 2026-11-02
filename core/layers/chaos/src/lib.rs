@@ -15,11 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Chaos layer implementation for Apache OpenDAL.
-
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
-
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -28,14 +27,14 @@ use opendal_core::*;
 use rand::prelude::*;
 use rand::rngs::StdRng;
 
-/// Inject chaos into underlying services for robustness test.
+/// `ChaosLayer` injects errors into services to test robustness.
 ///
 /// # Chaos
 ///
-/// Chaos tests is a part of stress test. By generating errors at specified
-/// error ratio, we can reproduce underlying services error more reliable.
+/// Chaos testing complements stress testing. A specified error ratio reproduces
+/// service errors consistently.
 ///
-/// Running tests under ChaosLayer will make your application more robust.
+/// Tests that use `ChaosLayer` can expose error-handling weaknesses.
 ///
 /// For example: If we specify an error rate of 0.5, there is a 50% chance
 /// of an EOF error for every read operation.
@@ -55,13 +54,13 @@ use rand::rngs::StdRng;
 /// #
 /// # fn main() -> Result<()> {
 /// let _ = Operator::new(services::Memory::default())?
-///     .layer(ChaosLayer::new(0.1))
-///     .finish();
+///     .layer(ChaosLayer::new(0.1));
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ChaosLayer {
+    rng: Arc<Mutex<StdRng>>,
     error_ratio: f64,
 }
 
@@ -76,17 +75,24 @@ impl ChaosLayer {
             (0.0..=1.0).contains(&error_ratio),
             "error_ratio must between 0.0 and 1.0"
         );
-        Self { error_ratio }
+        Self {
+            rng: Arc::new(Mutex::new(StdRng::from_rng(&mut rand::rng()))),
+            error_ratio,
+        }
     }
 }
 
-impl<A: Access> Layer<A> for ChaosLayer {
-    type LayeredAccess = ChaosAccessor<A>;
+impl Layer for ChaosLayer {
+    fn apply_service(&self, inner: Servicer) -> Servicer {
+        Arc::new(self.layer(inner))
+    }
+}
 
-    fn layer(&self, inner: A) -> Self::LayeredAccess {
-        ChaosAccessor {
+impl ChaosLayer {
+    fn layer(&self, inner: Servicer) -> ChaosService {
+        ChaosService {
             inner,
-            rng: StdRng::from_entropy(),
+            rng: self.rng.clone(),
             error_ratio: self.error_ratio,
         }
     }
@@ -94,41 +100,101 @@ impl<A: Access> Layer<A> for ChaosLayer {
 
 #[doc(hidden)]
 #[derive(Debug)]
-pub struct ChaosAccessor<A> {
-    inner: A,
-    rng: StdRng,
-
+pub struct ChaosService {
+    inner: Servicer,
+    rng: Arc<Mutex<StdRng>>,
     error_ratio: f64,
 }
 
-impl<A: Access> LayeredAccess for ChaosAccessor<A> {
-    type Inner = A;
-    type Reader = ChaosReader<A::Reader>;
-    type Writer = A::Writer;
-    type Lister = A::Lister;
-    type Deleter = A::Deleter;
+impl Service for ChaosService {
+    type Reader = ChaosReader<oio::Reader>;
+    type Writer = oio::Writer;
+    type Lister = oio::Lister;
+    type Deleter = oio::Deleter;
+    type Copier = oio::Copier;
+    type Composer = oio::Composer;
 
-    fn inner(&self) -> &Self::Inner {
-        &self.inner
+    fn info(&self) -> ServiceInfo {
+        self.inner.info()
     }
 
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
+    fn capability(&self) -> Capability {
+        let mut capability = self.inner.capability();
+        capability.write_can_copy_from = false;
+        capability
+    }
+
+    fn compose(&self, ctx: &OperationContext, to: &str, args: OpCompose) -> Result<Self::Composer> {
+        self.inner.compose(ctx, to, args)
+    }
+
+    async fn create_dir(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        self.inner.create_dir(ctx, path, args).await
+    }
+
+    async fn stat(&self, ctx: &OperationContext, path: &str, args: OpStat) -> Result<RpStat> {
+        self.inner.stat(ctx, path, args).await
+    }
+
+    fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
         self.inner
-            .read(path, args)
-            .await
-            .map(|(rp, r)| (rp, ChaosReader::new(r, self.rng.clone(), self.error_ratio)))
+            .read(ctx, path, args)
+            .map(|r| ChaosReader::new(r, Arc::clone(&self.rng), self.error_ratio))
     }
 
-    async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        self.inner.write(path, args).await
+    fn write(&self, ctx: &OperationContext, path: &str, args: OpWrite) -> Result<Self::Writer> {
+        self.inner.write(ctx, path, args)
     }
 
-    async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
-        self.inner.list(path, args).await
+    fn copy(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpCopy,
+    ) -> Result<Self::Copier> {
+        self.inner.copy(ctx, from, to, args)
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        self.inner.delete().await
+    fn list(&self, ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
+        self.inner.list(ctx, path, args)
+    }
+
+    fn delete(&self, ctx: &OperationContext) -> Result<Self::Deleter> {
+        self.inner.delete(ctx)
+    }
+
+    async fn rename(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpRename,
+    ) -> Result<RpRename> {
+        self.inner.rename(ctx, from, to, args).await
+    }
+
+    async fn restore(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpRestore,
+    ) -> Result<RpRestore> {
+        self.inner.restore(ctx, path, args).await
+    }
+
+    async fn presign(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpPresign,
+    ) -> Result<RpPresign> {
+        self.inner.presign(ctx, path, args).await
     }
 }
 
@@ -141,10 +207,10 @@ pub struct ChaosReader<R> {
 }
 
 impl<R> ChaosReader<R> {
-    fn new(inner: R, rng: StdRng, error_ratio: f64) -> Self {
+    fn new(inner: R, rng: Arc<Mutex<StdRng>>, error_ratio: f64) -> Self {
         Self {
             inner,
-            rng: Arc::new(Mutex::new(rng)),
+            rng,
             error_ratio,
         }
     }
@@ -152,8 +218,8 @@ impl<R> ChaosReader<R> {
     /// If I feel lucky, we can return the correct response. Otherwise,
     /// we need to generate an error.
     fn i_feel_lucky(&self) -> bool {
-        let point = self.rng.lock().unwrap().gen_range(0..=100);
-        point >= (self.error_ratio * 100.0) as i32
+        let point: u32 = self.rng.lock().unwrap().random_range(0..100);
+        point >= (self.error_ratio * 100.0) as u32
     }
 
     fn unexpected_eof() -> Error {
@@ -163,10 +229,33 @@ impl<R> ChaosReader<R> {
     }
 }
 
-impl<R: oio::Read> oio::Read for ChaosReader<R> {
+impl<R: oio::ReadStream> oio::ReadStream for ChaosReader<R> {
     async fn read(&mut self) -> Result<Buffer> {
         if self.i_feel_lucky() {
             self.inner.read().await
+        } else {
+            Err(Self::unexpected_eof())
+        }
+    }
+}
+
+impl<R: oio::Read> oio::Read for ChaosReader<R> {
+    async fn open(&self, range: BytesRange) -> Result<(RpRead, Box<dyn oio::ReadStreamDyn>)> {
+        if self.i_feel_lucky() {
+            let (rp, stream) = self.inner.open(range).await?;
+            Ok((
+                rp,
+                Box::new(ChaosReader::new(stream, self.rng.clone(), self.error_ratio))
+                    as Box<dyn oio::ReadStreamDyn>,
+            ))
+        } else {
+            Err(Self::unexpected_eof())
+        }
+    }
+
+    async fn read(&self, range: BytesRange) -> Result<(RpRead, Buffer)> {
+        if self.i_feel_lucky() {
+            self.inner.read(range).await
         } else {
             Err(Self::unexpected_eof())
         }

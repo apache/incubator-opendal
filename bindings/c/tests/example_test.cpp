@@ -56,7 +56,7 @@ void simple_test()
     // Test basic write/read if supported
     opendal_operator_info* info = opendal_operator_info_new(config->operator_instance);
     if (info) {
-        opendal_capability cap = opendal_operator_info_get_full_capability(info);
+        opendal_capability cap = opendal_operator_info_get_capability(info);
 
         if (cap.write && cap.read) {
             printf("Testing write/read operations...\n");

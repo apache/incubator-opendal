@@ -26,7 +26,7 @@ use tokio::time::sleep;
 use crate::*;
 
 pub fn tests(op: &Operator, tests: &mut Vec<Trial>) {
-    let cap = op.info().full_capability();
+    let cap = op.info().capability();
 
     if cap.stat && cap.write {
         tests.extend(async_trials!(
@@ -39,6 +39,7 @@ pub fn tests(op: &Operator, tests: &mut Vec<Trial>) {
             test_stat_not_exist,
             test_stat_with_if_match,
             test_stat_with_if_none_match,
+            test_stat_with_version_conditions,
             test_stat_with_if_modified_since,
             test_stat_with_if_unmodified_since,
             test_stat_with_override_cache_control,
@@ -75,7 +76,7 @@ pub async fn test_stat_file(op: Operator) -> Result<()> {
     assert_eq!(meta.content_length(), size as u64);
 
     // Stat a file with trailing slash should return `NotFound`.
-    if op.info().full_capability().create_dir {
+    if op.info().capability().create_dir {
         let result = op.stat(&format!("{path}/")).await;
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().kind(), ErrorKind::NotFound);
@@ -86,7 +87,7 @@ pub async fn test_stat_file(op: Operator) -> Result<()> {
 
 /// Stat existing file should return metadata
 pub async fn test_stat_dir(op: Operator) -> Result<()> {
-    if !op.info().full_capability().create_dir {
+    if !op.info().capability().create_dir {
         return Ok(());
     }
 
@@ -109,7 +110,7 @@ pub async fn test_stat_dir(op: Operator) -> Result<()> {
 
 /// Stat the parent dir of existing dir should return metadata
 pub async fn test_stat_nested_parent_dir(op: Operator) -> Result<()> {
-    if !op.info().full_capability().create_dir {
+    if !op.info().capability().create_dir {
         return Ok(());
     }
 
@@ -148,7 +149,7 @@ pub async fn test_stat_not_cleaned_path(op: Operator) -> Result<()> {
 
     op.write(&path, content).await.expect("write must succeed");
 
-    let meta = op.stat(&format!("//{}", &path)).await?;
+    let meta = op.stat(&format!("//{}", path)).await?;
     assert_eq!(meta.mode(), EntryMode::FILE);
     assert_eq!(meta.content_length(), size as u64);
 
@@ -165,7 +166,7 @@ pub async fn test_stat_not_exist(op: Operator) -> Result<()> {
     assert_eq!(meta.unwrap_err().kind(), ErrorKind::NotFound);
 
     // Stat not exist dir should also return NotFound.
-    if op.info().full_capability().create_dir {
+    if op.info().capability().create_dir {
         let meta = op.stat(&format!("{path}/")).await;
         assert!(meta.is_err());
         assert_eq!(meta.unwrap_err().kind(), ErrorKind::NotFound);
@@ -176,7 +177,7 @@ pub async fn test_stat_not_exist(op: Operator) -> Result<()> {
 
 /// Stat with if_match should succeed, else get a ConditionNotMatch error.
 pub async fn test_stat_with_if_match(op: Operator) -> Result<()> {
-    if !op.info().full_capability().stat_with_if_match {
+    if !op.info().capability().stat_with_if_match {
         return Ok(());
     }
 
@@ -200,12 +201,20 @@ pub async fn test_stat_with_if_match(op: Operator) -> Result<()> {
         .await;
     assert!(result.is_ok());
 
+    let missing = TEST_FIXTURE.new_file_path();
+    let err = op
+        .stat_with(&missing)
+        .if_match(meta.etag().expect("etag must exist"))
+        .await
+        .expect_err("missing target must fail");
+    assert_eq!(err.kind(), ErrorKind::NotFound);
+
     Ok(())
 }
 
 /// Stat with if_none_match should succeed, else get a ConditionNotMatch.
 pub async fn test_stat_with_if_none_match(op: Operator) -> Result<()> {
-    if !op.info().full_capability().stat_with_if_none_match {
+    if !op.info().capability().stat_with_if_none_match {
         return Ok(());
     }
 
@@ -233,12 +242,77 @@ pub async fn test_stat_with_if_none_match(op: Operator) -> Result<()> {
     assert_eq!(res.mode(), meta.mode());
     assert_eq!(res.content_length(), meta.content_length());
 
+    let missing = TEST_FIXTURE.new_file_path();
+    let err = op
+        .stat_with(&missing)
+        .if_none_match(meta.etag().expect("etag must exist"))
+        .await
+        .expect_err("missing target must fail");
+    assert_eq!(err.kind(), ErrorKind::NotFound);
+
+    Ok(())
+}
+
+/// Version preconditions should compare against the current live object version.
+pub async fn test_stat_with_version_conditions(op: Operator) -> Result<()> {
+    let cap = op.info().capability();
+    if !cap.stat_with_if_version_match || !cap.stat_with_if_version_not_match {
+        return Ok(());
+    }
+
+    let path = TEST_FIXTURE.new_file_path();
+    let (first, _) = gen_bytes(cap);
+    let (second, _) = gen_bytes(cap);
+    assert_ne!(first, second);
+
+    op.write(&path, first).await?;
+    let stale = op
+        .stat(&path)
+        .await?
+        .version()
+        .expect("version must exist")
+        .to_string();
+    op.write(&path, second).await?;
+    let current = op
+        .stat(&path)
+        .await?
+        .version()
+        .expect("version must exist")
+        .to_string();
+
+    op.stat_with(&path).if_version_match(&current).await?;
+    let err = op
+        .stat_with(&path)
+        .if_version_match(&stale)
+        .await
+        .expect_err("stale version match must fail");
+    assert_eq!(err.kind(), ErrorKind::ConditionNotMatch);
+
+    op.stat_with(&path).if_version_not_match(&stale).await?;
+    let err = op
+        .stat_with(&path)
+        .if_version_not_match(&current)
+        .await
+        .expect_err("equal version non-match must fail");
+    assert_eq!(err.kind(), ErrorKind::ConditionNotMatch);
+
+    let missing = TEST_FIXTURE.new_file_path();
+    for result in [
+        op.stat_with(&missing).if_version_match(&current).await,
+        op.stat_with(&missing).if_version_not_match(&current).await,
+    ] {
+        assert_eq!(
+            result.expect_err("missing target must fail").kind(),
+            ErrorKind::NotFound
+        );
+    }
+
     Ok(())
 }
 
 /// Stat file with if_modified_since should succeed, otherwise get a ConditionNotMatch error.
 pub async fn test_stat_with_if_modified_since(op: Operator) -> Result<()> {
-    if !op.info().full_capability().stat_with_if_modified_since {
+    if !op.info().capability().stat_with_if_modified_since {
         return Ok(());
     }
 
@@ -263,12 +337,20 @@ pub async fn test_stat_with_if_modified_since(op: Operator) -> Result<()> {
     assert!(res.is_err());
     assert_eq!(res.err().unwrap().kind(), ErrorKind::ConditionNotMatch);
 
+    let missing = TEST_FIXTURE.new_file_path();
+    let err = op
+        .stat_with(&missing)
+        .if_modified_since(since)
+        .await
+        .expect_err("missing target must fail");
+    assert_eq!(err.kind(), ErrorKind::NotFound);
+
     Ok(())
 }
 
 /// Stat file with if_unmodified_since should succeed, otherwise get a ConditionNotMatch error.
 pub async fn test_stat_with_if_unmodified_since(op: Operator) -> Result<()> {
-    if !op.info().full_capability().stat_with_if_unmodified_since {
+    if !op.info().capability().stat_with_if_unmodified_since {
         return Ok(());
     }
 
@@ -293,13 +375,20 @@ pub async fn test_stat_with_if_unmodified_since(op: Operator) -> Result<()> {
     let res = op.stat_with(&path).if_unmodified_since(since).await?;
     assert_eq!(res.last_modified(), meta.last_modified());
 
+    let missing = TEST_FIXTURE.new_file_path();
+    let err = op
+        .stat_with(&missing)
+        .if_unmodified_since(since)
+        .await
+        .expect_err("missing target must fail");
+    assert_eq!(err.kind(), ErrorKind::NotFound);
+
     Ok(())
 }
 
 /// Stat file with override-cache-control should succeed.
 pub async fn test_stat_with_override_cache_control(op: Operator) -> Result<()> {
-    if !(op.info().full_capability().stat_with_override_cache_control
-        && op.info().full_capability().presign)
+    if !(op.info().capability().stat_with_override_cache_control && op.info().capability().presign)
     {
         return Ok(());
     }
@@ -345,9 +434,9 @@ pub async fn test_stat_with_override_cache_control(op: Operator) -> Result<()> {
 pub async fn test_stat_with_override_content_disposition(op: Operator) -> Result<()> {
     if !(op
         .info()
-        .full_capability()
+        .capability()
         .stat_with_override_content_disposition
-        && op.info().full_capability().presign)
+        && op.info().capability().presign)
     {
         return Ok(());
     }
@@ -392,9 +481,7 @@ pub async fn test_stat_with_override_content_disposition(op: Operator) -> Result
 
 /// Stat file with override_content_type should succeed.
 pub async fn test_stat_with_override_content_type(op: Operator) -> Result<()> {
-    if !(op.info().full_capability().stat_with_override_content_type
-        && op.info().full_capability().presign)
-    {
+    if !(op.info().capability().stat_with_override_content_type && op.info().capability().presign) {
         return Ok(());
     }
 
@@ -493,7 +580,7 @@ pub async fn test_read_only_stat_not_exist(op: Operator) -> Result<()> {
 
 /// Stat with if_match should succeed, else get a ConditionNotMatch error.
 pub async fn test_read_only_stat_with_if_match(op: Operator) -> Result<()> {
-    if !op.info().full_capability().stat_with_if_match {
+    if !op.info().capability().stat_with_if_match {
         return Ok(());
     }
 
@@ -518,7 +605,7 @@ pub async fn test_read_only_stat_with_if_match(op: Operator) -> Result<()> {
 
 /// Stat with if_none_match should succeed, else get a ConditionNotMatch.
 pub async fn test_read_only_stat_with_if_none_match(op: Operator) -> Result<()> {
-    if !op.info().full_capability().stat_with_if_none_match {
+    if !op.info().capability().stat_with_if_none_match {
         return Ok(());
     }
 
@@ -554,7 +641,7 @@ pub async fn test_read_only_stat_root(op: Operator) -> Result<()> {
 }
 
 pub async fn test_stat_with_version(op: Operator) -> Result<()> {
-    if !op.info().full_capability().stat_with_version {
+    if !op.info().capability().stat_with_version {
         return Ok(());
     }
 
@@ -592,7 +679,7 @@ pub async fn test_stat_with_version(op: Operator) -> Result<()> {
 }
 
 pub async fn stat_with_not_existing_version(op: Operator) -> Result<()> {
-    if !op.info().full_capability().stat_with_version {
+    if !op.info().capability().stat_with_version {
         return Ok(());
     }
 

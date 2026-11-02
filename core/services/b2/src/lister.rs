@@ -19,15 +19,16 @@ use std::sync::Arc;
 
 use bytes::Buf;
 
-use super::core::B2Core;
 use super::core::ListFileNamesResponse;
+use super::core::parse_error;
 use super::core::parse_file_info;
-use super::error::parse_error;
+use super::core::{B2Core, ErrorContext};
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct B2Lister {
     core: Arc<B2Core>,
+    ctx: OperationContext,
 
     path: String,
     delimiter: Option<&'static str>,
@@ -40,6 +41,7 @@ pub struct B2Lister {
 impl B2Lister {
     pub fn new(
         core: Arc<B2Core>,
+        ctx: OperationContext,
         path: &str,
         recursive: bool,
         limit: Option<usize>,
@@ -48,6 +50,7 @@ impl B2Lister {
         let delimiter = if recursive { None } else { Some("/") };
         Self {
             core,
+            ctx,
 
             path: path.to_string(),
             delimiter,
@@ -62,6 +65,7 @@ impl oio::PageList for B2Lister {
         let resp = self
             .core
             .list_file_names(
+                &self.ctx,
                 Some(&self.path),
                 self.delimiter,
                 self.limit,
@@ -76,7 +80,10 @@ impl oio::PageList for B2Lister {
             .await?;
 
         if resp.status() != http::StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListFileNames")),
+                resp,
+            ));
         }
 
         let bs = resp.into_body();
@@ -91,10 +98,10 @@ impl oio::PageList for B2Lister {
         }
 
         for file in output.files {
-            if let Some(start_after) = self.start_after.clone() {
-                if build_abs_path(&self.core.root, &start_after) == file.file_name {
-                    continue;
-                }
+            if let Some(start_after) = self.start_after.clone()
+                && build_abs_path(&self.core.root, &start_after) == file.file_name
+            {
+                continue;
             }
             let file_name = file.file_name.clone();
             let metadata = parse_file_info(&file);

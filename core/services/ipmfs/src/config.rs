@@ -18,7 +18,7 @@
 use serde::Deserialize;
 use serde::Serialize;
 
-use super::builder::IpmfsBuilder;
+use super::backend::IpmfsBuilder;
 
 /// Config for IPFS MFS support.
 #[derive(Default, Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -40,10 +40,10 @@ impl opendal_core::Configurator for IpmfsConfig {
             map.insert("endpoint".to_string(), format!("http://{authority}"));
         }
 
-        if let Some(root) = uri.root() {
-            if !root.is_empty() {
-                map.insert("root".to_string(), root.to_string());
-            }
+        if let Some(root) = uri.root()
+            && !root.is_empty()
+        {
+            map.insert("root".to_string(), root.to_string());
         }
 
         Self::from_iter(map)

@@ -15,23 +15,24 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Metrics layer (using the [metrics](https://docs.rs/metrics/) crate) implementation for Apache OpenDAL.
-
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
-
 use metrics::Label;
 use metrics::counter;
 use metrics::gauge;
 use metrics::histogram;
+use opendal_core::OperationContext;
 use opendal_core::raw::*;
 use opendal_layer_observe_metrics_common as observe;
 
-/// Add [metrics](https://docs.rs/metrics/) for every operation.
+/// `MetricsLayer` records every operation with
+/// [metrics](https://docs.rs/metrics/).
 ///
 /// # Metrics
 ///
-/// We provide several metrics, please see the documentation of [`observe`] module.
+/// The [`observe`] module documents the metrics this layer records.
 ///
 /// # Notes
 ///
@@ -49,15 +50,14 @@ use opendal_layer_observe_metrics_common as observe;
 /// #
 /// # fn main() -> Result<()> {
 /// let _ = Operator::new(services::Memory::default())?
-///     .layer(MetricsLayer::default())
-///     .finish();
+///     .layer(MetricsLayer::default());
 /// # Ok(())
 /// # }
 /// ```
 ///
 /// # Output
 ///
-/// OpenDAL is using [`metrics`](https://docs.rs/metrics/latest/metrics/) for metrics internally.
+/// OpenDAL uses [`metrics`](https://docs.rs/metrics/latest/metrics/) internally.
 ///
 /// To enable metrics output, please enable one of the exporters that `metrics` supports.
 ///
@@ -80,7 +80,7 @@ use opendal_layer_observe_metrics_common as observe;
 /// let (recorder, exporter) = builder.build().expect("failed to build recorder/exporter");
 /// let recorder = builder.build_recorder().expect("failed to build recorder");
 /// ```
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct MetricsLayer {}
 
@@ -91,12 +91,15 @@ impl MetricsLayer {
     }
 }
 
-impl<A: Access> Layer<A> for MetricsLayer {
-    type LayeredAccess = observe::MetricsAccessor<A, MetricsInterceptor>;
-
-    fn layer(&self, inner: A) -> Self::LayeredAccess {
+impl Layer for MetricsLayer {
+    fn apply_service(&self, inner: Servicer) -> Servicer {
         let interceptor = MetricsInterceptor {};
-        observe::MetricsLayer::new(interceptor).layer(inner)
+        observe::MetricsLayer::new(interceptor).apply_service(inner)
+    }
+
+    fn apply_context(&self, srv: Servicer, inner: OperationContext) -> OperationContext {
+        let interceptor = MetricsInterceptor {};
+        observe::MetricsLayer::new(interceptor).apply_context(srv, inner)
     }
 }
 
@@ -188,6 +191,13 @@ impl OperationLabels {
             labels.push(Label::new(
                 observe::LABEL_STATUS_CODE,
                 status_code.as_str().to_owned(),
+            ));
+        }
+
+        if let Some(service_operation) = self.0.service_operation {
+            labels.push(Label::new(
+                observe::LABEL_SERVICE_OPERATION,
+                service_operation,
             ));
         }
 

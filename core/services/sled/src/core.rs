@@ -17,7 +17,20 @@
 
 use std::fmt::Debug;
 
+use opendal_core::raw::ServiceOperation;
 use opendal_core::*;
+
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+struct ErrorContext {
+    service_operation: ServiceOperation,
+}
+
+impl ErrorContext {
+    const fn new(service_operation: ServiceOperation) -> Self {
+        Self { service_operation }
+    }
+}
 
 #[derive(Clone)]
 pub struct SledCore {
@@ -35,40 +48,50 @@ impl Debug for SledCore {
 
 impl SledCore {
     pub fn get(&self, path: &str) -> Result<Option<Buffer>> {
-        let res = self.tree.get(path).map_err(parse_error)?;
+        let res = self
+            .tree
+            .get(path)
+            .map_err(|err| parse_error(ErrorContext::new(ServiceOperation("Get")), err))?;
         Ok(res.map(|v| Buffer::from(v.to_vec())))
     }
 
     pub fn set(&self, path: &str, value: Buffer) -> Result<()> {
         self.tree
             .insert(path, value.to_vec())
-            .map_err(parse_error)?;
+            .map_err(|err| parse_error(ErrorContext::new(ServiceOperation("Insert")), err))?;
         Ok(())
     }
 
     pub fn delete(&self, path: &str) -> Result<()> {
-        self.tree.remove(path).map_err(parse_error)?;
+        self.tree
+            .remove(path)
+            .map_err(|err| parse_error(ErrorContext::new(ServiceOperation("Remove")), err))?;
         Ok(())
     }
 
-    pub fn list(&self, path: &str) -> Result<Vec<String>> {
-        let it = self.tree.scan_prefix(path).keys();
+    pub fn list(&self, path: &str) -> Result<Vec<(String, u64)>> {
+        let it = self.tree.scan_prefix(path);
         let mut res = Vec::default();
 
         for i in it {
-            let bs = i.map_err(parse_error)?.to_vec();
+            let (key, value) = i.map_err(|err| {
+                parse_error(ErrorContext::new(ServiceOperation("ScanPrefix")), err)
+            })?;
+            let bs = key.to_vec();
             let v = String::from_utf8(bs).map_err(|err| {
                 Error::new(ErrorKind::Unexpected, "store key is not valid utf-8 string")
                     .set_source(err)
             })?;
 
-            res.push(v);
+            res.push((v, value.len() as u64));
         }
 
         Ok(res)
     }
 }
 
-fn parse_error(err: sled::Error) -> Error {
-    Error::new(ErrorKind::Unexpected, "error from sled").set_source(err)
+fn parse_error(ctx: ErrorContext, err: sled::Error) -> Error {
+    Error::new(ErrorKind::Unexpected, "error from sled")
+        .with_context("service_operation", ctx.service_operation.0)
+        .set_source(err)
 }

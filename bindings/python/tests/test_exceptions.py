@@ -18,6 +18,8 @@
 import builtins
 import inspect
 
+import pytest
+
 from opendal import exceptions
 
 
@@ -25,3 +27,52 @@ def test_exceptions():
     for _name, obj in inspect.getmembers(exceptions):
         if inspect.isclass(obj):
             assert issubclass(obj, builtins.Exception)
+
+
+def test_all_expected_exceptions_present():
+    """Verify every expected exception class is present in opendal.exceptions."""
+    expected = [
+        "Error",
+        "Unexpected",
+        "Unsupported",
+        "ConfigInvalid",
+        "NotFound",
+        "PermissionDenied",
+        "IsADirectory",
+        "NotADirectory",
+        "AlreadyExists",
+        "IsSameFile",
+        "ConditionNotMatch",
+        "RateLimited",
+        "RangeNotSatisfied",
+        "Conflict",
+    ]
+    for name in expected:
+        assert hasattr(exceptions, name), f"exceptions.{name} is missing"
+        cls = getattr(exceptions, name)
+        assert inspect.isclass(cls), f"exceptions.{name} is not a class"
+        assert issubclass(cls, builtins.Exception), (
+            f"exceptions.{name} does not inherit from Exception"
+        )
+
+
+def test_rate_limited_is_catchable():
+    """RateLimited can be raised and caught like a standard exception."""
+    msg = "too many requests"
+    with pytest.raises(exceptions.RateLimited):
+        raise exceptions.RateLimited(msg)
+
+
+def test_range_not_satisfied_is_catchable():
+    """RangeNotSatisfied can be raised and caught like a standard exception."""
+    msg = "requested range not satisfiable"
+    with pytest.raises(exceptions.RangeNotSatisfied):
+        raise exceptions.RangeNotSatisfied(msg)
+
+
+def test_exceptions_are_distinct():
+    """RateLimited and RangeNotSatisfied must not accidentally catch each other."""
+    assert not issubclass(exceptions.RateLimited, exceptions.RangeNotSatisfied)
+    assert not issubclass(exceptions.RangeNotSatisfied, exceptions.RateLimited)
+    assert not issubclass(exceptions.Conflict, exceptions.ConditionNotMatch)
+    assert not issubclass(exceptions.ConditionNotMatch, exceptions.Conflict)

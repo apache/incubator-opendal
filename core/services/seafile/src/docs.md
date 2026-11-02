@@ -1,6 +1,6 @@
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [ ] create_dir
 - [x] stat
@@ -12,15 +12,16 @@ This service can be used to:
 - [ ] rename
 - [ ] presign
 
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
+
 ## Configuration
 
-- `root`: Set the work directory for backend
-- `endpoint`: Seafile endpoint address
-- `username` Seafile username
-- `password` Seafile password
-- `repo_name` Seafile repo name
+Use [`crate::SeafileConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
-You can refer to [`SeafileBuilder`]'s docs for more information
+Authentication and library lookup are initialized together on first use. Failed or cancelled initialization can be retried by a subsequent operation; successful initialization is shared by an operator and its clones.
 
 ## Example
 
@@ -46,7 +47,7 @@ async fn main() -> Result<()> {
         // set the repo_name for OpenDAL
         .repo_name("xxxxxxxxxxxxx");
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
 
     Ok(())
 }

@@ -15,22 +15,29 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Vercel Artifacts service support for OpenDAL.
+#![doc = include_str!("../README.md")]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg))]
+#![deny(missing_docs)]
 
-/// Default scheme for vercel-artifacts service.
+/// URI scheme used for service registration and scheme-driven construction.
 pub const VERCEL_ARTIFACTS_SCHEME: &str = "vercel-artifacts";
 
-/// Register this service into the given registry.
+/// Register this service's URI scheme or schemes with an operator registry.
+///
+/// Registration enables scheme-driven construction through
+/// [`opendal_core::Operator::from_uri`] and
+/// [`opendal_core::Operator::via_iter`]. Direct construction through
+/// [`opendal_core::Operator::new`] does not require registration.
 pub fn register_vercel_artifacts_service(registry: &opendal_core::OperatorRegistry) {
     registry.register::<VercelArtifacts>(VERCEL_ARTIFACTS_SCHEME);
 }
 
 mod backend;
-mod builder;
 mod config;
 mod core;
-mod error;
+mod reader;
 mod writer;
 
-pub use builder::VercelArtifactsBuilder as VercelArtifacts;
+pub use backend::VercelArtifactsBuilder as VercelArtifacts;
 pub use config::VercelArtifactsConfig;

@@ -19,41 +19,63 @@ use std::sync::Arc;
 
 use bytes::Buf;
 
+use super::core::parse_error;
 use super::core::*;
-use super::error::parse_error;
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct SwiftLister {
     core: Arc<SwiftCore>,
+    ctx: OperationContext,
     path: String,
     delimiter: &'static str,
     limit: Option<usize>,
+    abs_start_after: Option<String>,
 }
 
 impl SwiftLister {
-    pub fn new(core: Arc<SwiftCore>, path: String, recursive: bool, limit: Option<usize>) -> Self {
+    pub fn new(
+        core: Arc<SwiftCore>,
+        ctx: OperationContext,
+        path: String,
+        recursive: bool,
+        limit: Option<usize>,
+        start_after: Option<String>,
+    ) -> Self {
         let delimiter = if recursive { "" } else { "/" };
+        // Swift listing names are absolute (root-prefixed) and the lister pages
+        // by `marker`, so the start-after must be made absolute as well.
+        let abs_start_after =
+            start_after.map(|start_after| build_abs_path(&core.root, &start_after));
         Self {
             core,
+            ctx,
             path,
             delimiter,
             limit,
+            abs_start_after,
         }
     }
 }
 
 impl oio::PageList for SwiftLister {
     async fn next_page(&self, ctx: &mut oio::PageContext) -> Result<()> {
+        // `start_after` applies to the first page only; subsequent pages
+        // continue from the previous page's last entry carried in `ctx.token`.
+        let marker = if ctx.token.is_empty() {
+            self.abs_start_after.as_deref().unwrap_or("")
+        } else {
+            ctx.token.as_str()
+        };
         let response = self
             .core
-            .swift_list(&self.path, self.delimiter, self.limit, &ctx.token)
+            .swift_list(&self.ctx, &self.path, self.delimiter, self.limit, marker)
             .await?;
 
         let status_code = response.status();
 
         if !status_code.is_success() {
-            let error = parse_error(response);
+            let error = parse_error(ErrorContext::new(ServiceOperation("ListObjects")), response);
             return Err(error);
         }
 
@@ -79,7 +101,7 @@ impl oio::PageList for SwiftLister {
                     if path.is_empty() {
                         path = "/".to_string();
                     }
-                    let meta = Metadata::new(EntryMode::DIR);
+                    let meta = MetadataBuilder::dir().build();
                     oio::Entry::with(path, meta)
                 }
                 ListOpResponse::FileInfo {
@@ -93,9 +115,12 @@ impl oio::PageList for SwiftLister {
                     if path.is_empty() {
                         path = "/".to_string();
                     }
-                    let mut meta = Metadata::new(EntryMode::from_path(path.as_str()));
-                    meta.set_content_length(bytes);
-                    meta.set_content_md5(hash.as_str());
+                    let mut meta = if path.ends_with('/') {
+                        MetadataBuilder::dir()
+                    } else {
+                        MetadataBuilder::file(bytes)
+                    };
+                    meta.content_md5(hash.as_str());
 
                     // OpenStack Swift returns time without 'Z' at the end,
                     // which causes an error in parse_datetime_from_rfc3339.
@@ -103,13 +128,13 @@ impl oio::PageList for SwiftLister {
                     if !last_modified.ends_with('Z') {
                         last_modified.push('Z');
                     }
-                    meta.set_last_modified(last_modified.parse::<Timestamp>()?);
+                    meta.last_modified(last_modified.parse::<Timestamp>()?);
 
                     if let Some(content_type) = content_type {
-                        meta.set_content_type(content_type.as_str());
+                        meta.content_type(content_type.as_str());
                     }
 
-                    oio::Entry::with(path, meta)
+                    oio::Entry::with(path, meta.build())
                 }
             };
             ctx.entries.push_back(entry);

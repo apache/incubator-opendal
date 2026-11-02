@@ -15,9 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Mini-moka service implementation for Apache OpenDAL.
-
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
 
 mod backend;
@@ -25,15 +25,21 @@ mod config;
 mod core;
 mod deleter;
 mod lister;
+mod reader;
 mod writer;
 
 pub use backend::MiniMokaBuilder as MiniMoka;
 pub use config::MiniMokaConfig;
 
-/// Default scheme for mini-moka service.
+/// URI scheme used for service registration and scheme-driven construction.
 pub const MINI_MOKA_SCHEME: &str = "mini-moka";
 
-/// Register this service into the given registry.
+/// Register this service's URI scheme or schemes with an operator registry.
+///
+/// Registration enables scheme-driven construction through
+/// [`opendal_core::Operator::from_uri`] and
+/// [`opendal_core::Operator::via_iter`]. Direct construction through
+/// [`opendal_core::Operator::new`] does not require registration.
 pub fn register_mini_moka_service(registry: &opendal_core::OperatorRegistry) {
     registry.register::<MiniMoka>(MINI_MOKA_SCHEME);
 }

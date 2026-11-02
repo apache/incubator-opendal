@@ -49,24 +49,28 @@ impl oio::Write for MiniMokaWriter {
     async fn close(&mut self) -> Result<Metadata> {
         let buf = self.buffer.clone().collect();
 
-        let mut md = Metadata::new(EntryMode::from_path(&self.path));
-        md.set_content_length(buf.len() as u64);
-        md.set_last_modified(Timestamp::now());
+        let mut md = if self.path.ends_with('/') {
+            MetadataBuilder::dir()
+        } else {
+            MetadataBuilder::file(buf.len() as u64)
+        };
+        md.last_modified(Timestamp::now());
 
         // Set metadata from OpWrite
         if let Some(content_type) = self.op.content_type() {
-            md.set_content_type(content_type);
+            md.content_type(content_type);
         }
         if let Some(content_disposition) = self.op.content_disposition() {
-            md.set_content_disposition(content_disposition);
+            md.content_disposition(content_disposition);
         }
         if let Some(content_encoding) = self.op.content_encoding() {
-            md.set_content_encoding(content_encoding);
+            md.content_encoding(content_encoding);
         }
         if let Some(cache_control) = self.op.cache_control() {
-            md.set_cache_control(cache_control);
+            md.cache_control(cache_control);
         }
 
+        let md = md.build();
         let value = MiniMokaValue {
             metadata: md.clone(),
             content: buf,

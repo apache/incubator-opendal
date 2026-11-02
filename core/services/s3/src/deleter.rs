@@ -20,20 +20,21 @@ use std::sync::Arc;
 use bytes::Buf;
 use http::StatusCode;
 
+use crate::core::parse_error;
+use crate::core::parse_s3_error_code;
 use crate::core::*;
-use crate::error::parse_error;
-use crate::error::parse_s3_error_code;
 use opendal_core::raw::oio::BatchDeleteResult;
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct S3Deleter {
     core: Arc<S3Core>,
+    ctx: OperationContext,
 }
 
 impl S3Deleter {
-    pub fn new(core: Arc<S3Core>) -> Self {
-        Self { core }
+    pub fn new(core: Arc<S3Core>, ctx: OperationContext) -> Self {
+        Self { core, ctx }
     }
 }
 
@@ -44,7 +45,9 @@ impl oio::BatchDelete for S3Deleter {
             return Ok(());
         }
 
-        let resp = self.core.s3_delete_object(&path, &args).await?;
+        let error_ctx = ErrorContext::new(ServiceOperation("DeleteObject"))
+            .with_caller_condition(args.is_conditional());
+        let resp = self.core.s3_delete_object(&self.ctx, &path, &args).await?;
 
         let status = resp.status();
 
@@ -53,17 +56,24 @@ impl oio::BatchDelete for S3Deleter {
             // Allow 404 when deleting a non-existing object
             // This is not a standard behavior, only some s3 alike service like GCS XML API do this.
             // ref: <https://cloud.google.com/storage/docs/xml-api/delete-object>
+            StatusCode::NOT_FOUND if args.if_match().is_some() => Err(Error::new(
+                ErrorKind::ConditionNotMatch,
+                "delete precondition requires a live target",
+            )),
             StatusCode::NOT_FOUND => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(error_ctx, resp)),
         }
     }
 
     async fn delete_batch(&self, batch: Vec<(String, OpDelete)>) -> Result<BatchDeleteResult> {
-        let resp = self.core.s3_delete_objects(batch).await?;
+        let resp = self.core.s3_delete_objects(&self.ctx, &batch).await?;
 
         let status = resp.status();
         if status != StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("DeleteObjects")),
+                resp,
+            ));
         }
 
         let bs = resp.into_body();
@@ -71,36 +81,47 @@ impl oio::BatchDelete for S3Deleter {
         let result: DeleteObjectsResult =
             quick_xml::de::from_reader(bs.reader()).map_err(new_xml_deserialize_error)?;
 
+        let mut errors = result.error;
         let mut batched_result = BatchDeleteResult {
-            succeeded: Vec::with_capacity(result.deleted.len()),
-            failed: Vec::with_capacity(result.error.len()),
+            // `errors.len()` is server-controlled and may exceed `batch.len()`; use
+            // `saturating_sub` (mirroring services/tos) to avoid an unsigned underflow
+            // that wraps to a huge `with_capacity` (release: abort).
+            succeeded: Vec::with_capacity(batch.len().saturating_sub(errors.len())),
+            failed: Vec::with_capacity(errors.len()),
         };
-        for i in result.deleted {
-            let path = build_rel_path(&self.core.root, &i.key);
-            let mut op = OpDelete::new();
-            if let Some(version_id) = i.version_id {
-                op = op.with_version(version_id.as_str());
+        for (path, op) in batch {
+            let abs_path = build_abs_path(&self.core.root, &path);
+            // Assume errors are rare, so lookup and erase is acceptable.
+            if let Some(idx) = errors
+                .iter()
+                .position(|e| e.key == abs_path && e.version_id.as_deref() == op.version())
+            {
+                let error = errors.swap_remove(idx);
+                let conditional = op.if_match().is_some();
+                batched_result.failed.push((
+                    path,
+                    op,
+                    parse_delete_objects_result_error(error, conditional),
+                ));
+            } else {
+                batched_result.succeeded.push((path, op));
             }
-            batched_result.succeeded.push((path, op));
-        }
-        for i in result.error {
-            let path = build_rel_path(&self.core.root, &i.key);
-            let mut op = OpDelete::new();
-            if let Some(version_id) = &i.version_id {
-                op = op.with_version(version_id.as_str());
-            }
-            batched_result
-                .failed
-                .push((path, op, parse_delete_objects_result_error(i)));
         }
 
         Ok(batched_result)
     }
 }
 
-fn parse_delete_objects_result_error(err: DeleteObjectsResultError) -> Error {
+fn parse_delete_objects_result_error(err: DeleteObjectsResultError, conditional: bool) -> Error {
+    let error_ctx =
+        ErrorContext::new(ServiceOperation("DeleteObjects")).with_caller_condition(conditional);
     let (kind, retryable) =
-        parse_s3_error_code(err.code.as_str()).unwrap_or((ErrorKind::Unexpected, false));
+        parse_s3_error_code(error_ctx, err.code.as_str()).unwrap_or((ErrorKind::Unexpected, false));
+    let kind = if conditional && kind == ErrorKind::NotFound {
+        ErrorKind::ConditionNotMatch
+    } else {
+        kind
+    };
     let mut err: Error = Error::new(kind, format!("{err:?}"));
     if retryable {
         err = err.set_temporary();

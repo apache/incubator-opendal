@@ -17,7 +17,7 @@
 
 # Generate code for language
 #
-# Available languages: python, java
+# Available targets: python, java, docs, gcs-grpc
 generate language:
     cargo run --quiet --manifest-path=dev/Cargo.toml -- generate -l {{language}}
 

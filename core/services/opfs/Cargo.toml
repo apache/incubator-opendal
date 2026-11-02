@@ -18,6 +18,7 @@
 [package]
 description = "Apache OpenDAL OPFS service implementation"
 name = "opendal-service-opfs"
+readme = "README.md"
 
 authors = { workspace = true }
 edition = { workspace = true }
@@ -29,21 +30,30 @@ version = { workspace = true }
 
 [package.metadata.docs.rs]
 all-features = true
+default-target = "wasm32-unknown-unknown"
+targets = ["wasm32-unknown-unknown"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 js-sys = "0.3.77"
-opendal-core = { path = "../../core", version = "0.55.0", default-features = false }
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false }
+send_wrapper = "0.6"
 serde = { workspace = true, features = ["derive"] }
 wasm-bindgen = "0.2.100"
 wasm-bindgen-futures = "0.4.50"
 web-sys = { version = "0.3.77", features = [
-  "Window",
+  "Blob",
+  "console",
+  "DomException",
   "File",
   "FileSystemDirectoryHandle",
   "FileSystemFileHandle",
   "FileSystemGetDirectoryOptions",
   "FileSystemGetFileOptions",
+  "FileSystemRemoveOptions",
   "FileSystemWritableFileStream",
   "Navigator",
+  "WriteCommandType",
+  "WriteParams",
   "StorageManager",
+  "Window",
 ] }

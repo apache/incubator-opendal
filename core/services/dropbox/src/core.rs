@@ -18,6 +18,7 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use asyncband::mutex::Mutex;
 use bytes::Buf;
 use bytes::Bytes;
 use http::Request;
@@ -26,16 +27,15 @@ use http::StatusCode;
 use http::header;
 use http::header::CONTENT_LENGTH;
 use http::header::CONTENT_TYPE;
-use mea::mutex::Mutex;
 use serde::Deserialize;
 use serde::Serialize;
 
-use super::error::parse_error;
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct DropboxCore {
-    pub info: Arc<AccessorInfo>,
+    pub info: ServiceInfo,
+    pub capability: Capability,
     pub root: String,
     pub signer: Arc<Mutex<DropboxSigner>>,
 }
@@ -56,7 +56,7 @@ impl DropboxCore {
         path.trim_end_matches('/').to_string()
     }
 
-    pub async fn sign<T>(&self, req: &mut Request<T>) -> Result<()> {
+    pub async fn sign<T>(&self, ctx: &OperationContext, req: &mut Request<T>) -> Result<()> {
         let mut signer = self.signer.lock().await;
 
         // Access token is valid, use it directly.
@@ -83,7 +83,7 @@ impl DropboxCore {
             .body(Buffer::from(bs))
             .map_err(new_request_build_error)?;
 
-        let resp = self.info.http_client().send(request).await?;
+        let resp = ctx.http_transport().send(request).await?;
         let body = resp.into_body();
 
         let token: DropboxTokenResponse =
@@ -106,6 +106,7 @@ impl DropboxCore {
 
     pub async fn dropbox_get(
         &self,
+        ctx: &OperationContext,
         path: &str,
         range: BytesRange,
         _: &OpRead,
@@ -125,16 +126,19 @@ impl DropboxCore {
             req = req.header(header::RANGE, range.to_header());
         }
 
-        let req = req.extension(Operation::Read);
+        let req = req
+            .extension(Operation::Read)
+            .extension(ServiceOperation("DownloadFile"));
 
         let mut request = req.body(Buffer::new()).map_err(new_request_build_error)?;
 
-        self.sign(&mut request).await?;
-        self.info.http_client().fetch(request).await
+        self.sign(ctx, &mut request).await?;
+        ctx.http_transport().fetch(request).await
     }
 
     pub async fn dropbox_update(
         &self,
+        ctx: &OperationContext,
         path: &str,
         size: Option<usize>,
         args: &OpWrite,
@@ -154,7 +158,9 @@ impl DropboxCore {
             args.content_type().unwrap_or("application/octet-stream"),
         );
 
-        let request_builder = request_builder.extension(Operation::Write);
+        let request_builder = request_builder
+            .extension(Operation::Write)
+            .extension(ServiceOperation("UploadFile"));
 
         let mut request = request_builder
             .header(
@@ -164,11 +170,15 @@ impl DropboxCore {
             .body(body)
             .map_err(new_request_build_error)?;
 
-        self.sign(&mut request).await?;
-        self.info.http_client().send(request).await
+        self.sign(ctx, &mut request).await?;
+        ctx.http_transport().send(request).await
     }
 
-    pub async fn dropbox_delete(&self, path: &str) -> Result<Response<Buffer>> {
+    pub async fn dropbox_delete(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+    ) -> Result<Response<Buffer>> {
         let url = "https://api.dropboxapi.com/2/files/delete_v2".to_string();
         let args = DropboxDeleteArgs {
             path: self.build_path(path),
@@ -180,14 +190,19 @@ impl DropboxCore {
             .header(CONTENT_TYPE, "application/json")
             .header(CONTENT_LENGTH, bs.len())
             .extension(Operation::Delete)
+            .extension(ServiceOperation("DeleteFile"))
             .body(Buffer::from(bs))
             .map_err(new_request_build_error)?;
 
-        self.sign(&mut request).await?;
-        self.info.http_client().send(request).await
+        self.sign(ctx, &mut request).await?;
+        ctx.http_transport().send(request).await
     }
 
-    pub async fn dropbox_create_folder(&self, path: &str) -> Result<RpCreateDir> {
+    pub async fn dropbox_create_folder(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+    ) -> Result<RpCreateDir> {
         let url = "https://api.dropboxapi.com/2/files/create_folder_v2".to_string();
         let args = DropboxCreateFolderArgs {
             path: self.build_path(path),
@@ -199,16 +214,17 @@ impl DropboxCore {
             .header(CONTENT_TYPE, "application/json")
             .header(CONTENT_LENGTH, bs.len())
             .extension(Operation::CreateDir)
+            .extension(ServiceOperation("CreateFolder"))
             .body(Buffer::from(bs))
             .map_err(new_request_build_error)?;
 
-        self.sign(&mut request).await?;
-        let resp = self.info.http_client().send(request).await?;
+        self.sign(ctx, &mut request).await?;
+        let resp = ctx.http_transport().send(request).await?;
         let status = resp.status();
         match status {
             StatusCode::OK => Ok(RpCreateDir::default()),
             _ => {
-                let err = parse_error(resp);
+                let err = parse_error(ErrorContext::new(ServiceOperation("CreateFolder")), resp);
                 match err.kind() {
                     ErrorKind::AlreadyExists => Ok(RpCreateDir::default()),
                     _ => Err(err),
@@ -219,6 +235,7 @@ impl DropboxCore {
 
     pub async fn dropbox_list(
         &self,
+        ctx: &OperationContext,
         path: &str,
         recursive: bool,
         limit: Option<usize>,
@@ -239,14 +256,19 @@ impl DropboxCore {
             .header(CONTENT_TYPE, "application/json")
             .header(CONTENT_LENGTH, bs.len())
             .extension(Operation::List)
+            .extension(ServiceOperation("ListFolder"))
             .body(Buffer::from(bs))
             .map_err(new_request_build_error)?;
 
-        self.sign(&mut request).await?;
-        self.info.http_client().send(request).await
+        self.sign(ctx, &mut request).await?;
+        ctx.http_transport().send(request).await
     }
 
-    pub async fn dropbox_list_continue(&self, cursor: &str) -> Result<Response<Buffer>> {
+    pub async fn dropbox_list_continue(
+        &self,
+        ctx: &OperationContext,
+        cursor: &str,
+    ) -> Result<Response<Buffer>> {
         let url = "https://api.dropboxapi.com/2/files/list_folder/continue".to_string();
 
         let args = DropboxListContinueArgs {
@@ -259,14 +281,20 @@ impl DropboxCore {
             .header(CONTENT_TYPE, "application/json")
             .header(CONTENT_LENGTH, bs.len())
             .extension(Operation::List)
+            .extension(ServiceOperation("ListFolderContinue"))
             .body(Buffer::from(bs))
             .map_err(new_request_build_error)?;
 
-        self.sign(&mut request).await?;
-        self.info.http_client().send(request).await
+        self.sign(ctx, &mut request).await?;
+        ctx.http_transport().send(request).await
     }
 
-    pub async fn dropbox_copy(&self, from: &str, to: &str) -> Result<Response<Buffer>> {
+    pub async fn dropbox_copy(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+    ) -> Result<Response<Buffer>> {
         let url = "https://api.dropboxapi.com/2/files/copy_v2".to_string();
 
         let args = DropboxCopyArgs {
@@ -280,14 +308,20 @@ impl DropboxCore {
             .header(CONTENT_TYPE, "application/json")
             .header(CONTENT_LENGTH, bs.len())
             .extension(Operation::Copy)
+            .extension(ServiceOperation("CopyFile"))
             .body(Buffer::from(bs))
             .map_err(new_request_build_error)?;
 
-        self.sign(&mut request).await?;
-        self.info.http_client().send(request).await
+        self.sign(ctx, &mut request).await?;
+        ctx.http_transport().send(request).await
     }
 
-    pub async fn dropbox_move(&self, from: &str, to: &str) -> Result<Response<Buffer>> {
+    pub async fn dropbox_move(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+    ) -> Result<Response<Buffer>> {
         let url = "https://api.dropboxapi.com/2/files/move_v2".to_string();
 
         let args = DropboxMoveArgs {
@@ -301,14 +335,19 @@ impl DropboxCore {
             .header(CONTENT_TYPE, "application/json")
             .header(CONTENT_LENGTH, bs.len())
             .extension(Operation::Rename)
+            .extension(ServiceOperation("MoveFile"))
             .body(Buffer::from(bs))
             .map_err(new_request_build_error)?;
 
-        self.sign(&mut request).await?;
-        self.info.http_client().send(request).await
+        self.sign(ctx, &mut request).await?;
+        ctx.http_transport().send(request).await
     }
 
-    pub async fn dropbox_get_metadata(&self, path: &str) -> Result<Response<Buffer>> {
+    pub async fn dropbox_get_metadata(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+    ) -> Result<Response<Buffer>> {
         let url = "https://api.dropboxapi.com/2/files/get_metadata".to_string();
         let args = DropboxMetadataArgs {
             path: self.build_path(path),
@@ -321,12 +360,13 @@ impl DropboxCore {
             .header(CONTENT_TYPE, "application/json")
             .header(CONTENT_LENGTH, bs.len())
             .extension(Operation::Stat)
+            .extension(ServiceOperation("GetMetadata"))
             .body(Buffer::from(bs))
             .map_err(new_request_build_error)?;
 
-        self.sign(&mut request).await?;
+        self.sign(ctx, &mut request).await?;
 
-        self.info.http_client().send(request).await
+        ctx.http_transport().send(request).await
     }
 }
 
@@ -487,4 +527,79 @@ pub struct DropboxListResponse {
     pub entries: Vec<DropboxMetadataResponse>,
     pub cursor: String,
     pub has_more: bool,
+}
+
+#[derive(Default, Debug, Deserialize)]
+#[serde(default)]
+pub struct DropboxErrorResponse {
+    pub error_summary: String,
+}
+
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+}
+
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self { service_operation }
+    }
+}
+
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
+    let (parts, body) = resp.into_parts();
+    let bs = body.to_bytes();
+
+    let (mut kind, mut retryable) = match parts.status {
+        StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
+        StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, false),
+        StatusCode::TOO_MANY_REQUESTS => (ErrorKind::RateLimited, true),
+        StatusCode::INTERNAL_SERVER_ERROR
+        | StatusCode::BAD_GATEWAY
+        | StatusCode::SERVICE_UNAVAILABLE
+        | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
+        _ => (ErrorKind::Unexpected, false),
+    };
+
+    let (message, dropbox_err) = serde_json::from_slice::<DropboxErrorResponse>(&bs)
+        .map(|dropbox_err| (format!("{dropbox_err:?}"), Some(dropbox_err)))
+        .unwrap_or_else(|_| (String::from_utf8_lossy(&bs).into_owned(), None));
+
+    if let Some(dropbox_err) = dropbox_err {
+        (kind, retryable) =
+            parse_dropbox_error_summary(&dropbox_err.error_summary).unwrap_or((kind, retryable));
+    }
+
+    let mut err = Error::new(kind, message);
+
+    err = err.with_context("service_operation", ctx.service_operation.0);
+    err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
+
+    err
+}
+
+/// We cannot get the error type from the response header when the status code is 409.
+/// Because Dropbox API v2 will put error summary in the response body,
+/// we need to parse it to get the correct error type and then error kind.
+///
+/// See <https://www.dropbox.com/developers/documentation/http/documentation#error-handling>
+pub fn parse_dropbox_error_summary(summary: &str) -> Option<(ErrorKind, bool)> {
+    if summary.starts_with("path/not_found")
+        || summary.starts_with("path_lookup/not_found")
+        || summary.starts_with("from_lookup/not_found")
+    {
+        Some((ErrorKind::NotFound, false))
+    } else if summary.starts_with("path/conflict") {
+        Some((ErrorKind::AlreadyExists, false))
+    } else if summary.starts_with("too_many_write_operations") {
+        Some((ErrorKind::RateLimited, true))
+    } else {
+        None
+    }
 }

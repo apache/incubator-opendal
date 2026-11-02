@@ -20,11 +20,11 @@ use std::sync::Arc;
 use bytes::Buf;
 use http::StatusCode;
 
-use super::core::B2Core;
 use super::core::StartLargeFileResponse;
 use super::core::UploadPartResponse;
 use super::core::UploadResponse;
-use super::error::parse_error;
+use super::core::parse_error;
+use super::core::{B2Core, ErrorContext};
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -32,34 +32,38 @@ pub type B2Writers = oio::MultipartWriter<B2Writer>;
 
 pub struct B2Writer {
     core: Arc<B2Core>,
+    ctx: OperationContext,
 
     op: OpWrite,
     path: String,
 }
 
 impl B2Writer {
-    pub fn new(core: Arc<B2Core>, path: &str, op: OpWrite) -> Self {
+    pub fn new(core: Arc<B2Core>, ctx: OperationContext, path: &str, op: OpWrite) -> Self {
         B2Writer {
             core,
+            ctx,
             path: path.to_string(),
             op,
         }
     }
 
     pub fn parse_body_into_meta(path: &str, resp: UploadResponse) -> Metadata {
-        let mut meta = Metadata::new(EntryMode::from_path(path));
+        let mut meta = if path.ends_with('/') {
+            MetadataBuilder::dir()
+        } else {
+            MetadataBuilder::file(resp.content_length)
+        };
 
         if let Some(md5) = resp.content_md5 {
-            meta.set_content_md5(&md5);
+            meta.content_md5(&md5);
         }
 
         if let Some(content_type) = resp.content_type {
-            meta.set_content_type(&content_type);
+            meta.content_type(&content_type);
         }
 
-        meta.set_content_length(resp.content_length);
-
-        meta
+        meta.build()
     }
 }
 
@@ -67,7 +71,7 @@ impl oio::MultipartWrite for B2Writer {
     async fn write_once(&self, size: u64, body: Buffer) -> Result<Metadata> {
         let resp = self
             .core
-            .upload_file(&self.path, Some(size), &self.op, body)
+            .upload_file(&self.ctx, &self.path, Some(size), &self.op, body)
             .await?;
 
         let status = resp.status();
@@ -83,12 +87,18 @@ impl oio::MultipartWrite for B2Writer {
 
                 Ok(meta)
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("UploadFile")),
+                resp,
+            )),
         }
     }
 
     async fn initiate_part(&self) -> Result<String> {
-        let resp = self.core.start_large_file(&self.path, &self.op).await?;
+        let resp = self
+            .core
+            .start_large_file(&self.ctx, &self.path, &self.op)
+            .await?;
 
         let status = resp.status();
 
@@ -101,7 +111,10 @@ impl oio::MultipartWrite for B2Writer {
 
                 Ok(result.file_id)
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("StartLargeFile")),
+                resp,
+            )),
         }
     }
 
@@ -117,7 +130,7 @@ impl oio::MultipartWrite for B2Writer {
 
         let resp = self
             .core
-            .upload_part(upload_id, part_number, size, body)
+            .upload_part(&self.ctx, upload_id, part_number, size, body)
             .await?;
 
         let status = resp.status();
@@ -133,9 +146,13 @@ impl oio::MultipartWrite for B2Writer {
                     etag: result.content_sha1,
                     part_number,
                     checksum: None,
+                    size: None,
                 })
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("UploadPart")),
+                resp,
+            )),
         }
     }
 
@@ -158,7 +175,7 @@ impl oio::MultipartWrite for B2Writer {
 
         let resp = self
             .core
-            .finish_large_file(upload_id, part_sha1_array)
+            .finish_large_file(&self.ctx, upload_id, part_sha1_array)
             .await?;
 
         let status = resp.status();
@@ -174,16 +191,22 @@ impl oio::MultipartWrite for B2Writer {
 
                 Ok(meta)
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("FinishLargeFile")),
+                resp,
+            )),
         }
     }
 
     async fn abort_part(&self, upload_id: &str) -> Result<()> {
-        let resp = self.core.cancel_large_file(upload_id).await?;
+        let resp = self.core.cancel_large_file(&self.ctx, upload_id).await?;
         match resp.status() {
             // b2 returns code 200 if abort succeeds.
             StatusCode::OK => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("CancelLargeFile")),
+                resp,
+            )),
         }
     }
 }

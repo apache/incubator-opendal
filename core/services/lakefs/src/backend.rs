@@ -18,7 +18,6 @@
 use std::sync::Arc;
 
 use bytes::Buf;
-use http::Response;
 use http::StatusCode;
 use log::debug;
 use opendal_core::raw::*;
@@ -26,11 +25,12 @@ use opendal_core::*;
 
 use super::LAKEFS_SCHEME;
 use super::config::LakefsConfig;
-use super::core::LakefsCore;
 use super::core::LakefsStatus;
+use super::core::parse_error;
+use super::core::{ErrorContext, LakefsCore};
 use super::deleter::LakefsDeleter;
-use super::error::parse_error;
 use super::lister::LakefsLister;
+use super::reader::*;
 use super::writer::LakefsWriter;
 
 /// [Lakefs](https://docs.lakefs.io/reference/api.html#/)'s API support.
@@ -110,8 +110,8 @@ impl Builder for LakefsBuilder {
     type Config = LakefsConfig;
 
     /// Build a LakefsBackend.
-    fn build(self) -> Result<impl Access> {
-        debug!("backend build started: {:?}", &self);
+    fn build(self) -> Result<impl Service> {
+        debug!("backend build started: {:?}", self);
 
         let endpoint = match self.config.endpoint {
             Some(endpoint) => Ok(endpoint.clone()),
@@ -119,7 +119,7 @@ impl Builder for LakefsBuilder {
                 .with_operation("Builder::build")
                 .with_context("service", LAKEFS_SCHEME)),
         }?;
-        debug!("backend use endpoint: {:?}", &endpoint);
+        debug!("backend use endpoint: {:?}", endpoint);
 
         let repository = match &self.config.repository {
             Some(repository) => Ok(repository.clone()),
@@ -127,16 +127,16 @@ impl Builder for LakefsBuilder {
                 .with_operation("Builder::build")
                 .with_context("service", LAKEFS_SCHEME)),
         }?;
-        debug!("backend use repository: {}", &repository);
+        debug!("backend use repository: {}", repository);
 
         let branch = match &self.config.branch {
             Some(branch) => branch.clone(),
             None => "main".to_string(),
         };
-        debug!("backend use branch: {}", &branch);
+        debug!("backend use branch: {}", branch);
 
         let root = normalize_root(&self.config.root.unwrap_or_default());
-        debug!("backend use root: {}", &root);
+        debug!("backend use root: {}", root);
 
         let username = match &self.config.username {
             Some(username) => Ok(username.clone()),
@@ -154,22 +154,19 @@ impl Builder for LakefsBuilder {
 
         Ok(LakefsBackend {
             core: Arc::new(LakefsCore {
-                info: {
-                    let am = AccessorInfo::default();
-                    am.set_scheme(LAKEFS_SCHEME)
-                        .set_native_capability(Capability {
-                            stat: true,
+                info: ServiceInfo::new(LAKEFS_SCHEME, "", ""),
+                capability: Capability {
+                    stat: true,
 
-                            list: true,
+                    list: true,
 
-                            read: true,
-                            write: true,
-                            delete: true,
-                            copy: true,
-                            shared: true,
-                            ..Default::default()
-                        });
-                    am.into()
+                    read: true,
+                    read_with_suffix: true,
+                    write: true,
+                    delete: true,
+                    copy: true,
+                    shared: true,
+                    ..Default::default()
                 },
                 endpoint,
                 repository,
@@ -185,26 +182,44 @@ impl Builder for LakefsBuilder {
 /// Backend for Lakefs service
 #[derive(Debug, Clone)]
 pub struct LakefsBackend {
-    core: Arc<LakefsCore>,
+    pub(crate) core: Arc<LakefsCore>,
 }
 
-impl Access for LakefsBackend {
-    type Reader = HttpBody;
+impl Service for LakefsBackend {
+    type Reader = oio::StreamReader<LakefsReader>;
     type Writer = oio::OneShotWriter<LakefsWriter>;
     type Lister = oio::PageLister<LakefsLister>;
     type Deleter = oio::OneShotDeleter<LakefsDeleter>;
+    type Copier = oio::OneShotCopier;
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
+    fn info(&self) -> ServiceInfo {
         self.core.info.clone()
     }
 
-    async fn stat(&self, path: &str, _: OpStat) -> Result<RpStat> {
+    fn capability(&self) -> Capability {
+        self.core.capability
+    }
+
+    async fn create_dir(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn stat(&self, ctx: &OperationContext, path: &str, _: OpStat) -> Result<RpStat> {
         // Stat root always returns a DIR.
         if path == "/" {
-            return Ok(RpStat::new(Metadata::new(EntryMode::DIR)));
+            return Ok(RpStat::new(MetadataBuilder::dir().build()));
         }
 
-        let resp = self.core.get_object_metadata(path).await?;
+        let resp = self.core.get_object_metadata(ctx, path).await?;
 
         let status = resp.status();
 
@@ -216,68 +231,129 @@ impl Access for LakefsBackend {
                     serde_json::from_reader(bs.reader()).map_err(new_json_deserialize_error)?;
 
                 // Use the helper function to parse LakefsStatus into Metadata
-                let meta = LakefsCore::parse_lakefs_status_into_metadata(&decoded_response);
+                let meta = LakefsCore::parse_lakefs_status_into_metadata(&decoded_response)?;
 
                 Ok(RpStat::new(meta))
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("StatObject")),
+                resp,
+            )),
         }
     }
+    fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
+        let output: oio::StreamReader<LakefsReader> = {
+            Ok(oio::StreamReader::new(LakefsReader::new(
+                self.clone(),
+                ctx.clone(),
+                path,
+                args,
+            )))
+        }?;
 
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let resp = self
-            .core
-            .get_object_content(path, args.range(), &args)
-            .await?;
-
-        let status = resp.status();
-
-        match status {
-            StatusCode::OK | StatusCode::PARTIAL_CONTENT => {
-                Ok((RpRead::default(), resp.into_body()))
-            }
-            _ => {
-                let (part, mut body) = resp.into_parts();
-                let buf = body.to_buffer().await?;
-                Err(parse_error(Response::from_parts(part, buf)))
-            }
-        }
+        Ok(output)
     }
 
-    async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
-        let l = LakefsLister::new(
-            self.core.clone(),
-            path.to_string(),
-            args.limit(),
-            args.start_after(),
-            args.recursive(),
-        );
+    fn list(&self, ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
+        let output: oio::PageLister<LakefsLister> = {
+            let l = LakefsLister::new(
+                self.core.clone(),
+                ctx.clone(),
+                path.to_string(),
+                args.limit(),
+                args.start_after(),
+                args.recursive(),
+            );
 
-        Ok((RpList::default(), oio::PageLister::new(l)))
+            Ok(oio::PageLister::new(l))
+        }?;
+
+        Ok(output)
     }
 
-    async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        Ok((
-            RpWrite::default(),
-            oio::OneShotWriter::new(LakefsWriter::new(self.core.clone(), path.to_string(), args)),
+    fn write(&self, ctx: &OperationContext, path: &str, args: OpWrite) -> Result<Self::Writer> {
+        let output: oio::OneShotWriter<LakefsWriter> = {
+            Ok(oio::OneShotWriter::new(LakefsWriter::new(
+                self.core.clone(),
+                ctx.clone(),
+                path.to_string(),
+                args,
+            )))
+        }?;
+
+        Ok(output)
+    }
+
+    fn delete(&self, ctx: &OperationContext) -> Result<Self::Deleter> {
+        let output: oio::OneShotDeleter<LakefsDeleter> = {
+            Ok(oio::OneShotDeleter::new(LakefsDeleter::new(
+                self.core.clone(),
+                ctx.clone(),
+            )))
+        }?;
+
+        Ok(output)
+    }
+
+    fn copy(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpCopy,
+    ) -> Result<Self::Copier> {
+        let backend = self.clone();
+        let core = self.core.clone();
+        let ctx = ctx.clone();
+        let from = from.to_string();
+        let to = to.to_string();
+        let source_content_length_hint = args.source_content_length_hint();
+
+        Ok(oio::OneShotCopier::new(async move {
+            let source_size = match source_content_length_hint {
+                Some(size) => size,
+                None => backend
+                    .stat(&ctx, &from, OpStat::default())
+                    .await?
+                    .into_metadata()
+                    .content_length(),
+            };
+
+            let resp = core.copy_object(&ctx, &from, &to).await?;
+            let status = resp.status();
+
+            match status {
+                StatusCode::CREATED => Ok(MetadataBuilder::file(source_size).build()),
+                _ => Err(parse_error(
+                    ErrorContext::new(ServiceOperation("CopyObject")),
+                    resp,
+                )),
+            }
+        }))
+    }
+
+    async fn rename(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpRename,
+    ) -> Result<RpRename> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
         ))
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        Ok((
-            RpDelete::default(),
-            oio::OneShotDeleter::new(LakefsDeleter::new(self.core.clone())),
+    async fn presign(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpPresign,
+    ) -> Result<RpPresign> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
         ))
-    }
-
-    async fn copy(&self, from: &str, to: &str, _args: OpCopy) -> Result<RpCopy> {
-        let resp = self.core.copy_object(from, to).await?;
-
-        let status = resp.status();
-
-        match status {
-            StatusCode::CREATED => Ok(RpCopy::default()),
-            _ => Err(parse_error(resp)),
-        }
     }
 }

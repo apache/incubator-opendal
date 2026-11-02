@@ -51,17 +51,18 @@ impl RocksdbCore {
         self.db.delete(path).map_err(parse_rocksdb_error)
     }
 
-    pub fn list(&self, path: &str) -> Result<Vec<String>> {
-        let it = self.db.prefix_iterator(path).map(|r| r.map(|(k, _)| k));
+    pub fn list(&self, path: &str) -> Result<Vec<(String, u64)>> {
+        let it = self.db.prefix_iterator(path);
         let mut res = Vec::default();
 
-        for key in it {
-            let key = key.map_err(parse_rocksdb_error)?;
+        for entry in it {
+            let (key, value) = entry.map_err(parse_rocksdb_error)?;
             let key = String::from_utf8_lossy(&key);
             if !key.starts_with(path) {
                 break;
             }
-            res.push(key.to_string());
+
+            res.push((key.to_string(), value.len() as u64));
         }
 
         Ok(res)

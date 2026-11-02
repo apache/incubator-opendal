@@ -124,7 +124,7 @@ pub fn blocking_writer(
 #[ocaml::func]
 #[ocaml::sig("operator -> string -> string -> (unit, string) Result.t ")]
 pub fn blocking_copy(operator: &mut Operator, from: String, to: String) -> Result<(), String> {
-    map_res_error(operator.0.copy(from.as_str(), to.as_str()))
+    map_res_error(operator.0.copy(from.as_str(), to.as_str())).map(|_| ())
 }
 
 #[ocaml::func]
@@ -173,5 +173,5 @@ pub fn operator_info(operator: &mut Operator) -> ocaml::Pointer<OperatorInfo> {
 #[ocaml::func]
 #[ocaml::sig("operator_info -> capability ")]
 pub fn operator_info_capability(info: &mut OperatorInfo) -> ocaml::Pointer<Capability> {
-    Capability(info.0.full_capability()).into()
+    Capability(info.0.capability()).into()
 }

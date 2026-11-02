@@ -72,32 +72,32 @@ impl opendal_core::Configurator for SurrealdbConfig {
                 .or_insert_with(|| format!("ws://{authority}"));
         }
 
-        if let Some(path) = uri.root() {
-            if !path.is_empty() {
-                let mut segments = path.splitn(4, '/');
-                if let Some(namespace) = segments.next() {
-                    if !namespace.is_empty() {
-                        map.entry("namespace".to_string())
-                            .or_insert_with(|| namespace.to_string());
-                    }
-                }
-                if let Some(database) = segments.next() {
-                    if !database.is_empty() {
-                        map.entry("database".to_string())
-                            .or_insert_with(|| database.to_string());
-                    }
-                }
-                if let Some(table) = segments.next() {
-                    if !table.is_empty() {
-                        map.entry("table".to_string())
-                            .or_insert_with(|| table.to_string());
-                    }
-                }
-                if let Some(rest) = segments.next() {
-                    if !rest.is_empty() {
-                        map.insert("root".to_string(), rest.to_string());
-                    }
-                }
+        if let Some(path) = uri.root()
+            && !path.is_empty()
+        {
+            let mut segments = path.splitn(4, '/');
+            if let Some(namespace) = segments.next()
+                && !namespace.is_empty()
+            {
+                map.entry("namespace".to_string())
+                    .or_insert_with(|| namespace.to_string());
+            }
+            if let Some(database) = segments.next()
+                && !database.is_empty()
+            {
+                map.entry("database".to_string())
+                    .or_insert_with(|| database.to_string());
+            }
+            if let Some(table) = segments.next()
+                && !table.is_empty()
+            {
+                map.entry("table".to_string())
+                    .or_insert_with(|| table.to_string());
+            }
+            if let Some(rest) = segments.next()
+                && !rest.is_empty()
+            {
+                map.insert("root".to_string(), rest.to_string());
             }
         }
 

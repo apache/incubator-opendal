@@ -18,12 +18,13 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use mea::once::OnceCell;
+use asyncband::once::OnceCell;
 
 use super::SURREALDB_SCHEME;
 use super::config::SurrealdbConfig;
 use super::core::*;
 use super::deleter::SurrealdbDeleter;
+use super::reader::*;
 use super::writer::SurrealdbWriter;
 use opendal_core::raw::*;
 use opendal_core::*;
@@ -129,7 +130,7 @@ impl SurrealdbBuilder {
 impl Builder for SurrealdbBuilder {
     type Config = SurrealdbConfig;
 
-    fn build(self) -> Result<impl Access> {
+    fn build(self) -> Result<impl Service> {
         let connection_string = match self.config.connection_string.clone() {
             Some(v) => v,
             None => {
@@ -200,18 +201,16 @@ impl Builder for SurrealdbBuilder {
 /// Backend for Surrealdb service
 #[derive(Clone, Debug)]
 pub struct SurrealdbBackend {
-    core: Arc<SurrealdbCore>,
-    root: String,
-    info: Arc<AccessorInfo>,
+    pub(crate) core: Arc<SurrealdbCore>,
+    pub(crate) root: String,
+    pub(crate) info: ServiceInfo,
+    pub(crate) capability: Capability,
 }
 
 impl SurrealdbBackend {
     pub fn new(core: SurrealdbCore) -> Self {
-        let info = AccessorInfo::default();
-        info.set_scheme(SURREALDB_SCHEME);
-        info.set_name(&core.table);
-        info.set_root("/");
-        info.set_native_capability(Capability {
+        let info = ServiceInfo::new(SURREALDB_SCHEME, "/", &core.table);
+        let capability = Capability {
             read: true,
             stat: true,
             write: true,
@@ -219,68 +218,140 @@ impl SurrealdbBackend {
             delete: true,
             shared: true,
             ..Default::default()
-        });
+        };
 
         Self {
             core: Arc::new(core),
             root: "/".to_string(),
-            info: Arc::new(info),
+            info,
+            capability,
         }
     }
 
     fn with_normalized_root(mut self, root: String) -> Self {
-        self.info.set_root(&root);
+        self.info = self.info.with_root(&root);
         self.root = root;
         self
     }
 }
 
-impl Access for SurrealdbBackend {
-    type Reader = Buffer;
+impl Service for SurrealdbBackend {
+    type Reader = oio::StreamReader<SurrealdbReader>;
     type Writer = SurrealdbWriter;
     type Lister = ();
     type Deleter = oio::OneShotDeleter<SurrealdbDeleter>;
+    type Copier = ();
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
+    fn info(&self) -> ServiceInfo {
         self.info.clone()
     }
 
-    async fn stat(&self, path: &str, _: OpStat) -> Result<RpStat> {
+    fn capability(&self) -> Capability {
+        self.capability
+    }
+
+    async fn create_dir(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn stat(&self, _ctx: &OperationContext, path: &str, _: OpStat) -> Result<RpStat> {
         let p = build_abs_path(&self.root, path);
 
         if p == build_abs_path(&self.root, "") {
-            Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+            Ok(RpStat::new(MetadataBuilder::dir().build()))
         } else {
-            let bs = self.core.get(&p).await?;
-            match bs {
-                Some(bs) => Ok(RpStat::new(
-                    Metadata::new(EntryMode::FILE).with_content_length(bs.len() as u64),
-                )),
+            match self.core.get_length(&p).await? {
+                Some(length) => Ok(RpStat::new({
+                    let metadata = MetadataBuilder::file(length as u64);
+                    metadata.build()
+                })),
                 None => Err(Error::new(ErrorKind::NotFound, "kv not found in surrealdb")),
             }
         }
     }
+    fn read(&self, _ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
+        let output: oio::StreamReader<SurrealdbReader> = {
+            Ok(oio::StreamReader::new(SurrealdbReader::new(
+                self.clone(),
+                path,
+                args,
+            )))
+        }?;
 
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let p = build_abs_path(&self.root, path);
-        let bs = match self.core.get(&p).await? {
-            Some(bs) => bs,
-            None => {
-                return Err(Error::new(ErrorKind::NotFound, "kv not found in surrealdb"));
-            }
-        };
-        Ok((RpRead::new(), bs.slice(args.range().to_range_as_usize())))
+        Ok(output)
     }
 
-    async fn write(&self, path: &str, _: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        let p = build_abs_path(&self.root, path);
-        Ok((RpWrite::new(), SurrealdbWriter::new(self.core.clone(), p)))
+    fn write(&self, _ctx: &OperationContext, path: &str, _: OpWrite) -> Result<Self::Writer> {
+        let output: SurrealdbWriter = {
+            let p = build_abs_path(&self.root, path);
+            Ok(SurrealdbWriter::new(self.core.clone(), p))
+        }?;
+
+        Ok(output)
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        Ok((
-            RpDelete::default(),
-            oio::OneShotDeleter::new(SurrealdbDeleter::new(self.core.clone(), self.root.clone())),
+    fn delete(&self, _ctx: &OperationContext) -> Result<Self::Deleter> {
+        let output: oio::OneShotDeleter<SurrealdbDeleter> = {
+            Ok(oio::OneShotDeleter::new(SurrealdbDeleter::new(
+                self.core.clone(),
+                self.root.clone(),
+            )))
+        }?;
+
+        Ok(output)
+    }
+
+    fn list(&self, _ctx: &OperationContext, _path: &str, _args: OpList) -> Result<Self::Lister> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    fn copy(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpCopy,
+    ) -> Result<Self::Copier> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn rename(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpRename,
+    ) -> Result<RpRename> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn presign(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpPresign,
+    ) -> Result<RpPresign> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
         ))
     }
 }

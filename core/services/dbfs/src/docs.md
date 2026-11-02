@@ -2,7 +2,7 @@ This service will visit the [DBFS API](https://docs.databricks.com/api/azure/wor
 
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [x] create_dir
 - [x] stat
@@ -14,13 +14,14 @@ This service can be used to:
 - [x] list
 - [ ] ~~presign~~
 
-## Configurations
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
 
-- `root`: Set the work directory for backend.
-- `endpoint`: Set the endpoint for backend.
-- `token`: Databricks personal access token.
+## Configuration
 
-Refer to [`DbfsBuilder`]'s public API docs for more information.
+Use [`crate::DbfsConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
 ## Examples
 
@@ -47,7 +48,7 @@ async fn main() -> Result<()> {
         // set the personal access token for builder
         .token("access_token");
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
 
     Ok(())
 }

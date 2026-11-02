@@ -22,12 +22,14 @@ use http::HeaderMap;
 use http::HeaderValue;
 use http::StatusCode;
 
+use super::core::parse_error;
 use super::core::*;
-use super::error::parse_error;
 use opendal_core::Buffer;
 use opendal_core::Error;
 use opendal_core::ErrorKind;
 use opendal_core::Metadata;
+use opendal_core::MetadataBuilder;
+use opendal_core::OperationContext;
 use opendal_core::Result;
 use opendal_core::raw::*;
 
@@ -35,47 +37,49 @@ pub type CosWriters = TwoWays<oio::MultipartWriter<CosWriter>, oio::AppendWriter
 
 pub struct CosWriter {
     core: Arc<CosCore>,
+    ctx: OperationContext,
 
     op: OpWrite,
     path: String,
 }
 
 impl CosWriter {
-    pub fn new(core: Arc<CosCore>, path: &str, op: OpWrite) -> Self {
+    pub fn new(core: Arc<CosCore>, ctx: OperationContext, path: &str, op: OpWrite) -> Self {
         CosWriter {
             core,
+            ctx,
             path: path.to_string(),
             op,
         }
     }
 
     fn parse_metadata(headers: &HeaderMap<HeaderValue>) -> Result<Metadata> {
-        let mut meta = Metadata::default();
+        let mut meta = MetadataBuilder::unknown();
         if let Some(etag) = parse_etag(headers)? {
-            meta.set_etag(etag);
+            meta.etag(etag);
         }
         if let Some(md5) = parse_content_md5(headers)? {
-            meta.set_content_md5(md5);
+            meta.content_md5(md5);
         }
-        if let Some(version) = parse_header_to_str(headers, constants::X_COS_VERSION_ID)? {
-            if version != "null" {
-                meta.set_version(version);
-            }
+        if let Some(version) = parse_header_to_str(headers, constants::X_COS_VERSION_ID)?
+            && version != "null"
+        {
+            meta.version(version);
         }
 
-        Ok(meta)
+        Ok(meta.build())
     }
 }
 
 impl oio::MultipartWrite for CosWriter {
     async fn write_once(&self, size: u64, body: Buffer) -> Result<Metadata> {
-        let mut req = self
+        let req = self
             .core
             .cos_put_object_request(&self.path, Some(size), &self.op, body)?;
 
-        self.core.sign(&mut req).await?;
+        let req = self.core.sign(&self.ctx, req).await?;
 
-        let resp = self.core.send(req).await?;
+        let resp = self.core.send(&self.ctx, req).await?;
 
         let meta = Self::parse_metadata(resp.headers())?;
 
@@ -83,14 +87,18 @@ impl oio::MultipartWrite for CosWriter {
 
         match status {
             StatusCode::CREATED | StatusCode::OK => Ok(meta),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("PutObject"))
+                    .with_if_not_exists(self.op.if_not_exists()),
+                resp,
+            )),
         }
     }
 
     async fn initiate_part(&self) -> Result<String> {
         let resp = self
             .core
-            .cos_initiate_multipart_upload(&self.path, &self.op)
+            .cos_initiate_multipart_upload(&self.ctx, &self.path, &self.op)
             .await?;
 
         let status = resp.status();
@@ -105,7 +113,11 @@ impl oio::MultipartWrite for CosWriter {
 
                 Ok(result.upload_id)
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("InitiateMultipartUpload"))
+                    .with_if_not_exists(self.op.if_not_exists()),
+                resp,
+            )),
         }
     }
 
@@ -121,7 +133,7 @@ impl oio::MultipartWrite for CosWriter {
 
         let resp = self
             .core
-            .cos_upload_part_request(&self.path, upload_id, part_number, size, body)
+            .cos_upload_part_request(&self.ctx, &self.path, upload_id, part_number, size, body)
             .await?;
 
         let status = resp.status();
@@ -141,9 +153,13 @@ impl oio::MultipartWrite for CosWriter {
                     part_number,
                     etag,
                     checksum: None,
+                    size: None,
                 })
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("UploadPart")),
+                resp,
+            )),
         }
     }
 
@@ -162,34 +178,40 @@ impl oio::MultipartWrite for CosWriter {
 
         let mut resp = self
             .core
-            .cos_complete_multipart_upload(&self.path, upload_id, parts)
+            .cos_complete_multipart_upload(&self.ctx, &self.path, upload_id, parts, &self.op)
             .await?;
 
-        let mut meta = Self::parse_metadata(resp.headers())?;
+        let mut meta = Self::parse_metadata(resp.headers())?.into_builder();
+
+        let status = resp.status();
+        if status != StatusCode::OK {
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("CompleteMultipartUpload"))
+                    .with_if_not_exists(self.op.if_not_exists()),
+                resp,
+            ));
+        }
 
         let result: CompleteMultipartUploadResult =
             quick_xml::de::from_reader(resp.body_mut().reader())
                 .map_err(new_xml_deserialize_error)?;
-        meta.set_etag(&result.etag);
-
-        let status = resp.status();
-
-        match status {
-            StatusCode::OK => Ok(meta),
-            _ => Err(parse_error(resp)),
-        }
+        meta.etag(&result.etag);
+        Ok(meta.build())
     }
 
     async fn abort_part(&self, upload_id: &str) -> Result<()> {
         let resp = self
             .core
-            .cos_abort_multipart_upload(&self.path, upload_id)
+            .cos_abort_multipart_upload(&self.ctx, &self.path, upload_id)
             .await?;
         match resp.status() {
             // cos returns code 204 if abort succeeds.
             // Reference: https://www.tencentcloud.com/document/product/436/7740
             StatusCode::NO_CONTENT => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("AbortMultipartUpload")),
+                resp,
+            )),
         }
     }
 }
@@ -198,7 +220,7 @@ impl oio::AppendWrite for CosWriter {
     async fn offset(&self) -> Result<u64> {
         let resp = self
             .core
-            .cos_head_object(&self.path, &OpStat::default())
+            .cos_head_object(&self.ctx, &self.path, &OpStat::default())
             .await?;
 
         let status = resp.status();
@@ -213,18 +235,21 @@ impl oio::AppendWrite for CosWriter {
                 Ok(content_length)
             }
             StatusCode::NOT_FOUND => Ok(0),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("HeadObject")),
+                resp,
+            )),
         }
     }
 
     async fn append(&self, offset: u64, size: u64, body: Buffer) -> Result<Metadata> {
-        let mut req = self
+        let req = self
             .core
             .cos_append_object_request(&self.path, offset, size, &self.op, body)?;
 
-        self.core.sign(&mut req).await?;
+        let req = self.core.sign(&self.ctx, req).await?;
 
-        let resp = self.core.send(req).await?;
+        let resp = self.core.send(&self.ctx, req).await?;
 
         let meta = Self::parse_metadata(resp.headers())?;
 
@@ -232,7 +257,10 @@ impl oio::AppendWrite for CosWriter {
 
         match status {
             StatusCode::OK => Ok(meta),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("AppendObject")),
+                resp,
+            )),
         }
     }
 }

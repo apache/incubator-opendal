@@ -19,6 +19,7 @@ use std::sync::Arc;
 
 use futures::stream::{self, StreamExt};
 use object_store::ObjectStore;
+use object_store::ObjectStoreExt;
 use object_store::path::Path as ObjectStorePath;
 use opendal::raw::oio::BatchDeleteResult;
 use opendal::raw::*;
@@ -43,13 +44,13 @@ impl oio::BatchDelete for ObjectStoreDeleter {
     }
 
     async fn delete_batch(&self, paths: Vec<(String, OpDelete)>) -> Result<BatchDeleteResult> {
-        // convert paths to stream, then use [`ObjectStore::delete_stream`] to delete them in batch
-        let stream = stream::iter(paths.iter())
+        let locations: Vec<_> = paths
+            .iter()
             .map(|(path, _)| Ok::<_, object_store::Error>(ObjectStorePath::from(path.as_str())))
-            .boxed();
+            .collect();
+        let stream = stream::iter(locations).boxed();
         let results = self.store.delete_stream(stream).collect::<Vec<_>>().await;
 
-        // convert the results to [`BatchDeleteResult`]
         let mut result_batch = BatchDeleteResult::default();
         for (idx, result) in results.into_iter().enumerate() {
             match result {

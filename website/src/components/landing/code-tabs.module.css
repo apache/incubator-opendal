@@ -1,0 +1,96 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+.installCopyButton {
+  cursor: pointer;
+  justify-self: end;
+}
+.installCopyButtonCopied {
+  color: var(--odl-green-500);
+  opacity: 1;
+}
+.installCopyIcons {
+  --install-copy-icon-size: 0.95rem;
+
+  position: relative;
+  display: block;
+  width: var(--install-copy-icon-size);
+  height: var(--install-copy-icon-size);
+}
+.installCopyIcon,
+.installCopySuccessIcon {
+  position: absolute;
+  inset: 0;
+  width: inherit;
+  height: inherit;
+  color: currentColor;
+  transition: opacity var(--odl-dur-fast) var(--odl-ease),
+    transform var(--odl-dur-fast) var(--odl-ease);
+}
+.installCopySuccessIcon {
+  opacity: 0;
+  transform: scale(0.33);
+}
+.installCopyButtonCopied .installCopyIcon {
+  opacity: 0;
+  transform: scale(0.33);
+}
+.installCopyButtonCopied .installCopySuccessIcon {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.codeTabs {
+  --code-tabs-gap: 2px;
+  --tabs-bg: var(--odl-surface-2);
+  --tabs-border-color: var(--odl-border);
+  --tabs-gap: var(--code-tabs-gap);
+  --tabs-margin-bottom: 0;
+  --tabs-padding: var(--odl-space-2) var(--odl-space-3) 0;
+  --tabs-padding-right: var(--odl-space-4);
+  --tabs-scrollbar-width: none;
+  --tabs-scrollbar-display: none;
+  --tabs-tab-padding: var(--odl-space-2) var(--odl-space-3)
+    var(--odl-space-3);
+  --tabs-tab-font-family: var(--odl-font-mono);
+  --tabs-tab-font-size: var(--odl-text-xs);
+  --tabs-tab-color: var(--odl-fg-subtle);
+  --tabs-tab-hover-color: var(--odl-fg);
+  --tabs-tab-active-color: var(--odl-fg-strong);
+  --tabs-tab-active-border-color: var(--odl-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .installCopyIcon,
+  .installCopySuccessIcon {
+    transition: none;
+  }
+}
+
+@media (max-width: 996px) {
+  .installCopyButton {
+    margin-top: var(--install-copy-mobile-offset, -0.05rem);
+  }
+  .codeTabs {
+    --tabs-mobile-padding: var(--odl-space-2);
+    --tabs-mobile-tab-flex: 1 1 var(--code-tab-mobile-min, 4.75rem);
+    --tabs-mobile-tab-text-align: center;
+    --tabs-mobile-tab-white-space: normal;
+  }
+}

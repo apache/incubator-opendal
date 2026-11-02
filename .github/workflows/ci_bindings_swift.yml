@@ -23,14 +23,16 @@ on:
       - main
     tags:
       - '*'
-  pull_request:
-    branches:
-      - main
-    paths:
+    paths: &paths
       - "bindings/swift/**"
       - "bindings/c/**"
       - "core/**"
+      - ".github/actions/setup/**"
       - ".github/workflows/ci_bindings_swift.yml"
+  pull_request:
+    branches:
+      - main
+    paths: *paths
   workflow_dispatch:
 
 concurrency:
@@ -48,7 +50,7 @@ jobs:
       matrix:
         os: [ ubuntu-latest ]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
@@ -61,3 +63,7 @@ jobs:
       - name: Build and run tests
         working-directory: "bindings/swift"
         run: make test
+
+      - name: Run getting-started example
+        working-directory: "bindings/swift/OpenDAL"
+        run: swift run GettingStarted

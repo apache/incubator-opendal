@@ -19,24 +19,25 @@ use std::sync::Arc;
 
 use http::StatusCode;
 
+use super::core::parse_error;
 use super::core::*;
-use super::error::parse_error;
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct YandexDiskDeleter {
     core: Arc<YandexDiskCore>,
+    ctx: OperationContext,
 }
 
 impl YandexDiskDeleter {
-    pub fn new(core: Arc<YandexDiskCore>) -> Self {
-        Self { core }
+    pub fn new(core: Arc<YandexDiskCore>, ctx: OperationContext) -> Self {
+        Self { core, ctx }
     }
 }
 
 impl oio::OneShotDelete for YandexDiskDeleter {
     async fn delete_once(&self, path: String, _: OpDelete) -> Result<()> {
-        let resp = self.core.delete(&path).await?;
+        let resp = self.core.delete(&self.ctx, &path).await?;
 
         let status = resp.status();
 
@@ -48,7 +49,10 @@ impl oio::OneShotDelete for YandexDiskDeleter {
             StatusCode::ACCEPTED => Ok(()),
             // Allow 404 when deleting a non-existing object
             StatusCode::NOT_FOUND => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("DeleteResource")),
+                resp,
+            )),
         }
     }
 }

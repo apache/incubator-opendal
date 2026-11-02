@@ -20,11 +20,11 @@ use std::sync::Arc;
 use bytes::Buf;
 use quick_xml::de;
 
+use crate::core::parse_error;
 use crate::core::*;
-use crate::error::parse_error;
-use opendal_core::EntryMode;
 use opendal_core::Error;
-use opendal_core::Metadata;
+use opendal_core::MetadataBuilder;
+use opendal_core::OperationContext;
 use opendal_core::Result;
 use opendal_core::raw::oio::PageContext;
 use opendal_core::raw::*;
@@ -38,6 +38,7 @@ pub type S3Listers = ThreeWays<
 /// S3ListerV1 implements ListObjectV1 for s3 backend.
 pub struct S3ListerV1 {
     core: Arc<S3Core>,
+    ctx: OperationContext,
 
     path: String,
     args: OpList,
@@ -50,7 +51,7 @@ pub struct S3ListerV1 {
 }
 
 impl S3ListerV1 {
-    pub fn new(core: Arc<S3Core>, path: &str, args: OpList) -> Self {
+    pub fn new(core: Arc<S3Core>, ctx: OperationContext, path: &str, args: OpList) -> Self {
         let delimiter = if args.recursive() { "" } else { "/" };
         let first_marker = args
             .start_after()
@@ -59,6 +60,7 @@ impl S3ListerV1 {
 
         Self {
             core,
+            ctx,
 
             path: path.to_string(),
             args,
@@ -73,6 +75,7 @@ impl oio::PageList for S3ListerV1 {
         let resp = self
             .core
             .s3_list_objects_v1(
+                &self.ctx,
                 &self.path,
                 // `marker` is used as `start-after` for the first page.
                 if !ctx.token.is_empty() {
@@ -86,7 +89,10 @@ impl oio::PageList for S3ListerV1 {
             .await?;
 
         if resp.status() != http::StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListObjects")),
+                resp,
+            ));
         }
         let bs = resp.into_body();
 
@@ -126,7 +132,7 @@ impl oio::PageList for S3ListerV1 {
         for prefix in output.common_prefixes {
             let de = oio::Entry::new(
                 &build_rel_path(&self.core.root, &prefix.prefix),
-                Metadata::new(EntryMode::DIR),
+                MetadataBuilder::dir().build(),
             );
 
             ctx.entries.push_back(de);
@@ -138,19 +144,20 @@ impl oio::PageList for S3ListerV1 {
                 path = "/".to_string();
             }
 
-            let mut meta = Metadata::new(EntryMode::from_path(&path));
-            meta.set_is_current(true);
+            let mut meta = if path.ends_with('/') {
+                MetadataBuilder::dir()
+            } else {
+                MetadataBuilder::file(object.size)
+            };
+            meta.is_current(Some(true));
             if let Some(etag) = &object.etag {
-                meta.set_etag(etag);
-                meta.set_content_md5(etag.trim_matches('"'));
+                meta.etag(etag);
             }
-            meta.set_content_length(object.size);
-
             // object.last_modified provides more precise time that contains
             // nanosecond, let's trim them.
-            meta.set_last_modified(object.last_modified.parse::<Timestamp>()?);
+            meta.last_modified(object.last_modified.parse::<Timestamp>()?);
 
-            let de = oio::Entry::with(path, meta);
+            let de = oio::Entry::with(path, meta.build());
             ctx.entries.push_back(de);
         }
 
@@ -161,6 +168,7 @@ impl oio::PageList for S3ListerV1 {
 /// S3ListerV2 implements ListObjectV2 for s3 backend.
 pub struct S3ListerV2 {
     core: Arc<S3Core>,
+    ctx: OperationContext,
 
     path: String,
     args: OpList,
@@ -170,7 +178,7 @@ pub struct S3ListerV2 {
 }
 
 impl S3ListerV2 {
-    pub fn new(core: Arc<S3Core>, path: &str, args: OpList) -> Self {
+    pub fn new(core: Arc<S3Core>, ctx: OperationContext, path: &str, args: OpList) -> Self {
         let delimiter = if args.recursive() { "" } else { "/" };
         let abs_start_after = args
             .start_after()
@@ -178,6 +186,7 @@ impl S3ListerV2 {
 
         Self {
             core,
+            ctx,
 
             path: path.to_string(),
             args,
@@ -192,6 +201,7 @@ impl oio::PageList for S3ListerV2 {
         let resp = self
             .core
             .s3_list_objects_v2(
+                &self.ctx,
                 &self.path,
                 &ctx.token,
                 self.delimiter,
@@ -206,7 +216,10 @@ impl oio::PageList for S3ListerV2 {
             .await?;
 
         if resp.status() != http::StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListObjectsV2")),
+                resp,
+            ));
         }
         let bs = resp.into_body();
 
@@ -236,7 +249,7 @@ impl oio::PageList for S3ListerV2 {
         for prefix in output.common_prefixes {
             let de = oio::Entry::new(
                 &build_rel_path(&self.core.root, &prefix.prefix),
-                Metadata::new(EntryMode::DIR),
+                MetadataBuilder::dir().build(),
             );
 
             ctx.entries.push_back(de);
@@ -248,19 +261,20 @@ impl oio::PageList for S3ListerV2 {
                 path = "/".to_string();
             }
 
-            let mut meta = Metadata::new(EntryMode::from_path(&path));
-            meta.set_is_current(true);
+            let mut meta = if path.ends_with('/') {
+                MetadataBuilder::dir()
+            } else {
+                MetadataBuilder::file(object.size)
+            };
+            meta.is_current(Some(true));
             if let Some(etag) = &object.etag {
-                meta.set_etag(etag);
-                meta.set_content_md5(etag.trim_matches('"'));
+                meta.etag(etag);
             }
-            meta.set_content_length(object.size);
-
             // object.last_modified provides more precise time that contains
             // nanosecond, let's trim them.
-            meta.set_last_modified(object.last_modified.parse::<Timestamp>()?);
+            meta.last_modified(object.last_modified.parse::<Timestamp>()?);
 
-            let de = oio::Entry::with(path, meta);
+            let de = oio::Entry::with(path, meta.build());
             ctx.entries.push_back(de);
         }
 
@@ -271,6 +285,7 @@ impl oio::PageList for S3ListerV2 {
 /// refer: https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectVersions.html
 pub struct S3ObjectVersionsLister {
     core: Arc<S3Core>,
+    ctx: OperationContext,
 
     prefix: String,
     args: OpList,
@@ -280,7 +295,7 @@ pub struct S3ObjectVersionsLister {
 }
 
 impl S3ObjectVersionsLister {
-    pub fn new(core: Arc<S3Core>, path: &str, args: OpList) -> Self {
+    pub fn new(core: Arc<S3Core>, ctx: OperationContext, path: &str, args: OpList) -> Self {
         let delimiter = if args.recursive() { "" } else { "/" };
         let abs_start_after = args
             .start_after()
@@ -288,6 +303,7 @@ impl S3ObjectVersionsLister {
 
         Self {
             core,
+            ctx,
             prefix: path.to_string(),
             args,
             delimiter,
@@ -310,6 +326,7 @@ impl oio::PageList for S3ObjectVersionsLister {
         let resp = self
             .core
             .s3_list_object_versions(
+                &self.ctx,
                 &self.prefix,
                 self.delimiter,
                 self.args.limit(),
@@ -318,7 +335,10 @@ impl oio::PageList for S3ObjectVersionsLister {
             )
             .await?;
         if resp.status() != http::StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListObjectVersions")),
+                resp,
+            ));
         }
 
         let body = resp.into_body();
@@ -345,7 +365,7 @@ impl oio::PageList for S3ObjectVersionsLister {
         for prefix in output.common_prefixes {
             let de = oio::Entry::new(
                 &build_rel_path(&self.core.root, &prefix.prefix),
-                Metadata::new(EntryMode::DIR),
+                MetadataBuilder::dir().build(),
             );
             ctx.entries.push_back(de);
         }
@@ -364,18 +384,20 @@ impl oio::PageList for S3ObjectVersionsLister {
                 path = "/".to_owned();
             }
 
-            let mut meta = Metadata::new(EntryMode::from_path(&path));
-            meta.set_version(&version_object.version_id);
-            meta.set_is_current(version_object.is_latest);
-            meta.set_content_length(version_object.size);
-            meta.set_last_modified(version_object.last_modified.parse::<Timestamp>()?);
+            let mut meta = if path.ends_with('/') {
+                MetadataBuilder::dir()
+            } else {
+                MetadataBuilder::file(version_object.size)
+            };
+            meta.version(&version_object.version_id)
+                .is_current(Some(version_object.is_latest))
+                .last_modified(version_object.last_modified.parse::<Timestamp>()?);
 
             if let Some(etag) = version_object.etag {
-                meta.set_etag(&etag);
-                meta.set_content_md5(etag.trim_matches('"'));
+                meta.etag(&etag);
             }
 
-            let entry = oio::Entry::new(&path, meta);
+            let entry = oio::Entry::new(&path, meta.build());
             ctx.entries.push_back(entry);
         }
 
@@ -386,13 +408,17 @@ impl oio::PageList for S3ObjectVersionsLister {
                     path = "/".to_owned();
                 }
 
-                let mut meta = Metadata::new(EntryMode::FILE);
-                meta.set_version(&delete_marker.version_id);
-                meta.set_is_deleted(true);
-                meta.set_is_current(delete_marker.is_latest);
-                meta.set_last_modified(delete_marker.last_modified.parse::<Timestamp>()?);
+                let mut meta = if path.ends_with('/') {
+                    MetadataBuilder::dir()
+                } else {
+                    MetadataBuilder::file(0)
+                };
+                meta.version(&delete_marker.version_id)
+                    .is_deleted(true)
+                    .is_current(Some(delete_marker.is_latest))
+                    .last_modified(delete_marker.last_modified.parse::<Timestamp>()?);
 
-                let entry = oio::Entry::new(&path, meta);
+                let entry = oio::Entry::new(&path, meta.build());
                 ctx.entries.push_back(entry);
             }
         }

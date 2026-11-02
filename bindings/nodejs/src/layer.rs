@@ -18,6 +18,7 @@
 use std::time::Duration;
 
 use napi::bindgen_prelude::External;
+use napi::bindgen_prelude::Result;
 
 pub trait NodeLayer: Send + Sync {
     fn layer(&self, op: opendal::Operator) -> opendal::Operator;
@@ -32,6 +33,37 @@ pub struct Layer {
 impl NodeLayer for opendal::layers::RetryLayer {
     fn layer(&self, op: opendal::Operator) -> opendal::Operator {
         op.layer(self.clone())
+    }
+}
+
+impl NodeLayer for opendal::layers::CapabilityOverrideLayer {
+    fn layer(&self, op: opendal::Operator) -> opendal::Operator {
+        op.layer(self.clone())
+    }
+}
+
+/// Capability override layer
+///
+/// Override the full capability exposed by an operator.
+#[napi]
+pub struct CapabilityOverrideLayer {
+    overrides: String,
+}
+
+#[napi]
+impl CapabilityOverrideLayer {
+    /// Create a new CapabilityOverrideLayer from capability override entries.
+    #[napi(constructor)]
+    pub fn new(overrides: String) -> Self {
+        Self { overrides }
+    }
+
+    #[napi]
+    pub fn build(&self) -> Result<External<Layer>> {
+        let l = opendal::layers::CapabilityOverrideLayer::from_overrides(&self.overrides)
+            .map_err(|err| napi::Error::from_reason(format!("{err}")))?;
+
+        Ok(External::new(Layer { inner: Box::new(l) }))
     }
 }
 

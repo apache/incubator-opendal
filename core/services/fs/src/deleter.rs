@@ -33,7 +33,7 @@ impl FsDeleter {
 
 impl oio::OneShotDelete for FsDeleter {
     async fn delete_once(&self, path: String, args: OpDelete) -> Result<()> {
-        let p = self.core.root.join(path.trim_end_matches('/'));
+        let p = self.core.root_join(&path)?;
 
         let recursive = args.recursive();
 

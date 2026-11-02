@@ -63,11 +63,43 @@ impl Operator {
         })
     }
 
+    /// Create a new operator from a URI string.
+    ///
+    /// The URI encodes the scheme and configuration in a single string, e.g.
+    /// `memory://localhost/` or `s3://bucket/path?region=us-east-1`.
+    ///
+    /// Optional extra key-value options can be passed to override or supplement
+    /// the values encoded in the URI.
+    ///
+    /// ### Example
+    ///
+    /// ```javascript
+    /// const op = Operator.fromUri("memory://localhost/");
+    /// const op2 = Operator.fromUri("s3://my-bucket/", { region: "us-east-1" });
+    /// ```
+    #[napi(factory, async_runtime)]
+    pub fn from_uri(uri: String, options: Option<HashMap<String, String>>) -> Result<Self> {
+        let options = options.unwrap_or_default();
+        let async_op = if options.is_empty() {
+            opendal::Operator::from_uri(uri).map_err(format_napi_error)?
+        } else {
+            opendal::Operator::from_uri((uri.as_str(), options)).map_err(format_napi_error)?
+        };
+
+        let blocking_op =
+            opendal::blocking::Operator::new(async_op.clone()).map_err(format_napi_error)?;
+
+        Ok(Operator {
+            async_op,
+            blocking_op,
+        })
+    }
+
     /// Get current operator(service)'s full capability.
     #[napi]
     pub fn capability(&self) -> Result<capability::Capability> {
         Ok(capability::Capability::new(
-            self.async_op.info().full_capability(),
+            self.async_op.info().capability(),
         ))
     }
 
@@ -390,6 +422,7 @@ impl Operator {
         self.async_op
             .copy(&from, &to)
             .await
+            .map(|_| ())
             .map_err(format_napi_error)
     }
 
@@ -401,7 +434,10 @@ impl Operator {
     /// ```
     #[napi]
     pub fn copy_sync(&self, from: String, to: String) -> Result<()> {
-        self.blocking_op.copy(&from, &to).map_err(format_napi_error)
+        self.blocking_op
+            .copy(&from, &to)
+            .map(|_| ())
+            .map_err(format_napi_error)
     }
 
     /// Rename file according to given `from` and `to` path.
@@ -794,6 +830,29 @@ impl Operator {
             .map_err(format_napi_error)?;
         Ok(PresignedRequest::new(res))
     }
+
+    /// Get a presigned request for delete.
+    ///
+    /// Unit of `expires` is seconds.
+    ///
+    /// ### Example
+    ///
+    /// ```javascript
+    /// const req = await op.presignDelete(path, parseInt(expires));
+    ///
+    /// console.log("method: ", req.method);
+    /// console.log("url: ", req.url);
+    /// console.log("headers: ", req.headers);
+    /// ```
+    #[napi]
+    pub async fn presign_delete(&self, path: String, expires: u32) -> Result<PresignedRequest> {
+        let res = self
+            .async_op
+            .presign_delete(&path, Duration::from_secs(expires as u64))
+            .await
+            .map_err(format_napi_error)?;
+        Ok(PresignedRequest::new(res))
+    }
 }
 
 /// Entry returned by Lister or BlockingLister to represent a path, and it's a relative metadata.
@@ -806,6 +865,12 @@ impl Entry {
     #[napi]
     pub fn path(&self) -> String {
         self.0.path().to_string()
+    }
+
+    /// Return the name of this entry.
+    #[napi]
+    pub fn name(&self) -> String {
+        self.0.name().to_string()
     }
 
     /// Return the metadata of this entry.
@@ -899,7 +964,12 @@ impl Metadata {
     /// User Metadata of this object.
     #[napi(getter)]
     pub fn user_metadata(&self) -> Option<HashMap<String, String>> {
-        self.0.user_metadata().cloned()
+        self.0.user_metadata().map(|metadata| {
+            metadata
+                .into_iter()
+                .map(|(key, value)| (key.to_string(), value.to_string()))
+                .collect()
+        })
     }
 
     /// ETag of this object.

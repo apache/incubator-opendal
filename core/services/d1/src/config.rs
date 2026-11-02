@@ -89,10 +89,10 @@ impl opendal_core::Configurator for D1Config {
         map.insert("account_id".to_string(), account_id.to_string());
         map.insert("database_id".to_string(), database_id.to_string());
 
-        if let Some(rest) = segments.next() {
-            if !rest.is_empty() {
-                map.insert("root".to_string(), rest.to_string());
-            }
+        if let Some(rest) = segments.next()
+            && !rest.is_empty()
+        {
+            map.insert("root".to_string(), rest.to_string());
         }
 
         Self::from_iter(map)

@@ -19,31 +19,35 @@ use std::sync::Arc;
 
 use http::StatusCode;
 
+use super::core::parse_error;
 use super::core::*;
-use super::error::parse_error;
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct DbfsDeleter {
     core: Arc<DbfsCore>,
+    ctx: OperationContext,
 }
 
 impl DbfsDeleter {
-    pub fn new(core: Arc<DbfsCore>) -> Self {
-        Self { core }
+    pub fn new(core: Arc<DbfsCore>, ctx: OperationContext) -> Self {
+        Self { core, ctx }
     }
 }
 
 impl oio::OneShotDelete for DbfsDeleter {
     async fn delete_once(&self, path: String, _: OpDelete) -> Result<()> {
-        let resp = self.core.dbfs_delete(&path).await?;
+        let resp = self.core.dbfs_delete(&self.ctx, &path).await?;
 
         let status = resp.status();
 
         match status {
             // NOTE: Server will return 200 even if the path doesn't exist.
             StatusCode::OK => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Delete")),
+                resp,
+            )),
         }
     }
 }

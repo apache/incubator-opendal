@@ -72,23 +72,23 @@ impl opendal_core::Configurator for PostgresqlConfig {
                 .or_insert_with(|| format!("postgresql://{authority}"));
         }
 
-        if let Some(path) = uri.root() {
-            if !path.is_empty() {
-                let (table_segment, rest) = match path.split_once('/') {
-                    Some((table, remainder)) => (table, Some(remainder)),
-                    None => (path, None),
-                };
+        if let Some(path) = uri.root()
+            && !path.is_empty()
+        {
+            let (table_segment, rest) = match path.split_once('/') {
+                Some((table, remainder)) => (table, Some(remainder)),
+                None => (path, None),
+            };
 
-                if !table_segment.is_empty() {
-                    map.entry("table".to_string())
-                        .or_insert_with(|| table_segment.to_string());
-                }
+            if !table_segment.is_empty() {
+                map.entry("table".to_string())
+                    .or_insert_with(|| table_segment.to_string());
+            }
 
-                if let Some(root) = rest {
-                    if !root.is_empty() {
-                        map.insert("root".to_string(), root.to_string());
-                    }
-                }
+            if let Some(root) = rest
+                && !root.is_empty()
+            {
+                map.insert("root".to_string(), root.to_string());
             }
         }
 

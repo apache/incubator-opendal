@@ -23,16 +23,17 @@ use opendal_core::*;
 
 pub struct AlluxioDeleter {
     core: Arc<AlluxioCore>,
+    ctx: OperationContext,
 }
 
 impl AlluxioDeleter {
-    pub fn new(core: Arc<AlluxioCore>) -> Self {
-        AlluxioDeleter { core }
+    pub fn new(core: Arc<AlluxioCore>, ctx: OperationContext) -> Self {
+        AlluxioDeleter { core, ctx }
     }
 }
 
 impl oio::OneShotDelete for AlluxioDeleter {
     async fn delete_once(&self, path: String, _: OpDelete) -> Result<()> {
-        self.core.delete(&path).await
+        self.core.delete(&self.ctx, &path).await
     }
 }

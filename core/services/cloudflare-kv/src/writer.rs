@@ -21,18 +21,19 @@ use http::StatusCode;
 use opendal_core::raw::*;
 use opendal_core::*;
 
-use super::core::CloudflareKvCore;
-use super::error::parse_error;
+use super::core::parse_error;
+use super::core::{CloudflareKvCore, ErrorContext};
 use super::model::CfKvMetadata;
 
 pub struct CloudflareWriter {
     core: Arc<CloudflareKvCore>,
+    ctx: OperationContext,
     path: String,
 }
 
 impl CloudflareWriter {
-    pub fn new(core: Arc<CloudflareKvCore>, path: String) -> Self {
-        CloudflareWriter { core, path }
+    pub fn new(core: Arc<CloudflareKvCore>, ctx: OperationContext, path: String) -> Self {
+        CloudflareWriter { core, ctx, path }
     }
 }
 
@@ -47,21 +48,24 @@ impl oio::OneShotWrite for CloudflareWriter {
 
         let resp = self
             .core
-            .set(&self.path, bs, cf_kv_metadata.clone())
+            .set(&self.ctx, &self.path, bs, cf_kv_metadata.clone())
             .await?;
 
         let status = resp.status();
 
         match status {
             StatusCode::OK => {
-                let mut metadata = Metadata::default();
-                metadata.set_etag(&cf_kv_metadata.etag);
-                metadata.set_last_modified(cf_kv_metadata.last_modified.parse::<Timestamp>()?);
-                metadata.set_content_length(cf_kv_metadata.content_length as u64);
+                let mut metadata = MetadataBuilder::unknown();
+                metadata.etag(&cf_kv_metadata.etag);
+                metadata.last_modified(cf_kv_metadata.last_modified.parse::<Timestamp>()?);
+                metadata.set_file(cf_kv_metadata.content_length as u64);
 
-                Ok(metadata)
+                Ok(metadata.build())
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("WriteValue")),
+                resp,
+            )),
         }
     }
 }

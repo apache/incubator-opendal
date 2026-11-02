@@ -1,6 +1,6 @@
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [ ] create_dir
 - [x] stat
@@ -9,30 +9,74 @@ This service can be used to:
 - [x] delete
 - [x] list
 - [x] copy
+- [x] restore
 - [ ] rename
 - [x] presign
 
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
+
+## Object restoration
+
+S3 restoration requires bucket versioning. [`opendal_core::Operator::restore`]
+removes the current delete marker. Calling it on an already-live object succeeds.
+It does not scan or remove older marker versions. If no live object or current
+delete marker exists, it returns [`opendal_core::ErrorKind::NotFound`].
+
+Use [`opendal_core::Operator::restore_with`] to promote a specific version:
+
+```rust,no_run
+# use opendal_core::Operator;
+# use opendal_core::Result;
+# async fn restore(op: Operator, version: &str) -> Result<()> {
+op.restore_with("path/to/file")
+    .version(version)
+    .await?;
+# Ok(())
+# }
+```
+
+Add `.if_not_exists(true)` when a selected version must not overwrite an
+object recreated by another writer. This condition requires an explicit
+version.
+
 ## Configuration
 
-- `root`: Set the work dir for backend.
-- `bucket`: Set the container name for backend.
-- `endpoint`: Set the endpoint for backend.
-- `region`: Set the region for backend.
-- `access_key_id`: Set the access_key_id for backend.
-- `secret_access_key`: Set the secret_access_key for backend.
-- `session_token`: Set the session_token for backend.
-- `default_storage_class`: Set the default storage_class for backend.
-- `server_side_encryption`: Set the server_side_encryption for backend.
-- `server_side_encryption_aws_kms_key_id`: Set the server_side_encryption_aws_kms_key_id for backend.
-- `server_side_encryption_customer_algorithm`: Set the server_side_encryption_customer_algorithm for backend.
-- `server_side_encryption_customer_key`: Set the server_side_encryption_customer_key for backend.
-- `server_side_encryption_customer_key_md5`: Set the server_side_encryption_customer_key_md5 for backend.
-- `disable_config_load`: Disable aws config load from env.
-- `enable_virtual_host_style`: Enable virtual host style.
-- `disable_write_with_if_match`: Disable write with if match.
-- `enable_request_payer`: Enable the request payer for backend.
+Use [`crate::S3Config`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
-Refer to [`S3Builder`]'s public API docs for more information.
+## S3 Express One Zone
+
+OpenDAL recognizes valid AWS directory bucket names on AWS endpoints and uses
+the bucket's zonal endpoint automatically. It creates and refreshes `ReadWrite`
+S3 Express sessions through the configured AWS credential provider. No extra
+configuration is required:
+
+```rust,no_run
+use opendal_core::Operator;
+use opendal_core::Result;
+use opendal_service_s3::S3;
+
+fn build_operator() -> Result<Operator> {
+    Operator::new(
+        S3::default()
+            .bucket("example--usw2-az1--x-s3")
+            .region("us-west-2"),
+    )
+}
+```
+
+This automatic behavior applies only to AWS endpoints. S3-compatible services
+retain the existing IAM authentication behavior.
+
+An explicit AWS endpoint must match the bucket's derived Zone, Region, and
+partition. OpenDAL rejects unsupported endpoint variants, including dual-stack
+endpoints, with `ConfigInvalid` instead of falling back to general S3 behavior.
+
+OpenDAL uses the source IAM credentials for `CopyObject`, `UploadPartCopy`, and
+presigned requests because these operations do not accept S3 Express session
+credentials.
 
 ## Temporary security credentials
 
@@ -112,7 +156,7 @@ async fn main() -> Result<()> {
       .access_key_id("access_key_id")
       .secret_access_key("secret_access_key");
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
 
     Ok(())
 }
@@ -139,7 +183,7 @@ async fn main() -> Result<()> {
       // Enable SSE-C
       .server_side_encryption_with_customer_key("AES256", "customer_key".as_bytes());
 
-    let op = Operator::new(builder)?.finish();
+    let op = Operator::new(builder)?;
     info!("operator: {:?}", op);
 
     // Writing your testing code here.
@@ -169,7 +213,7 @@ async fn main() -> Result<()> {
       // Enable SSE-KMS with aws managed kms key
       .server_side_encryption_with_aws_managed_kms_key();
 
-    let op = Operator::new(builder)?.finish();
+    let op = Operator::new(builder)?;
     info!("operator: {:?}", op);
 
     // Writing your testing code here.
@@ -199,7 +243,7 @@ async fn main() -> Result<()> {
       // Enable SSE-KMS with customer managed kms key
       .server_side_encryption_with_customer_managed_kms_key("aws_kms_key_id");
 
-    let op = Operator::new(builder)?.finish();
+    let op = Operator::new(builder)?;
     info!("operator: {:?}", op);
 
     // Writing your testing code here.
@@ -229,10 +273,40 @@ async fn main() -> Result<()> {
       // Enable SSE-S3
       .server_side_encryption_with_s3_key();
 
-    let op = Operator::new(builder)?.finish();
+    let op = Operator::new(builder)?;
     info!("operator: {:?}", op);
 
     // Writing your testing code here.
+
+    Ok(())
+}
+```
+
+### S3 with default ACL
+
+```rust,no_run
+use log::info;
+use opendal_core::Operator;
+use opendal_core::Result;
+use opendal_service_s3::S3;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let mut builder = S3::default()
+      // Setup builders
+      .root("/path/to/dir")
+      .bucket("test")
+      .region("us-east-1")
+      .endpoint("https://s3.amazonaws.com")
+      .access_key_id("access_key_id")
+      .secret_access_key("secret_access_key")
+      // Enable public-read ACL
+      .default_acl("public-read");
+
+    let op = Operator::new(builder)?;
+    info!("operator: {:?}", op);
+
+    // New objects will be created with public-read ACL
 
     Ok(())
 }

@@ -18,7 +18,7 @@
 use crate::utils::build_trail;
 use bytes::Bytes;
 use libtest_mimic::Trial;
-use object_store::ObjectStore;
+use object_store::ObjectStoreExt;
 use object_store::path::Path;
 use object_store_opendal::OpendalStore;
 

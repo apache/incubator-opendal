@@ -15,19 +15,21 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Async backtrace layer implementation for Apache OpenDAL.
-
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
+use std::sync::Arc;
 
 use opendal_core::raw::*;
 use opendal_core::*;
 
-/// Add Efficient, logical 'stack' traces of async functions for the underlying services.
+/// `AsyncBacktraceLayer` records efficient logical stack traces for asynchronous
+/// service operations.
 ///
 /// # Async Backtrace
 ///
-/// async-backtrace allows developers to get a stack trace of the async functions.
+/// `async-backtrace` lets developers inspect the stack traces of asynchronous functions.
 /// Read more about [async-backtrace](https://docs.rs/async-backtrace/latest/async_backtrace/)
 ///
 /// # Examples
@@ -40,12 +42,11 @@ use opendal_core::*;
 /// #
 /// # fn main() -> Result<()> {
 /// let _ = Operator::new(services::Memory::default())?
-///     .layer(AsyncBacktraceLayer::new())
-///     .finish();
+///     .layer(AsyncBacktraceLayer::new());
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct AsyncBacktraceLayer {}
 
@@ -56,81 +57,120 @@ impl AsyncBacktraceLayer {
     }
 }
 
-impl<A: Access> Layer<A> for AsyncBacktraceLayer {
-    type LayeredAccess = AsyncBacktraceAccessor<A>;
+impl Layer for AsyncBacktraceLayer {
+    fn apply_service(&self, inner: Servicer) -> Servicer {
+        Arc::new(self.layer(inner))
+    }
+}
 
-    fn layer(&self, inner: A) -> Self::LayeredAccess {
+impl AsyncBacktraceLayer {
+    fn layer(&self, inner: Servicer) -> AsyncBacktraceAccessor {
         AsyncBacktraceAccessor { inner }
     }
 }
 
 #[doc(hidden)]
 #[derive(Debug)]
-pub struct AsyncBacktraceAccessor<A: Access> {
-    inner: A,
+pub struct AsyncBacktraceAccessor {
+    inner: Servicer,
 }
 
-impl<A: Access> LayeredAccess for AsyncBacktraceAccessor<A> {
-    type Inner = A;
-    type Reader = AsyncBacktraceWrapper<A::Reader>;
-    type Writer = AsyncBacktraceWrapper<A::Writer>;
-    type Lister = AsyncBacktraceWrapper<A::Lister>;
-    type Deleter = AsyncBacktraceWrapper<A::Deleter>;
+impl Service for AsyncBacktraceAccessor {
+    type Reader = AsyncBacktraceWrapper<oio::Reader>;
+    type Writer = AsyncBacktraceWrapper<oio::Writer>;
+    type Lister = AsyncBacktraceWrapper<oio::Lister>;
+    type Deleter = AsyncBacktraceWrapper<oio::Deleter>;
+    type Copier = oio::Copier;
+    type Composer = oio::Composer;
 
-    fn inner(&self) -> &Self::Inner {
-        &self.inner
+    fn info(&self) -> ServiceInfo {
+        self.inner.info()
+    }
+
+    fn capability(&self) -> Capability {
+        self.inner.capability()
+    }
+
+    fn compose(&self, ctx: &OperationContext, to: &str, args: OpCompose) -> Result<Self::Composer> {
+        self.inner.compose(ctx, to, args)
     }
 
     #[async_backtrace::framed]
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
+    async fn create_dir(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        self.inner.create_dir(ctx, path, args).await
+    }
+
+    fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
         self.inner
-            .read(path, args)
-            .await
-            .map(|(rp, r)| (rp, AsyncBacktraceWrapper::new(r)))
+            .read(ctx, path, args)
+            .map(AsyncBacktraceWrapper::new)
     }
 
-    #[async_backtrace::framed]
-    async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
+    fn write(&self, ctx: &OperationContext, path: &str, args: OpWrite) -> Result<Self::Writer> {
         self.inner
-            .write(path, args)
-            .await
-            .map(|(rp, r)| (rp, AsyncBacktraceWrapper::new(r)))
+            .write(ctx, path, args)
+            .map(AsyncBacktraceWrapper::new)
+    }
+
+    fn copy(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpCopy,
+    ) -> Result<Self::Copier> {
+        self.inner.copy(ctx, from, to, args)
     }
 
     #[async_backtrace::framed]
-    async fn copy(&self, from: &str, to: &str, args: OpCopy) -> Result<RpCopy> {
-        self.inner.copy(from, to, args).await
+    async fn rename(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpRename,
+    ) -> Result<RpRename> {
+        self.inner.rename(ctx, from, to, args).await
     }
 
     #[async_backtrace::framed]
-    async fn rename(&self, from: &str, to: &str, args: OpRename) -> Result<RpRename> {
-        self.inner.rename(from, to, args).await
+    async fn restore(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpRestore,
+    ) -> Result<RpRestore> {
+        self.inner.restore(ctx, path, args).await
     }
 
     #[async_backtrace::framed]
-    async fn stat(&self, path: &str, args: OpStat) -> Result<RpStat> {
-        self.inner.stat(path, args).await
+    async fn stat(&self, ctx: &OperationContext, path: &str, args: OpStat) -> Result<RpStat> {
+        self.inner.stat(ctx, path, args).await
     }
 
-    #[async_backtrace::framed]
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
+    fn delete(&self, ctx: &OperationContext) -> Result<Self::Deleter> {
+        self.inner.delete(ctx).map(AsyncBacktraceWrapper::new)
+    }
+
+    fn list(&self, ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
         self.inner
-            .delete()
-            .await
-            .map(|(rp, r)| (rp, AsyncBacktraceWrapper::new(r)))
+            .list(ctx, path, args)
+            .map(AsyncBacktraceWrapper::new)
     }
 
     #[async_backtrace::framed]
-    async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
-        self.inner
-            .list(path, args)
-            .await
-            .map(|(rp, r)| (rp, AsyncBacktraceWrapper::new(r)))
-    }
-
-    #[async_backtrace::framed]
-    async fn presign(&self, path: &str, args: OpPresign) -> Result<RpPresign> {
-        self.inner.presign(path, args).await
+    async fn presign(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpPresign,
+    ) -> Result<RpPresign> {
+        self.inner.presign(ctx, path, args).await
     }
 }
 
@@ -145,10 +185,26 @@ impl<R> AsyncBacktraceWrapper<R> {
     }
 }
 
-impl<R: oio::Read> oio::Read for AsyncBacktraceWrapper<R> {
+impl<R: oio::ReadStream> oio::ReadStream for AsyncBacktraceWrapper<R> {
     #[async_backtrace::framed]
     async fn read(&mut self) -> Result<Buffer> {
         self.inner.read().await
+    }
+}
+
+impl<R: oio::Read> oio::Read for AsyncBacktraceWrapper<R> {
+    #[async_backtrace::framed]
+    async fn open(&self, range: BytesRange) -> Result<(RpRead, Box<dyn oio::ReadStreamDyn>)> {
+        let (rp, stream) = self.inner.open(range).await?;
+        Ok((
+            rp,
+            Box::new(AsyncBacktraceWrapper::new(stream)) as Box<dyn oio::ReadStreamDyn>,
+        ))
+    }
+
+    #[async_backtrace::framed]
+    async fn read(&self, range: BytesRange) -> Result<(RpRead, Buffer)> {
+        self.inner.read(range).await
     }
 }
 
@@ -156,6 +212,11 @@ impl<R: oio::Write> oio::Write for AsyncBacktraceWrapper<R> {
     #[async_backtrace::framed]
     async fn write(&mut self, bs: Buffer) -> Result<()> {
         self.inner.write(bs).await
+    }
+
+    #[async_backtrace::framed]
+    async fn copy_from(&mut self, path: &str, args: OpRead, range: BytesRange) -> Result<()> {
+        self.inner.copy_from(path, args, range).await
     }
 
     #[async_backtrace::framed]

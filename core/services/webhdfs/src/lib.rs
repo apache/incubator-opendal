@@ -15,10 +15,20 @@
 // specific language governing permissions and limitations
 // under the License.
 
-/// Default scheme for webhdfs service.
+#![doc = include_str!("../README.md")]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg))]
+#![deny(missing_docs)]
+
+/// URI scheme used for service registration and scheme-driven construction.
 pub const WEBHDFS_SCHEME: &str = "webhdfs";
 
-/// Register this service into the given registry.
+/// Register this service's URI scheme or schemes with an operator registry.
+///
+/// Registration enables scheme-driven construction through
+/// [`opendal_core::Operator::from_uri`] and
+/// [`opendal_core::Operator::via_iter`]. Direct construction through
+/// [`opendal_core::Operator::new`] does not require registration.
 pub fn register_webhdfs_service(registry: &opendal_core::OperatorRegistry) {
     registry.register::<Webhdfs>(WEBHDFS_SCHEME);
 }
@@ -27,9 +37,9 @@ mod backend;
 mod config;
 mod core;
 mod deleter;
-mod error;
 mod lister;
 mod message;
+mod reader;
 mod writer;
 
 pub use backend::WebhdfsBuilder as Webhdfs;

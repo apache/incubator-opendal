@@ -1,6 +1,6 @@
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [ ] create_dir
 - [x] stat
@@ -12,15 +12,14 @@ This service can be used to:
 - [ ] rename
 - [ ] ~~presign~~
 
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
+
 ## Configuration
 
-- `root`: Set the working directory of `OpenDAL`
-- `username`: Set the username for authentication.
-- `password`: Set the password for authentication.
-- `endpoint`: Set the network address of memcached server
-- `default_ttl`: Set the ttl for memcached service.
-
-You can refer to [`MemcachedBuilder`]'s docs for more information
+Use [`crate::MemcachedConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
 ## Example
 
@@ -40,7 +39,7 @@ async fn main() -> Result<()> {
         // builder.username("admin")
         // builder.password("password");
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
     Ok(())
 }
 ```

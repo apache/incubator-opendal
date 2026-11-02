@@ -17,9 +17,9 @@
 
 //! executors module provides implementations for the [`Execute`](crate::Execute) trait for widely used runtimes.
 //!
-//! Every executor will be hide behind the feature like `executors-xxx`. Users can switch or enable
-//! the executors they want by enabling the corresponding feature. Also, users can provide their
-//! own executor by implementing the [`Execute`](crate::Execute) trait directly.
+//! OpenDAL provides executor integrations through features such as `executors-xxx`.
+//! Enable the corresponding feature to select an executor. You can also provide
+//! your own executor by implementing the [`Execute`](crate::Execute) trait.
 
 #[cfg(feature = "executors-tokio")]
 mod tokio_executor;

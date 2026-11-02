@@ -18,12 +18,22 @@
 # frozen_string_literal: true
 
 require "bundler/gem_tasks"
+require "fileutils"
 require "rake/testtask"
-require "rb_sys/extensiontask"
+require "rubygems/ext"
+require "rubygems/ext/cargo_builder"
+require "rubygems/package"
 require "standard/rake"
 
 GEMSPEC = Gem::Specification.load("opendal.gemspec")
+PACKAGE_NAME = "opendal"
 CRATE_PACKAGE_NAME = "opendal-ruby"
+# Ruby loads native extensions by basename without the platform suffix.
+# RbConfig::CONFIG["DLEXT"] is Ruby's loadable native-extension suffix for
+# the current platform, such as "bundle" on macOS or "so" on Linux.
+EXTENSION = "opendal_ruby"
+EXTENSION_FILE = "#{EXTENSION}.#{RbConfig::CONFIG["DLEXT"]}"
+EXTENSION_PATH = "lib/#{EXTENSION_FILE}"
 
 desc "Copy core files for compilation"
 task :copy_core do
@@ -52,34 +62,23 @@ task :copy_core do
   end
 end
 
-RbSys::ExtensionTask.new(CRATE_PACKAGE_NAME, GEMSPEC) do |ext|
-  ext.name = "opendal_ruby"
-  ext.ext_dir = "."
-  ext.lib_dir = "lib/opendal_ruby"
-
-  ext.cross_compile = true
-  ext.cross_platform = %w[
-    x86_64-linux
-    arm64-linux
-    arm64-darwin
-    arm64-darwin23
-  ]
-
-  # Override Ruby version requirement for native gems
-  # This prevents automatic constraint to the build Ruby version (e.g., >= 3.3, < 3.4.dev)
-  ext.cross_compiling do |gem_spec|
-    # keep in sync with opendal.gemspec
-    gem_spec.required_ruby_version = ">= 3.2", "< 3.5.dev"
-  end
-end
-
-Rake::Task[:test].prerequisites << :compile
-
-Rake::TestTask.new do |t|
+Rake::TestTask.new("test:base") do |t|
   t.libs << "lib"
   t.libs << "test"
-  t.pattern = "test/**/*_test.rb"
+  t.test_files = FileList["test/*_test.rb"]
 end
+
+Rake::TestTask.new("test:service") do |t|
+  t.libs << "lib"
+  t.libs << "test"
+  t.test_files = FileList["test/service/*_test.rb"]
+end
+
+desc "Test base functionality"
+task "test:base" => :test
+
+desc "Test service functionality"
+task "test:service" => :test
 
 namespace :doc do
   task default: %i[rustdoc yard]
@@ -120,6 +119,54 @@ task :version do
   print GEMSPEC.version
 end
 
+# Rake's file task below writes into lib/, so model the directory explicitly.
+directory "lib"
+
+extension_sources = FileList["Cargo.toml", "build.rs", "src/**/*.rs"]
+file EXTENSION_PATH => ["lib", "Cargo.lock", *extension_sources] do
+  original_verbose = Gem.configuration.verbose
+  # `:loud` enables RubyGems' highest verbosity and prints the exact Cargo
+  # command plus compiler output. That context is helpful when native CI fails.
+  Gem.configuration.verbose = :loud
+  Gem::Ext::CargoBuilder.new.build("Cargo.toml", ".", [], [], "lib", __dir__)
+  FileUtils.rm_f EXTENSION_FILE
+ensure
+  Gem.configuration.verbose = original_verbose
+end
+
+# Make `rake clean` remove the generated native extension.
+CLEAN.include EXTENSION_PATH
+
+desc "Compile #{EXTENSION}"
+task "compile:#{EXTENSION}" => EXTENSION_PATH
+
+desc "Compile all the extensions"
+task compile: "compile:#{EXTENSION}"
+
+Rake::Task[:test].prerequisites << EXTENSION_PATH
+
+namespace :native do
+  desc "Build a native gem for #{ENV.fetch("OPENDAL_RUBY_PLATFORM", Gem::Platform.local.to_s)}"
+  task PACKAGE_NAME do
+    platform = ENV.fetch("OPENDAL_RUBY_PLATFORM", Gem::Platform.local.to_s)
+    Rake::Task["native:#{PACKAGE_NAME}:#{platform}"].invoke
+  end
+
+  task "#{PACKAGE_NAME}:#{ENV.fetch("OPENDAL_RUBY_PLATFORM", Gem::Platform.local.to_s)}" => EXTENSION_PATH do
+    platform = ENV.fetch("OPENDAL_RUBY_PLATFORM", Gem::Platform.local.to_s)
+    spec = GEMSPEC.dup
+    spec.platform = Gem::Platform.new(platform)
+    spec.extensions.clear
+    spec.files |= [EXTENSION_PATH]
+
+    FileUtils.mkdir_p "pkg"
+    gem_file = Gem::Package.build(spec)
+    FileUtils.mv gem_file, "pkg/#{File.basename(gem_file)}"
+  end
+end
+
+task native: "native:#{PACKAGE_NAME}"
+
 # Ensure core files are copied before compilation and packaging
 Rake::Task["build"].enhance(["copy_core"]) if Rake::Task.task_defined?("build")
 
@@ -127,7 +174,7 @@ Rake::Task["release"].clear # clear the existing release task to allow override
 Rake::Task["release:rubygem_push"].clear if Rake::Task.task_defined?("release:rubygem_push")
 
 # overrides bundler's default rake release task
-# we removed build and git tagging steps. Read more in ``./.github/workflows/release-ruby.yml`
+# we removed build and git tagging steps. Read more in `./.github/workflows/release-ruby.yml`
 # read more https://github.com/rubygems/rubygems/blob/master/bundler/lib/bundler/gem_helper.rb
 desc "Multi-arch release"
 task release: [

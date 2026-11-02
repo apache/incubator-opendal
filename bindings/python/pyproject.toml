@@ -25,7 +25,13 @@ classifiers = [
   "Programming Language :: Python :: Implementation :: CPython",
 ]
 description = "Apache OpenDAL™ Python Binding"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = [
+  "LICENSE",
+  "LICENSE-libgcc.txt",
+  "LICENSE-MPL-2.0.txt",
+  "NOTICE",
+]
 name = "opendal"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -41,14 +47,11 @@ Repository = "https://github.com/apache/opendal"
 benchmark = [
   "boto3>=1.37.9",
   "boto3-stubs[essential]>=1.37.9",
-  "gevent>=24.11.1",
-  "greenify>=0.4.3",
-  "greenlet>=3.1.1",
   "pydantic>=2.10.6",
 ]
 dev = ["maturin>=1.8.2"]
-docs = ["mkdocs", "mkdocs-material", "mkdocstrings[python]", "mkdocs-jupyter"]
-lint = ["ruff>=0.9.10"]
+docs = ["zensical>=0.0.11", "mkdocstrings-python", "nbconvert"]
+lint = ["ruff>=0.9.10", "ty>=0.0.51"]
 test = [
   "pytest>=8.3.5",
   "pytest-asyncio>=0.25.3",
@@ -60,7 +63,9 @@ test = [
 features = ["pyo3/extension-module"]
 module-name = "opendal._opendal"
 python-source = "python"
-strip = true
+
+[tool.ty.src]
+include = ["python/opendal"]
 
 [tool.uv]
 cache-keys = [

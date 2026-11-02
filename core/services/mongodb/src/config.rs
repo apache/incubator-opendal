@@ -64,26 +64,26 @@ impl opendal_core::Configurator for MongodbConfig {
                 .or_insert_with(|| format!("mongodb://{authority}"));
         }
 
-        if let Some(path) = uri.root() {
-            if !path.is_empty() {
-                let mut segments = path.splitn(3, '/');
-                if let Some(db) = segments.next() {
-                    if !db.is_empty() {
-                        map.entry("database".to_string())
-                            .or_insert_with(|| db.to_string());
-                    }
-                }
-                if let Some(collection) = segments.next() {
-                    if !collection.is_empty() {
-                        map.entry("collection".to_string())
-                            .or_insert_with(|| collection.to_string());
-                    }
-                }
-                if let Some(rest) = segments.next() {
-                    if !rest.is_empty() {
-                        map.insert("root".to_string(), rest.to_string());
-                    }
-                }
+        if let Some(path) = uri.root()
+            && !path.is_empty()
+        {
+            let mut segments = path.splitn(3, '/');
+            if let Some(db) = segments.next()
+                && !db.is_empty()
+            {
+                map.entry("database".to_string())
+                    .or_insert_with(|| db.to_string());
+            }
+            if let Some(collection) = segments.next()
+                && !collection.is_empty()
+            {
+                map.entry("collection".to_string())
+                    .or_insert_with(|| collection.to_string());
+            }
+            if let Some(rest) = segments.next()
+                && !rest.is_empty()
+            {
+                map.insert("root".to_string(), rest.to_string());
             }
         }
 

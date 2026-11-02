@@ -1,0 +1,78 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: Sync release lifecycle
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-lifecycle-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    concurrency:
+      group: release-lifecycle-mutations
+      cancel-in-progress: false
+    if: github.repository == 'apache/opendal' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      discussions: write
+      contents: read
+    outputs:
+      candidates: ${{ steps.sync.outputs.candidates }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Synchronize ATR state
+        id: sync
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/release_lifecycle.py sync
+
+  publish:
+    needs: sync
+    if: always() && !cancelled() && needs.sync.outputs.candidates != '' && needs.sync.outputs.candidates != '[]'
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        rc: ${{ fromJSON(needs.sync.outputs.candidates) }}
+    permissions:
+      actions: write
+      contents: write
+      discussions: write
+      pull-requests: write
+      id-token: write
+    # A reusable workflow preserves the caller's ASF-linked actor for ATR OIDC.
+    uses: ./.github/workflows/release_publish.yml
+    with:
+      rc: ${{ matrix.rc }}
+    secrets:
+      GPG_SECRET_KEY: ${{ secrets.GPG_SECRET_KEY }}
+      NEXUS_STAGE_DEPLOYER_USER: ${{ secrets.NEXUS_STAGE_DEPLOYER_USER }}
+      NEXUS_STAGE_DEPLOYER_PW: ${{ secrets.NEXUS_STAGE_DEPLOYER_PW }}

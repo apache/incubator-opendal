@@ -407,11 +407,13 @@ impl Part for MixedPart {
                 .as_bytes(),
         );
         bs.extend_from_slice(b" ");
+        let uri = self
+            .uri
+            .as_ref()
+            .expect("mixed part must be a valid request that contains uri");
         bs.extend_from_slice(
-            self.uri
-                .as_ref()
-                .expect("mixed part must be a valid request that contains uri")
-                .path()
+            uri.path_and_query()
+                .map_or_else(|| uri.path(), PathAndQuery::as_str)
                 .as_bytes(),
         );
         bs.extend_from_slice(b" ");
@@ -846,6 +848,24 @@ content-length: 32
         );
 
         Ok(())
+    }
+
+    #[test]
+    fn test_multipart_mixed_request_line_keeps_query() {
+        let req = Request::delete(
+            "https://storage.googleapis.com/storage/v1/b/example-bucket/o/obj1?generation=123",
+        )
+        .body(Buffer::new())
+        .unwrap();
+        let multipart = Multipart::new()
+            .with_boundary("batch")
+            .part(MixedPart::from_request(req));
+
+        let bs = String::from_utf8(multipart.build().to_bytes().to_vec()).unwrap();
+
+        assert!(bs.contains(
+            "\r\nDELETE /storage/v1/b/example-bucket/o/obj1?generation=123 HTTP/1.1\r\n"
+        ));
     }
 
     /// This test is inspired by <https://learn.microsoft.com/en-us/rest/api/storageservices/blob-batch?tabs=azure-ad>

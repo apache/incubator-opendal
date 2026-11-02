@@ -15,6 +15,8 @@
 -- specific language governing permissions and limitations
 -- under the License.
 
+{-# LANGUAGE CPP #-}
+
 import Control.Monad
 import Data.Maybe
 import qualified Distribution.PackageDescription as PD
@@ -22,6 +24,9 @@ import Distribution.Simple
 import Distribution.Simple.LocalBuildInfo
 import Distribution.Simple.Setup
 import Distribution.Simple.Utils
+#if MIN_VERSION_Cabal(3,14,0)
+import Distribution.Utils.Path (makeSymbolicPath)
+#endif
 import Distribution.System
 import System.Directory
 import System.Environment
@@ -51,7 +56,12 @@ rustConfHook (description, buildInfo) flags = do
                   library
                     { PD.libBuildInfo =
                         libraryBuildInfo
-                          { PD.extraLibDirs = dir : PD.extraLibDirs libraryBuildInfo,
+                          { PD.extraLibDirs =
+#if MIN_VERSION_Cabal(3,14,0)
+                              makeSymbolicPath dir : PD.extraLibDirs libraryBuildInfo,
+#else
+                              dir : PD.extraLibDirs libraryBuildInfo,
+#endif
                             PD.ldOptions = ("-Wl,-rpath," ++ dir) : (PD.ldOptions libraryBuildInfo)
                           }
                     }
@@ -63,7 +73,11 @@ rustBuildHook pkg_descr lbi hooks flags = do
   putStrLn "Building Rust code..."
   let isRelease = withProfLib lbi
   let cargoArgs = if isRelease then ["build", "--release"] else ["build"]
+#if MIN_VERSION_Cabal(3,14,0)
+  rawSystemExit (fromFlag $ buildVerbosity flags) Nothing "cargo" cargoArgs
+#else
   rawSystemExit (fromFlag $ buildVerbosity flags) "cargo" cargoArgs
+#endif
   putStrLn "Build Rust code success!"
   buildHook simpleUserHooks pkg_descr lbi hooks flags
 

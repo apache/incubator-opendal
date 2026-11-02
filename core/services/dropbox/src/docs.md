@@ -1,6 +1,6 @@
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [x] create_dir
 - [x] stat
@@ -11,9 +11,14 @@ This service can be used to:
 - [x] copy
 - [x] rename
 
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
+
 ## Configuration
 
-- `root`: Set the work directory for this backend.
+Use [`crate::DropboxConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
 ### Credentials related
 
@@ -38,8 +43,6 @@ and exchange it for refresh token.
 Please refer to [Dropbox OAuth2 Guide](https://www.dropbox.com/developers/reference/oauth-guide)
 for more information.
 
-You can refer to [`DropboxBuilder`]'s docs for more information
-
 ## Example
 
 ### Via Builder
@@ -55,7 +58,7 @@ async fn main() -> Result<()> {
         .root("/opendal")
         .access_token("<token>");
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
     Ok(())
 }
 ```

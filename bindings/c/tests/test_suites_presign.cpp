@@ -475,6 +475,88 @@ void test_presign_read(opendal_test_context* ctx)
     OPENDAL_ASSERT(mismatch == 0, "Downloaded content should match stored content");
 }
 
+// Test: Presign read operation with options
+void test_presign_read_with_range(opendal_test_context* ctx)
+{
+    const char* path = "test_presign_read_with_range.txt";
+    const char* content = "0123456789";
+    const char* expected = "2345";
+    size_t content_len = strlen(content);
+    size_t expected_len = strlen(expected);
+
+    opendal_bytes data;
+    data.data = (uint8_t*)content;
+    data.len = content_len;
+    data.capacity = content_len;
+
+    opendal_error* error = opendal_operator_write(ctx->config->operator_instance, path, &data);
+    OPENDAL_ASSERT_NO_ERROR(error, "Write operation should succeed");
+
+    opendal_read_options* opts = opendal_read_options_new();
+    OPENDAL_ASSERT_NOT_NULL(opts, "Read options should not be null");
+    opendal_read_options_set_range(opts, 2, expected_len);
+
+    opendal_result_presign presign_result = opendal_operator_presign_read_with(ctx->config->operator_instance, path, 3600, opts);
+    opendal_read_options_free(opts);
+    OPENDAL_ASSERT_NO_ERROR(presign_result.error, "Presign read with range should succeed");
+    OPENDAL_ASSERT_NOT_NULL(presign_result.req, "Presigned request should not be null");
+
+    const char* method = opendal_presigned_request_method(presign_result.req);
+    const char* url = opendal_presigned_request_uri(presign_result.req);
+    const opendal_http_header_pair* headers = opendal_presigned_request_headers(presign_result.req);
+    uintptr_t headers_len = opendal_presigned_request_headers_len(presign_result.req);
+    OPENDAL_ASSERT_NOT_NULL(method, "Presigned method should not be null");
+    OPENDAL_ASSERT_STR_EQ("GET", method, "Presigned method should be GET");
+    OPENDAL_ASSERT_NOT_NULL(url, "Presigned URL should not be null");
+    OPENDAL_ASSERT(headers_len == 0 || headers != NULL, "Headers pointer must be valid when headers exist");
+
+    CURL* curl = curl_easy_init();
+    OPENDAL_ASSERT_NOT_NULL(curl, "CURL initialization should succeed");
+
+    struct curl_slist* chunk = NULL;
+    CURLcode setup_error = CURLE_OK;
+    presign_prepare_result prepare_res = presign_prepare_curl(curl, url, method,
+        headers, headers_len, PRESIGN_NO_OVERRIDE, &chunk, &setup_error);
+    PRESIGN_ASSERT_PREPARE_OK(curl, chunk, prepare_res, setup_error);
+
+    presign_body_context body_ctx;
+    body_ctx.expected = expected;
+    body_ctx.expected_len = expected_len;
+    body_ctx.offset = 0;
+    body_ctx.mismatch = 0;
+
+    CURLcode opt_res = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, presign_write_callback);
+    if (opt_res != CURLE_OK) {
+        presign_cleanup_curl(curl, chunk);
+        OPENDAL_ASSERT_EQ(CURLE_OK, opt_res, "Setting CURL write callback should succeed");
+    }
+    opt_res = curl_easy_setopt(curl, CURLOPT_WRITEDATA, &body_ctx);
+    if (opt_res != CURLE_OK) {
+        presign_cleanup_curl(curl, chunk);
+        OPENDAL_ASSERT_EQ(CURLE_OK, opt_res, "Setting CURL write data should succeed");
+    }
+
+    CURLcode res = curl_easy_perform(curl);
+    if (res != CURLE_OK) {
+        presign_cleanup_curl(curl, chunk);
+        OPENDAL_ASSERT_EQ(CURLE_OK, res, "CURL perform should succeed");
+    }
+
+    presign_cleanup_curl(curl, chunk);
+
+    size_t received_len = body_ctx.offset;
+    int mismatch = body_ctx.mismatch;
+
+    opendal_presigned_request_free(presign_result.req);
+
+    opendal_error* delete_error = opendal_operator_delete(ctx->config->operator_instance, path);
+    OPENDAL_ASSERT_NO_ERROR(delete_error, "Cleanup delete should succeed");
+
+    OPENDAL_ASSERT_EQ(expected_len, received_len,
+        "Downloaded range length should match requested range");
+    OPENDAL_ASSERT(mismatch == 0, "Downloaded range content should match");
+}
+
 // Test: Presign write operation
 void test_presign_write(opendal_test_context* ctx)
 {
@@ -661,7 +743,7 @@ void test_presign_delete(opendal_test_context* ctx)
 {
     opendal_operator_info* info = opendal_operator_info_new(ctx->config->operator_instance);
     OPENDAL_ASSERT_NOT_NULL(info, "Operator info should not be null");
-    opendal_capability cap = opendal_operator_info_get_full_capability(info);
+    opendal_capability cap = opendal_operator_info_get_capability(info);
     opendal_operator_info_free(info);
     if (!cap.presign_delete) {
         return;
@@ -723,6 +805,7 @@ void test_presign_delete(opendal_test_context* ctx)
 
 opendal_test_case presign_tests[] = {
     { "presign_read", test_presign_read, make_capability_presign() },
+    { "presign_read_with_range", test_presign_read_with_range, make_capability_presign() },
     { "presign_write", test_presign_write, make_capability_presign() },
     { "presign_stat", test_presign_stat, make_capability_presign() },
     { "presign_delete", test_presign_delete, make_capability_presign() },

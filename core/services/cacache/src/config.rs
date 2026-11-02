@@ -32,11 +32,11 @@ impl opendal_core::Configurator for CacacheConfig {
     fn from_uri(uri: &opendal_core::OperatorUri) -> opendal_core::Result<Self> {
         let mut map = uri.options().clone();
 
-        if let Some(root) = uri.root() {
-            if !root.is_empty() {
-                map.entry("datadir".to_string())
-                    .or_insert_with(|| format!("/{root}"));
-            }
+        if let Some(root) = uri.root()
+            && !root.is_empty()
+        {
+            map.entry("datadir".to_string())
+                .or_insert_with(|| format!("/{root}"));
         }
 
         Self::from_iter(map)

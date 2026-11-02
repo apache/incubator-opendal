@@ -1,6 +1,6 @@
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [ ] create_dir
 - [x] stat
@@ -12,15 +12,14 @@ This service can be used to:
 - [ ] rename
 - [x] presign
 
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
+
 ## Configuration
 
-- `root`: Set the work directory for backend
-- `key_id`: B2 application key keyID
-- `application_key` B2 application key applicationKey
-- `bucket` B2 bucket name
-- `bucket_id` B2 bucket_id
-
-You can refer to [`B2Builder`]'s docs for more information
+Use [`crate::B2Config`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
 ## Example
 
@@ -46,7 +45,7 @@ async fn main() -> Result<()> {
         // set the bucket_id for OpenDAL
         .bucket_id("xxxxxxxxxxxxx");
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
 
     Ok(())
 }

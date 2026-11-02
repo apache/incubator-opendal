@@ -25,6 +25,7 @@ use super::config::MokaConfig;
 use super::core::*;
 use super::deleter::MokaDeleter;
 use super::lister::MokaLister;
+use super::reader::*;
 use super::writer::MokaWriter;
 use opendal_core::raw::*;
 use opendal_core::*;
@@ -141,8 +142,8 @@ impl MokaBuilder {
 impl Builder for MokaBuilder {
     type Config = MokaConfig;
 
-    fn build(self) -> Result<impl Access> {
-        debug!("backend build started: {:?}", &self);
+    fn build(self) -> Result<impl Service> {
+        debug!("backend build started: {:?}", self);
 
         let root = normalize_root(
             self.config
@@ -179,21 +180,18 @@ impl Builder for MokaBuilder {
     }
 }
 
-/// MokaBackend implements Access trait directly
 #[derive(Debug, Clone)]
 pub struct MokaBackend {
-    core: Arc<MokaCore>,
-    root: String,
-    info: Arc<AccessorInfo>,
+    pub(crate) core: Arc<MokaCore>,
+    pub(crate) root: String,
+    pub(crate) info: ServiceInfo,
+    pub(crate) capability: Capability,
 }
 
 impl MokaBackend {
     fn new(core: MokaCore) -> Self {
-        let info = AccessorInfo::default();
-        info.set_scheme(MOKA_SCHEME);
-        info.set_name(core.cache.name().unwrap_or("moka"));
-        info.set_root("/");
-        info.set_native_capability(Capability {
+        let info = ServiceInfo::new(MOKA_SCHEME, "/", core.cache.name().unwrap_or("moka"));
+        let capability = Capability {
             read: true,
             write: true,
             write_can_empty: true,
@@ -204,51 +202,69 @@ impl MokaBackend {
             delete: true,
             stat: true,
             list: true,
-            shared: false,
             ..Default::default()
-        });
+        };
 
         Self {
             core: Arc::new(core),
             root: "/".to_string(),
-            info: Arc::new(info),
+            info,
+            capability,
         }
     }
 
     fn with_normalized_root(mut self, root: String) -> Self {
-        self.info.set_root(&root);
+        self.info = self.info.with_root(&root);
         self.root = root;
         self
     }
 }
 
-impl Access for MokaBackend {
-    type Reader = Buffer;
+impl Service for MokaBackend {
+    type Reader = oio::StreamReader<MokaReader>;
     type Writer = MokaWriter;
     type Lister = oio::HierarchyLister<MokaLister>;
     type Deleter = oio::OneShotDeleter<MokaDeleter>;
+    type Copier = ();
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
+    fn info(&self) -> ServiceInfo {
         self.info.clone()
     }
 
-    async fn stat(&self, path: &str, _: OpStat) -> Result<RpStat> {
+    fn capability(&self) -> Capability {
+        self.capability
+    }
+
+    async fn create_dir(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn stat(&self, _ctx: &OperationContext, path: &str, _: OpStat) -> Result<RpStat> {
         let p = build_abs_path(&self.root, path);
 
         if p == build_abs_path(&self.root, "") {
-            Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+            Ok(RpStat::new(MetadataBuilder::dir().build()))
         } else {
             // Check the exact path first
             match self.core.get(&p).await? {
                 Some(value) => {
                     // Use the stored metadata but override mode if necessary
-                    let mut metadata = value.metadata.clone();
+                    let mut metadata = value.metadata.clone().into_builder();
                     // If path ends with '/' but we found a file, return DIR
                     // This is because CompleteLayer's create_dir creates empty files with '/' suffix
-                    if p.ends_with('/') && metadata.mode() != EntryMode::DIR {
-                        metadata.set_mode(EntryMode::DIR);
+                    if p.ends_with('/') && value.metadata.mode() != EntryMode::DIR {
+                        metadata.set_dir();
                     }
-                    Ok(RpStat::new(metadata))
+                    Ok(RpStat::new(metadata.build()))
                 }
                 None => {
                     // If path ends with '/', check if there are any children
@@ -260,7 +276,7 @@ impl Access for MokaBackend {
                             .any(|kv| kv.0.starts_with(&p) && kv.0.len() > p.len());
 
                         if has_children {
-                            Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+                            Ok(RpStat::new(MetadataBuilder::dir().build()))
                         } else {
                             Err(Error::new(ErrorKind::NotFound, "key not found in moka"))
                         }
@@ -271,46 +287,85 @@ impl Access for MokaBackend {
             }
         }
     }
+    fn read(&self, _ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
+        let output: oio::StreamReader<MokaReader> = {
+            Ok(oio::StreamReader::new(MokaReader::new(
+                self.clone(),
+                path,
+                args,
+            )))
+        }?;
 
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let p = build_abs_path(&self.root, path);
-
-        match self.core.get(&p).await? {
-            Some(value) => {
-                let buffer = if args.range().is_full() {
-                    value.content
-                } else {
-                    let range = args.range();
-                    let start = range.offset() as usize;
-                    let end = match range.size() {
-                        Some(size) => (range.offset() + size) as usize,
-                        None => value.content.len(),
-                    };
-                    value.content.slice(start..end.min(value.content.len()))
-                };
-                Ok((RpRead::new(), buffer))
-            }
-            None => Err(Error::new(ErrorKind::NotFound, "key not found in moka")),
-        }
+        Ok(output)
     }
 
-    async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        let p = build_abs_path(&self.root, path);
-        Ok((RpWrite::new(), MokaWriter::new(self.core.clone(), p, args)))
+    fn write(&self, _ctx: &OperationContext, path: &str, args: OpWrite) -> Result<Self::Writer> {
+        let output: MokaWriter = {
+            let p = build_abs_path(&self.root, path);
+            Ok(MokaWriter::new(self.core.clone(), p, args))
+        }?;
+
+        Ok(output)
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        Ok((
-            RpDelete::default(),
-            oio::OneShotDeleter::new(MokaDeleter::new(self.core.clone(), self.root.clone())),
+    fn delete(&self, _ctx: &OperationContext) -> Result<Self::Deleter> {
+        let output: oio::OneShotDeleter<MokaDeleter> = {
+            Ok(oio::OneShotDeleter::new(MokaDeleter::new(
+                self.core.clone(),
+                self.root.clone(),
+            )))
+        }?;
+
+        Ok(output)
+    }
+
+    fn list(&self, _ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
+        let output: oio::HierarchyLister<MokaLister> = {
+            // For moka, we don't distinguish between files and directories
+            // Just return the lister to iterate through all matching keys
+            let lister = MokaLister::new(self.core.clone(), self.root.clone(), path.to_string());
+            let lister = oio::HierarchyLister::new(lister, path, args.recursive());
+            Ok(lister)
+        }?;
+
+        Ok(output)
+    }
+
+    fn copy(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpCopy,
+    ) -> Result<Self::Copier> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
         ))
     }
 
-    async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
-        // For moka, we don't distinguish between files and directories
-        // Just return the lister to iterate through all matching keys
-        let lister = MokaLister::new(self.core.clone(), self.root.clone(), path.to_string());
-        let lister = oio::HierarchyLister::new(lister, path, args.recursive());
-        Ok((RpList::default(), lister))
+    async fn rename(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpRename,
+    ) -> Result<RpRename> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn presign(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpPresign,
+    ) -> Result<RpPresign> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
     }
 }

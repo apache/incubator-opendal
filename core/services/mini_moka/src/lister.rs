@@ -25,40 +25,29 @@ use super::core::MiniMokaCore;
 
 pub struct MiniMokaLister {
     root: String,
-    keys: IntoIter<String>,
+    entries: IntoIter<(String, Metadata)>,
 }
 
 impl MiniMokaLister {
     pub fn new(core: Arc<MiniMokaCore>, root: String, _path: String) -> Self {
-        // Get all keys from the cache
-        let keys: Vec<String> = core
+        let entries: Vec<(String, Metadata)> = core
             .cache
             .iter()
-            .map(|entry| entry.key().to_string())
+            .map(|entry| (entry.key().to_string(), entry.value().metadata.clone()))
             .collect();
 
         Self {
             root,
-            keys: keys.into_iter(),
+            entries: entries.into_iter(),
         }
     }
 }
 
 impl oio::List for MiniMokaLister {
     async fn next(&mut self) -> Result<Option<oio::Entry>> {
-        match self.keys.next() {
-            Some(key) => {
-                // Convert absolute path to relative path
+        match self.entries.next() {
+            Some((key, metadata)) => {
                 let rel_path = build_rel_path(&self.root, &key);
-
-                // Determine if it's a file or directory based on trailing slash
-                let mode = if key.ends_with('/') {
-                    EntryMode::DIR
-                } else {
-                    EntryMode::FILE
-                };
-
-                let metadata = Metadata::new(mode);
 
                 Ok(Some(oio::Entry::new(&rel_path, metadata)))
             }

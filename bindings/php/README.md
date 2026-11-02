@@ -1,49 +1,38 @@
-# Apache OpenDAL™ PHP Binding (WIP)
+# Apache OpenDAL™ PHP Binding
 
-[![](https://img.shields.io/badge/status-unreleased-red)](https://opendal.apache.org/bindings/php/)
+[![status: unreleased](https://img.shields.io/badge/status-unreleased-red)](https://opendal.apache.org/docs/bindings/php)
 
-> **Note**: This binding has its own independent version number, which may differ from the Rust core version. When checking for updates or compatibility, always refer to this binding's version rather than the core version.
+A PHP extension for OpenDAL: access S3, GCS, Azure Blob, the local filesystem,
+and 50+ more services through one synchronous API, built on the Rust core.
 
-## Example
+**Status**: experimental / work in progress. Not published to any package
+registry. Expect breaking changes.
 
-```php
-use OpenDAL\Operator;
+## Useful Links
 
-$op = new Operator("fs", ["root" => "/tmp"]);
-$op->write("test.txt", "hello world");
-
-echo $op->read("test.txt"); // hello world
-```
+- **User guide**: [opendal.apache.org/docs/bindings/php](https://opendal.apache.org/docs/bindings/php)
+- **Services & configuration**: [opendal.apache.org/services](https://opendal.apache.org/services)
+- **Source**: [`bindings/php/`](https://github.com/apache/opendal/tree/main/bindings/php)
+- **ext-php-rs**: [github.com/davidcole1340/ext-php-rs](https://github.com/davidcole1340/ext-php-rs)
 
 ## Requirements
 
-* PHP 8.1+
-* Composer
+- PHP 8.1+
+- Rust and Cargo — [rust-lang.org/tools/install](https://www.rust-lang.org/tools/install)
 
-## Install Extension
+## Build and install the extension
 
-We use [ext-php-rs](https://github.com/davidcole1340/ext-php-rs) to build PHP extensions natively in Rust, it's different from the traditional PHP extension development and cannot be installed using `pecl` or `phpize`. Before installing the extension, it is necessary to install Rust and Cargo. For instructions on how to install them, please refer to [Rust's website](https://www.rust-lang.org/tools/install).
-
-1. Clone the repository
+The extension cannot be installed via `pecl` or Composer. Build from source:
 
 ```bash
-git clone git@github.com:apache/opendal.git
-```
-
-2. Build the opendal-php extension
-
-```bash
+git clone https://github.com/apache/opendal.git
 cd opendal/bindings/php
-cargo build
+cargo build          # add --release for production
 ```
 
-> don't forget to add `--release` flag for production use.
-
-3. Enable extension for PHP Manually
+Copy the library to PHP's extension directory, then register it in `php.ini`:
 
 ```bash
-cd opendal
-
 # Linux
 cp target/debug/libopendal_php.so $(php -r "echo ini_get('extension_dir');")/libopendal_php.so
 echo "extension=libopendal_php.so" >> $(php -r "echo php_ini_loaded_file();")
@@ -57,33 +46,55 @@ cp target/debug/libopendal_php.dll $(php -r "echo ini_get('extension_dir');")/li
 echo "extension=libopendal_php.dll" >> $(php -r "echo php_ini_loaded_file();")
 ```
 
-4. Enable extension for PHP using cargo-php
-
-You can also use cargo-php directly to install the extension, see [cargo-php](https://davidcole1340.github.io/ext-php-rs/getting-started/cargo-php.html) for more details.
+Or use `cargo-php` to build and install in one step:
 
 ```bash
 cargo install cargo-php
-cd opendal/bindings/php
 cargo php install
 ```
-This command will automatically build the extension and copy it to the extension directory of the current PHP version.
 
-5. Test
-
-use `php -m` to check if the extension is installed successfully.
+Verify with:
 
 ```bash
 php -m | grep opendal-php
 ```
 
-Composer test:
+## Quickstart
+
+```php
+use OpenDAL\Operator;
+
+$op = new Operator("memory", []);
+
+$op->write("hello.txt", "Hello, World!");
+
+echo $op->read("hello.txt"); // Hello, World!
+
+$meta = $op->stat("hello.txt");
+echo $meta->content_length;  // 13
+
+$op->delete("hello.txt");
+```
+
+Replace `"memory"` with any supported scheme and pass its configuration as the
+second argument — for example, `new Operator("fs", ["root" => "/tmp"])`.
+
+For the full guide including error handling and binary writes, see the
+[user guide](https://opendal.apache.org/docs/bindings/php).
+
+## Running the tests
 
 ```bash
 cd opendal/bindings/php
-
 composer install
 composer test
 ```
+
+## Contributing
+
+All contributions go through the main OpenDAL repository at
+[github.com/apache/opendal](https://github.com/apache/opendal). Open an issue
+or pull request there.
 
 ## License and Trademarks
 

@@ -15,59 +15,167 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::fmt::Debug;
+use super::OPFS_SCHEME;
+use opendal_core::raw::*;
+use opendal_core::*;
 
-use wasm_bindgen::JsCast;
-use wasm_bindgen_futures::JsFuture;
-use web_sys::File;
-use web_sys::FileSystemWritableFileStream;
-
-use opendal_core::Error;
-use opendal_core::Result;
-
-use super::error::*;
-use super::utils::*;
-
-#[derive(Default, Debug)]
-pub struct OpfsCore {}
+#[derive(Debug, Clone)]
+pub struct OpfsCore {
+    pub root: String,
+    pub info: ServiceInfo,
+    pub capability: Capability,
+}
 
 impl OpfsCore {
-    #[allow(unused)]
-    async fn store_file(&self, file_name: &str, content: &[u8]) -> Result<(), Error> {
-        let handle = get_handle_by_filename(file_name).await?;
+    pub fn new(root: String) -> Self {
+        let info = ServiceInfo::new(OPFS_SCHEME, &root, "opfs");
+        let capability = Capability {
+            stat: true,
 
-        let writable: FileSystemWritableFileStream = JsFuture::from(handle.create_writable())
-            .await
-            .and_then(JsCast::dyn_into)
-            .map_err(parse_js_error)?;
+            read: true,
 
-        JsFuture::from(
-            writable
-                .write_with_u8_array(content)
-                .map_err(parse_js_error)?,
-        )
-        .await
-        .map_err(parse_js_error)?;
+            list: true,
 
-        JsFuture::from(writable.close())
-            .await
-            .map_err(parse_js_error)?;
+            create_dir: true,
 
-        Ok(())
-    }
+            write: true,
+            write_can_empty: true,
+            write_can_multi: true,
 
-    #[allow(unused)]
-    async fn read_file(&self, file_name: &str) -> Result<Vec<u8>, Error> {
-        let handle = get_handle_by_filename(file_name).await?;
+            delete: true,
 
-        let file: File = JsFuture::from(handle.get_file())
-            .await
-            .and_then(JsCast::dyn_into)
-            .map_err(parse_js_error)?;
-        let array_buffer = JsFuture::from(file.array_buffer())
-            .await
-            .map_err(parse_js_error)?;
+            shared: true,
 
-        Ok(js_sys::Uint8Array::new(&array_buffer).to_vec())
+            ..Default::default()
+        };
+
+        Self {
+            root,
+            info,
+            capability,
+        }
     }
 }
+
+use wasm_bindgen::JsCast;
+use wasm_bindgen::JsValue;
+use web_sys::DomException;
+
+use opendal_core::Error;
+use opendal_core::ErrorKind;
+
+pub(crate) fn parse_js_error(value: JsValue) -> Error {
+    if let Some(exc) = value.dyn_ref::<DomException>() {
+        let kind = match exc.name().as_str() {
+            "NotFoundError" => ErrorKind::NotFound,
+            "TypeMismatchError" => ErrorKind::NotFound,
+            "NotAllowedError" => ErrorKind::PermissionDenied,
+            "QuotaExceededError" => ErrorKind::Unexpected,
+            e => {
+                console_debug!("Got unhandled DOM exception {e:?}");
+                ErrorKind::Unexpected
+            }
+        };
+        return Error::new(kind, exc.message());
+    }
+
+    // FIXME: how to map `TypeError`` from `getDirectoryHandle`:
+    // "name specified is not a valid string or contains characters that
+    // would interfere with the native file system"
+    if let Some(err) = value.dyn_ref::<js_sys::Error>() {
+        return Error::new(ErrorKind::Unexpected, String::from(err.message()));
+    }
+
+    Error::new(
+        ErrorKind::Unexpected,
+        value
+            .as_string()
+            .unwrap_or_else(|| "unknown JS error".to_string()),
+    )
+}
+
+mod utils {
+    use opendal_core::Result;
+    use wasm_bindgen::JsCast;
+    use wasm_bindgen_futures::JsFuture;
+    use web_sys::FileSystemDirectoryHandle;
+    use web_sys::FileSystemFileHandle;
+    use web_sys::FileSystemGetDirectoryOptions;
+    use web_sys::FileSystemGetFileOptions;
+    use web_sys::window;
+
+    use crate::core::*;
+
+    /// Get the OPFS root directory handle.
+    pub(crate) async fn get_root_directory_handle() -> Result<FileSystemDirectoryHandle> {
+        let navigator = window().unwrap().navigator();
+        let storage_manager = navigator.storage();
+        // This may fail if not secure (not: HTTPS or localhost)
+        JsFuture::from(storage_manager.get_directory())
+            .await
+            .and_then(JsCast::dyn_into)
+            .map_err(parse_js_error)
+    }
+
+    /// Navigate to a directory handle by path.
+    ///
+    /// When `create` is true, intermediate directories are created as needed.
+    pub(crate) async fn get_directory_handle(
+        path: &str,
+        create: bool,
+    ) -> Result<FileSystemDirectoryHandle> {
+        let opt = FileSystemGetDirectoryOptions::new();
+        opt.set_create(create);
+
+        let trimmed = path.trim_matches('/');
+        let mut handle = get_root_directory_handle().await?;
+        if trimmed.is_empty() {
+            return Ok(handle);
+        }
+        for dir in trimmed.split('/') {
+            handle = JsFuture::from(handle.get_directory_handle_with_options(dir, &opt))
+                .await
+                .and_then(JsCast::dyn_into)
+                .map_err(parse_js_error)?;
+        }
+
+        Ok(handle)
+    }
+
+    /// Split a file path into its parent directory handle and filename.
+    ///
+    /// When `create` is true, intermediate directories are created as needed.
+    pub(crate) async fn get_parent_dir_and_name<'a>(
+        path: &'a str,
+        create: bool,
+    ) -> Result<(FileSystemDirectoryHandle, &'a str)> {
+        let trimmed = path.trim_matches('/');
+        match trimmed.rsplit_once('/') {
+            Some((parent, name)) => {
+                let dir = get_directory_handle(parent, create).await?;
+                Ok((dir, name))
+            }
+            None => {
+                let root = get_root_directory_handle().await?;
+                Ok((root, trimmed))
+            }
+        }
+    }
+
+    /// Get a file handle by its full path.
+    ///
+    /// When `create` is true, intermediate directories and the file itself are created as needed.
+    pub(crate) async fn get_file_handle(path: &str, create: bool) -> Result<FileSystemFileHandle> {
+        let (dir, name) = get_parent_dir_and_name(path, create).await?;
+
+        let opt = FileSystemGetFileOptions::new();
+        opt.set_create(create);
+
+        JsFuture::from(dir.get_file_handle_with_options(name, &opt))
+            .await
+            .and_then(JsCast::dyn_into)
+            .map_err(parse_js_error)
+    }
+}
+
+pub(super) use utils::*;

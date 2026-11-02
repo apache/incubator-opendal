@@ -18,4 +18,14 @@
 mod api;
 pub use api::Read;
 pub use api::ReadDyn;
+pub use api::ReadStream;
+pub use api::ReadStreamDyn;
 pub use api::Reader;
+
+mod position_read;
+pub use position_read::PositionRead;
+pub use position_read::PositionReader;
+
+mod stream_read;
+pub use stream_read::StreamRead;
+pub use stream_read::StreamReader;

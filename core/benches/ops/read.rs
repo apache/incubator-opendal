@@ -19,7 +19,7 @@ use divan::Bencher;
 use divan::counter::BytesCount;
 use opendal::tests::TEST_RUNTIME;
 use opendal::tests::init_test_service;
-use rand::prelude::*;
+use rand::rng;
 use size::Size;
 
 use super::utils::*;
@@ -35,7 +35,7 @@ use super::utils::*;
 )]
 fn whole(b: Bencher, size: Size) {
     let op = init_test_service().unwrap().unwrap();
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let content = gen_bytes(&mut rng, size.bytes() as usize);
     let path = uuid::Uuid::new_v4().to_string();
     let _temp_data = TempData::generate(op.clone(), &path, content.clone());
@@ -57,7 +57,7 @@ mod concurrent {
     )]
     fn baseline(b: Bencher) {
         let op = init_test_service().unwrap().unwrap();
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let content = gen_bytes(&mut rng, 1024 * 1024 * 1024);
         let path = uuid::Uuid::new_v4().to_string();
         let _temp_data = TempData::generate(op.clone(), &path, content.clone());
@@ -78,7 +78,7 @@ mod concurrent {
     )]
     fn concurrent(b: Bencher, concurrent: usize) {
         let op = init_test_service().unwrap().unwrap();
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let content = gen_bytes(&mut rng, 1024 * 1024 * 1024);
         let path = uuid::Uuid::new_v4().to_string();
         let _temp_data = TempData::generate(op.clone(), &path, content.clone());

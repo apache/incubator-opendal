@@ -18,22 +18,32 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use http::Response;
 use http::StatusCode;
 use http::Uri;
 use log::debug;
-use reqsign::AliyunConfig;
-use reqsign::AliyunLoader;
-use reqsign::AliyunOssSigner;
+use reqsign_aliyun_oss::AssumeRoleCredentialProvider;
+use reqsign_aliyun_oss::AssumeRoleWithOidcCredentialProvider;
+use reqsign_aliyun_oss::EcsRamRoleCredentialProvider;
+use reqsign_aliyun_oss::EnvCredentialProvider;
+use reqsign_aliyun_oss::RequestSigner;
+use reqsign_aliyun_oss::StaticCredentialProvider;
+use reqsign_core::Context;
+use reqsign_core::Env as _;
+use reqsign_core::OsEnv;
+use reqsign_core::ProvideCredentialChain;
+use reqsign_core::Signer;
+use reqsign_core::StaticEnv;
+use reqsign_file_read_tokio::TokioFileRead;
 
 use super::OSS_SCHEME;
 use super::config::OssConfig;
+use super::core::parse_error;
 use super::core::*;
 use super::deleter::OssDeleter;
-use super::error::parse_error;
 use super::lister::OssLister;
 use super::lister::OssListers;
 use super::lister::OssObjectVersionsLister;
+use super::reader::*;
 use super::writer::OssWriter;
 use super::writer::OssWriters;
 use opendal_core::raw::*;
@@ -102,10 +112,12 @@ impl OssBuilder {
         self
     }
 
-    /// Set bucket versioning status for this backend
-    pub fn enable_versioning(mut self, enabled: bool) -> Self {
-        self.config.enable_versioning = enabled;
-
+    /// Deprecated: OSS versioning capability is enabled by default.
+    #[deprecated(
+        since = "0.57.0",
+        note = "OSS versioning capability is enabled by default and this option is no longer needed."
+    )]
+    pub fn enable_versioning(self, _enabled: bool) -> Self {
         self
     }
 
@@ -278,29 +290,38 @@ impl OssBuilder {
         self
     }
 
-    /// Set maximum batch operations of this backend.
+    /// Deprecated: OSS delete batch capability is enabled by default.
     #[deprecated(
-        since = "0.52.0",
-        note = "Please use `delete_max_size` instead of `batch_max_operations`"
+        since = "0.57.0",
+        note = "OSS delete batch capability is enabled by default and this option is no longer needed."
     )]
-    pub fn batch_max_operations(mut self, delete_max_size: usize) -> Self {
-        self.config.delete_max_size = Some(delete_max_size);
-
+    pub fn batch_max_operations(self, _delete_max_size: usize) -> Self {
         self
     }
 
-    /// Set maximum delete operations of this backend.
-    pub fn delete_max_size(mut self, delete_max_size: usize) -> Self {
-        self.config.delete_max_size = Some(delete_max_size);
+    /// Deprecated: OSS delete batch capability is enabled by default.
+    #[deprecated(
+        since = "0.57.0",
+        note = "OSS delete batch capability is enabled by default and this option is no longer needed."
+    )]
+    pub fn delete_max_size(self, _delete_max_size: usize) -> Self {
+        self
+    }
 
+    /// Skip signature will skip loading credentials and signing requests.
+    pub fn skip_signature(mut self) -> Self {
+        self.config.skip_signature = true;
         self
     }
 
     /// Allow anonymous will allow opendal to send request without signing
     /// when credential is not loaded.
-    pub fn allow_anonymous(mut self) -> Self {
-        self.config.allow_anonymous = true;
-        self
+    #[deprecated(
+        since = "0.57.0",
+        note = "Please use `skip_signature` instead of `allow_anonymous`"
+    )]
+    pub fn allow_anonymous(self) -> Self {
+        self.skip_signature()
     }
 
     /// Set role_arn for this backend.
@@ -350,6 +371,15 @@ impl OssBuilder {
 
         self
     }
+
+    /// Set external_id for this backend.
+    pub fn external_id(mut self, v: &str) -> Self {
+        if !v.is_empty() {
+            self.config.external_id = Some(v.to_string())
+        }
+
+        self
+    }
 }
 
 enum AddressingStyle {
@@ -379,11 +409,14 @@ impl TryFrom<&Option<String>> for AddressingStyle {
 impl Builder for OssBuilder {
     type Config = OssConfig;
 
-    fn build(self) -> Result<impl Access> {
-        debug!("backend build started: {:?}", &self);
+    fn build(self) -> Result<impl Service> {
+        debug!("backend build started: {:?}", self);
+
+        #[allow(deprecated)]
+        let skip_signature = self.config.skip_signature || self.config.allow_anonymous;
 
         let root = normalize_root(&self.config.root.clone().unwrap_or_default());
-        debug!("backend use root {}", &root);
+        debug!("backend use root {}", root);
 
         // Handle endpoint, region and bucket name.
         let bucket = match self.config.bucket.is_empty() {
@@ -401,7 +434,7 @@ impl Builder for OssBuilder {
             bucket,
             (&self.config.addressing_style).try_into()?,
         )?;
-        debug!("backend use bucket {}, endpoint: {}", &bucket, &endpoint);
+        debug!("backend use bucket {}, endpoint: {}", bucket, endpoint);
 
         let presign_endpoint = if self.config.presign_endpoint.is_some() {
             self.parse_endpoint(
@@ -413,7 +446,7 @@ impl Builder for OssBuilder {
         } else {
             endpoint.clone()
         };
-        debug!("backend use presign_endpoint: {}", &presign_endpoint);
+        debug!("backend use presign_endpoint: {}", presign_endpoint);
 
         let server_side_encryption = match &self.config.server_side_encryption {
             None => None,
@@ -431,130 +464,166 @@ impl Builder for OssBuilder {
             ),
         };
 
-        let mut cfg = AliyunConfig::default();
-        // Load cfg from env first.
-        cfg = cfg.from_env();
+        // NOTE: `AssumeRoleWithOidcCredentialProvider` still reads `role_arn`, `oidc_provider_arn`
+        // and `oidc_token_file` from `Context` environment variables at runtime. Until reqsign
+        // exposes typed builder APIs for all of them, we overlay config values into a `StaticEnv`
+        // snapshot here.
+        let os_env = OsEnv;
+        let mut envs = os_env.vars();
 
-        if let Some(v) = self.config.access_key_id {
-            cfg.access_key_id = Some(v);
+        if let Some(v) = &self.config.role_arn {
+            envs.insert("ALIBABA_CLOUD_ROLE_ARN".to_string(), v.clone());
+        }
+        if let Some(v) = &self.config.oidc_provider_arn {
+            envs.insert("ALIBABA_CLOUD_OIDC_PROVIDER_ARN".to_string(), v.clone());
+        }
+        if let Some(v) = &self.config.oidc_token_file {
+            envs.insert("ALIBABA_CLOUD_OIDC_TOKEN_FILE".to_string(), v.clone());
         }
 
-        if let Some(v) = self.config.access_key_secret {
-            cfg.access_key_secret = Some(v);
+        let mut assume_role = AssumeRoleWithOidcCredentialProvider::new();
+
+        if let Some(sts_endpoint) = &self.config.sts_endpoint {
+            if sts_endpoint.starts_with("http://") || sts_endpoint.starts_with("https://") {
+                assume_role = assume_role.with_sts_endpoint(sts_endpoint.clone());
+            } else {
+                envs.insert(
+                    "ALIBABA_CLOUD_STS_ENDPOINT".to_string(),
+                    sts_endpoint.clone(),
+                );
+            }
         }
 
-        if let Some(v) = self.config.security_token {
-            cfg.security_token = Some(v);
+        if let Some(role_session_name) = &self.config.role_session_name {
+            assume_role = assume_role.with_role_session_name(role_session_name.clone());
         }
 
-        if let Some(v) = self.config.role_arn {
-            cfg.role_arn = Some(v);
+        let ctx = Context::new()
+            .with_file_read(TokioFileRead)
+            .with_env(StaticEnv {
+                home_dir: os_env.home_dir(),
+                envs,
+            });
+
+        let static_provider = if let (Some(ak), Some(sk)) =
+            (&self.config.access_key_id, &self.config.access_key_secret)
+        {
+            Some(if let Some(token) = self.config.security_token.as_deref() {
+                StaticCredentialProvider::new(ak, sk).with_security_token(token)
+            } else {
+                StaticCredentialProvider::new(ak, sk)
+            })
+        } else {
+            None
+        };
+
+        let mut provider = ProvideCredentialChain::new();
+        if let Some(static_provider) = static_provider {
+            provider = provider.push(static_provider);
+        }
+        let mut provider = provider
+            .push(EnvCredentialProvider::new())
+            .push(assume_role)
+            .push(EcsRamRoleCredentialProvider::new());
+
+        if let Some(role_arn) = &self.config.role_arn {
+            let mut assume_role_with_ak = AssumeRoleCredentialProvider::new()
+                .with_base_provider(provider)
+                .with_role_arn(role_arn.clone());
+
+            if let Some(role_session_name) = &self.config.role_session_name {
+                assume_role_with_ak =
+                    assume_role_with_ak.with_role_session_name(role_session_name.clone());
+            }
+            if let Some(external_id) = &self.config.external_id {
+                assume_role_with_ak = assume_role_with_ak.with_external_id(external_id.clone());
+            }
+            if let Some(sts_endpoint) = &self.config.sts_endpoint {
+                assume_role_with_ak = assume_role_with_ak.with_sts_endpoint(sts_endpoint.clone());
+            }
+
+            provider = ProvideCredentialChain::new().push(assume_role_with_ak);
         }
 
-        // override default role_session_name if set
-        if let Some(v) = self.config.role_session_name {
-            cfg.role_session_name = v;
-        }
+        let sign_ctx = ctx;
+        let request_signer = RequestSigner::new(bucket);
+        let signer = Signer::new(sign_ctx.clone(), provider, request_signer);
 
-        if let Some(v) = self.config.oidc_provider_arn {
-            cfg.oidc_provider_arn = Some(v);
-        }
+        let info = ServiceInfo::new(OSS_SCHEME, &root, bucket);
+        let capability = Capability {
+            stat: true,
+            stat_with_if_match: true,
+            stat_with_if_none_match: true,
+            stat_with_version: true,
 
-        if let Some(v) = self.config.oidc_token_file {
-            cfg.oidc_token_file = Some(v);
-        }
+            read: true,
+            read_with_suffix: true,
 
-        if let Some(v) = self.config.sts_endpoint {
-            cfg.sts_endpoint = Some(v);
-        }
+            read_with_if_match: true,
+            read_with_if_none_match: true,
+            read_with_version: true,
+            read_with_if_modified_since: true,
+            read_with_if_unmodified_since: true,
 
-        let loader = AliyunLoader::new(GLOBAL_REQWEST_CLIENT.clone(), cfg);
+            write: true,
+            write_can_empty: true,
+            write_can_append: true,
+            write_can_multi: true,
+            write_with_cache_control: true,
+            write_with_content_type: true,
+            write_with_content_disposition: true,
+            write_with_content_encoding: true,
+            write_with_if_not_exists: true,
 
-        let signer = AliyunOssSigner::new(bucket);
+            // The min multipart size of OSS is 100 KiB.
+            //
+            // ref: <https://www.alibabacloud.com/help/en/oss/user-guide/multipart-upload-12>
+            write_multi_min_size: Some(100 * 1024),
+            // The max multipart size of OSS is 5 GiB.
+            //
+            // ref: <https://www.alibabacloud.com/help/en/oss/user-guide/multipart-upload-12>
+            write_multi_max_size: if cfg!(target_pointer_width = "64") {
+                Some(5 * 1024 * 1024 * 1024)
+            } else {
+                Some(usize::MAX)
+            },
+            write_with_user_metadata: true,
 
-        let delete_max_size = self
-            .config
-            .delete_max_size
-            .unwrap_or(DEFAULT_BATCH_MAX_OPERATIONS);
+            delete: true,
+            delete_with_version: true,
+            delete_max_size: Some(DEFAULT_BATCH_MAX_OPERATIONS),
+
+            copy: true,
+
+            list: true,
+            list_with_limit: true,
+            list_with_start_after: true,
+            list_with_recursive: true,
+            list_with_versions: true,
+            list_with_deleted: true,
+
+            presign: true,
+            presign_stat: true,
+            presign_read: true,
+            presign_write: true,
+
+            shared: true,
+
+            ..Default::default()
+        };
 
         Ok(OssBackend {
             core: Arc::new(OssCore {
-                info: {
-                    let am = AccessorInfo::default();
-                    am.set_scheme(OSS_SCHEME)
-                        .set_root(&root)
-                        .set_name(bucket)
-                        .set_native_capability(Capability {
-                            stat: true,
-                            stat_with_if_match: true,
-                            stat_with_if_none_match: true,
-                            stat_with_version: self.config.enable_versioning,
-
-                            read: true,
-
-                            read_with_if_match: true,
-                            read_with_if_none_match: true,
-                            read_with_version: self.config.enable_versioning,
-                            read_with_if_modified_since: true,
-                            read_with_if_unmodified_since: true,
-
-                            write: true,
-                            write_can_empty: true,
-                            write_can_append: true,
-                            write_can_multi: true,
-                            write_with_cache_control: true,
-                            write_with_content_type: true,
-                            write_with_content_disposition: true,
-                            // TODO: set this to false while version has been enabled.
-                            write_with_if_not_exists: !self.config.enable_versioning,
-
-                            // The min multipart size of OSS is 100 KiB.
-                            //
-                            // ref: <https://www.alibabacloud.com/help/en/oss/user-guide/multipart-upload-12>
-                            write_multi_min_size: Some(100 * 1024),
-                            // The max multipart size of OSS is 5 GiB.
-                            //
-                            // ref: <https://www.alibabacloud.com/help/en/oss/user-guide/multipart-upload-12>
-                            write_multi_max_size: if cfg!(target_pointer_width = "64") {
-                                Some(5 * 1024 * 1024 * 1024)
-                            } else {
-                                Some(usize::MAX)
-                            },
-                            write_with_user_metadata: true,
-
-                            delete: true,
-                            delete_with_version: self.config.enable_versioning,
-                            delete_max_size: Some(delete_max_size),
-
-                            copy: true,
-
-                            list: true,
-                            list_with_limit: true,
-                            list_with_start_after: true,
-                            list_with_recursive: true,
-                            list_with_versions: self.config.enable_versioning,
-                            list_with_deleted: self.config.enable_versioning,
-
-                            presign: true,
-                            presign_stat: true,
-                            presign_read: true,
-                            presign_write: true,
-
-                            shared: true,
-
-                            ..Default::default()
-                        });
-
-                    am.into()
-                },
+                info,
+                capability,
                 root,
                 bucket: bucket.to_owned(),
                 endpoint,
                 host,
                 presign_endpoint,
-                allow_anonymous: self.config.allow_anonymous,
+                skip_signature,
                 signer,
-                loader,
+                sign_ctx,
                 server_side_encryption,
                 server_side_encryption_key_id,
             }),
@@ -565,117 +634,205 @@ impl Builder for OssBuilder {
 #[derive(Debug, Clone)]
 /// Aliyun Object Storage Service backend
 pub struct OssBackend {
-    core: Arc<OssCore>,
+    pub(crate) core: Arc<OssCore>,
 }
 
-impl Access for OssBackend {
-    type Reader = HttpBody;
+impl Service for OssBackend {
+    type Reader = oio::StreamReader<OssReader>;
     type Writer = OssWriters;
     type Lister = OssListers;
     type Deleter = oio::BatchDeleter<OssDeleter>;
+    type Copier = oio::OneShotCopier;
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
+    fn info(&self) -> ServiceInfo {
         self.core.info.clone()
     }
 
-    async fn stat(&self, path: &str, args: OpStat) -> Result<RpStat> {
-        let resp = self.core.oss_head_object(path, &args).await?;
+    fn capability(&self) -> Capability {
+        self.core.capability
+    }
+
+    async fn create_dir(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn stat(&self, ctx: &OperationContext, path: &str, args: OpStat) -> Result<RpStat> {
+        let resp = self.core.oss_head_object(ctx, path, &args).await?;
 
         let status = resp.status();
 
         match status {
             StatusCode::OK => {
                 let headers = resp.headers();
-                let mut meta = self.core.parse_metadata(path, resp.headers())?;
+                let mut meta = self
+                    .core
+                    .parse_metadata(path, resp.headers())?
+                    .into_builder();
 
                 if let Some(v) = parse_header_to_str(headers, constants::X_OSS_VERSION_ID)? {
-                    meta.set_version(v);
+                    meta.version(v);
                 }
 
-                Ok(RpStat::new(meta))
+                Ok(RpStat::new(meta.build()))
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("HeadObject"))
+                    .with_caller_condition(args.is_conditional()),
+                resp,
+            )),
         }
     }
-
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let resp = self.core.oss_get_object(path, &args).await?;
-
-        let status = resp.status();
-
-        match status {
-            StatusCode::OK | StatusCode::PARTIAL_CONTENT => {
-                Ok((RpRead::default(), resp.into_body()))
-            }
-            _ => {
-                let (part, mut body) = resp.into_parts();
-                let buf = body.to_buffer().await?;
-                Err(parse_error(Response::from_parts(part, buf)))
-            }
-        }
-    }
-
-    async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        let writer = OssWriter::new(self.core.clone(), path, args.clone());
-
-        let w = if args.append() {
-            OssWriters::Two(oio::AppendWriter::new(writer))
-        } else {
-            OssWriters::One(oio::MultipartWriter::new(
-                self.core.info.clone(),
-                writer,
-                args.concurrent(),
-            ))
-        };
-
-        Ok((RpWrite::default(), w))
-    }
-
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        Ok((
-            RpDelete::default(),
-            oio::BatchDeleter::new(
-                OssDeleter::new(self.core.clone()),
-                self.core.info.full_capability().delete_max_size,
-            ),
-        ))
-    }
-
-    async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
-        let l = if args.versions() || args.deleted() {
-            TwoWays::Two(oio::PageLister::new(OssObjectVersionsLister::new(
-                self.core.clone(),
+    fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
+        let output: oio::StreamReader<OssReader> = {
+            Ok(oio::StreamReader::new(OssReader::new(
+                self.clone(),
+                ctx.clone(),
                 path,
                 args,
             )))
-        } else {
-            TwoWays::One(oio::PageLister::new(OssLister::new(
-                self.core.clone(),
-                path,
-                args.recursive(),
-                args.limit(),
-                args.start_after(),
-            )))
-        };
+        }?;
 
-        Ok((RpList::default(), l))
+        Ok(output)
     }
 
-    async fn copy(&self, from: &str, to: &str, _args: OpCopy) -> Result<RpCopy> {
-        let resp = self.core.oss_copy_object(from, to).await?;
-        let status = resp.status();
+    fn write(&self, ctx: &OperationContext, path: &str, args: OpWrite) -> Result<Self::Writer> {
+        let output: OssWriters = {
+            let writer = OssWriter::new(self.core.clone(), ctx.clone(), path, args.clone());
 
-        match status {
-            StatusCode::OK => Ok(RpCopy::default()),
-            _ => Err(parse_error(resp)),
-        }
+            let w = if args.append() {
+                OssWriters::Two(oio::AppendWriter::new(writer))
+            } else {
+                OssWriters::One(oio::MultipartWriter::new(
+                    ctx.executor().clone(),
+                    writer,
+                    args.concurrent(),
+                ))
+            };
+
+            Ok(w)
+        }?;
+
+        Ok(output)
     }
 
-    async fn presign(&self, path: &str, args: OpPresign) -> Result<RpPresign> {
+    fn delete(&self, ctx: &OperationContext) -> Result<Self::Deleter> {
+        let output: oio::BatchDeleter<OssDeleter> = {
+            Ok(oio::BatchDeleter::new(
+                OssDeleter::new(self.core.clone(), ctx.clone()),
+                self.core.capability.delete_max_size,
+            ))
+        }?;
+
+        Ok(output)
+    }
+
+    fn list(&self, ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
+        let output: OssListers = {
+            let l = if args.versions() || args.deleted() {
+                TwoWays::Two(oio::PageLister::new(OssObjectVersionsLister::new(
+                    self.core.clone(),
+                    ctx.clone(),
+                    path,
+                    args,
+                )))
+            } else {
+                TwoWays::One(oio::PageLister::new(OssLister::new(
+                    self.core.clone(),
+                    ctx.clone(),
+                    path,
+                    args.recursive(),
+                    args.limit(),
+                    args.start_after(),
+                )))
+            };
+
+            Ok(l)
+        }?;
+
+        Ok(output)
+    }
+
+    fn copy(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpCopy,
+    ) -> Result<Self::Copier> {
+        let core = self.core.clone();
+        let ctx = ctx.clone();
+        let from = from.to_string();
+        let to = to.to_string();
+        Ok(oio::OneShotCopier::new(async move {
+            let source_size = match args.source_content_length_hint() {
+                Some(size) => size,
+                None => {
+                    let stat_args: OpStat = options::StatOptions {
+                        version: args.source_version().map(str::to_owned),
+                        ..Default::default()
+                    }
+                    .into();
+                    let resp = core.oss_head_object(&ctx, &from, &stat_args).await?;
+                    match resp.status() {
+                        StatusCode::OK => {
+                            parse_into_metadata(&from, resp.headers())?.content_length()
+                        }
+                        _ => {
+                            return Err(parse_error(
+                                ErrorContext::new(ServiceOperation("HeadObject")),
+                                resp,
+                            ));
+                        }
+                    }
+                }
+            };
+            let resp = core.oss_copy_object(&ctx, &from, &to).await?;
+            let status = resp.status();
+
+            match status {
+                StatusCode::OK => Ok(MetadataBuilder::file(source_size).build()),
+                _ => Err(parse_error(
+                    ErrorContext::new(ServiceOperation("CopyObject")),
+                    resp,
+                )),
+            }
+        }))
+    }
+
+    async fn rename(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpRename,
+    ) -> Result<RpRename> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn presign(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpPresign,
+    ) -> Result<RpPresign> {
         // We will not send this request out, just for signing.
         let req = match args.operation() {
             PresignOperation::Stat(v) => self.core.oss_head_object_request(path, true, v),
-            PresignOperation::Read(v) => self.core.oss_get_object_request(path, true, v),
+            PresignOperation::Read(range, v) => {
+                self.core.oss_get_object_request(path, true, *range, v)
+            }
             PresignOperation::Write(v) => {
                 self.core
                     .oss_put_object_request(path, None, v, Buffer::new(), true)
@@ -689,9 +846,8 @@ impl Access for OssBackend {
                 "operation is not supported",
             )),
         };
-        let mut req = req?;
-
-        self.core.sign_query(&mut req, args.expire()).await?;
+        let req = req?;
+        let req = self.core.sign_query(ctx, req, args.expire()).await?;
 
         // We don't need this request anymore, consume it directly.
         let (parts, _) = req.into_parts();
@@ -701,5 +857,146 @@ impl Access for OssBackend {
             parts.uri,
             parts.headers,
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+
+    use bytes::Bytes;
+    use reqsign_core::{FileRead, HttpSend};
+
+    use super::*;
+
+    #[derive(Debug)]
+    struct OidcTokenFile;
+
+    impl FileRead for OidcTokenFile {
+        async fn file_read(&self, path: &str) -> reqsign_core::Result<Vec<u8>> {
+            assert_eq!(path, "/test/oidc-token");
+            Ok(b"test-oidc-token".to_vec())
+        }
+    }
+
+    #[derive(Clone, Debug, Default)]
+    struct CredentialHttpSend {
+        requests: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl HttpSend for CredentialHttpSend {
+        async fn http_send(
+            &self,
+            req: http::Request<Bytes>,
+        ) -> reqsign_core::Result<http::Response<Bytes>> {
+            let host = req.uri().host().unwrap();
+            let path = req.uri().path();
+            self.requests.lock().unwrap().push(format!("{host}{path}"));
+            let body = match (host, path) {
+                ("sts.aliyuncs.com", "/") => {
+                    assert!(
+                        req.uri()
+                            .query()
+                            .unwrap()
+                            .contains("Action=AssumeRoleWithOIDC")
+                    );
+                    r#"{"Credentials":{"AccessKeyId":"oidc-ak","AccessKeySecret":"oidc-secret","SecurityToken":"oidc-token","Expiration":"2099-01-01T00:00:00Z"}}"#
+                }
+                ("100.100.100.200", "/latest/api/token") => "metadata-token",
+                ("100.100.100.200", "/latest/meta-data/ram/security-credentials/") => "node-role",
+                ("100.100.100.200", "/latest/meta-data/ram/security-credentials/node-role") => {
+                    r#"{"Code":"Success","AccessKeyId":"ecs-ak","AccessKeySecret":"ecs-secret","SecurityToken":"ecs-token","Expiration":"2099-01-01T00:00:00Z"}"#
+                }
+                _ => panic!("unexpected credential request: {}", req.uri()),
+            };
+            Ok(http::Response::new(Bytes::from_static(body.as_bytes())))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_credential_precedence() {
+        for (static_keys, env_keys, oidc, expected_key, expected_token) in [
+            (true, true, true, "static-ak", "static-token"),
+            (false, true, true, "env-ak", "env-token"),
+            (false, false, true, "oidc-ak", "oidc-token"),
+            (false, false, false, "ecs-ak", "ecs-token"),
+        ] {
+            let mut builder = OssBuilder::default()
+                .bucket("test-bucket")
+                .endpoint("https://oss-cn-hangzhou.aliyuncs.com");
+            if static_keys {
+                builder = builder
+                    .access_key_id("static-ak")
+                    .access_key_secret("static-secret")
+                    .security_token("static-token");
+            }
+            let backend = builder.build().unwrap();
+            let backend = (&backend as &dyn std::any::Any)
+                .downcast_ref::<OssBackend>()
+                .unwrap();
+            let mut envs = HashMap::new();
+            if env_keys {
+                envs.extend([
+                    ("ALIBABA_CLOUD_ACCESS_KEY_ID".into(), "env-ak".into()),
+                    (
+                        "ALIBABA_CLOUD_ACCESS_KEY_SECRET".into(),
+                        "env-secret".into(),
+                    ),
+                    ("ALIBABA_CLOUD_SECURITY_TOKEN".into(), "env-token".into()),
+                ]);
+            }
+            if oidc {
+                envs.extend([
+                    (
+                        "ALIBABA_CLOUD_ROLE_ARN".into(),
+                        "acs:ram::123456789012:role/pod-role".into(),
+                    ),
+                    (
+                        "ALIBABA_CLOUD_OIDC_PROVIDER_ARN".into(),
+                        "acs:ram::123456789012:oidc-provider/test".into(),
+                    ),
+                    (
+                        "ALIBABA_CLOUD_OIDC_TOKEN_FILE".into(),
+                        "/test/oidc-token".into(),
+                    ),
+                ]);
+            }
+            let http = CredentialHttpSend::default();
+            let ctx = Context::new()
+                .with_env(StaticEnv {
+                    home_dir: None,
+                    envs,
+                })
+                .with_file_read(OidcTokenFile)
+                .with_http_send(http.clone());
+            let signer = backend.core.signer.clone().with_context(ctx);
+            let (mut parts, _) = http::Request::builder()
+                .method(http::Method::PUT)
+                .uri("https://test-bucket.oss-cn-hangzhou.aliyuncs.com/manifest.json")
+                .body(())
+                .unwrap()
+                .into_parts();
+            signer.sign(&mut parts, None).await.unwrap();
+            assert!(
+                parts.headers[http::header::AUTHORIZATION]
+                    .to_str()
+                    .unwrap()
+                    .starts_with(&format!("OSS {expected_key}:"))
+            );
+            assert_eq!(parts.headers["x-oss-security-token"], expected_token);
+            let expected_requests = if static_keys || env_keys {
+                vec![]
+            } else if oidc {
+                vec!["sts.aliyuncs.com/"]
+            } else {
+                vec![
+                    "100.100.100.200/latest/api/token",
+                    "100.100.100.200/latest/meta-data/ram/security-credentials/",
+                    "100.100.100.200/latest/meta-data/ram/security-credentials/node-role",
+                ]
+            };
+            assert_eq!(*http.requests.lock().unwrap(), expected_requests);
+        }
     }
 }

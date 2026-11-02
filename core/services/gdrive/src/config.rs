@@ -20,7 +20,7 @@ use std::fmt::Debug;
 use serde::Deserialize;
 use serde::Serialize;
 
-use super::builder::GdriveBuilder;
+use super::backend::GdriveBuilder;
 
 /// [GoogleDrive](https://drive.google.com/) configuration.
 #[derive(Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -37,12 +37,18 @@ pub struct GdriveConfig {
     pub client_id: Option<String>,
     /// Client secret for gdrive.
     pub client_secret: Option<String>,
+    /// Shared drive (formerly Team Drive) id for gdrive.
+    ///
+    /// When set, gdrive resolves `root` inside this shared drive instead of
+    /// the user's My Drive.
+    pub drive_id: Option<String>,
 }
 
 impl Debug for GdriveConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GdriveConfig")
             .field("root", &self.root)
+            .field("drive_id", &self.drive_id)
             .finish_non_exhaustive()
     }
 }
@@ -53,10 +59,10 @@ impl opendal_core::Configurator for GdriveConfig {
     fn from_uri(uri: &opendal_core::OperatorUri) -> opendal_core::Result<Self> {
         let mut map = uri.options().clone();
 
-        if let Some(root) = uri.root() {
-            if !root.is_empty() {
-                map.insert("root".to_string(), root.to_string());
-            }
+        if let Some(root) = uri.root()
+            && !root.is_empty()
+        {
+            map.insert("root".to_string(), root.to_string());
         }
 
         Self::from_iter(map)
@@ -83,5 +89,18 @@ mod tests {
 
         let cfg = GdriveConfig::from_uri(&uri).unwrap();
         assert_eq!(cfg.root.as_deref(), Some("root/folder"));
+    }
+
+    #[test]
+    fn from_uri_sets_drive_id() {
+        let uri = OperatorUri::new(
+            "gdrive://service/root/folder?drive_id=0ABCdefGHIjkl",
+            Vec::<(String, String)>::new(),
+        )
+        .unwrap();
+
+        let cfg = GdriveConfig::from_uri(&uri).unwrap();
+        assert_eq!(cfg.root.as_deref(), Some("root/folder"));
+        assert_eq!(cfg.drive_id.as_deref(), Some("0ABCdefGHIjkl"));
     }
 }

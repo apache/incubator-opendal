@@ -15,26 +15,43 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-//! Google Cloud Storage service implementation for Apache OpenDAL.
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
 
 mod backend;
+mod composer;
 mod config;
+mod copier;
 mod core;
 mod deleter;
-mod error;
 mod lister;
-mod uri;
+mod reader;
 mod writer;
 
 pub use backend::GcsBuilder as Gcs;
 pub use config::GcsConfig;
 
-/// Default scheme for gcs service.
+/// Re-export of the [`reqsign_google`] crate that this service signs requests
+/// with.
+///
+/// [`Gcs::credential_provider`] and [`Gcs::credential_provider_chain`] take
+/// providers for [`reqsign_google::Credential`]. Implement providers against this
+/// re-export and [`opendal_core::reqsign_core`] rather than depending on the
+/// `reqsign` crates directly, so that the types always match the ones this
+/// service is built with.
+pub use reqsign_google;
+
+/// URI scheme used for service registration and scheme-driven construction.
 pub const GCS_SCHEME: &str = "gcs";
 
-/// Register this service into the given registry.
+/// Register this service's URI scheme or schemes with an operator registry.
+///
+/// Registration enables scheme-driven construction through
+/// [`opendal_core::Operator::from_uri`] and
+/// [`opendal_core::Operator::via_iter`]. Direct construction through
+/// [`opendal_core::Operator::new`] does not require registration.
 pub fn register_gcs_service(registry: &opendal_core::OperatorRegistry) {
     registry.register::<Gcs>(GCS_SCHEME);
 }

@@ -15,11 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Route layer implementation for Apache OpenDAL.
-
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
-
 use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::sync::Arc;
@@ -30,7 +29,34 @@ use globset::GlobSetBuilder;
 use opendal_core::raw::*;
 use opendal_core::*;
 
-/// Route operations to different operators by matching paths with glob patterns.
+/// `RouteLayer` routes operations to different operators by matching paths
+/// against glob patterns.
+///
+/// Routes are evaluated in insertion order, and the first matching route wins.
+/// An unmatched path uses the operator wrapped by this layer. Copy and rename
+/// operations select a route from the source path, so this layer does not move
+/// data between two routed services. A batched delete routes each path
+/// independently.
+///
+/// [`OperatorInfo::capability`] continues to describe the wrapped operator; it
+/// does not aggregate the capabilities of route targets.
+///
+/// # Example
+///
+/// ```no_run
+/// use opendal_core::services::Memory;
+/// use opendal_core::{Operator, Result};
+/// use opendal_layer_route::RouteLayer;
+///
+/// fn build_operator() -> Result<Operator> {
+///     let archive = Operator::new(Memory::default())?;
+///     let routes = RouteLayer::builder()
+///         .route("archive/**", archive)
+///         .build()?;
+///
+///     Ok(Operator::new(Memory::default())?.layer(routes))
+/// }
+/// ```
 #[derive(Clone, Debug)]
 pub struct RouteLayer {
     router: Arc<RouteRouter>,
@@ -50,18 +76,23 @@ pub struct RouteLayerBuilder {
 }
 
 impl RouteLayerBuilder {
-    /// Add a route with a glob pattern.
+    /// Add a route for paths that match `pattern`.
+    ///
+    /// If multiple patterns match, the route added first wins. The target
+    /// operator contributes both its service and its operation context.
     pub fn route(mut self, pattern: impl AsRef<str>, op: Operator) -> Self {
+        let (ctx, srv) = op.into_parts();
         self.routes.push(RouteEntry {
             pattern: pattern.as_ref().to_string(),
-            accessor: op.into_inner(),
+            target: RouteTarget { srv, ctx },
         });
         self
     }
 
-    /// Build the `RouteLayer`.
+    /// Build the route layer.
     ///
-    /// Returns an error if any glob pattern fails to compile.
+    /// This method returns [`ErrorKind::ConfigInvalid`] if a glob pattern is
+    /// invalid.
     pub fn build(self) -> Result<RouteLayer> {
         let mut builder = GlobSetBuilder::new();
         let mut targets = Vec::with_capacity(self.routes.len());
@@ -73,7 +104,7 @@ impl RouteLayerBuilder {
                     .with_context("source", err.to_string())
             })?;
             builder.add(glob);
-            targets.push(entry.accessor);
+            targets.push(entry.target);
         }
 
         let glob = builder.build().map_err(|err| {
@@ -89,13 +120,24 @@ impl RouteLayerBuilder {
 
 struct RouteEntry {
     pattern: String,
-    accessor: Accessor,
+    target: RouteTarget,
 }
 
 #[derive(Debug)]
 struct RouteRouter {
     glob: GlobSet,
-    targets: Vec<Accessor>,
+    targets: Vec<RouteTarget>,
+}
+
+#[derive(Clone, Debug)]
+struct RouteTarget {
+    srv: Servicer,
+    ctx: OperationContext,
+}
+
+enum RouteSelected {
+    Default(Servicer),
+    Target(RouteTarget),
 }
 
 impl RouteRouter {
@@ -103,34 +145,36 @@ impl RouteRouter {
         self.glob.matches(path).into_iter().min()
     }
 
-    fn select(&self, path: &str, default: &Accessor) -> Accessor {
+    fn select(&self, path: &str, default: &Servicer) -> RouteSelected {
         self.match_index(path)
             .and_then(|idx| self.targets.get(idx).cloned())
-            .unwrap_or_else(|| default.clone())
+            .map(RouteSelected::Target)
+            .unwrap_or_else(|| RouteSelected::Default(default.clone()))
     }
 
-    fn target(&self, idx: usize, default: &Accessor) -> Accessor {
-        self.targets
-            .get(idx)
-            .cloned()
-            .unwrap_or_else(|| default.clone())
+    fn target(&self, idx: usize) -> Option<RouteTarget> {
+        self.targets.get(idx).cloned()
     }
 }
 
-impl Layer<Accessor> for RouteLayer {
-    type LayeredAccess = RouteAccessor;
+impl Layer for RouteLayer {
+    fn apply_service(&self, inner: Servicer) -> Servicer {
+        Arc::new(self.layer(inner))
+    }
+}
 
-    fn layer(&self, inner: Accessor) -> Self::LayeredAccess {
+impl RouteLayer {
+    fn layer(&self, inner: Servicer) -> RouteAccessor {
         RouteAccessor {
-            inner,
+            inner: Arc::new(inner),
             router: self.router.clone(),
         }
     }
 }
 
-/// Accessor that routes operations to different targets based on path.
+#[doc(hidden)]
 pub struct RouteAccessor {
-    inner: Accessor,
+    inner: Servicer,
     router: Arc<RouteRouter>,
 }
 
@@ -141,77 +185,158 @@ impl Debug for RouteAccessor {
 }
 
 impl RouteAccessor {
-    fn select(&self, path: &str) -> Accessor {
+    fn select(&self, path: &str) -> RouteSelected {
         self.router.select(path, &self.inner)
     }
 }
 
-impl LayeredAccess for RouteAccessor {
-    type Inner = Accessor;
+impl Service for RouteAccessor {
     type Reader = oio::Reader;
     type Writer = oio::Writer;
     type Lister = oio::Lister;
-    type Deleter = RouteDeleter;
+    type Deleter = oio::Deleter;
+    type Copier = oio::Copier;
+    type Composer = ();
 
-    fn inner(&self) -> &Self::Inner {
-        &self.inner
+    fn info(&self) -> ServiceInfo {
+        self.inner.info()
     }
 
-    async fn create_dir(&self, path: &str, args: OpCreateDir) -> Result<RpCreateDir> {
-        self.select(path).create_dir(path, args).await
+    fn capability(&self) -> Capability {
+        let mut capability = self.inner.capability();
+        capability.write_can_copy_from = false;
+        capability.compose = false;
+        capability.compose_with_content_type = false;
+        capability.compose_with_content_disposition = false;
+        capability.compose_with_content_encoding = false;
+        capability.compose_with_cache_control = false;
+        capability.compose_with_user_metadata = false;
+        capability.compose_with_if_match = false;
+        capability.compose_with_if_none_match = false;
+        capability.compose_with_if_version_match = false;
+        capability.compose_with_if_version_not_match = false;
+        capability.compose_with_if_not_exists = false;
+        capability.compose_with_source_version = false;
+        capability.compose_with_source_if_match = false;
+        capability
     }
 
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        self.select(path).read(path, args).await
+    async fn create_dir(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        match self.select(path) {
+            RouteSelected::Default(srv) => srv.create_dir(ctx, path, args).await,
+            RouteSelected::Target(target) => target.srv.create_dir(&target.ctx, path, args).await,
+        }
     }
 
-    async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        self.select(path).write(path, args).await
+    fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<oio::Reader> {
+        match self.select(path) {
+            RouteSelected::Default(srv) => srv.read(ctx, path, args),
+            RouteSelected::Target(target) => target.srv.read(&target.ctx, path, args),
+        }
     }
 
-    async fn copy(&self, from: &str, to: &str, args: OpCopy) -> Result<RpCopy> {
-        self.select(from).copy(from, to, args).await
+    fn write(&self, ctx: &OperationContext, path: &str, args: OpWrite) -> Result<oio::Writer> {
+        match self.select(path) {
+            RouteSelected::Default(srv) => srv.write(ctx, path, args),
+            RouteSelected::Target(target) => target.srv.write(&target.ctx, path, args),
+        }
     }
 
-    async fn rename(&self, from: &str, to: &str, args: OpRename) -> Result<RpRename> {
-        self.select(from).rename(from, to, args).await
+    fn copy(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpCopy,
+    ) -> Result<oio::Copier> {
+        match self.select(from) {
+            RouteSelected::Default(srv) => srv.copy(ctx, from, to, args),
+            RouteSelected::Target(target) => target.srv.copy(&target.ctx, from, to, args),
+        }
     }
 
-    async fn stat(&self, path: &str, args: OpStat) -> Result<RpStat> {
-        self.select(path).stat(path, args).await
+    async fn rename(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpRename,
+    ) -> Result<RpRename> {
+        match self.select(from) {
+            RouteSelected::Default(srv) => srv.rename(ctx, from, to, args).await,
+            RouteSelected::Target(target) => target.srv.rename(&target.ctx, from, to, args).await,
+        }
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        Ok((
-            RpDelete::default(),
-            RouteDeleter::new(self.inner.clone(), self.router.clone()),
-        ))
+    async fn restore(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpRestore,
+    ) -> Result<RpRestore> {
+        match self.select(path) {
+            RouteSelected::Default(srv) => srv.restore(ctx, path, args).await,
+            RouteSelected::Target(target) => target.srv.restore(&target.ctx, path, args).await,
+        }
     }
 
-    async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
-        self.select(path).list(path, args).await
+    async fn stat(&self, ctx: &OperationContext, path: &str, args: OpStat) -> Result<RpStat> {
+        match self.select(path) {
+            RouteSelected::Default(srv) => srv.stat(ctx, path, args).await,
+            RouteSelected::Target(target) => target.srv.stat(&target.ctx, path, args).await,
+        }
     }
 
-    async fn presign(&self, path: &str, args: OpPresign) -> Result<RpPresign> {
-        self.select(path).presign(path, args).await
+    fn delete(&self, ctx: &OperationContext) -> Result<oio::Deleter> {
+        Ok(Box::new(RouteDeleter::new(
+            self.inner.clone(),
+            self.router.clone(),
+            ctx.clone(),
+        )) as oio::Deleter)
+    }
+
+    fn list(&self, ctx: &OperationContext, path: &str, args: OpList) -> Result<oio::Lister> {
+        match self.select(path) {
+            RouteSelected::Default(srv) => srv.list(ctx, path, args),
+            RouteSelected::Target(target) => target.srv.list(&target.ctx, path, args),
+        }
+    }
+
+    async fn presign(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpPresign,
+    ) -> Result<RpPresign> {
+        match self.select(path) {
+            RouteSelected::Default(srv) => srv.presign(ctx, path, args).await,
+            RouteSelected::Target(target) => target.srv.presign(&target.ctx, path, args).await,
+        }
     }
 }
 
-/// Deleter that batches deletions per routed accessor.
+#[doc(hidden)]
 pub struct RouteDeleter {
-    default: Accessor,
+    default: Servicer,
     router: Arc<RouteRouter>,
+    ctx: OperationContext,
     default_deleter: Option<oio::Deleter>,
     target_deleters: Vec<Option<oio::Deleter>>,
 }
 
 impl RouteDeleter {
-    fn new(default: Accessor, router: Arc<RouteRouter>) -> Self {
+    fn new(default: Servicer, router: Arc<RouteRouter>, ctx: OperationContext) -> Self {
         let mut target_deleters = Vec::with_capacity(router.targets.len());
         target_deleters.resize_with(router.targets.len(), || None);
         Self {
             default,
             router,
+            ctx,
             default_deleter: None,
             target_deleters,
         }
@@ -221,7 +346,7 @@ impl RouteDeleter {
         match key {
             RouteKey::Default => {
                 if self.default_deleter.is_none() {
-                    let (_, deleter) = self.default.delete().await?;
+                    let deleter = self.default.delete(&self.ctx)?;
                     self.default_deleter = Some(deleter);
                 }
                 Ok(self
@@ -232,7 +357,7 @@ impl RouteDeleter {
             RouteKey::Target(idx) => {
                 if idx >= self.target_deleters.len() {
                     if self.default_deleter.is_none() {
-                        let (_, deleter) = self.default.delete().await?;
+                        let deleter = self.default.delete(&self.ctx)?;
                         self.default_deleter = Some(deleter);
                     }
                     return Ok(self
@@ -241,8 +366,15 @@ impl RouteDeleter {
                         .expect("default deleter must exist"));
                 }
                 if self.target_deleters[idx].is_none() {
-                    let accessor = self.router.target(idx, &self.default);
-                    let (_, deleter) = accessor.delete().await?;
+                    let Some(target) = self.router.target(idx) else {
+                        let deleter = self.default.delete(&self.ctx)?;
+                        self.default_deleter = Some(deleter);
+                        return Ok(self
+                            .default_deleter
+                            .as_mut()
+                            .expect("default deleter must exist"));
+                    };
+                    let deleter = target.srv.delete(&target.ctx)?;
                     self.target_deleters[idx] = Some(deleter);
                 }
                 Ok(self.target_deleters[idx]
@@ -265,16 +397,16 @@ impl oio::Delete for RouteDeleter {
 
     async fn close(&mut self) -> Result<()> {
         let mut first_err = None;
-        if let Some(deleter) = self.default_deleter.as_mut() {
-            if let Err(err) = deleter.close().await {
-                first_err = Some(err);
-            }
+        if let Some(deleter) = self.default_deleter.as_mut()
+            && let Err(err) = deleter.close().await
+        {
+            first_err = Some(err);
         }
         for deleter in self.target_deleters.iter_mut().flatten() {
-            if let Err(err) = deleter.close().await {
-                if first_err.is_none() {
-                    first_err = Some(err);
-                }
+            if let Err(err) = deleter.close().await
+                && first_err.is_none()
+            {
+                first_err = Some(err);
             }
         }
 
@@ -293,8 +425,10 @@ enum RouteKey {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
     use std::path::Path;
     use std::path::PathBuf;
+    use std::sync::Mutex;
     use std::time::SystemTime;
     use std::time::UNIX_EPOCH;
 
@@ -303,7 +437,17 @@ mod tests {
     use super::*;
 
     fn build_memory_operator() -> Result<Operator> {
-        Ok(Operator::new(services::Memory::default())?.finish())
+        Operator::new(services::Memory::default())
+    }
+
+    fn build_mock_operator(name: &'static str) -> Operator {
+        Operator::from_parts(
+            OperationContext::default(),
+            Arc::new(MockService {
+                info: ServiceInfo::new("mock", "", name),
+                paths: Arc::new(Mutex::new(HashSet::new())),
+            }),
+        )
     }
 
     async fn build_fs_operator(label: &str) -> Result<(Operator, PathBuf)> {
@@ -311,7 +455,7 @@ mod tests {
         tokio::fs::create_dir_all(&root)
             .await
             .map_err(new_std_io_error)?;
-        let op = Operator::new(Fs::default().root(&root.to_string_lossy()))?.finish();
+        let op = Operator::new(Fs::default().root(&root.to_string_lossy()))?;
         Ok((op, root))
     }
 
@@ -336,6 +480,139 @@ mod tests {
         let err = op.stat(path).await.unwrap_err();
         assert_eq!(err.kind(), ErrorKind::NotFound);
         Ok(())
+    }
+
+    #[derive(Debug)]
+    struct MockService {
+        info: ServiceInfo,
+        paths: Arc<Mutex<HashSet<String>>>,
+    }
+
+    impl Service for MockService {
+        type Reader = ();
+        type Writer = MockWriter;
+        type Lister = ();
+        type Deleter = ();
+        type Copier = ();
+        type Composer = ();
+
+        fn info(&self) -> ServiceInfo {
+            self.info.clone()
+        }
+
+        fn capability(&self) -> Capability {
+            Capability {
+                stat: true,
+                write: true,
+                copy: true,
+                rename: true,
+                ..Default::default()
+            }
+        }
+
+        async fn create_dir(
+            &self,
+            _: &OperationContext,
+            _: &str,
+            _: OpCreateDir,
+        ) -> Result<RpCreateDir> {
+            Err(Error::new(
+                ErrorKind::Unsupported,
+                "operation is not supported",
+            ))
+        }
+
+        async fn stat(&self, _: &OperationContext, path: &str, _: OpStat) -> Result<RpStat> {
+            if self.paths.lock().unwrap().contains(path) {
+                Ok(RpStat::new(MetadataBuilder::file(0).build()))
+            } else {
+                Err(Error::new(ErrorKind::NotFound, "path not found"))
+            }
+        }
+
+        fn read(&self, _ctx: &OperationContext, _: &str, _: OpRead) -> Result<Self::Reader> {
+            Err(Error::new(
+                ErrorKind::Unsupported,
+                "operation is not supported",
+            ))
+        }
+
+        fn write(&self, _: &OperationContext, path: &str, _: OpWrite) -> Result<Self::Writer> {
+            Ok(MockWriter {
+                paths: self.paths.clone(),
+                path: path.to_string(),
+            })
+        }
+
+        fn delete(&self, _ctx: &OperationContext) -> Result<Self::Deleter> {
+            Err(Error::new(
+                ErrorKind::Unsupported,
+                "operation is not supported",
+            ))
+        }
+
+        fn list(&self, _ctx: &OperationContext, _: &str, _: OpList) -> Result<Self::Lister> {
+            Err(Error::new(
+                ErrorKind::Unsupported,
+                "operation is not supported",
+            ))
+        }
+
+        fn copy(
+            &self,
+            _: &OperationContext,
+            from: &str,
+            to: &str,
+            _: OpCopy,
+        ) -> Result<Self::Copier> {
+            if !self.paths.lock().unwrap().contains(from) {
+                return Err(Error::new(ErrorKind::NotFound, "source not found"));
+            }
+            self.paths.lock().unwrap().insert(to.to_string());
+            Ok(())
+        }
+
+        async fn rename(
+            &self,
+            _: &OperationContext,
+            from: &str,
+            to: &str,
+            _: OpRename,
+        ) -> Result<RpRename> {
+            let mut paths = self.paths.lock().unwrap();
+            if !paths.remove(from) {
+                return Err(Error::new(ErrorKind::NotFound, "source not found"));
+            }
+            paths.insert(to.to_string());
+            Ok(RpRename::default())
+        }
+
+        async fn presign(&self, _: &OperationContext, _: &str, _: OpPresign) -> Result<RpPresign> {
+            Err(Error::new(
+                ErrorKind::Unsupported,
+                "operation is not supported",
+            ))
+        }
+    }
+
+    struct MockWriter {
+        paths: Arc<Mutex<HashSet<String>>>,
+        path: String,
+    }
+
+    impl oio::Write for MockWriter {
+        async fn write(&mut self, _: Buffer) -> Result<()> {
+            Ok(())
+        }
+
+        async fn close(&mut self) -> Result<Metadata> {
+            self.paths.lock().unwrap().insert(self.path.clone());
+            Ok(MetadataBuilder::unknown().build())
+        }
+
+        async fn abort(&mut self) -> Result<()> {
+            Ok(())
+        }
     }
 
     #[tokio::test]
@@ -383,8 +660,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_copy_and_rename_route_by_from() -> Result<()> {
-        let default_op = build_memory_operator()?;
-        let (hot_op, hot_root) = build_fs_operator("copy-rename-hot").await?;
+        let default_op = build_mock_operator("default");
+        let hot_op = build_mock_operator("hot");
 
         let routed = default_op.clone().layer(
             RouteLayer::builder()
@@ -406,7 +683,6 @@ mod tests {
         assert!(hot_op.stat("cold/renamed.txt").await.is_ok());
         assert_missing(&default_op, "cold/renamed.txt").await?;
 
-        cleanup_fs_root(&hot_root).await;
         Ok(())
     }
 

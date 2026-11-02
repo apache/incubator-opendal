@@ -28,147 +28,156 @@ import { EntryMode } from '../../index.mjs'
 export function run(op) {
   const capability = op.capability()
 
-  describe.runIf(capability.write && capability.read && capability.list)('async listOptions tests', () => {
-    test('test remove all', async () => {
-      const parent = `random_remove_${randomUUID()}/`
-      await op.createDir(parent)
+  describe.runIf(capability.write && capability.read && capability.list && capability.createDir)(
+    'async listOptions tests',
+    () => {
+      test('test remove all', async () => {
+        const parent = `random_remove_${randomUUID()}/`
+        await op.createDir(parent)
 
-      const expected = ['x/', 'x/y', 'x/x/', 'x/x/y', 'x/x/x/', 'x/x/x/y', 'x/x/x/x/']
+        const expected = ['x/', 'x/y', 'x/x/', 'x/x/y', 'x/x/x/', 'x/x/x/y', 'x/x/x/x/']
 
-      for await (const entry of expected) {
-        if (entry.endsWith('/')) {
-          await op.createDir(path.join(parent, entry))
-        } else {
-          await op.write(path.join(parent, entry), 'test_scan')
-        }
-      }
-
-      await op.removeAll(path.join(parent, 'x/'))
-
-      for await (const entry of expected) {
-        if (entry.endsWith('/')) {
-          continue
+        for await (const entry of expected) {
+          if (entry.endsWith('/')) {
+            await op.createDir(path.join(parent, entry))
+          } else {
+            await op.write(path.join(parent, entry), 'test_scan')
+          }
         }
 
-        assert.isNotTrue(await op.exists(path.join(parent, entry)))
-      }
+        await op.removeAll(path.join(parent, 'x/'))
 
-      await op.removeAll(parent)
-    })
+        for await (const entry of expected) {
+          if (entry.endsWith('/')) {
+            continue
+          }
 
-    test.runIf(capability.listWithRecursive)('list with recursive', async () => {
-      const dirname = `random_dir_${randomUUID()}/`
-      await op.createDir(dirname)
-
-      const expected = ['x/', 'x/y', 'x/x/', 'x/x/y', 'x/x/x/', 'x/x/x/y', 'x/x/x/x/']
-      for await (const entry of expected) {
-        if (entry.endsWith('/')) {
-          await op.createDir(path.join(dirname, entry))
-        } else {
-          await op.write(path.join(dirname, entry), 'test_scan')
+          assert.isNotTrue(await op.exists(path.join(parent, entry)))
         }
-      }
 
-      const lists = await op.list(dirname, { recursive: true })
-      const actual = lists.filter((item) => item.metadata().isFile()).map((item) => item.path().slice(dirname.length))
-      expect(actual.length).toEqual(3)
+        await op.removeAll(parent)
+      })
 
-      expect(actual.sort()).toEqual(['x/x/x/y', 'x/x/y', 'x/y'])
-
-      await op.removeAll(dirname)
-    })
-
-    test.runIf(capability.listWithStartAfter)('list with start after', async () => {
-      const dirname = `random_dir_${randomUUID()}/`
-
-      await op.createDir(dirname)
-
-      const given = Array.from({ length: 6 }, (_, i) => path.join(dirname, `file_${i}_${randomUUID()}`))
-      for await (const entry of given) {
-        await op.write(entry, 'content')
-      }
-
-      const lists = await op.list(dirname, { startAfter: given[2] })
-      const actual = lists.filter((item) => item.path() !== dirname).map((item) => item.path())
-      const expected = given.slice(3)
-      expect(actual).toEqual(expected)
-
-      await op.removeAll(dirname)
-    })
-
-    test.runIf(capability.listWithVersions)('list with versions', async () => {
-      const dirname = `random_dir_${randomUUID()}/`
-
-      await op.createDir(dirname)
-
-      const filePath = path.join(dirname, `random_file_${randomUUID()}`)
-      await op.write(filePath, '1')
-      await op.write(filePath, '2')
-      const lists = await op.list(dirname, { versions: true })
-      const actual = lists.filter((item) => item.path() !== dirname)
-      expect(actual.length).toBe(2)
-      expect(actual[0].metadata().version).not.toBe(actual[1].metadata().version)
-
-      for await (const entry of actual) {
-        expect(entry.path()).toBe(filePath)
-        const meta = entry.metadata()
-        expect(meta.mode).toBe(EntryMode.FILE)
-      }
-
-      await op.removeAll(dirname)
-    })
-
-    test.runIf(capability.listWithLimit)('list with limit', async () => {
-      const dirname = `random_dir_${randomUUID()}/`
-      await op.createDir(dirname)
-
-      const given = Array.from({ length: 5 }, (_, i) => path.join(dirname, `file_${i}_${randomUUID()}`))
-      for await (const entry of given) {
-        await op.write(entry, 'data')
-      }
-
-      const lists = await op.list(dirname, { limit: 3 })
-      expect(lists.length).toBe(6)
-
-      await op.removeAll(dirname)
-    })
-
-    test.runIf(capability.listWithVersions && capability.listWithStartAfter)(
-      'list with versions and start after',
-      async () => {
+      test.runIf(capability.listWithRecursive)('list with recursive', async () => {
         const dirname = `random_dir_${randomUUID()}/`
         await op.createDir(dirname)
+
+        const expected = ['x/', 'x/y', 'x/x/', 'x/x/y', 'x/x/x/', 'x/x/x/y', 'x/x/x/x/']
+        for await (const entry of expected) {
+          if (entry.endsWith('/')) {
+            await op.createDir(path.join(dirname, entry))
+          } else {
+            await op.write(path.join(dirname, entry), 'test_scan')
+          }
+        }
+
+        const lists = await op.list(dirname, { recursive: true })
+        const actual = lists.filter((item) => item.metadata().isFile()).map((item) => item.path().slice(dirname.length))
+        expect(actual.length).toEqual(3)
+
+        expect(actual.sort()).toEqual(['x/x/x/y', 'x/x/y', 'x/y'])
+
+        await op.removeAll(dirname)
+      })
+
+      test.runIf(capability.listWithStartAfter)('list with start after', async () => {
+        const dirname = `random_dir_${randomUUID()}/`
+
+        await op.createDir(dirname)
+
         const given = Array.from({ length: 6 }, (_, i) => path.join(dirname, `file_${i}_${randomUUID()}`))
         for await (const entry of given) {
-          await op.write(entry, '1')
-          await op.write(entry, '2')
+          await op.write(entry, 'content')
         }
-        const lists = await op.list(dirname, { versions: true, startAfter: given[2] })
-        const actual = lists.filter((item) => item.path() !== dirname)
+
+        const lists = await op.list(dirname, { startAfter: given[2] })
+        const actual = lists.filter((item) => item.path() !== dirname).map((item) => item.path())
         const expected = given.slice(3)
         expect(actual).toEqual(expected)
 
         await op.removeAll(dirname)
-      },
-    )
+      })
 
-    test.runIf(capability.listWithDeleted)('list with deleted', async () => {
-      const dirname = `random_dir_${randomUUID()}/`
-      await op.createDir(dirname)
-      const filePath = path.join(dirname, `random_file_${randomUUID()}`)
-      await op.write(filePath, '1')
+      test.runIf(capability.listWithVersions)('list with versions', async () => {
+        const dirname = `random_dir_${randomUUID()}/`
 
-      const lists = await op.list(filePath, { deleted: true })
-      expect(lists.length).toBe(1)
+        await op.createDir(dirname)
 
-      await op.write(filePath, '2')
-      await op.delete(filePath)
+        const filePath = path.join(dirname, `random_file_${randomUUID()}`)
+        await op.write(filePath, '1')
+        await op.write(filePath, '2')
+        const lists = await op.list(dirname, { versions: true })
+        const actual = lists.filter((item) => item.path() !== dirname)
+        expect(actual.length).toBe(2)
+        expect(actual[0].metadata().version).not.toBe(actual[1].metadata().version)
 
-      const ds = await op.list(filePath, { deleted: true })
-      const actual = ds.filter((item) => item.path() === filePath && item.metadata().isDeleted())
-      expect(actual.length).toBe(1)
+        for await (const entry of actual) {
+          expect(entry.path()).toBe(filePath)
+          const meta = entry.metadata()
+          expect(meta.mode).toBe(EntryMode.FILE)
+        }
 
-      await op.removeAll(dirname)
-    })
-  })
+        await op.removeAll(dirname)
+      })
+
+      test.runIf(capability.listWithLimit)('list with limit', async () => {
+        const dirname = `random_dir_${randomUUID()}/`
+        await op.createDir(dirname)
+
+        const given = Array.from({ length: 5 }, (_, i) => path.join(dirname, `file_${i}_${randomUUID()}`))
+        for await (const entry of given) {
+          await op.write(entry, 'data')
+        }
+
+        const lists = await op.list(dirname, { limit: 3 })
+        expect(lists.length).toBe(6)
+
+        await op.removeAll(dirname)
+      })
+
+      test.runIf(capability.listWithVersions && capability.listWithStartAfter)(
+        'list with versions and start after',
+        async () => {
+          const dirname = `random_dir_${randomUUID()}/`
+          await op.createDir(dirname)
+          const given = Array.from({ length: 6 }, (_, i) => path.join(dirname, `file_${i}_${randomUUID()}`))
+          for await (const entry of given) {
+            await op.write(entry, '1')
+            await op.write(entry, '2')
+          }
+          const lists = await op.list(dirname, { versions: true, startAfter: given[2] })
+          const actual = lists
+            .filter((item) => item.path() !== dirname)
+            .map((item) => item.path())
+            .sort()
+          const expected = given
+            .slice(3)
+            .flatMap((item) => [item, item])
+            .sort()
+          expect(actual).toEqual(expected)
+
+          await op.removeAll(dirname)
+        },
+      )
+
+      test.runIf(capability.listWithDeleted)('list with deleted', async () => {
+        const dirname = `random_dir_${randomUUID()}/`
+        await op.createDir(dirname)
+        const filePath = path.join(dirname, `random_file_${randomUUID()}`)
+        await op.write(filePath, '1')
+
+        const lists = await op.list(filePath, { deleted: true })
+        expect(lists.length).toBe(1)
+
+        await op.write(filePath, '2')
+        await op.delete(filePath)
+
+        const ds = await op.list(filePath, { deleted: true })
+        const actual = ds.filter((item) => item.path() === filePath && item.metadata().isDeleted())
+        expect(actual.length).toBe(1)
+
+        await op.removeAll(dirname)
+      })
+    },
+  )
 }

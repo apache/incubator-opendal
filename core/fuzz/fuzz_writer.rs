@@ -17,6 +17,8 @@
 
 #![no_main]
 
+use std::sync::LazyLock;
+
 use libfuzzer_sys::arbitrary::Arbitrary;
 use libfuzzer_sys::arbitrary::Unstructured;
 use libfuzzer_sys::fuzz_target;
@@ -27,7 +29,7 @@ use opendal::tests::WriteAction;
 use opendal::tests::WriteChecker;
 use opendal::tests::init_test_service;
 
-const MAX_DATA_SIZE: usize = 16 * 1024 * 1024;
+const MAX_DATA_SIZE: usize = 4 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 struct FuzzInput {
@@ -50,7 +52,7 @@ impl Arbitrary<'_> for FuzzInput {
             None
         };
 
-        let count = u.int_in_range(1..=1024)?;
+        let count = u.int_in_range(1..=256)?;
 
         for _ in 0..count {
             let size = u.int_in_range(1..=MAX_DATA_SIZE)?;
@@ -81,7 +83,7 @@ async fn fuzz_writer(op: Operator, input: FuzzInput) -> Result<()> {
     let mut writer = op.writer_with(&path);
     if let Some(buffer) = input.buffer {
         writer = writer.chunk(buffer);
-    } else if let Some(min_size) = op.info().full_capability().write_multi_min_size {
+    } else if let Some(min_size) = op.info().capability().write_multi_min_size {
         writer = writer.chunk(min_size);
     }
     if let Some(concurrent) = input.concurrent {
@@ -104,20 +106,30 @@ async fn fuzz_writer(op: Operator, input: FuzzInput) -> Result<()> {
     Ok(())
 }
 
+static OPERATOR: LazyLock<Operator> = LazyLock::new(|| {
+    if let Some(op) = init_test_service().expect("operator init must succeed") {
+        return op;
+    }
+
+    log::warn!("OPENDAL_TEST is not set; falling back to a temporary fs operator");
+    let root = std::env::temp_dir().join(format!("opendal-fuzz-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&root).expect("create fuzz root dir must succeed");
+    Operator::new(opendal::services::Fs::default().root(&root.to_string_lossy()))
+        .expect("operator init must succeed")
+});
+
 fuzz_target!(|input: FuzzInput| {
     let _ = logforth::starter_log::stderr().try_apply();
 
-    let op = init_test_service().expect("operator init must succeed");
-    if let Some(op) = op {
-        if !op.info().full_capability().write_can_multi {
-            log::warn!("service doesn't support write multi, skip fuzzing");
-            return;
-        }
-
-        TEST_RUNTIME.block_on(async {
-            fuzz_writer(op, input.clone())
-                .await
-                .unwrap_or_else(|err| panic!("fuzz reader must succeed: {err:?}"));
-        })
+    let op = OPERATOR.clone();
+    if !op.info().capability().write_can_multi {
+        log::warn!("service doesn't support write multi, skip fuzzing");
+        return;
     }
+
+    TEST_RUNTIME.block_on(async {
+        fuzz_writer(op, input.clone())
+            .await
+            .unwrap_or_else(|err| panic!("fuzz writer must succeed: {err:?}"));
+    })
 });

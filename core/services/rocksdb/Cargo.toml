@@ -18,6 +18,7 @@
 [package]
 description = "Apache OpenDAL RocksDB service implementation"
 name = "opendal-service-rocksdb"
+readme = "README.md"
 
 authors = { workspace = true }
 edition = { workspace = true }
@@ -31,8 +32,8 @@ version = { workspace = true }
 all-features = true
 
 [dependencies]
-opendal-core = { path = "../../core", version = "0.55.0", default-features = false }
-rocksdb = { version = "0.21.0", default-features = false }
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false }
+rocksdb = { version = "0.24.0", default-features = false }
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]

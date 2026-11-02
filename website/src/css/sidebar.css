@@ -1,0 +1,97 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+/* A divider + eyebrow label that separates concept docs from language guides. */
+.sidebar-section-label {
+  margin: var(--odl-space-4, 1rem) 0 var(--odl-space-1, 0.25rem);
+  padding: var(--odl-space-3, 0.75rem) 0.75rem 0;
+  border-top: 1px solid var(--ifm-toc-border-color);
+  font-family: var(--odl-font-mono);
+  font-size: var(--odl-text-xs);
+  font-weight: 600;
+  letter-spacing: var(--odl-tracking-label);
+  text-transform: uppercase;
+  color: var(--odl-fg-muted);
+}
+
+/* The `>` chain targets only the category's own title, never its child pages. */
+.sidebar-lang > .menu__list-item-collapsible > .menu__link::before {
+  content: "";
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 1.15em;
+  height: 1.15em;
+  margin-right: 0.55em;
+  background-size: contain;
+  background-repeat: no-repeat;
+  background-position: center;
+  vertical-align: -0.18em;
+}
+
+.sidebar-lang-rust > .menu__list-item-collapsible > .menu__link::before {
+  background-image: url(/img/bindings/rust.svg);
+}
+.sidebar-lang-c > .menu__list-item-collapsible > .menu__link::before {
+  background-image: url(/img/bindings/c.svg);
+}
+.sidebar-lang-cpp > .menu__list-item-collapsible > .menu__link::before {
+  background-image: url(/img/bindings/cpp.svg);
+}
+.sidebar-lang-d > .menu__list-item-collapsible > .menu__link::before {
+  background-image: url(/img/bindings/d.svg);
+}
+.sidebar-lang-dart > .menu__list-item-collapsible > .menu__link::before {
+  background-image: url(/img/bindings/dart.svg);
+}
+.sidebar-lang-dotnet > .menu__list-item-collapsible > .menu__link::before {
+  background-image: url(/img/bindings/dotnet.svg);
+}
+.sidebar-lang-go > .menu__list-item-collapsible > .menu__link::before {
+  background-image: url(/img/bindings/go.svg);
+}
+.sidebar-lang-haskell > .menu__list-item-collapsible > .menu__link::before {
+  background-image: url(/img/bindings/haskell.svg);
+}
+.sidebar-lang-java > .menu__list-item-collapsible > .menu__link::before {
+  background-image: url(/img/bindings/java.svg);
+}
+.sidebar-lang-lua > .menu__list-item-collapsible > .menu__link::before {
+  background-image: url(/img/bindings/lua.svg);
+}
+.sidebar-lang-nodejs > .menu__list-item-collapsible > .menu__link::before {
+  background-image: url(/img/bindings/nodejs.svg);
+}
+.sidebar-lang-ocaml > .menu__list-item-collapsible > .menu__link::before {
+  background-image: url(/img/bindings/ocaml.svg);
+}
+.sidebar-lang-php > .menu__list-item-collapsible > .menu__link::before {
+  background-image: url(/img/bindings/php.svg);
+}
+.sidebar-lang-python > .menu__list-item-collapsible > .menu__link::before {
+  background-image: url(/img/bindings/python.svg);
+}
+.sidebar-lang-ruby > .menu__list-item-collapsible > .menu__link::before {
+  background-image: url(/img/bindings/ruby.svg);
+}
+.sidebar-lang-swift > .menu__list-item-collapsible > .menu__link::before {
+  background-image: url(/img/bindings/swift.svg);
+}
+.sidebar-lang-zig > .menu__list-item-collapsible > .menu__link::before {
+  background-image: url(/img/bindings/zig.svg);
+}

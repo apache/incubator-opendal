@@ -1,6 +1,6 @@
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [ ] create_dir
 - [x] stat
@@ -12,17 +12,15 @@ This service can be used to:
 - [ ] rename
 - [ ] ~~presign~~
 
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
+
 ## Configuration
 
-- `root`: Set the working directory of `OpenDAL`
-- `connection_string`: Set the connection string of surrealdb server
-- `username`: set the username of surrealdb
-- `password`: set the password of surrealdb
-- `namespace`: set the namespace of surrealdb
-- `database`: set the database of surrealdb
-- `table`: Set the table of surrealdb
-- `key_field`: Set the key field of surrealdb
-- `value_field`: Set the value field of surrealdb
+Use [`crate::SurrealdbConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
+
 -
 
 ## Example
@@ -47,7 +45,7 @@ async fn main() -> Result<()> {
         .key_field("key")
         .value_field("value");
 
-    let op = Operator::new(builder)?.finish();
+    let op = Operator::new(builder)?;
     Ok(())
 }
 ```

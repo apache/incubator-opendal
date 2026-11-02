@@ -20,22 +20,44 @@ use foyer::Error as FoyerError;
 use opendal_core::Error;
 use opendal_core::ErrorKind;
 
-/// Custom error type for when fetched data exceeds size limit.
 #[derive(Debug)]
-pub(crate) struct FetchSizeTooLarge;
+pub(crate) enum FetchError {
+    SizeTooLarge,
+    Source { kind: ErrorKind, message: String },
+}
 
-impl std::fmt::Display for FetchSizeTooLarge {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "fetched data size exceeds size limit")
+impl FetchError {
+    pub(crate) fn from_error(err: Error) -> Self {
+        Self::Source {
+            kind: err.kind(),
+            message: err.to_string(),
+        }
     }
 }
 
-impl std::error::Error for FetchSizeTooLarge {}
+impl std::fmt::Display for FetchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::SizeTooLarge => write!(f, "fetched data size exceeds size limit"),
+            Self::Source { message, .. } => write!(f, "{message}"),
+        }
+    }
+}
+
+impl std::error::Error for FetchError {}
 
 pub(crate) fn extract_err(e: FoyerError) -> Error {
-    let e = match e.downcast::<Error>() {
-        Ok(e) => return e,
-        Err(e) => e,
-    };
-    Error::new(ErrorKind::Unexpected, e.to_string())
+    if let Some(e) = e.downcast_ref::<Error>() {
+        return Error::new(e.kind(), e.to_string());
+    }
+    if let Some(e) = e.downcast_ref::<FetchError>() {
+        return match e {
+            FetchError::SizeTooLarge => Error::new(
+                ErrorKind::Unexpected,
+                "fetched data size exceeds size limit",
+            ),
+            FetchError::Source { kind, message } => Error::new(*kind, message.clone()),
+        };
+    }
+    Error::new(ErrorKind::Unexpected, "foyer operation failed").set_source(e)
 }

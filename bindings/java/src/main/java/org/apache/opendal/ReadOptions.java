@@ -33,4 +33,22 @@ public class ReadOptions {
      */
     @Builder.Default
     public final long length = -1;
+
+    /**
+     * Overrides the Content-Type response header when the service supports it.
+     * Also applies to presigned read requests.
+     */
+    public final String overrideContentType;
+
+    /**
+     * Overrides the Cache-Control response header when the service supports it.
+     * Also applies to presigned read requests.
+     */
+    public final String overrideCacheControl;
+
+    /**
+     * Overrides the Content-Disposition response header when the service supports it.
+     * Use this to set a download filename on a presigned read request.
+     */
+    public final String overrideContentDisposition;
 }

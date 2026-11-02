@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::fs::File;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -24,10 +25,7 @@ use super::FS_SCHEME;
 use super::config::FsConfig;
 use super::core::*;
 use super::deleter::FsDeleter;
-use super::lister::FsLister;
-use super::reader::FsReader;
-use super::writer::FsWriter;
-use super::writer::FsWriters;
+use super::reader::*;
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -68,8 +66,8 @@ impl FsBuilder {
 impl Builder for FsBuilder {
     type Config = FsConfig;
 
-    fn build(self) -> Result<impl Access> {
-        debug!("backend build started: {:?}", &self);
+    fn build(self) -> Result<impl Service> {
+        debug!("backend build started: {:?}", self);
 
         let root = match self.config.root.map(PathBuf::from) {
             Some(root) => Ok(root),
@@ -81,31 +79,30 @@ impl Builder for FsBuilder {
         debug!("backend use root {}", root.to_string_lossy());
 
         // If root dir is not exist, we must create it.
-        if let Err(e) = std::fs::metadata(&root) {
-            if e.kind() == std::io::ErrorKind::NotFound {
-                std::fs::create_dir_all(&root).map_err(|e| {
-                    Error::new(ErrorKind::Unexpected, "create root dir failed")
-                        .with_operation("Builder::build")
-                        .with_context("root", root.to_string_lossy())
-                        .set_source(e)
-                })?;
-            }
+        if let Err(e) = std::fs::metadata(&root)
+            && e.kind() == std::io::ErrorKind::NotFound
+        {
+            std::fs::create_dir_all(&root).map_err(|e| {
+                Error::new(ErrorKind::Unexpected, "create root dir failed")
+                    .with_operation("Builder::build")
+                    .with_context("root", root.to_string_lossy())
+                    .set_source(e)
+            })?;
         }
 
         let atomic_write_dir = self.config.atomic_write_dir.map(PathBuf::from);
 
         // If atomic write dir is not exist, we must create it.
-        if let Some(d) = &atomic_write_dir {
-            if let Err(e) = std::fs::metadata(d) {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    std::fs::create_dir_all(d).map_err(|e| {
-                        Error::new(ErrorKind::Unexpected, "create atomic write dir failed")
-                            .with_operation("Builder::build")
-                            .with_context("atomic_write_dir", d.to_string_lossy())
-                            .set_source(e)
-                    })?;
-                }
-            }
+        if let Some(d) = &atomic_write_dir
+            && let Err(e) = std::fs::metadata(d)
+            && e.kind() == std::io::ErrorKind::NotFound
+        {
+            std::fs::create_dir_all(d).map_err(|e| {
+                Error::new(ErrorKind::Unexpected, "create atomic write dir failed")
+                    .with_operation("Builder::build")
+                    .with_context("atomic_write_dir", d.to_string_lossy())
+                    .set_source(e)
+            })?;
         }
 
         // Canonicalize the root directory. This should work since we already know that we can
@@ -136,38 +133,32 @@ impl Builder for FsBuilder {
 
         Ok(FsBackend {
             core: Arc::new(FsCore {
-                info: {
-                    let am = AccessorInfo::default();
-                    am.set_scheme(FS_SCHEME)
-                        .set_root(&root.to_string_lossy())
-                        .set_native_capability(Capability {
-                            stat: true,
+                info: ServiceInfo::new(FS_SCHEME, root.to_string_lossy(), ""),
+                capability: Capability {
+                    stat: true,
 
-                            read: true,
+                    read: true,
 
-                            write: true,
-                            write_can_empty: true,
-                            write_can_append: true,
-                            write_can_multi: true,
-                            write_with_if_not_exists: true,
-                            #[cfg(unix)]
-                            write_with_user_metadata: true,
+                    write: true,
+                    write_can_empty: true,
+                    write_can_append: true,
+                    write_can_multi: true,
+                    write_with_if_not_exists: true,
+                    #[cfg(unix)]
+                    write_with_user_metadata: true,
 
-                            create_dir: true,
-                            delete: true,
-                            delete_with_recursive: true,
+                    create_dir: true,
+                    delete: true,
+                    delete_with_recursive: true,
 
-                            list: true,
+                    list: true,
 
-                            copy: true,
-                            rename: true,
+                    copy: true,
+                    rename: true,
 
-                            shared: true,
+                    shared: true,
 
-                            ..Default::default()
-                        });
-
-                    am.into()
+                    ..Default::default()
                 },
                 root,
                 atomic_write_dir,
@@ -177,94 +168,116 @@ impl Builder for FsBuilder {
     }
 }
 
-/// Backend is used to serve `Accessor` support for posix-like fs.
+/// FsBackend implements [`Service`] for POSIX-like file systems.
 #[derive(Debug, Clone)]
 pub struct FsBackend {
-    core: Arc<FsCore>,
+    pub(crate) core: Arc<FsCore>,
 }
 
-impl Access for FsBackend {
-    type Reader = FsReader<tokio::fs::File>;
-    type Writer = FsWriters;
-    type Lister = Option<FsLister<tokio::fs::ReadDir>>;
+impl Service for FsBackend {
+    type Reader = oio::PositionReader<FsReader>;
+    type Writer = FsLazyWriter;
+    type Lister = FsLazyLister;
     type Deleter = oio::OneShotDeleter<FsDeleter>;
+    type Copier = oio::OneShotCopier;
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
+    fn info(&self) -> ServiceInfo {
         self.core.info.clone()
     }
 
-    async fn create_dir(&self, path: &str, _: OpCreateDir) -> Result<RpCreateDir> {
+    fn capability(&self) -> Capability {
+        self.core.capability
+    }
+
+    async fn create_dir(
+        &self,
+        _ctx: &OperationContext,
+        path: &str,
+        _: OpCreateDir,
+    ) -> Result<RpCreateDir> {
         self.core.fs_create_dir(path).await?;
         Ok(RpCreateDir::default())
     }
 
-    async fn stat(&self, path: &str, _: OpStat) -> Result<RpStat> {
+    async fn stat(&self, _ctx: &OperationContext, path: &str, _: OpStat) -> Result<RpStat> {
         let m = self.core.fs_stat(path).await?;
         Ok(RpStat::new(m))
     }
 
-    /// # Notes
-    ///
-    /// There are three ways to get the total file length:
-    ///
-    /// - call std::fs::metadata directly and then open. (400ns)
-    /// - open file first, and then use `f.metadata()` (300ns)
-    /// - open file first, and then use `seek`. (100ns)
-    ///
-    /// Benchmark could be found [here](https://gist.github.com/Xuanwo/48f9cfbc3022ea5f865388bb62e1a70f)
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let f = self.core.fs_read(path, &args).await?;
-        let r = FsReader::new(
+    fn read(&self, _ctx: &OperationContext, path: &str, _: OpRead) -> Result<Self::Reader> {
+        Ok(oio::PositionReader::new(FsReader::new(
             self.core.clone(),
-            f,
-            args.range().size().unwrap_or(u64::MAX) as _,
-        );
-        Ok((RpRead::new(), r))
+            path,
+        )))
     }
 
-    async fn write(&self, path: &str, op: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        let is_append = op.append();
-        let concurrent = op.concurrent();
-
-        let writer = FsWriter::create(self.core.clone(), path, op).await?;
-
-        let writer = if is_append {
-            FsWriters::One(writer)
-        } else {
-            FsWriters::Two(oio::PositionWriter::new(
-                self.info().clone(),
-                writer,
-                concurrent,
-            ))
-        };
-
-        Ok((RpWrite::default(), writer))
-    }
-
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        Ok((
-            RpDelete::default(),
-            oio::OneShotDeleter::new(FsDeleter::new(self.core.clone())),
+    fn write(&self, ctx: &OperationContext, path: &str, op: OpWrite) -> Result<Self::Writer> {
+        Ok(FsLazyWriter::new(
+            self.core.clone(),
+            ctx.executor().clone(),
+            path,
+            op,
         ))
     }
 
-    async fn list(&self, path: &str, _: OpList) -> Result<(RpList, Self::Lister)> {
-        match self.core.fs_list(path).await? {
-            Some(f) => {
-                let rd = FsLister::new(&self.core.root, path, f);
-                Ok((RpList::default(), Some(rd)))
-            }
-            None => Ok((RpList::default(), None)),
-        }
+    fn delete(&self, _ctx: &OperationContext) -> Result<Self::Deleter> {
+        Ok(oio::OneShotDeleter::new(FsDeleter::new(self.core.clone())))
     }
 
-    async fn copy(&self, from: &str, to: &str, _args: OpCopy) -> Result<RpCopy> {
-        self.core.fs_copy(from, to).await?;
-        Ok(RpCopy::default())
+    fn list(&self, _ctx: &OperationContext, path: &str, _: OpList) -> Result<Self::Lister> {
+        Ok(FsLazyLister::new(self.core.clone(), path))
     }
 
-    async fn rename(&self, from: &str, to: &str, _args: OpRename) -> Result<RpRename> {
+    fn copy(
+        &self,
+        _ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        _args: OpCopy,
+    ) -> Result<Self::Copier> {
+        let core = self.core.clone();
+        let from = from.to_string();
+        let to = to.to_string();
+        Ok(oio::OneShotCopier::new(async move {
+            let size = core.fs_copy(&from, &to).await?;
+            let metadata = MetadataBuilder::file(size);
+            Ok(metadata.build())
+        }))
+    }
+
+    async fn rename(
+        &self,
+        _ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        _args: OpRename,
+    ) -> Result<RpRename> {
         self.core.fs_rename(from, to).await?;
         Ok(RpRename::default())
     }
+
+    async fn presign(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpPresign,
+    ) -> Result<RpPresign> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+}
+
+#[cfg(windows)]
+pub(crate) fn read_at(f: &File, buf: &mut [u8], offset: u64) -> Result<usize> {
+    use std::os::windows::fs::FileExt;
+    f.seek_read(buf, offset).map_err(new_std_io_error)
+}
+
+#[cfg(unix)]
+pub(crate) fn read_at(f: &File, buf: &mut [u8], offset: u64) -> Result<usize> {
+    use std::os::unix::fs::FileExt;
+    f.read_at(buf, offset).map_err(new_std_io_error)
 }

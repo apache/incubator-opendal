@@ -22,26 +22,27 @@ use http::StatusCode;
 use opendal_core::raw::*;
 use opendal_core::*;
 
+use super::core::PcloudError;
+use super::core::parse_error;
 use super::core::*;
-use super::error::PcloudError;
-use super::error::parse_error;
 
 pub struct PcloudDeleter {
     core: Arc<PcloudCore>,
+    ctx: OperationContext,
 }
 
 impl PcloudDeleter {
-    pub fn new(core: Arc<PcloudCore>) -> Self {
-        Self { core }
+    pub fn new(core: Arc<PcloudCore>, ctx: OperationContext) -> Self {
+        Self { core, ctx }
     }
 }
 
 impl oio::OneShotDelete for PcloudDeleter {
     async fn delete_once(&self, path: String, _: OpDelete) -> Result<()> {
         let resp = if path.ends_with('/') {
-            self.core.delete_folder(&path).await?
+            self.core.delete_folder(&self.ctx, &path).await?
         } else {
-            self.core.delete_file(&path).await?
+            self.core.delete_file(&self.ctx, &path).await?
         };
 
         let status = resp.status();
@@ -60,7 +61,14 @@ impl oio::OneShotDelete for PcloudDeleter {
 
                 Ok(())
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(if path.ends_with('/') {
+                    ServiceOperation("DeleteFolder")
+                } else {
+                    ServiceOperation("DeleteFile")
+                }),
+                resp,
+            )),
         }
     }
 }

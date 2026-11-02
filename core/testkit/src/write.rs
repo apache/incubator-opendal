@@ -17,37 +17,36 @@
 
 use bytes::Bytes;
 use bytes::BytesMut;
-use rand::RngCore;
-use rand::thread_rng;
-use sha2::Digest;
-use sha2::Sha256;
+use rand::Rng;
+use rand::rng;
 
-/// WriteAction represents a read action.
+use crate::utils::sha256_digest;
+
+/// A writer operation used by write behavior tests.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum WriteAction {
-    /// Write represents a write action with given input buf size.
+    /// Write a buffer with the given size.
     ///
-    /// # NOTE
-    ///
-    /// The size is the input buf size, it's possible that the actual write size is smaller.
+    /// A writer can accept the buffer incrementally even though the action
+    /// supplies it as one logical chunk.
     Write(usize),
 }
 
-/// WriteAction is used to check the correctness of the write process.
+/// Generates write chunks and verifies the combined stored data.
 pub struct WriteChecker {
     chunks: Vec<Bytes>,
     data: Bytes,
 }
 
 impl WriteChecker {
-    /// Create a new WriteChecker with given size.
-    pub fn new(size: Vec<usize>) -> Self {
-        let mut rng = thread_rng();
+    /// Create random chunks with the requested `sizes`.
+    pub fn new(sizes: Vec<usize>) -> Self {
+        let mut rng = rng();
 
-        let mut chunks = Vec::with_capacity(size.len());
+        let mut chunks = Vec::with_capacity(sizes.len());
 
-        for i in size {
-            let mut bs = vec![0u8; i];
+        for size in sizes {
+            let mut bs = vec![0u8; size];
             rng.fill_bytes(&mut bs);
             chunks.push(Bytes::from(bs));
         }
@@ -63,17 +62,19 @@ impl WriteChecker {
         }
     }
 
-    /// Get the check's chunks.
+    /// Return the chunks to write, in order.
     pub fn chunks(&self) -> &[Bytes] {
         &self.chunks
     }
 
-    /// Check the correctness of the write process.
+    /// Verify that `actual` equals the concatenated generated chunks.
     pub fn check(&self, actual: &[u8]) {
-        assert_eq!(
-            format!("{:x}", Sha256::digest(actual)),
-            format!("{:x}", Sha256::digest(&self.data)),
-            "check failed: result is not expected"
-        )
+        if actual != self.data.as_ref() {
+            assert_eq!(
+                sha256_digest(actual),
+                sha256_digest(&self.data),
+                "check failed: result is not expected"
+            );
+        }
     }
 }

@@ -34,10 +34,10 @@ impl crate::Configurator for MemoryConfig {
 
     fn from_uri(uri: &crate::types::OperatorUri) -> crate::Result<Self> {
         let mut map = uri.options().clone();
-        if !map.contains_key("root") {
-            if let Some(root) = uri.root().filter(|v| !v.is_empty()) {
-                map.insert("root".to_string(), root.to_string());
-            }
+        if !map.contains_key("root")
+            && let Some(root) = uri.root().filter(|v| !v.is_empty())
+        {
+            map.insert("root".to_string(), root.to_string());
         }
 
         Self::from_iter(map)

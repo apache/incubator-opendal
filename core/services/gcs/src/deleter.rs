@@ -19,44 +19,55 @@ use std::sync::Arc;
 
 use http::StatusCode;
 
+use super::core::parse_error;
 use super::core::*;
-use super::error::parse_error;
 use opendal_core::raw::oio::BatchDeleteResult;
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct GcsDeleter {
     core: Arc<GcsCore>,
+    ctx: OperationContext,
 }
 
 impl GcsDeleter {
-    pub fn new(core: Arc<GcsCore>) -> Self {
-        Self { core }
+    pub fn new(core: Arc<GcsCore>, ctx: OperationContext) -> Self {
+        Self { core, ctx }
     }
 }
 
 impl oio::BatchDelete for GcsDeleter {
-    async fn delete_once(&self, path: String, _: OpDelete) -> Result<()> {
-        let resp = self.core.gcs_delete_object(&path).await?;
+    async fn delete_once(&self, path: String, args: OpDelete) -> Result<()> {
+        let resp = self.core.gcs_delete_object(&self.ctx, &path, &args).await?;
+        let error_ctx = ErrorContext::new(ServiceOperation("DeleteObject"))
+            .with_caller_condition(args.is_conditional())
+            .with_delete_match_condition(
+                args.if_match().is_some() || args.if_version_match().is_some(),
+            );
 
-        // deleting not existing objects is ok
-        if resp.status().is_success() || resp.status() == StatusCode::NOT_FOUND {
+        if resp.status().is_success()
+            || (resp.status() == StatusCode::NOT_FOUND
+                && args.if_match().is_none()
+                && args.if_version_match().is_none())
+        {
             Ok(())
         } else {
-            Err(parse_error(resp))
+            Err(parse_error(error_ctx, resp))
         }
     }
 
     async fn delete_batch(&self, batch: Vec<(String, OpDelete)>) -> Result<BatchDeleteResult> {
-        let paths: Vec<String> = batch.into_iter().map(|(p, _)| p).collect();
-        let resp = self.core.gcs_delete_objects(paths.clone()).await?;
+        let resp = self.core.gcs_delete_objects(&self.ctx, &batch).await?;
 
         let status = resp.status();
 
         // If the overall request isn't formatted correctly and Cloud Storage is unable to parse it into sub-requests, you receive a 400 error.
         // Otherwise, Cloud Storage returns a 200 status code, even if some or all of the sub-requests fail.
         if status != StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("BatchDeleteObjects")),
+                resp,
+            ));
         }
 
         let boundary = parse_multipart_boundary(resp.headers())?.ok_or_else(|| {
@@ -75,15 +86,23 @@ impl oio::BatchDelete for GcsDeleter {
         for (i, part) in parts.into_iter().enumerate() {
             let resp = part.into_response();
             // TODO: maybe we can take it directly?
-            let path = paths[i].clone();
+            let (path, op) = batch[i].clone();
+            let error_ctx = ErrorContext::new(ServiceOperation("BatchDeleteObjects"))
+                .with_caller_condition(op.is_conditional())
+                .with_delete_match_condition(
+                    op.if_match().is_some() || op.if_version_match().is_some(),
+                );
 
-            // deleting not existing objects is ok
-            if resp.status().is_success() || resp.status() == StatusCode::NOT_FOUND {
-                batched_result.succeeded.push((path, OpDelete::default()));
+            if resp.status().is_success()
+                || (resp.status() == StatusCode::NOT_FOUND
+                    && op.if_match().is_none()
+                    && op.if_version_match().is_none())
+            {
+                batched_result.succeeded.push((path, op));
             } else {
                 batched_result
                     .failed
-                    .push((path, OpDelete::default(), parse_error(resp)));
+                    .push((path, op, parse_error(error_ctx, resp)));
             }
         }
 

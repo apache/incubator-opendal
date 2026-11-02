@@ -62,6 +62,15 @@ pub fn with_error_response_context(mut err: Error, mut parts: Parts) -> Error {
     parts.headers.remove("WWW-Authenticate");
     parts.headers.remove("Proxy-Authenticate");
 
+    if parts.headers.contains_key(http::header::LOCATION) {
+        let location = crate::HttpUri::from_response_location(&mut parts)
+            .map(|uri| uri.redacted_uri())
+            .unwrap_or("<invalid URL>")
+            .parse()
+            .unwrap_or_else(|_| http::HeaderValue::from_static("<invalid URL>"));
+        parts.headers.insert(http::header::LOCATION, location);
+    }
+
     err = err.with_context("response", format!("{parts:?}"));
 
     err

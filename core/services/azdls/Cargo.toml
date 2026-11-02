@@ -18,6 +18,7 @@
 [package]
 description = "Apache OpenDAL Azure Data Lake Storage Gen2 service implementation"
 name = "opendal-service-azdls"
+readme = "README.md"
 
 authors = { workspace = true }
 edition = { workspace = true }
@@ -31,16 +32,19 @@ version = { workspace = true }
 all-features = true
 
 [dependencies]
+asyncband = { workspace = true, features = ["once-cell"] }
+base64 = { workspace = true }
 bytes = { workspace = true }
 http = { workspace = true }
 log = { workspace = true }
-opendal-core = { path = "../../core", version = "0.55.0", default-features = false }
-opendal-service-azure-common = { path = "../azure-common", version = "0.55.0" }
-quick-xml = { workspace = true, features = ["serialize", "overlapped-lists"] }
-reqsign = { workspace = true, features = [
-  "reqwest_request",
-  "services-azblob",
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false, features = [
+  "reqsign",
 ] }
+opendal-service-azure-common = { path = "../azure-common", version = "0.59.5" }
+quick-xml = { workspace = true, features = ["serialize", "overlapped-lists"] }
+reqsign-azure-storage = { version = "3.1.1", default-features = false }
+reqsign-core = { version = "3.2.0", default-features = false }
+reqsign-file-read-tokio = { version = "3.0.3", default-features = false }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 

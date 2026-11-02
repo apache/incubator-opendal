@@ -22,27 +22,31 @@ use http::StatusCode;
 use opendal_core::raw::*;
 use opendal_core::*;
 
-use super::core::OneDriveCore;
-use super::error::parse_error;
+use super::core::parse_error;
+use super::core::{ErrorContext, OneDriveCore};
 
 /// Delete operation
 /// Documentation: https://learn.microsoft.com/en-us/onedrive/developer/rest-api/api/driveitem_delete?view=odsp-graph-online
 pub struct OneDriveDeleter {
     core: Arc<OneDriveCore>,
+    ctx: OperationContext,
 }
 
 impl OneDriveDeleter {
-    pub fn new(core: Arc<OneDriveCore>) -> Self {
-        Self { core }
+    pub fn new(core: Arc<OneDriveCore>, ctx: OperationContext) -> Self {
+        Self { core, ctx }
     }
 }
 
 impl oio::OneShotDelete for OneDriveDeleter {
     async fn delete_once(&self, path: String, _: OpDelete) -> Result<()> {
-        let response = self.core.onedrive_delete(&path).await?;
+        let response = self.core.onedrive_delete(&self.ctx, &path).await?;
         match response.status() {
             StatusCode::NO_CONTENT | StatusCode::NOT_FOUND => Ok(()),
-            _ => Err(parse_error(response)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("DeleteItem")),
+                response,
+            )),
         }
     }
 }

@@ -1,6 +1,6 @@
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [ ] create_dir
 - [x] stat
@@ -12,14 +12,14 @@ This service can be used to:
 - [ ] rename
 - [ ] ~~presign~~
 
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
+
 ## Configuration
 
-- `root`: Set the working directory of `OpenDAL`
-- `connection_string`: Set the connection string of mongodb server
-- `database`: Set the database of mongodb
-- `collection`: Set the collection of mongodb
-- `key_field`: Set the key field of mongodb
-- `value_field`: Set the value field of mongodb
+Use [`crate::MongodbConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
 ## Example
 
@@ -42,7 +42,7 @@ async fn main() -> Result<()> {
         // value field type in the table should be compatible with Rust's Vec<u8> like bytea
         .value_field("value");
 
-    let op = Operator::new(builder)?.finish();
+    let op = Operator::new(builder)?;
     Ok(())
 }
 ```

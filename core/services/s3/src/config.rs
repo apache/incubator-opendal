@@ -15,6 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::collections::HashMap;
 use std::fmt::Debug;
 
 use opendal_core::Configurator;
@@ -36,13 +37,25 @@ pub struct S3Config {
     /// All operations will happen under this root.
     ///
     /// default to `/` if not set.
+    ///
+    /// <!-- @group General -->
+    /// <!-- @default / -->
     pub root: Option<String>,
     /// bucket name of this backend.
     ///
     /// required.
+    ///
+    /// <!-- @group General -->
+    /// <!-- @example my-bucket -->
     #[serde(alias = "aws_bucket", alias = "aws_bucket_name", alias = "bucket_name")]
     pub bucket: String,
-    /// is bucket versioning enabled for this bucket
+    /// Deprecated: S3 versioning capability is enabled by default.
+    ///
+    /// <!-- @group Deprecated -->
+    #[deprecated(
+        since = "0.57.0",
+        note = "S3 versioning capability is enabled by default and this option is no longer needed."
+    )]
     pub enable_versioning: bool,
     /// endpoint of this backend.
     ///
@@ -60,6 +73,9 @@ pub struct S3Config {
     /// - If endpoint is set, we will take user's input first.
     /// - If not, we will try to load it from environment.
     /// - If still not set, default to `https://s3.amazonaws.com`.
+    ///
+    /// <!-- @group General -->
+    /// <!-- @default https://s3.amazonaws.com -->
     #[serde(
         alias = "aws_endpoint",
         alias = "aws_endpoint_url",
@@ -72,36 +88,71 @@ pub struct S3Config {
     /// If using a custom endpoint,
     /// - If region is set, we will take user's input first.
     /// - If not, we will try to load it from environment.
+    ///
+    /// <!-- @group General -->
+    /// <!-- @example us-east-1 -->
     #[serde(alias = "aws_region")]
     pub region: Option<String>,
+
+    /// AWS profile.
+    ///
+    /// By default, reqsign which is the default credential provider, supplies profile in order:
+    /// - explicit option
+    /// - `AWS_PROFILE` environment variable, from which reqsign reads profile from:
+    ///    - `~/.aws/credentials` (or the path specified by `AWS_SHARED_CREDENTIALS_FILE`)
+    ///    - `~/.aws/config` (or the path specified by `AWS_CONFIG_FILE`)
+    /// <!-- @group Credentials -->
+    /// <!-- @example development -->
+    #[serde(alias = "aws_profile")]
+    pub profile: Option<String>,
 
     /// access_key_id of this backend.
     ///
     /// - If access_key_id is set, we will take user's input first.
     /// - If not, we will try to load it from environment.
+    ///
+    /// <!-- @group Credentials -->
     #[serde(alias = "aws_access_key_id")]
     pub access_key_id: Option<String>,
     /// secret_access_key of this backend.
     ///
     /// - If secret_access_key is set, we will take user's input first.
     /// - If not, we will try to load it from environment.
+    ///
+    /// <!-- @group Credentials -->
     #[serde(alias = "aws_secret_access_key")]
     pub secret_access_key: Option<String>,
     /// session_token (aka, security token) of this backend.
     ///
     /// This token will expire after sometime, it's recommended to set session_token
     /// by hand.
+    ///
+    /// <!-- @group Credentials -->
     #[serde(alias = "aws_session_token", alias = "aws_token", alias = "token")]
     pub session_token: Option<String>,
     /// role_arn for this backend.
     ///
     /// If `role_arn` is set, we will use already known config as source
     /// credential to assume role with `role_arn`.
+    ///
+    /// <!-- @group Assume role -->
     pub role_arn: Option<String>,
     /// external_id for this backend.
+    ///
+    /// <!-- @group Assume role -->
     pub external_id: Option<String>,
     /// role_session_name for this backend.
+    ///
+    /// <!-- @group Assume role -->
     pub role_session_name: Option<String>,
+    /// assume_role_duration_seconds for this backend.
+    ///
+    /// <!-- @group Assume role -->
+    pub assume_role_duration_seconds: Option<u32>,
+    /// assume_role_session_tags for this backend.
+    ///
+    /// <!-- @group Assume role -->
+    pub assume_role_session_tags: Option<HashMap<String, String>>,
     /// Disable config load so that opendal will not load config from
     /// environment.
     ///
@@ -109,18 +160,34 @@ pub struct S3Config {
     ///
     /// - envs like `AWS_ACCESS_KEY_ID`
     /// - files like `~/.aws/config`
+    ///
+    /// <!-- @group Credentials -->
     pub disable_config_load: bool,
     /// Disable load credential from ec2 metadata.
     ///
     /// This option is used to disable the default behavior of opendal
     /// to load credential from ec2 metadata, a.k.a., IMDSv2
+    ///
+    /// <!-- @group Credentials -->
     pub disable_ec2_metadata: bool,
+    /// Skip signature will skip loading credentials and signing requests.
+    ///
+    /// <!-- @group Credentials -->
+    pub skip_signature: bool,
     /// Allow anonymous will allow opendal to send request without signing
     /// when credential is not loaded.
+    ///
+    /// <!-- @group Deprecated -->
+    #[deprecated(
+        since = "0.57.0",
+        note = "Please use `skip_signature` instead of `allow_anonymous`"
+    )]
     pub allow_anonymous: bool,
     /// server_side_encryption for this backend.
     ///
     /// Available values: `AES256`, `aws:kms`.
+    ///
+    /// <!-- @group Encryption -->
     #[serde(alias = "aws_server_side_encryption")]
     pub server_side_encryption: Option<String>,
     /// server_side_encryption_aws_kms_key_id for this backend
@@ -133,21 +200,29 @@ pub struct S3Config {
     ///   returned.
     /// - If `server_side_encryption` is not `aws:kms`, setting `server_side_encryption_aws_kms_key_id`
     ///   is a noop.
+    ///
+    /// <!-- @group Encryption -->
     #[serde(alias = "aws_sse_kms_key_id")]
     pub server_side_encryption_aws_kms_key_id: Option<String>,
     /// server_side_encryption_customer_algorithm for this backend.
     ///
     /// Available values: `AES256`.
+    ///
+    /// <!-- @group Encryption -->
     pub server_side_encryption_customer_algorithm: Option<String>,
     /// server_side_encryption_customer_key for this backend.
     ///
     /// Value: BASE64-encoded key that matches algorithm specified in
     /// `server_side_encryption_customer_algorithm`.
+    ///
+    /// <!-- @group Encryption -->
     #[serde(alias = "aws_sse_customer_key_base64")]
     pub server_side_encryption_customer_key: Option<String>,
     /// Set server_side_encryption_customer_key_md5 for this backend.
     ///
     /// Value: MD5 digest of key specified in `server_side_encryption_customer_key`.
+    ///
+    /// <!-- @group Encryption -->
     pub server_side_encryption_customer_key_md5: Option<String>,
     /// default storage_class for this backend.
     ///
@@ -164,38 +239,44 @@ pub struct S3Config {
     /// - `STANDARD_IA`
     ///
     /// S3 compatible services don't support all of them
+    ///
+    /// <!-- @group Behavior -->
     pub default_storage_class: Option<String>,
     /// Enable virtual host style so that opendal will send API requests
     /// in virtual host style instead of path style.
     ///
     /// - By default, opendal will send API to `https://s3.us-east-1.amazonaws.com/bucket_name`
     /// - Enabled, opendal will send API to `https://bucket_name.s3.us-east-1.amazonaws.com`
+    ///
+    /// <!-- @group Behavior -->
     #[serde(
         alias = "aws_virtual_hosted_style_request",
         alias = "virtual_hosted_style_request"
     )]
     pub enable_virtual_host_style: bool,
-    /// Set maximum batch operations of this backend.
+    /// Deprecated: S3 delete batch capability is enabled by default.
     ///
-    /// Some compatible services have a limit on the number of operations in a batch request.
-    /// For example, R2 could return `Internal Error` while batch delete 1000 files.
-    ///
-    /// Please tune this value based on services' document.
+    /// <!-- @group Deprecated -->
     #[deprecated(
-        since = "0.52.0",
-        note = "Please use `delete_max_size` instead of `batch_max_operations`"
+        since = "0.57.0",
+        note = "S3 delete batch capability is enabled by default. Use CapabilityOverrideLayer to override delete_max_size for specific endpoints."
     )]
     pub batch_max_operations: Option<usize>,
-    /// Set the maximum delete size of this backend.
+    /// Deprecated: S3 delete batch capability is enabled by default.
     ///
-    /// Some compatible services have a limit on the number of operations in a batch request.
-    /// For example, R2 could return `Internal Error` while batch delete 1000 files.
-    ///
-    /// Please tune this value based on services' document.
+    /// <!-- @group Deprecated -->
+    #[deprecated(
+        since = "0.57.0",
+        note = "S3 delete batch capability is enabled by default. Use CapabilityOverrideLayer to override delete_max_size for specific endpoints."
+    )]
     pub delete_max_size: Option<usize>,
-    /// Disable stat with override so that opendal will not send stat request with override queries.
+    /// Deprecated: S3 stat override capabilities are enabled by default.
     ///
-    /// For example, R2 doesn't support stat with `response_content_type` query.
+    /// <!-- @group Deprecated -->
+    #[deprecated(
+        since = "0.57.0",
+        note = "S3 stat override capabilities are enabled by default. Use CapabilityOverrideLayer to override them for specific endpoints."
+    )]
     pub disable_stat_with_override: bool,
     /// Checksum Algorithm to use when sending checksums in HTTP headers.
     /// This is necessary when writing to AWS S3 Buckets with Object Lock enabled for example.
@@ -203,24 +284,46 @@ pub struct S3Config {
     /// Available options:
     /// - "crc32c"
     /// - "md5"
+    ///
+    /// <!-- @group Behavior -->
     #[serde(alias = "aws_checksum_algorithm")]
     pub checksum_algorithm: Option<String>,
-    /// Disable write with if match so that opendal will not send write request with if match headers.
+    /// Deprecated: S3 write with If-Match capability is enabled by default.
     ///
-    /// For example, Ceph RADOS S3 doesn't support write with if matched.
+    /// <!-- @group Deprecated -->
+    #[deprecated(
+        since = "0.57.0",
+        note = "S3 write with If-Match capability is enabled by default and this option is no longer needed."
+    )]
     pub disable_write_with_if_match: bool,
 
-    /// Enable write with append so that opendal will send write request with append headers.
+    /// Deprecated: S3 append capability is enabled by default.
+    ///
+    /// <!-- @group Deprecated -->
+    #[deprecated(
+        since = "0.57.0",
+        note = "S3 append capability is enabled by default and this option is no longer needed."
+    )]
     pub enable_write_with_append: bool,
 
     /// OpenDAL uses List Objects V2 by default to list objects.
     /// However, some legacy services do not yet support V2.
     /// This option allows users to switch back to the older List Objects V1.
+    ///
+    /// <!-- @group Behavior -->
     pub disable_list_objects_v2: bool,
 
     /// Indicates whether the client agrees to pay for the requests made to the S3 bucket.
+    ///
+    /// <!-- @group Behavior -->
     #[serde(alias = "aws_request_payer", alias = "request_payer")]
     pub enable_request_payer: bool,
+
+    /// Default ACL for new objects.
+    /// Note that some s3 services like minio do not support this option.
+    ///
+    /// <!-- @group Behavior -->
+    pub default_acl: Option<String>,
 }
 
 impl Debug for S3Config {
@@ -276,6 +379,7 @@ mod tests {
             "secret_access_key": "test-secret",
             "region": "us-west-2",
             "endpoint": "https://s3.amazonaws.com",
+            "profile": "development",
             "session_token": "test-token"
         }"#;
 
@@ -288,6 +392,7 @@ mod tests {
             config.endpoint,
             Some("https://s3.amazonaws.com".to_string())
         );
+        assert_eq!(config.profile, Some("development".to_string()));
         assert_eq!(config.session_token, Some("test-token".to_string()));
     }
 
@@ -299,6 +404,7 @@ mod tests {
             "aws_secret_access_key": "test-secret",
             "aws_region": "us-west-2",
             "aws_endpoint": "https://s3.amazonaws.com",
+            "aws_profile": "staging",
             "aws_session_token": "test-token"
         }"#;
 
@@ -311,6 +417,7 @@ mod tests {
             config.endpoint,
             Some("https://s3.amazonaws.com".to_string())
         );
+        assert_eq!(config.profile, Some("staging".to_string()));
         assert_eq!(config.session_token, Some("test-token".to_string()));
     }
 

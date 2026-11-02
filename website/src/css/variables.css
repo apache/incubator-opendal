@@ -1,0 +1,279 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+/* ==========================================================================
+   OpenDAL CSS Variables
+   --------------------------------------------------------------------------
+   "One Layer, All Storage." A precise, engineering-grade visual system built
+   on a near-monochrome ink scale, a single precise-blue accent, and the
+   signature solid "bar" lifted from the OpenDAL wordmark.
+
+   CSS variable layers:
+     1. Primitives  — raw, theme-agnostic values (--odl-ink-*, --odl-blue-*)
+     2. Semantic    — meaning-bound, theme-aware roles (--odl-bg, --odl-fg ...)
+     3. Infima map  — semantic CSS variables projected onto Docusaurus/Infima
+                      vars so docs, blog and community pages inherit the same
+                      system.
+
+   Typography uses native system stacks on purpose: zero third-party requests
+   (ASF privacy-friendly), zero layout shift, instant global rendering. The
+   monospace stack is promoted to a brand motif (labels, indices, figures).
+   To adopt IBM Plex instead, self-host it and swap --odl-font-* below.
+   ========================================================================== */
+
+/* ---- 1. Primitive CSS variables ------------------------------------------ */
+:root {
+  /* Ink — a cool, neutral near-black→white ramp */
+  --odl-ink-0: #ffffff;
+  --odl-ink-50: #f6f8fa;
+  --odl-ink-100: #edf1f5;
+  --odl-ink-150: #e4e9ef;
+  --odl-ink-200: #d8dee6;
+  --odl-ink-300: #c2cad4;
+  --odl-ink-400: #98a2b0;
+  --odl-ink-500: #6e7886;
+  --odl-ink-600: #4f5864;
+  --odl-ink-700: #39414b;
+  --odl-ink-800: #262c34;
+  --odl-ink-850: #1b2027;
+  --odl-ink-900: #12161b;
+  --odl-ink-950: #0a0d11;
+
+  /* Precise blue — the single brand accent */
+  --odl-blue-50: #edf3ff;
+  --odl-blue-100: #d8e5ff;
+  --odl-blue-200: #b4ccff;
+  --odl-blue-300: #85a9ff;
+  --odl-blue-400: #5384ff;
+  --odl-blue-500: #2c63f5;
+  --odl-blue-600: #1e54e0;
+  --odl-blue-700: #1846be;
+  --odl-blue-800: #163a97;
+  --odl-blue-900: #163172;
+
+  /* Functional signals (kept restrained, mostly for inherited docs UI) */
+  --odl-green-500: #1a8f5e;
+  --odl-green-400: #36c08a;
+  --odl-amber-500: #b7791f;
+  --odl-amber-400: #e0a93b;
+  --odl-red-500: #d23b3b;
+  --odl-red-400: #f06363;
+
+  /* Type families — system stacks with a clear engineering character */
+  --odl-font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif,
+    "Apple Color Emoji", "Segoe UI Emoji";
+  --odl-font-mono: ui-monospace, "SF Mono", SFMono-Regular, "Cascadia Code",
+    "JetBrains Mono", "Roboto Mono", Menlo, Consolas, "Liberation Mono",
+    monospace;
+
+  /* Type scale */
+  --odl-text-2xs: 0.6875rem; /* 11px — mono micro-labels */
+  --odl-text-xs: 0.75rem; /* 12px */
+  --odl-text-sm: 0.875rem; /* 14px */
+  --odl-text-base: 1rem; /* 16px */
+  --odl-text-md: 1.125rem; /* 18px */
+  --odl-text-lg: 1.375rem; /* 22px */
+  --odl-text-xl: 1.75rem; /* 28px */
+  --odl-text-2xl: 2.25rem; /* 36px */
+  --odl-text-3xl: 3rem; /* 48px */
+  --odl-text-display: clamp(2.75rem, 1.6rem + 5.2vw, 5rem);
+  --odl-leading-tight: 1.08;
+  --odl-leading-snug: 1.28;
+  --odl-leading-normal: 1.6;
+  --odl-tracking-tight: -0.022em;
+  --odl-tracking-label: 0.12em;
+
+  /* Spacing — 4px rhythm */
+  --odl-space-1: 0.25rem;
+  --odl-space-2: 0.5rem;
+  --odl-space-3: 0.75rem;
+  --odl-space-4: 1rem;
+  --odl-space-5: 1.5rem;
+  --odl-space-6: 2rem;
+  --odl-space-7: 3rem;
+  --odl-space-8: 4rem;
+  --odl-space-9: 6rem;
+  --odl-space-10: 8rem;
+
+  /* Radius — restrained; the bar motif stays sharp (0) */
+  --odl-radius-xs: 3px;
+  --odl-radius-sm: 5px;
+  --odl-radius-md: 8px;
+  --odl-radius-lg: 12px;
+  --odl-radius-pill: 999px;
+
+  /* Layout */
+  --odl-container: 1200px;
+  --odl-container-narrow: 880px;
+  --odl-gutter: clamp(1.25rem, 1rem + 2vw, 2.5rem);
+
+  /* Motion */
+  --odl-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --odl-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --odl-dur-fast: 120ms;
+  --odl-dur: 200ms;
+  --odl-dur-slow: 320ms;
+}
+
+/* ---- 2. Semantic CSS variables — light (default) ------------------------- */
+:root {
+  --odl-bg: var(--odl-ink-0);
+  --odl-bg-subtle: var(--odl-ink-50);
+  --odl-bg-inset: var(--odl-ink-100);
+  --odl-surface: var(--odl-ink-0);
+  --odl-surface-2: var(--odl-ink-50);
+  --odl-fg: var(--odl-ink-900);
+  --odl-fg-strong: var(--odl-ink-950);
+  --odl-fg-muted: var(--odl-ink-600);
+  --odl-fg-subtle: var(--odl-ink-500);
+  --odl-border: var(--odl-ink-200);
+  --odl-border-strong: var(--odl-ink-300);
+  --odl-bar: var(--odl-ink-950);
+
+  --odl-accent: var(--odl-blue-600);
+  --odl-accent-hover: var(--odl-blue-700);
+  --odl-accent-subtle: var(--odl-blue-50);
+  --odl-accent-border: var(--odl-blue-200);
+  --odl-link: var(--odl-blue-600);
+
+  /* Solid action surface — vivid blue with white text in both themes */
+  --odl-action-bg: var(--odl-blue-600);
+  --odl-action-bg-hover: var(--odl-blue-700);
+  --odl-action-fg: #ffffff;
+
+  --odl-code-bg: var(--odl-ink-50);
+  --odl-code-border: var(--odl-ink-150);
+  --odl-selection: var(--odl-blue-100);
+  --odl-navbar-icon: var(--odl-fg-muted);
+  --odl-navbar-icon-hover: var(--odl-accent);
+  --odl-search-border: var(--odl-border-strong);
+  /* Percent-encoded inline SVG used only as a mask shape; icon color comes from navbar tokens. */
+  --odl-search-icon-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' height='16px' width='16px'%3E%3Cpath d='M6.02945,10.20327a4.17382,4.17382,0,1,1,4.17382-4.17382A4.15609,4.15609,0,0,1,6.02945,10.20327Zm9.69195,4.2199L10.8989,9.59979A5.88021,5.88021,0,0,0,12.058,6.02856,6.00467,6.00467,0,1,0,9.59979,10.8989l4.82338,4.82338a.89729.89729,0,0,0,1.29912,0,.89749.89749,0,0,0-.00087-1.29909Z'/%3E%3C/svg%3E");
+  --odl-github-icon-mask: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 24' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12'/%3E%3C/svg%3E");
+  --odl-discord-icon-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' fill='currentColor' viewBox='0 0 16 16'%3E%3Cpath d='M13.545 2.907a13.227 13.227 0 0 0-3.257-1.011.05.05 0 0 0-.052.025c-.141.25-.297.577-.406.833a12.19 12.19 0 0 0-3.658 0 8.258 8.258 0 0 0-.412-.833.051.051 0 0 0-.052-.025c-1.125.194-2.22.534-3.257 1.011a.041.041 0 0 0-.021.018C.356 6.024-.213 9.047.066 12.032c.001.014.01.028.021.037a13.276 13.276 0 0 0 3.995 2.02.05.05 0 0 0 .056-.019c.308-.42.582-.863.818-1.329a.05.05 0 0 0-.01-.059.051.051 0 0 0-.018-.011 8.875 8.875 0 0 1-1.248-.595.05.05 0 0 1-.02-.066.051.051 0 0 1 .015-.019c.084-.063.168-.129.248-.195a.05.05 0 0 1 .051-.007c2.619 1.196 5.454 1.196 8.041 0a.052.052 0 0 1 .053.007c.08.066.164.132.248.195a.051.051 0 0 1-.004.085 8.254 8.254 0 0 1-1.249.594.05.05 0 0 0-.03.03.052.052 0 0 0 .003.041c.24.465.515.909.817 1.329a.05.05 0 0 0 .056.019 13.235 13.235 0 0 0 4.001-2.02.049.049 0 0 0 .021-.037c.334-3.451-.559-6.449-2.366-9.106a.034.034 0 0 0-.02-.019Zm-8.198 7.307c-.789 0-1.438-.724-1.438-1.612 0-.889.637-1.613 1.438-1.613.807 0 1.45.73 1.438 1.613 0 .888-.637 1.612-1.438 1.612Zm5.316 0c-.788 0-1.438-.724-1.438-1.612 0-.889.637-1.613 1.438-1.613.807 0 1.451.73 1.438 1.613 0 .888-.631 1.612-1.438 1.612Z'/%3E%3C/svg%3E");
+
+  --odl-grid-line: rgba(18, 22, 27, 0.05);
+  --odl-shadow-sm: 0 1px 2px rgba(10, 13, 17, 0.06),
+    0 1px 1px rgba(10, 13, 17, 0.04);
+  --odl-shadow-md: 0 4px 12px rgba(10, 13, 17, 0.07),
+    0 1px 3px rgba(10, 13, 17, 0.05);
+  --odl-shadow-lg: 0 18px 40px rgba(10, 13, 17, 0.1),
+    0 4px 12px rgba(10, 13, 17, 0.06);
+}
+
+/* ---- 2b. Semantic CSS variables — dark ----------------------------------- */
+[data-theme="dark"] {
+  --odl-bg: #0a0d11;
+  --odl-bg-subtle: #0e1218;
+  --odl-bg-inset: #12161d;
+  --odl-surface: #11161c;
+  --odl-surface-2: #161c24;
+  --odl-fg: #e7ebf0;
+  --odl-fg-strong: #f6f8fa;
+  --odl-fg-muted: #9aa6b3;
+  --odl-fg-subtle: #76828f;
+  --odl-border: #242c35;
+  --odl-border-strong: #313b46;
+  --odl-bar: #f6f8fa;
+
+  --odl-accent: var(--odl-blue-300);
+  --odl-accent-hover: var(--odl-blue-200);
+  --odl-accent-subtle: rgba(44, 99, 245, 0.14);
+  --odl-accent-border: rgba(133, 169, 255, 0.32);
+  --odl-link: var(--odl-blue-300);
+
+  --odl-action-bg: var(--odl-blue-500);
+  --odl-action-bg-hover: var(--odl-blue-400);
+  --odl-action-fg: #ffffff;
+
+  --odl-code-bg: #0e131a;
+  --odl-code-border: #232b35;
+  --odl-selection: rgba(44, 99, 245, 0.36);
+  --odl-search-border: var(--odl-ink-600);
+
+  --odl-grid-line: rgba(255, 255, 255, 0.045);
+  --odl-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --odl-shadow-md: 0 6px 18px rgba(0, 0, 0, 0.5);
+  --odl-shadow-lg: 0 22px 48px rgba(0, 0, 0, 0.6);
+}
+
+/* ---- 3. Project onto Infima so docs/blog inherit the system -------------- */
+:root {
+  --ifm-color-primary: #1e54e0;
+  --ifm-color-primary-dark: #1b4bca;
+  --ifm-color-primary-darker: #1846be;
+  --ifm-color-primary-darkest: #163a9c;
+  --ifm-color-primary-light: #3568ef;
+  --ifm-color-primary-lighter: #4c79f1;
+  --ifm-color-primary-lightest: #79a0f5;
+
+  --ifm-background-color: var(--odl-bg);
+  --ifm-background-surface-color: var(--odl-surface);
+  --ifm-font-color-base: var(--odl-fg);
+  --ifm-heading-color: var(--odl-fg-strong);
+  --ifm-font-family-base: var(--odl-font-sans);
+  --ifm-heading-font-family: var(--odl-font-sans);
+  --ifm-font-family-monospace: var(--odl-font-mono);
+  --ifm-font-size-base: 16px;
+  --ifm-line-height-base: 1.6;
+  --ifm-link-color: var(--odl-link);
+  --ifm-link-hover-color: var(--odl-accent-hover);
+
+  --ifm-heading-font-weight: 650;
+  --ifm-font-weight-semibold: 600;
+
+  --ifm-navbar-background-color: var(--odl-surface);
+  --ifm-navbar-shadow: inset 0 -1px 0 var(--odl-border);
+  --ifm-navbar-link-color: var(--odl-fg-muted);
+  --ifm-navbar-link-hover-color: var(--odl-fg-strong);
+  --ifm-navbar-search-input-icon: none;
+
+  --ifm-toc-border-color: var(--odl-border);
+  --ifm-color-emphasis-200: var(--odl-border);
+  --ifm-color-emphasis-300: var(--odl-border-strong);
+
+  --ifm-code-font-size: 0.9em;
+  --ifm-code-background: var(--odl-code-bg);
+  --ifm-code-border-radius: var(--odl-radius-sm);
+  --ifm-pre-background: var(--odl-code-bg);
+
+  --ifm-button-border-radius: var(--odl-radius-md);
+  --ifm-global-radius: var(--odl-radius-md);
+
+  --docusaurus-highlighted-code-line-bg: rgba(30, 84, 224, 0.1);
+
+  --footer-font-color: var(--odl-fg-muted);
+  --footer-column-width: unset;
+  --footer-row-max-width: 1100px;
+}
+
+[data-theme="dark"] {
+  --ifm-color-primary: #5384ff;
+  --ifm-color-primary-dark: #3568ef;
+  --ifm-color-primary-darker: #2c63f5;
+  --ifm-color-primary-darkest: #1e54e0;
+  --ifm-color-primary-light: #79a0f5;
+  --ifm-color-primary-lighter: #95b5f8;
+  --ifm-color-primary-lightest: #b4ccff;
+
+  --ifm-navbar-background-color: var(--odl-surface);
+  --ifm-navbar-shadow: inset 0 -1px 0 var(--odl-border);
+  --docusaurus-highlighted-code-line-bg: rgba(83, 132, 255, 0.16);
+}

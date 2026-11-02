@@ -76,10 +76,10 @@ impl opendal_core::Configurator for KoofrConfig {
         }
         map.insert("email".to_string(), email.to_string());
 
-        if let Some(rest) = segments.next() {
-            if !rest.is_empty() {
-                map.insert("root".to_string(), rest.to_string());
-            }
+        if let Some(rest) = segments.next()
+            && !rest.is_empty()
+        {
+            map.insert("root".to_string(), rest.to_string());
         }
 
         Self::from_iter(map)

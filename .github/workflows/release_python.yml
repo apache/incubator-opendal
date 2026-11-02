@@ -26,6 +26,7 @@ on:
       - main
     paths:
       - ".github/workflows/release_python.yml"
+      - ".github/scripts/release_python/**"
   workflow_dispatch:
 
 concurrency:
@@ -39,14 +40,19 @@ jobs:
   sdist:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
+      - name: Test release helper
+        run: python3 -m unittest discover -s .github/scripts/release_python -p "test_*.py"
+      - name: Prepare release candidate version
+        if: ${{ startsWith(github.ref, 'refs/tags/') && contains(github.ref, '-') }}
+        run: python3 .github/scripts/release_python/prepare.py
       - uses: PyO3/maturin-action@v1
         with:
           working-directory: "bindings/python"
           command: sdist
           args: -o dist
       - name: Upload sdist
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: wheels-sdist
           path: bindings/python/dist
@@ -66,7 +72,10 @@ jobs:
           - { os: ubuntu-latest, target: "aarch64-unknown-linux-musl", manylinux: "musllinux_1_1" }
           - { os: ubuntu-latest, target: "armv7-unknown-linux-musleabihf", manylinux: "musllinux_1_1" }
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
+      - name: Prepare release candidate version
+        if: ${{ startsWith(github.ref, 'refs/tags/') && contains(github.ref, '-') }}
+        run: python .github/scripts/release_python/prepare.py
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
       - uses: PyO3/maturin-action@v1
@@ -85,15 +94,6 @@ jobs:
           args: --release -o dist -i python3.10 --features=pyo3/extension-module,services-all
           sccache: true
           manylinux: ${{ matrix.manylinux || 'auto' }}
-      - name: Build free-threaded wheels
-        uses: PyO3/maturin-action@v1
-        with:
-          working-directory: "bindings/python"
-          target: "${{ matrix.target }}"
-          command: build
-          args: --release -o dist -i python3.13t --features=pyo3/extension-module,services-all
-          sccache: true
-          manylinux: ${{ matrix.manylinux || 'auto' }}
       - name: Build python 3.14t
         uses: PyO3/maturin-action@v1
         with:
@@ -105,7 +105,7 @@ jobs:
           manylinux: ${{ matrix.manylinux || 'auto' }}
 
       - name: Upload wheels
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: wheels-${{ matrix.os }}-${{ matrix.target }}
           path: bindings/python/dist
@@ -118,21 +118,25 @@ jobs:
       id-token: write
     needs: [sdist, wheels]
     steps:
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: wheels-*
           merge-multiple: true
           path: bindings/python/dist
+      - name: Setup uv
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - name: Publish to TestPyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
         if: ${{ startsWith(github.ref, 'refs/tags/') && contains(github.ref, '-') }}
-        with:
-          repository-url: https://test.pypi.org/legacy/
-          skip-existing: true
-          packages-dir: bindings/python/dist
+        run: |
+          uv publish \
+            --trusted-publishing automatic \
+            --publish-url https://test.pypi.org/legacy/ \
+            --check-url https://test.pypi.org/simple/opendal/ \
+            bindings/python/dist/*
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
         if: ${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref, '-') }}
-        with:
-          skip-existing: true
-          packages-dir: bindings/python/dist
+        run: |
+          uv publish \
+            --trusted-publishing automatic \
+            --check-url https://pypi.org/simple/opendal/ \
+            bindings/python/dist/*

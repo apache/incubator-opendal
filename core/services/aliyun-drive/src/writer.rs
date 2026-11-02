@@ -20,6 +20,7 @@ use std::sync::Arc;
 use bytes::Buf;
 
 use super::core::AliyunDriveCore;
+use super::core::AliyunDriveFile;
 use super::core::CheckNameMode;
 use super::core::CreateResponse;
 use super::core::CreateType;
@@ -28,6 +29,7 @@ use opendal_core::*;
 
 pub struct AliyunDriveWriter {
     core: Arc<AliyunDriveCore>,
+    ctx: OperationContext,
 
     _op: OpWrite,
     parent_file_id: String,
@@ -38,10 +40,93 @@ pub struct AliyunDriveWriter {
     part_number: usize,
 }
 
+pub struct AliyunDriveLazyWriter {
+    core: Arc<AliyunDriveCore>,
+    ctx: OperationContext,
+    path: String,
+    args: OpWrite,
+    inner: Option<AliyunDriveWriter>,
+}
+
+impl AliyunDriveLazyWriter {
+    pub fn new(
+        core: Arc<AliyunDriveCore>,
+        ctx: OperationContext,
+        path: String,
+        args: OpWrite,
+    ) -> Self {
+        Self {
+            core,
+            ctx,
+            path,
+            args,
+            inner: None,
+        }
+    }
+
+    async fn inner(&mut self) -> Result<&mut AliyunDriveWriter> {
+        if self.inner.is_none() {
+            let parent_path = get_parent(&self.path);
+            let parent_file_id = self.core.ensure_dir_exists(&self.ctx, parent_path).await?;
+
+            // write can overwrite
+            match self.core.get_by_path(&self.ctx, &self.path).await {
+                Err(err) if err.kind() == ErrorKind::NotFound => {}
+                Err(err) => return Err(err),
+                Ok(res) => {
+                    let file: AliyunDriveFile =
+                        serde_json::from_reader(res.reader()).map_err(new_json_serialize_error)?;
+                    self.core.delete_path(&self.ctx, &file.file_id).await?;
+                }
+            };
+
+            self.inner = Some(AliyunDriveWriter::new(
+                self.core.clone(),
+                self.ctx.clone(),
+                &parent_file_id,
+                get_basename(&self.path),
+                self.args.clone(),
+            ));
+        }
+
+        Ok(self
+            .inner
+            .as_mut()
+            .expect("aliyun drive writer must be initialized"))
+    }
+}
+
+impl oio::Write for AliyunDriveLazyWriter {
+    async fn write(&mut self, bs: Buffer) -> Result<()> {
+        self.inner().await?.write(bs).await
+    }
+
+    async fn close(&mut self) -> Result<Metadata> {
+        match &mut self.inner {
+            Some(w) => w.close().await,
+            None => Ok(MetadataBuilder::unknown().build()),
+        }
+    }
+
+    async fn abort(&mut self) -> Result<()> {
+        match &mut self.inner {
+            Some(w) => w.abort().await,
+            None => Ok(()),
+        }
+    }
+}
+
 impl AliyunDriveWriter {
-    pub fn new(core: Arc<AliyunDriveCore>, parent_file_id: &str, name: &str, op: OpWrite) -> Self {
+    pub fn new(
+        core: Arc<AliyunDriveCore>,
+        ctx: OperationContext,
+        parent_file_id: &str,
+        name: &str,
+        op: OpWrite,
+    ) -> Self {
         AliyunDriveWriter {
             core,
+            ctx,
             _op: op,
             parent_file_id: parent_file_id.to_string(),
             name: name.to_string(),
@@ -60,6 +145,7 @@ impl oio::Write for AliyunDriveWriter {
                 let res = self
                     .core
                     .create(
+                        &self.ctx,
                         Some(&self.parent_file_id),
                         &self.name,
                         CreateType::File,
@@ -82,7 +168,7 @@ impl oio::Write for AliyunDriveWriter {
 
         if let Err(err) = self
             .core
-            .upload(file_id, upload_id, self.part_number, bs)
+            .upload(&self.ctx, file_id, upload_id, self.part_number, bs)
             .await
             && err.kind() != ErrorKind::AlreadyExists
         {
@@ -97,17 +183,17 @@ impl oio::Write for AliyunDriveWriter {
     async fn close(&mut self) -> Result<Metadata> {
         let (Some(upload_id), Some(file_id)) = (self.upload_id.as_ref(), self.file_id.as_ref())
         else {
-            return Ok(Metadata::default());
+            return Ok(MetadataBuilder::unknown().build());
         };
 
-        self.core.complete(file_id, upload_id).await?;
-        Ok(Metadata::default())
+        self.core.complete(&self.ctx, file_id, upload_id).await?;
+        Ok(MetadataBuilder::unknown().build())
     }
 
     async fn abort(&mut self) -> Result<()> {
         let Some(file_id) = self.file_id.as_ref() else {
             return Ok(());
         };
-        self.core.delete_path(file_id).await
+        self.core.delete_path(&self.ctx, file_id).await
     }
 }

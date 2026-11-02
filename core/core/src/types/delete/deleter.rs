@@ -20,7 +20,7 @@ use std::pin::pin;
 use futures::Stream;
 use futures::StreamExt;
 
-use crate::raw::oio::DeleteDyn;
+use crate::raw::oio::Delete;
 use crate::raw::*;
 use crate::*;
 
@@ -83,27 +83,34 @@ use crate::*;
 /// ```
 pub struct Deleter {
     deleter: oio::Deleter,
+    scheme: &'static str,
+    capability: Capability,
 }
 
 impl Deleter {
-    pub(crate) async fn create(acc: Accessor) -> Result<Self> {
-        let (_, deleter) = acc.delete().await?;
+    pub(crate) fn create(ctx: OperationContext, srv: Servicer) -> Result<Self> {
+        let scheme = srv.info().scheme();
+        let capability = srv.capability();
+        let deleter = srv.delete(&ctx)?;
 
-        Ok(Self { deleter })
+        Ok(Self {
+            deleter,
+            scheme,
+            capability,
+        })
     }
 
-    /// Delete a path.
+    /// Delete a path with default or per-entry options.
+    ///
+    /// Pass a path directly to use [`options::DeleteOptions::default`]. Pass
+    /// `(String, DeleteOptions)` when this entry needs version or condition
+    /// options.
     pub async fn delete(&mut self, input: impl IntoDeleteInput) -> Result<()> {
-        let input = input.into_delete_input();
-        let mut op = OpDelete::default();
-        if let Some(version) = &input.version {
-            op = op.with_version(version);
-        }
-        if input.recursive {
-            op = op.with_recursive(true);
-        }
-
-        self.deleter.delete_dyn(&input.path, op).await?;
+        let (path, options) = input.into_delete_input();
+        let path = normalize_path(&path);
+        let op = OpDelete::from_options(&self.capability, options)
+            .map_err(|err| err.with_context("service", self.scheme))?;
+        self.deleter.delete(&path, op).await?;
         Ok(())
     }
 
@@ -186,11 +193,86 @@ impl Deleter {
 
     /// Close the deleter, this will flush the deleter and wait until all paths are deleted.
     pub async fn close(&mut self) -> Result<()> {
-        self.deleter.close_dyn().await
+        self.deleter.close().await
     }
 
     /// Convert the deleter into a sink.
     pub fn into_sink<T: IntoDeleteInput>(self) -> FuturesDeleteSink<T> {
         FuturesDeleteSink::new(self)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::Mutex;
+
+    use futures::SinkExt;
+
+    use super::*;
+    use crate::raw::OpDelete;
+    use crate::raw::oio;
+
+    struct MockBatchDeleter {
+        buffer: Vec<String>,
+        flushed: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl oio::Delete for MockBatchDeleter {
+        async fn delete(&mut self, path: &str, _args: OpDelete) -> Result<()> {
+            self.buffer.push(path.to_string());
+            Ok(())
+        }
+
+        async fn close(&mut self) -> Result<()> {
+            let mut flushed = self.flushed.lock().unwrap();
+            flushed.extend(self.buffer.drain(..));
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_sink_close_must_flush_buffered_deletes() {
+        let flushed = Arc::new(Mutex::new(Vec::<String>::new()));
+
+        let mock = MockBatchDeleter {
+            buffer: Vec::new(),
+            flushed: flushed.clone(),
+        };
+
+        let deleter = Deleter {
+            deleter: Box::new(mock),
+            scheme: "memory",
+            capability: Capability::default(),
+        };
+        let mut sink = deleter.into_sink::<String>();
+
+        sink.send("file_a".to_string()).await.unwrap();
+        sink.send("file_b".to_string()).await.unwrap();
+        sink.close().await.unwrap();
+
+        let flushed = flushed.lock().unwrap();
+        assert!(
+            flushed.contains(&"file_a".to_string()),
+            "file_a should have been flushed by close, got: {:?}",
+            *flushed
+        );
+        assert!(
+            flushed.contains(&"file_b".to_string()),
+            "file_b should have been flushed by close, got: {:?}",
+            *flushed
+        );
+    }
+
+    #[tokio::test]
+    async fn test_delete_normalizes_path() {
+        let op = Operator::new(services::Memory::default()).unwrap();
+        op.write("dir/file", "data").await.unwrap();
+
+        let mut deleter = op.deleter().await.unwrap();
+        deleter.delete("/dir/file").await.unwrap();
+        deleter.close().await.unwrap();
+
+        assert!(!op.exists("dir/file").await.unwrap());
     }
 }

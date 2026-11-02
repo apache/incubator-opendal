@@ -44,7 +44,7 @@ pub struct MemcachedConfig {
     /// Memcached password, optional.
     pub password: Option<String>,
     /// The default ttl for put operations.
-    pub default_ttl: Option<Duration>,
+    pub default_ttl: Option<SignedDuration>,
     /// The maximum number of connections allowed.
     ///
     /// default is 10
@@ -71,17 +71,20 @@ impl Configurator for MemcachedConfig {
             map.insert("endpoint".to_string(), format!("tcp://{authority}"));
         }
 
-        if let Some(root) = uri.root() {
-            if !root.is_empty() {
-                map.insert("root".to_string(), root.to_string());
-            }
+        if let Some(root) = uri.root()
+            && !root.is_empty()
+        {
+            map.insert("root".to_string(), root.to_string());
         }
 
         Self::from_iter(map)
     }
 
     fn into_builder(self) -> Self::Builder {
-        MemcachedBuilder { config: self }
+        MemcachedBuilder {
+            config: self,
+            default_ttl: None,
+        }
     }
 }
 
@@ -99,6 +102,14 @@ mod tests {
         let cfg = MemcachedConfig::from_uri(&uri)?;
         assert_eq!(cfg.endpoint.as_deref(), Some("tcp://cache.local:11211"));
         assert_eq!(cfg.root.as_deref(), Some("app/session"));
+        Ok(())
+    }
+
+    #[test]
+    fn from_iter_parses_default_ttl() -> Result<()> {
+        let cfg = MemcachedConfig::from_iter([("default_ttl".to_string(), "1500ms".to_string())])?;
+
+        assert_eq!(cfg.default_ttl, Some(SignedDuration::from_millis(1500)));
         Ok(())
     }
 }

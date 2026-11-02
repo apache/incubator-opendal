@@ -18,12 +18,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use asyncband::mpsc;
+use asyncband::oneshot;
 use bytes::Buf;
 use bytes::Bytes;
-use futures::SinkExt;
-use futures::StreamExt;
-use futures::channel::mpsc;
-use futures::channel::oneshot;
 use monoio::fs::OpenOptions;
 use opendal_core::raw::*;
 use opendal_core::*;
@@ -93,7 +91,7 @@ impl MonoiofsWriter {
         };
         // wait for write or close request and send back result to main thread
         loop {
-            let Some(req) = rx.next().await else {
+            let Ok(req) = rx.recv().await else {
                 // MonoiofsWriter is dropped, exit worker task
                 break;
             };
@@ -131,15 +129,11 @@ impl oio::Write for MonoiofsWriter {
             let buf = bs.current();
             let n = buf.len();
             let (tx, rx) = oneshot::channel();
-            self.core.unwrap(
-                self.tx
-                    .send(WriterRequest::Write {
-                        pos: self.pos,
-                        buf,
-                        tx,
-                    })
-                    .await,
-            );
+            self.core.unwrap(self.tx.send(WriterRequest::Write {
+                pos: self.pos,
+                buf,
+                tx,
+            }));
             self.core.unwrap(rx.await)?;
             self.pos += n as u64;
             bs.advance(n);
@@ -152,13 +146,11 @@ impl oio::Write for MonoiofsWriter {
     /// on worker thread.
     async fn close(&mut self) -> Result<Metadata> {
         let (tx, rx) = oneshot::channel();
-        self.core
-            .unwrap(self.tx.send(WriterRequest::Stat { tx }).await);
+        self.core.unwrap(self.tx.send(WriterRequest::Stat { tx }));
         let file_meta = self.core.unwrap(rx.await)?;
 
         let (tx, rx) = oneshot::channel();
-        self.core
-            .unwrap(self.tx.send(WriterRequest::Close { tx }).await);
+        self.core.unwrap(self.tx.send(WriterRequest::Close { tx }));
         self.core.unwrap(rx.await)?;
 
         let mode = if file_meta.is_dir() {
@@ -168,12 +160,15 @@ impl oio::Write for MonoiofsWriter {
         } else {
             EntryMode::Unknown
         };
-        let meta = Metadata::new(mode)
-            .with_content_length(file_meta.len())
-            .with_last_modified(Timestamp::try_from(
-                file_meta.modified().map_err(new_std_io_error)?,
-            )?);
-        Ok(meta)
+        let mut meta = match mode {
+            EntryMode::FILE => MetadataBuilder::file(file_meta.len()),
+            EntryMode::DIR => MetadataBuilder::dir(),
+            EntryMode::Unknown => MetadataBuilder::unknown(),
+        };
+        meta.last_modified(Timestamp::try_from(
+            file_meta.modified().map_err(new_std_io_error)?,
+        )?);
+        Ok(meta.build())
     }
 
     async fn abort(&mut self) -> Result<()> {

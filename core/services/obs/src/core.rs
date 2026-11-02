@@ -16,7 +16,6 @@
 // under the License.
 
 use std::fmt::Debug;
-use std::sync::Arc;
 
 use bytes::Bytes;
 use http::Request;
@@ -26,15 +25,15 @@ use http::header::CONTENT_DISPOSITION;
 use http::header::CONTENT_LENGTH;
 use http::header::CONTENT_TYPE;
 use http::header::IF_MATCH;
+use http::header::IF_MODIFIED_SINCE;
 use http::header::IF_NONE_MATCH;
-use reqsign::HuaweicloudObsCredential;
-use reqsign::HuaweicloudObsCredentialLoader;
-use reqsign::HuaweicloudObsSigner;
-use serde::Deserialize;
-use serde::Serialize;
-
+use http::header::IF_UNMODIFIED_SINCE;
 use opendal_core::raw::*;
 use opendal_core::*;
+use reqsign_core::{Context, Signer};
+use reqsign_huaweicloud_obs::Credential;
+use serde::Deserialize;
+use serde::Serialize;
 
 pub mod constants {
     pub const X_OBS_META_PREFIX: &str = "x-obs-meta-";
@@ -42,13 +41,13 @@ pub mod constants {
 }
 
 pub struct ObsCore {
-    pub info: Arc<AccessorInfo>,
+    pub info: ServiceInfo,
+    pub capability: Capability,
     pub bucket: String,
     pub root: String,
     pub endpoint: String,
 
-    pub signer: HuaweicloudObsSigner,
-    pub loader: HuaweicloudObsCredentialLoader,
+    pub signer: Signer<Credential>,
 }
 
 impl Debug for ObsCore {
@@ -62,60 +61,65 @@ impl Debug for ObsCore {
 }
 
 impl ObsCore {
-    async fn load_credential(&self) -> Result<Option<HuaweicloudObsCredential>> {
-        let cred = self
-            .loader
-            .load()
+    fn signer(&self, ctx: &OperationContext) -> Signer<Credential> {
+        self.signer.clone().with_context(
+            Context::new()
+                .with_file_read(reqsign_file_read_tokio::TokioFileRead)
+                .with_http_send(ctx.http_transport().clone())
+                .with_env(reqsign_core::OsEnv),
+        )
+    }
+
+    pub async fn sign<T>(&self, ctx: &OperationContext, req: Request<T>) -> Result<Request<T>> {
+        let (mut parts, body) = req.into_parts();
+
+        self.signer(ctx)
+            .sign(&mut parts, None)
             .await
-            .map_err(new_request_credential_error)?;
+            .map_err(|e| new_request_sign_error(e.into()))?;
 
-        if let Some(cred) = cred {
-            Ok(Some(cred))
-        } else {
-            Ok(None)
-        }
+        Ok(Request::from_parts(parts, body))
     }
 
-    pub async fn sign<T>(&self, req: &mut Request<T>) -> Result<()> {
-        let cred = if let Some(cred) = self.load_credential().await? {
-            cred
-        } else {
-            return Ok(());
-        };
+    pub async fn sign_query<T>(
+        &self,
+        ctx: &OperationContext,
+        req: Request<T>,
+        duration: Duration,
+    ) -> Result<Request<T>> {
+        let (mut parts, body) = req.into_parts();
 
-        self.signer.sign(req, &cred).map_err(new_request_sign_error)
-    }
+        self.signer(ctx)
+            .sign(&mut parts, Some(duration))
+            .await
+            .map_err(|e| new_request_sign_error(e.into()))?;
 
-    pub async fn sign_query<T>(&self, req: &mut Request<T>, duration: Duration) -> Result<()> {
-        let cred = if let Some(cred) = self.load_credential().await? {
-            cred
-        } else {
-            return Ok(());
-        };
-
-        self.signer
-            .sign_query(req, duration, &cred)
-            .map_err(new_request_sign_error)
+        Ok(Request::from_parts(parts, body))
     }
 
     #[inline]
-    pub async fn send(&self, req: Request<Buffer>) -> Result<Response<Buffer>> {
-        self.info.http_client().send(req).await
+    pub async fn send(
+        &self,
+        ctx: &OperationContext,
+        req: Request<Buffer>,
+    ) -> Result<Response<Buffer>> {
+        ctx.http_transport().send(req).await
     }
 }
 
 impl ObsCore {
     pub async fn obs_get_object(
         &self,
+        ctx: &OperationContext,
         path: &str,
         range: BytesRange,
         args: &OpRead,
     ) -> Result<Response<HttpBody>> {
-        let mut req = self.obs_get_object_request(path, range, args)?;
+        let req = self.obs_get_object_request(path, range, args)?;
 
-        self.sign(&mut req).await?;
+        let req = self.sign(ctx, req).await?;
 
-        self.info.http_client().fetch(req).await
+        ctx.http_transport().fetch(req).await
     }
 
     pub fn obs_get_object_request(
@@ -142,8 +146,17 @@ impl ObsCore {
             req = req.header(IF_NONE_MATCH, if_none_match);
         }
 
+        if let Some(if_modified_since) = args.if_modified_since() {
+            req = req.header(IF_MODIFIED_SINCE, if_modified_since.format_http_date());
+        }
+
+        if let Some(if_unmodified_since) = args.if_unmodified_since() {
+            req = req.header(IF_UNMODIFIED_SINCE, if_unmodified_since.format_http_date());
+        }
+
         let req = req
             .extension(Operation::Read)
+            .extension(ServiceOperation("GetObject"))
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
 
@@ -183,18 +196,24 @@ impl ObsCore {
 
         let req = req
             .extension(Operation::Write)
+            .extension(ServiceOperation("PutObject"))
             .body(body)
             .map_err(new_request_build_error)?;
 
         Ok(req)
     }
 
-    pub async fn obs_head_object(&self, path: &str, args: &OpStat) -> Result<Response<Buffer>> {
-        let mut req = self.obs_head_object_request(path, args)?;
+    pub async fn obs_head_object(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: &OpStat,
+    ) -> Result<Response<Buffer>> {
+        let req = self.obs_head_object_request(path, args)?;
 
-        self.sign(&mut req).await?;
+        let req = self.sign(ctx, req).await?;
 
-        self.send(req).await
+        self.send(ctx, req).await
     }
 
     pub fn obs_head_object_request(&self, path: &str, args: &OpStat) -> Result<Request<Buffer>> {
@@ -217,27 +236,33 @@ impl ObsCore {
 
         let req = req
             .extension(Operation::Stat)
+            .extension(ServiceOperation("HeadObject"))
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
 
         Ok(req)
     }
 
-    pub async fn obs_delete_object(&self, path: &str) -> Result<Response<Buffer>> {
+    pub async fn obs_delete_object(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+    ) -> Result<Response<Buffer>> {
         let p = build_abs_path(&self.root, path);
 
         let url = format!("{}/{}", self.endpoint, percent_encode_path(&p));
 
         let req = Request::delete(&url);
 
-        let mut req = req
+        let req = req
             .extension(Operation::Delete)
+            .extension(ServiceOperation("DeleteObject"))
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
 
-        self.sign(&mut req).await?;
+        let req = self.sign(ctx, req).await?;
 
-        self.send(req).await
+        self.send(ctx, req).await
     }
 
     pub fn obs_append_object_request(
@@ -274,32 +299,40 @@ impl ObsCore {
 
         let req = req
             .extension(Operation::Write)
+            .extension(ServiceOperation("AppendObject"))
             .body(body)
             .map_err(new_request_build_error)?;
 
         Ok(req)
     }
 
-    pub async fn obs_copy_object(&self, from: &str, to: &str) -> Result<Response<Buffer>> {
+    pub async fn obs_copy_object(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+    ) -> Result<Response<Buffer>> {
         let source = build_abs_path(&self.root, from);
         let target = build_abs_path(&self.root, to);
 
         let source = format!("/{}/{}", self.bucket, percent_encode_path(&source));
         let url = format!("{}/{}", self.endpoint, percent_encode_path(&target));
 
-        let mut req = Request::put(&url)
+        let req = Request::put(&url)
             .extension(Operation::Copy)
+            .extension(ServiceOperation("CopyObject"))
             .header("x-obs-copy-source", &source)
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
 
-        self.sign(&mut req).await?;
+        let req = self.sign(ctx, req).await?;
 
-        self.send(req).await
+        self.send(ctx, req).await
     }
 
     pub async fn obs_list_objects(
         &self,
+        ctx: &OperationContext,
         path: &str,
         next_marker: &str,
         delimiter: &str,
@@ -318,20 +351,22 @@ impl ObsCore {
             url = url.push("max-keys", &limit.to_string());
         }
         if !next_marker.is_empty() {
-            url = url.push("marker", next_marker);
+            url = url.push("marker", &percent_encode_path(next_marker));
         }
 
-        let mut req = Request::get(url.finish())
+        let req = Request::get(url.finish())
             .extension(Operation::List)
+            .extension(ServiceOperation("ListObjects"))
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
 
-        self.sign(&mut req).await?;
+        let req = self.sign(ctx, req).await?;
 
-        self.send(req).await
+        self.send(ctx, req).await
     }
     pub async fn obs_initiate_multipart_upload(
         &self,
+        ctx: &OperationContext,
         path: &str,
         content_type: Option<&str>,
     ) -> Result<Response<Buffer>> {
@@ -344,17 +379,19 @@ impl ObsCore {
             req = req.header(CONTENT_TYPE, mime)
         }
 
-        let mut req = req
+        let req = req
             .extension(Operation::Write)
+            .extension(ServiceOperation("InitiateMultipartUpload"))
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
 
-        self.sign(&mut req).await?;
+        let req = self.sign(ctx, req).await?;
 
-        self.send(req).await
+        self.send(ctx, req).await
     }
     pub async fn obs_upload_part_request(
         &self,
+        ctx: &OperationContext,
         path: &str,
         upload_id: &str,
         part_number: usize,
@@ -377,19 +414,21 @@ impl ObsCore {
             req = req.header(CONTENT_LENGTH, size);
         }
 
-        let mut req = req
+        let req = req
             .extension(Operation::Write)
+            .extension(ServiceOperation("UploadPart"))
             // Set body
             .body(body)
             .map_err(new_request_build_error)?;
 
-        self.sign(&mut req).await?;
+        let req = self.sign(ctx, req).await?;
 
-        self.send(req).await
+        self.send(ctx, req).await
     }
 
     pub async fn obs_complete_multipart_upload(
         &self,
+        ctx: &OperationContext,
         path: &str,
         upload_id: &str,
         parts: Vec<CompleteMultipartUploadRequestPart>,
@@ -413,18 +452,20 @@ impl ObsCore {
         // Set content-type to `application/xml` to avoid mixed with form post.
         let req = req.header(CONTENT_TYPE, "application/xml");
 
-        let mut req = req
+        let req = req
             .extension(Operation::Write)
+            .extension(ServiceOperation("CompleteMultipartUpload"))
             .body(Buffer::from(Bytes::from(content)))
             .map_err(new_request_build_error)?;
 
-        self.sign(&mut req).await?;
-        self.send(req).await
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 
     /// Abort an on-going multipart upload.
     pub async fn obs_abort_multipart_upload(
         &self,
+        ctx: &OperationContext,
         path: &str,
         upload_id: &str,
     ) -> Result<Response<Buffer>> {
@@ -437,13 +478,14 @@ impl ObsCore {
             percent_encode_path(upload_id)
         );
 
-        let mut req = Request::delete(&url)
+        let req = Request::delete(&url)
             .extension(Operation::Write)
+            .extension(ServiceOperation("AbortMultipartUpload"))
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
 
-        self.sign(&mut req).await?;
-        self.send(req).await
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 }
 
@@ -500,7 +542,7 @@ pub struct CompleteMultipartUploadRequestPart {
 
 /// Output of `CompleteMultipartUpload` operation
 #[derive(Debug, Default, Deserialize)]
-#[serde[default, rename_all = "PascalCase"]]
+#[serde(default, rename_all = "PascalCase")]
 pub struct CompleteMultipartUploadResult {
     pub location: String,
     pub bucket: String,
@@ -603,4 +645,97 @@ mod tests {
             ["hello", "world"],
         )
     }
+
+    #[test]
+    fn test_parse_error() {
+        let bs = bytes::Bytes::from(
+            r#"
+<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+<Code>NoSuchKey</Code>
+<Message>The resource you requested does not exist</Message>
+<Resource>/example-bucket/object</Resource>
+<RequestId>001B21A61C6C0000013402C4616D5285</RequestId>
+<HostId>RkRCRDJENDc5MzdGQkQ4OUY3MTI4NTQ3NDk2Mjg0M0FBQUFBQUFBYmJiYmJiYmJD</HostId>
+</Error>
+"#,
+        );
+
+        let out: ObsError = de::from_reader(bs.reader()).expect("must success");
+        println!("{out:?}");
+
+        assert_eq!(out.code, "NoSuchKey");
+        assert_eq!(out.message, "The resource you requested does not exist");
+        assert_eq!(out.resource, "/example-bucket/object");
+        assert_eq!(out.request_id, "001B21A61C6C0000013402C4616D5285");
+        assert_eq!(
+            out.host_id,
+            "RkRCRDJENDc5MzdGQkQ4OUY3MTI4NTQ3NDk2Mjg0M0FBQUFBQUFBYmJiYmJiYmJD"
+        );
+    }
+}
+
+use bytes::Buf;
+use http::StatusCode;
+use quick_xml::de;
+
+/// ObsError is the error returned by obs service.
+#[derive(Default, Debug, Deserialize)]
+#[serde(default, rename_all = "PascalCase")]
+struct ObsError {
+    code: String,
+    message: String,
+    resource: String,
+    request_id: String,
+    host_id: String,
+}
+
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+}
+
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self { service_operation }
+    }
+}
+
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
+    let (parts, body) = resp.into_parts();
+    let bs = body.to_bytes();
+
+    let (kind, retryable) = match parts.status {
+        StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
+        StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, false),
+        StatusCode::PRECONDITION_FAILED | StatusCode::NOT_MODIFIED => {
+            (ErrorKind::ConditionNotMatch, false)
+        }
+        StatusCode::INTERNAL_SERVER_ERROR
+        | StatusCode::BAD_GATEWAY
+        | StatusCode::SERVICE_UNAVAILABLE
+        | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
+        // OBS could return `520 Origin Error` errors which should be retried.
+        v if v.as_u16() == 520 => (ErrorKind::Unexpected, true),
+
+        _ => (ErrorKind::Unexpected, false),
+    };
+
+    let message = match de::from_reader::<_, ObsError>(bs.clone().reader()) {
+        Ok(obs_error) => format!("{obs_error:?}"),
+        Err(_) => String::from_utf8_lossy(&bs).into_owned(),
+    };
+
+    let mut err = Error::new(kind, message);
+
+    err = err.with_context("service_operation", ctx.service_operation.0);
+    err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
+
+    err
 }

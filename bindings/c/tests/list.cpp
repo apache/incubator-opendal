@@ -95,7 +95,7 @@ TEST_F(OpendalListTest, ListDirTest)
             EXPECT_EQ(opendal_metadata_content_length(s.meta), nbytes);
         }
 
-        free(de_path);
+        opendal_string_free(de_path);
         opendal_metadata_free(s.meta);
         opendal_entry_free(entry);
 

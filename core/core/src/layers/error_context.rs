@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::fmt::Debug;
 use std::fmt::Formatter;
 use std::sync::Arc;
 
@@ -42,146 +41,181 @@ use crate::*;
 /// - `deleted`: The already deleted size in given deleter.
 pub struct ErrorContextLayer;
 
-impl<A: Access> Layer<A> for ErrorContextLayer {
-    type LayeredAccess = ErrorContextAccessor<A>;
+impl std::fmt::Debug for ErrorContextLayer {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ErrorContextLayer").finish()
+    }
+}
 
-    fn layer(&self, inner: A) -> Self::LayeredAccess {
-        let info = inner.info();
-        ErrorContextAccessor { info, inner }
+impl Layer for ErrorContextLayer {
+    fn apply_service(&self, inner: Servicer) -> Servicer {
+        Arc::new(self.layer(inner))
+    }
+}
+
+impl ErrorContextLayer {
+    fn layer(&self, inner: Servicer) -> ErrorContextService {
+        ErrorContextService { inner }
     }
 }
 
 /// Provide error context wrapper for backend.
-pub struct ErrorContextAccessor<A: Access> {
-    info: Arc<AccessorInfo>,
-    inner: A,
+pub struct ErrorContextService {
+    inner: Servicer,
 }
 
-impl<A: Access> Debug for ErrorContextAccessor<A> {
+impl std::fmt::Debug for ErrorContextService {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         self.inner.fmt(f)
     }
 }
 
-impl<A: Access> LayeredAccess for ErrorContextAccessor<A> {
-    type Inner = A;
-    type Reader = ErrorContextWrapper<A::Reader>;
-    type Writer = ErrorContextWrapper<A::Writer>;
-    type Lister = ErrorContextWrapper<A::Lister>;
-    type Deleter = ErrorContextWrapper<A::Deleter>;
+impl Service for ErrorContextService {
+    type Reader = ErrorContextWrapper<oio::Reader>;
+    type Writer = ErrorContextWrapper<oio::Writer>;
+    type Lister = ErrorContextWrapper<oio::Lister>;
+    type Deleter = ErrorContextWrapper<oio::Deleter>;
+    type Copier = ErrorContextWrapper<oio::Copier>;
+    type Composer = ErrorContextWrapper<oio::Composer>;
 
-    fn inner(&self) -> &Self::Inner {
-        &self.inner
+    fn info(&self) -> ServiceInfo {
+        self.inner.info()
     }
 
-    async fn create_dir(&self, path: &str, args: OpCreateDir) -> Result<RpCreateDir> {
-        self.inner.create_dir(path, args).await.map_err(|err| {
+    fn capability(&self) -> Capability {
+        self.inner.capability()
+    }
+
+    async fn create_dir(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        self.inner.create_dir(ctx, path, args).await.map_err(|err| {
             err.with_operation(Operation::CreateDir)
-                .with_context("service", self.info.scheme())
+                .with_context("service", self.info().scheme())
                 .with_context("path", path)
         })
     }
 
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let range = args.range();
+    fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
         self.inner
-            .read(path, args)
-            .await
-            .map(|(rp, r)| {
-                (
-                    rp,
-                    ErrorContextWrapper::new(self.info.scheme(), path.to_string(), r)
-                        .with_range(range),
-                )
-            })
+            .read(ctx, path, args)
+            .map(|r| ErrorContextWrapper::new(self.info().scheme(), path, r))
             .map_err(|err| {
                 err.with_operation(Operation::Read)
-                    .with_context("service", self.info.scheme())
+                    .with_context("service", self.info().scheme())
                     .with_context("path", path)
-                    .with_context("range", range.to_string())
             })
     }
 
-    async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
+    fn write(&self, ctx: &OperationContext, path: &str, args: OpWrite) -> Result<Self::Writer> {
         self.inner
-            .write(path, args)
-            .await
-            .map(|(rp, w)| {
-                (
-                    rp,
-                    ErrorContextWrapper::new(self.info.scheme(), path.to_string(), w),
-                )
-            })
+            .write(ctx, path, args)
+            .map(|w| ErrorContextWrapper::new(self.info().scheme(), path, w))
             .map_err(|err| {
                 err.with_operation(Operation::Write)
-                    .with_context("service", self.info.scheme())
+                    .with_context("service", self.info().scheme())
                     .with_context("path", path)
             })
     }
 
-    async fn copy(&self, from: &str, to: &str, args: OpCopy) -> Result<RpCopy> {
-        self.inner.copy(from, to, args).await.map_err(|err| {
-            err.with_operation(Operation::Copy)
-                .with_context("service", self.info.scheme())
-                .with_context("from", from)
-                .with_context("to", to)
-        })
+    fn copy(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpCopy,
+    ) -> Result<Self::Copier> {
+        self.inner
+            .copy(ctx, from, to, args)
+            .map(|p| ErrorContextWrapper::new(self.info().scheme(), to, p))
+            .map_err(|err| {
+                err.with_operation(Operation::Copy)
+                    .with_context("service", self.info().scheme())
+                    .with_context("from", from)
+                    .with_context("to", to)
+            })
     }
 
-    async fn rename(&self, from: &str, to: &str, args: OpRename) -> Result<RpRename> {
-        self.inner.rename(from, to, args).await.map_err(|err| {
+    fn compose(&self, ctx: &OperationContext, to: &str, args: OpCompose) -> Result<Self::Composer> {
+        self.inner
+            .compose(ctx, to, args)
+            .map(|composer| ErrorContextWrapper::new(self.info().scheme(), to, composer))
+            .map_err(|err| {
+                err.with_operation(Operation::Compose)
+                    .with_context("service", self.info().scheme())
+                    .with_context("to", to)
+            })
+    }
+
+    async fn rename(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpRename,
+    ) -> Result<RpRename> {
+        self.inner.rename(ctx, from, to, args).await.map_err(|err| {
             err.with_operation(Operation::Rename)
-                .with_context("service", self.info.scheme())
+                .with_context("service", self.info().scheme())
                 .with_context("from", from)
                 .with_context("to", to)
         })
     }
 
-    async fn stat(&self, path: &str, args: OpStat) -> Result<RpStat> {
-        self.inner.stat(path, args).await.map_err(|err| {
-            err.with_operation(Operation::Stat)
-                .with_context("service", self.info.scheme())
+    async fn restore(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpRestore,
+    ) -> Result<RpRestore> {
+        self.inner.restore(ctx, path, args).await.map_err(|err| {
+            err.with_operation(Operation::Restore)
+                .with_context("service", self.info().scheme())
                 .with_context("path", path)
         })
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
+    async fn stat(&self, ctx: &OperationContext, path: &str, args: OpStat) -> Result<RpStat> {
+        self.inner.stat(ctx, path, args).await.map_err(|err| {
+            err.with_operation(Operation::Stat)
+                .with_context("service", self.info().scheme())
+                .with_context("path", path)
+        })
+    }
+
+    fn delete(&self, ctx: &OperationContext) -> Result<Self::Deleter> {
         self.inner
-            .delete()
-            .await
-            .map(|(rp, w)| {
-                (
-                    rp,
-                    ErrorContextWrapper::new(self.info.scheme(), "".to_string(), w),
-                )
-            })
+            .delete(ctx)
+            .map(|w| ErrorContextWrapper::new(self.info().scheme(), "", w))
             .map_err(|err| {
                 err.with_operation(Operation::Delete)
-                    .with_context("service", self.info.scheme())
+                    .with_context("service", self.info().scheme())
             })
     }
 
-    async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
+    fn list(&self, ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
         self.inner
-            .list(path, args)
-            .await
-            .map(|(rp, p)| {
-                (
-                    rp,
-                    ErrorContextWrapper::new(self.info.scheme(), path.to_string(), p),
-                )
-            })
+            .list(ctx, path, args)
+            .map(|p| ErrorContextWrapper::new(self.info().scheme(), path, p))
             .map_err(|err| {
                 err.with_operation(Operation::List)
-                    .with_context("service", self.info.scheme())
+                    .with_context("service", self.info().scheme())
                     .with_context("path", path)
             })
     }
 
-    async fn presign(&self, path: &str, args: OpPresign) -> Result<RpPresign> {
-        self.inner.presign(path, args).await.map_err(|err| {
+    async fn presign(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpPresign,
+    ) -> Result<RpPresign> {
+        self.inner.presign(ctx, path, args).await.map_err(|err| {
             err.with_operation(Operation::Presign)
-                .with_context("service", self.info.scheme())
+                .with_context("service", self.info().scheme())
                 .with_context("path", path)
         })
     }
@@ -196,10 +230,10 @@ pub struct ErrorContextWrapper<T> {
 }
 
 impl<T> ErrorContextWrapper<T> {
-    fn new(scheme: &'static str, path: String, inner: T) -> Self {
+    fn new(scheme: &'static str, path: impl Into<String>, inner: T) -> Self {
         Self {
             scheme,
-            path,
+            path: path.into(),
             inner,
             range: BytesRange::default(),
             processed: 0,
@@ -210,9 +244,49 @@ impl<T> ErrorContextWrapper<T> {
         self.range = range;
         self
     }
+
+    fn read_error(&self, err: Error) -> Error {
+        err.with_operation(Operation::Read)
+            .with_context("service", self.scheme)
+            .with_context("path", &self.path)
+            .with_context("range", self.range.to_string())
+            .with_context("read", self.processed.to_string())
+    }
 }
 
 impl<T: oio::Read> oio::Read for ErrorContextWrapper<T> {
+    async fn open(&self, range: BytesRange) -> Result<(RpRead, Box<dyn oio::ReadStreamDyn>)> {
+        self.inner
+            .open(range)
+            .await
+            .map(|(rp, stream)| {
+                (
+                    rp,
+                    Box::new(
+                        ErrorContextWrapper::new(self.scheme, self.path.clone(), stream)
+                            .with_range(range),
+                    ) as Box<dyn oio::ReadStreamDyn>,
+                )
+            })
+            .map_err(|err| {
+                err.with_operation(Operation::Read)
+                    .with_context("service", self.scheme)
+                    .with_context("path", &self.path)
+                    .with_context("range", range.to_string())
+            })
+    }
+
+    async fn read(&self, range: BytesRange) -> Result<(RpRead, Buffer)> {
+        self.inner.read(range).await.map_err(|err| {
+            err.with_operation(Operation::Read)
+                .with_context("service", self.scheme)
+                .with_context("path", &self.path)
+                .with_context("range", range.to_string())
+        })
+    }
+}
+
+impl<T: oio::ReadStream> oio::ReadStream for ErrorContextWrapper<T> {
     async fn read(&mut self) -> Result<Buffer> {
         self.inner
             .read()
@@ -220,13 +294,7 @@ impl<T: oio::Read> oio::Read for ErrorContextWrapper<T> {
             .inspect(|bs| {
                 self.processed += bs.len() as u64;
             })
-            .map_err(|err| {
-                err.with_operation(Operation::Read)
-                    .with_context("service", self.scheme)
-                    .with_context("path", &self.path)
-                    .with_context("range", self.range.to_string())
-                    .with_context("read", self.processed.to_string())
-            })
+            .map_err(|err| self.read_error(err))
     }
 }
 
@@ -244,6 +312,29 @@ impl<T: oio::Write> oio::Write for ErrorContextWrapper<T> {
                     .with_context("service", self.scheme)
                     .with_context("path", &self.path)
                     .with_context("size", size.to_string())
+                    .with_context("written", self.processed.to_string())
+            })
+    }
+
+    async fn copy_from(&mut self, path: &str, args: OpRead, range: BytesRange) -> Result<()> {
+        let size = range.size().ok_or_else(|| {
+            Error::new(
+                ErrorKind::Unexpected,
+                "native writer copy requires a bounded range",
+            )
+        })?;
+        self.inner
+            .copy_from(path, args, range)
+            .await
+            .inspect(|_| {
+                self.processed += size;
+            })
+            .map_err(|err| {
+                err.with_operation(Operation::Write)
+                    .with_context("service", self.scheme)
+                    .with_context("path", &self.path)
+                    .with_context("source", path)
+                    .with_context("range", range.to_string())
                     .with_context("written", self.processed.to_string())
             })
     }
@@ -299,6 +390,68 @@ impl<T: oio::Delete> oio::Delete for ErrorContextWrapper<T> {
             err.with_operation(Operation::Delete)
                 .with_context("service", self.scheme)
                 .with_context("deleted", self.processed.to_string())
+        })
+    }
+}
+
+impl<T: oio::Copy> oio::Copy for ErrorContextWrapper<T> {
+    async fn next(&mut self) -> Result<Option<usize>> {
+        self.inner
+            .next()
+            .await
+            .inspect(|size| {
+                self.processed += size.unwrap_or_default() as u64;
+            })
+            .map_err(|err| {
+                err.with_operation(Operation::Copy)
+                    .with_context("service", self.scheme)
+                    .with_context("path", &self.path)
+                    .with_context("copied", self.processed.to_string())
+            })
+    }
+
+    async fn close(&mut self) -> Result<Metadata> {
+        self.inner.close().await.map_err(|err| {
+            err.with_operation(Operation::Copy)
+                .with_context("service", self.scheme)
+                .with_context("path", &self.path)
+                .with_context("copied", self.processed.to_string())
+        })
+    }
+
+    async fn abort(&mut self) -> Result<()> {
+        self.inner.abort().await.map_err(|err| {
+            err.with_operation(Operation::Copy)
+                .with_context("service", self.scheme)
+                .with_context("path", &self.path)
+                .with_context("copied", self.processed.to_string())
+        })
+    }
+}
+
+impl<T: oio::Compose> oio::Compose for ErrorContextWrapper<T> {
+    async fn compose(&mut self, path: &str, args: OpRead) -> Result<()> {
+        self.inner
+            .compose(path, args)
+            .await
+            .inspect(|_| {
+                self.processed += 1;
+            })
+            .map_err(|err| {
+                err.with_operation(Operation::Compose)
+                    .with_context("service", self.scheme)
+                    .with_context("from", path)
+                    .with_context("to", &self.path)
+                    .with_context("accepted", self.processed.to_string())
+            })
+    }
+
+    async fn close(&mut self) -> Result<Metadata> {
+        self.inner.close().await.map_err(|err| {
+            err.with_operation(Operation::Compose)
+                .with_context("service", self.scheme)
+                .with_context("to", &self.path)
+                .with_context("accepted", self.processed.to_string())
         })
     }
 }

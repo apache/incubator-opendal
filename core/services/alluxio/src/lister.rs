@@ -19,20 +19,23 @@ use std::sync::Arc;
 
 use super::core::AlluxioCore;
 use opendal_core::ErrorKind;
+use opendal_core::OperationContext;
 use opendal_core::Result;
 use opendal_core::raw::oio::Entry;
 use opendal_core::raw::*;
 
 pub struct AlluxioLister {
     core: Arc<AlluxioCore>,
+    ctx: OperationContext,
 
     path: String,
 }
 
 impl AlluxioLister {
-    pub(super) fn new(core: Arc<AlluxioCore>, path: &str) -> Self {
+    pub(super) fn new(core: Arc<AlluxioCore>, ctx: OperationContext, path: &str) -> Self {
         AlluxioLister {
             core,
+            ctx,
             path: path.to_string(),
         }
     }
@@ -40,7 +43,7 @@ impl AlluxioLister {
 
 impl oio::PageList for AlluxioLister {
     async fn next_page(&self, ctx: &mut oio::PageContext) -> Result<()> {
-        let result = self.core.list_status(&self.path).await;
+        let result = self.core.list_status(&self.ctx, &self.path).await;
 
         match result {
             Ok(file_infos) => {

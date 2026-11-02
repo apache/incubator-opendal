@@ -25,39 +25,34 @@ use opendal_core::*;
 
 pub struct MokaLister {
     root: String,
-    keys: IntoIter<String>,
+    entries: IntoIter<(String, Metadata)>,
 }
 
 impl MokaLister {
     pub fn new(core: Arc<MokaCore>, root: String, _path: String) -> Self {
-        // Get all keys from the cache
-        let keys: Vec<String> = core.cache.iter().map(|kv| kv.0.to_string()).collect();
+        let entries: Vec<(String, Metadata)> = core
+            .cache
+            .iter()
+            .map(|(key, value)| (key.to_string(), value.metadata.clone()))
+            .collect();
 
         Self {
             root,
-            keys: keys.into_iter(),
+            entries: entries.into_iter(),
         }
     }
 }
 
 impl oio::List for MokaLister {
     async fn next(&mut self) -> Result<Option<oio::Entry>> {
-        match self.keys.next() {
-            Some(key) => {
-                // Convert absolute path to relative path
+        match self.entries.next() {
+            Some((key, metadata)) => {
                 let mut path = build_rel_path(&self.root, &key);
                 if path.is_empty() {
                     path = "/".to_string();
                 }
 
-                // Determine if it's a file or directory based on trailing slash
-                let mode = if key.ends_with('/') {
-                    EntryMode::DIR
-                } else {
-                    EntryMode::FILE
-                };
-
-                Ok(Some(oio::Entry::new(&path, Metadata::new(mode))))
+                Ok(Some(oio::Entry::new(&path, metadata)))
             }
             None => Ok(None),
         }

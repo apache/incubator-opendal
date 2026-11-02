@@ -18,13 +18,14 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use mea::once::OnceCell;
+use asyncband::once::OnceCell;
 use sqlx::sqlite::SqliteConnectOptions;
 
 use super::SQLITE_SCHEME;
 use super::config::SqliteConfig;
 use super::core::SqliteCore;
 use super::deleter::SqliteDeleter;
+use super::reader::*;
 use super::writer::SqliteWriter;
 use opendal_core::raw::oio;
 use opendal_core::raw::*;
@@ -102,7 +103,7 @@ impl SqliteBuilder {
 impl Builder for SqliteBuilder {
     type Config = SqliteConfig;
 
-    fn build(self) -> Result<impl Access> {
+    fn build(self) -> Result<impl Service> {
         let conn = match self.config.connection_string {
             Some(v) => v,
             None => {
@@ -167,21 +168,19 @@ pub fn parse_sqlite_error(err: sqlx::Error) -> Error {
     error
 }
 
-/// SqliteBackend implements Access trait directly
+/// SqliteBackend implements [`Service`] for SQLite-backed object storage.
 #[derive(Debug, Clone)]
 pub struct SqliteBackend {
-    core: Arc<SqliteCore>,
-    root: String,
-    info: Arc<AccessorInfo>,
+    pub(crate) core: Arc<SqliteCore>,
+    pub(crate) root: String,
+    pub(crate) info: ServiceInfo,
+    pub(crate) capability: Capability,
 }
 
 impl SqliteBackend {
     fn new(core: SqliteCore) -> Self {
-        let info = AccessorInfo::default();
-        info.set_scheme(SQLITE_SCHEME);
-        info.set_name(&core.table);
-        info.set_root("/");
-        info.set_native_capability(Capability {
+        let info = ServiceInfo::new(SQLITE_SCHEME, "/", &core.table);
+        let capability = Capability {
             read: true,
             write: true,
             create_dir: true,
@@ -189,45 +188,56 @@ impl SqliteBackend {
             stat: true,
             write_can_empty: true,
             list: false,
-            shared: false,
             ..Default::default()
-        });
+        };
 
         Self {
             core: Arc::new(core),
             root: "/".to_string(),
-            info: Arc::new(info),
+            info,
+            capability,
         }
     }
 
     fn with_normalized_root(mut self, root: String) -> Self {
-        self.info.set_root(&root);
+        self.info = self.info.with_root(&root);
         self.root = root;
         self
     }
 }
 
-impl Access for SqliteBackend {
-    type Reader = Buffer;
+impl Service for SqliteBackend {
+    type Reader = oio::StreamReader<SqliteReader>;
     type Writer = SqliteWriter;
     type Lister = ();
     type Deleter = oio::OneShotDeleter<SqliteDeleter>;
+    type Copier = ();
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
+    fn info(&self) -> ServiceInfo {
         self.info.clone()
     }
 
-    async fn stat(&self, path: &str, _: OpStat) -> Result<RpStat> {
+    fn capability(&self) -> Capability {
+        self.capability
+    }
+
+    async fn stat(&self, _ctx: &OperationContext, path: &str, _: OpStat) -> Result<RpStat> {
         let p = build_abs_path(&self.root, path);
 
         if p == build_abs_path(&self.root, "") {
-            Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+            Ok(RpStat::new(MetadataBuilder::dir().build()))
         } else {
-            let bs = self.core.get(&p).await?;
-            match bs {
-                Some(bs) => Ok(RpStat::new(
-                    Metadata::new(EntryMode::from_path(&p)).with_content_length(bs.len() as u64),
-                )),
+            let length = self.core.get_length(&p).await?;
+            match length {
+                Some(length) => {
+                    let metadata = if p.ends_with('/') {
+                        MetadataBuilder::dir()
+                    } else {
+                        MetadataBuilder::file(length as u64)
+                    };
+                    Ok(RpStat::new(metadata.build()))
+                }
                 None => {
                     // Check if this might be a directory by looking for keys with this prefix
                     let dir_path = if p.ends_with('/') {
@@ -235,18 +245,11 @@ impl Access for SqliteBackend {
                     } else {
                         format!("{}/", p)
                     };
-                    let count: i64 = sqlx::query_scalar(&format!(
-                        "SELECT COUNT(*) FROM `{}` WHERE `{}` LIKE $1 LIMIT 1",
-                        self.core.table, self.core.key_field
-                    ))
-                    .bind(format!("{}%", dir_path))
-                    .fetch_one(self.core.get_client().await?)
-                    .await
-                    .map_err(parse_sqlite_error)?;
+                    let count = self.core.count_under(&dir_path).await?;
 
                     if count > 0 {
                         // Directory exists (has children)
-                        Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+                        Ok(RpStat::new(MetadataBuilder::dir().build()))
                     } else {
                         Err(Error::new(ErrorKind::NotFound, "key not found in sqlite"))
                     }
@@ -254,47 +257,44 @@ impl Access for SqliteBackend {
             }
         }
     }
+    fn read(&self, _ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
+        let output: oio::StreamReader<SqliteReader> = {
+            Ok(oio::StreamReader::new(SqliteReader::new(
+                self.clone(),
+                path,
+                args,
+            )))
+        }?;
 
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let p = build_abs_path(&self.root, path);
-
-        let range = args.range();
-        let buffer = if range.is_full() {
-            // Full read - use GET
-            match self.core.get(&p).await? {
-                Some(bs) => bs,
-                None => return Err(Error::new(ErrorKind::NotFound, "key not found in sqlite")),
-            }
-        } else {
-            // Range read - use GETRANGE
-            let start = range.offset() as isize;
-            let limit = match range.size() {
-                Some(size) => size as isize,
-                None => -1, // Sqlite uses -1 for end of string
-            };
-
-            match self.core.get_range(&p, start, limit).await? {
-                Some(bs) => bs,
-                None => return Err(Error::new(ErrorKind::NotFound, "key not found in sqlite")),
-            }
-        };
-
-        Ok((RpRead::new(), buffer))
+        Ok(output)
     }
 
-    async fn write(&self, path: &str, _: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        let p = build_abs_path(&self.root, path);
-        Ok((RpWrite::new(), SqliteWriter::new(self.core.clone(), &p)))
+    fn write(&self, _ctx: &OperationContext, path: &str, _: OpWrite) -> Result<Self::Writer> {
+        let output: SqliteWriter = {
+            let p = build_abs_path(&self.root, path);
+            Ok(SqliteWriter::new(self.core.clone(), &p))
+        }?;
+
+        Ok(output)
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        Ok((
-            RpDelete::default(),
-            oio::OneShotDeleter::new(SqliteDeleter::new(self.core.clone(), self.root.clone())),
-        ))
+    fn delete(&self, _ctx: &OperationContext) -> Result<Self::Deleter> {
+        let output: oio::OneShotDeleter<SqliteDeleter> = {
+            Ok(oio::OneShotDeleter::new(SqliteDeleter::new(
+                self.core.clone(),
+                self.root.clone(),
+            )))
+        }?;
+
+        Ok(output)
     }
 
-    async fn create_dir(&self, path: &str, _: OpCreateDir) -> Result<RpCreateDir> {
+    async fn create_dir(
+        &self,
+        _ctx: &OperationContext,
+        path: &str,
+        _: OpCreateDir,
+    ) -> Result<RpCreateDir> {
         let p = build_abs_path(&self.root, path);
 
         // Ensure path ends with '/' for directory marker
@@ -309,11 +309,59 @@ impl Access for SqliteBackend {
 
         Ok(RpCreateDir::default())
     }
+
+    fn list(&self, _ctx: &OperationContext, _path: &str, _args: OpList) -> Result<Self::Lister> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    fn copy(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpCopy,
+    ) -> Result<Self::Copier> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn rename(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpRename,
+    ) -> Result<RpRename> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn presign(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpPresign,
+    ) -> Result<RpPresign> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use opendal_core::raw::oio::Read as _;
+    use opendal_core::raw::oio::ReadStream as _;
+    use opendal_core::raw::oio::Write as _;
     use sqlx::SqlitePool;
 
     async fn build_client() -> OnceCell<SqlitePool> {
@@ -322,40 +370,147 @@ mod test {
         OnceCell::from_value(pool)
     }
 
-    #[tokio::test]
-    async fn test_sqlite_accessor_creation() {
+    async fn build_backend() -> SqliteBackend {
         let core = SqliteCore {
             pool: build_client().await,
             config: Default::default(),
-            table: "test".to_string(),
+            table: "test_table".to_string(),
             key_field: "key".to_string(),
             value_field: "value".to_string(),
         };
 
-        let accessor = SqliteBackend::new(core);
-
-        // Verify basic properties
-        assert_eq!(accessor.root, "/");
-        assert_eq!(accessor.info.scheme(), SQLITE_SCHEME);
-        assert!(accessor.info.native_capability().read);
-        assert!(accessor.info.native_capability().write);
-        assert!(accessor.info.native_capability().delete);
-        assert!(accessor.info.native_capability().stat);
+        SqliteBackend::new(core)
     }
 
     #[tokio::test]
-    async fn test_sqlite_accessor_with_root() {
-        let core = SqliteCore {
-            pool: build_client().await,
-            config: Default::default(),
-            table: "test".to_string(),
-            key_field: "key".to_string(),
-            value_field: "value".to_string(),
-        };
+    async fn test_sqlite_backend_creation() {
+        let backend = build_backend().await;
 
-        let accessor = SqliteBackend::new(core).with_normalized_root("/test/".to_string());
+        // Verify basic properties
+        assert_eq!(backend.root, "/");
+        assert_eq!(backend.info.scheme(), SQLITE_SCHEME);
+        assert!(backend.capability().read);
+        assert!(backend.capability().write);
+        assert!(backend.capability().delete);
+        assert!(backend.capability().stat);
+    }
 
-        assert_eq!(accessor.root, "/test/");
-        assert_eq!(accessor.info.root(), Arc::from("/test/"));
+    #[tokio::test]
+    async fn test_sqlite_backend_with_root() {
+        let backend = build_backend()
+            .await
+            .with_normalized_root("/test/".to_string());
+
+        assert_eq!(backend.root, "/test/");
+        assert_eq!(backend.info.root(), Arc::from("/test/"));
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_read_range_from_offset_reads_to_eof() {
+        let backend = build_backend().await;
+
+        let pool = backend.core.get_client().await.unwrap();
+        sqlx::query("CREATE TABLE test_table (key TEXT PRIMARY KEY, value BLOB)")
+            .execute(pool)
+            .await
+            .unwrap();
+
+        let ctx = OperationContext::new();
+        let mut writer = backend.write(&ctx, "hello", OpWrite::default()).unwrap();
+        writer.write(Buffer::from("hello world")).await.unwrap();
+        writer.close().await.unwrap();
+
+        let reader = backend.read(&ctx, "hello", OpRead::default()).unwrap();
+        let (_, mut stream) = reader.open(BytesRange::from(6_u64..)).await.unwrap();
+        let buffer = stream.read_all().await.unwrap();
+
+        assert_eq!(buffer.to_vec(), b"world");
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_stat_uses_value_length() {
+        let backend = build_backend().await;
+
+        let pool = backend.core.get_client().await.unwrap();
+        sqlx::query("CREATE TABLE test_table (key TEXT PRIMARY KEY, value BLOB)")
+            .execute(pool)
+            .await
+            .unwrap();
+
+        let ctx = OperationContext::new();
+        let mut writer = backend.write(&ctx, "key_id", OpWrite::default()).unwrap();
+        writer.write(Buffer::from("hello world")).await.unwrap();
+        writer.close().await.unwrap();
+
+        let rp = backend
+            .stat(&ctx, "key_id", OpStat::default())
+            .await
+            .unwrap();
+
+        assert_eq!(rp.into_metadata().content_length(), 11);
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_stat_returns_byte_length_for_text_value() {
+        let backend = build_backend().await;
+
+        let pool = backend.core.get_client().await.unwrap();
+        sqlx::query("CREATE TABLE test_table (key TEXT PRIMARY KEY, value BLOB)")
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO test_table (key, value) VALUES ($1, $2)")
+            .bind("key_id")
+            .bind("你好")
+            .execute(pool)
+            .await
+            .unwrap();
+
+        let ctx = OperationContext::new();
+
+        let rp = backend
+            .stat(&ctx, "key_id", OpStat::default())
+            .await
+            .unwrap();
+        assert_eq!(rp.into_metadata().content_length(), 6);
+
+        let reader = backend.read(&ctx, "key_id", OpRead::default()).unwrap();
+        let (rp, mut stream) = reader.open(BytesRange::from(0_u64..3)).await.unwrap();
+        let buffer = stream.read_all().await.unwrap();
+
+        assert_eq!(rp.into_metadata().unwrap().content_length(), 6);
+        assert_eq!(buffer.to_vec(), "你".as_bytes());
+    }
+
+    #[tokio::test]
+    async fn test_sqlite_stat_returns_byte_length_for_text_column() {
+        let backend = build_backend().await;
+        let pool = backend.core.get_client().await.unwrap();
+
+        sqlx::query("CREATE TABLE test_table (key TEXT PRIMARY KEY, value TEXT)")
+            .execute(pool)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO test_table (key, value) VALUES ($1, $2)")
+            .bind("key_id")
+            .bind("你好")
+            .execute(pool)
+            .await
+            .unwrap();
+
+        let ctx = OperationContext::new();
+
+        let rp = backend
+            .stat(&ctx, "key_id", OpStat::default())
+            .await
+            .unwrap();
+        assert_eq!(rp.into_metadata().content_length(), 6);
+
+        let reader = backend.read(&ctx, "key_id", OpRead::default()).unwrap();
+        let (rp, mut stream) = reader.open(BytesRange::from(0_u64..3)).await.unwrap();
+        let buffer = stream.read_all().await.unwrap();
+
+        assert_eq!(rp.into_metadata().unwrap().content_length(), 6);
+        assert_eq!(buffer.to_vec(), "你".as_bytes());
     }
 }

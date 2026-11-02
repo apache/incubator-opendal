@@ -1,6 +1,6 @@
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [ ] create_dir
 - [x] stat
@@ -12,14 +12,16 @@ This service can be used to:
 - [ ] rename
 - [ ] ~~presign~~
 
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
+
 **Note**: As for [Known Limitations - FoundationDB](https://apple.github.io/foundationdb/known-limitations), keys cannot exceed 10,000 bytes in size, and values cannot exceed 100,000 bytes in size. Errors will be raised by OpenDAL if these limits are exceeded.
 
 ## Configuration
 
-- `root`: Set the work directory for this backend.
-- `config_path`: Set the configuration path for foundationdb. If not provided, the default configuration path will be used.
-
-You can refer to [`FoundationdbBuilder`]'s docs for more information
+Use [`crate::FoundationdbConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
 ## Example
 
@@ -35,7 +37,7 @@ async fn main() -> Result<()> {
     let mut builder = Foundationdb::default()
         .config_path("/etc/foundationdb/foundationdb.conf");
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
     Ok(())
 }
 ```

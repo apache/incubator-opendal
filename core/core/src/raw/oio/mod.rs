@@ -21,8 +21,14 @@
 //! Those types should only be used internally and we don't want users to
 //! depend on them.
 
+mod compose;
+pub use compose::*;
+
 mod delete;
 pub use delete::*;
+
+mod copy;
+pub use copy::*;
 
 mod read;
 pub use read::*;

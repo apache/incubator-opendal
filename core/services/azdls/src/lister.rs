@@ -21,21 +21,32 @@ use bytes::Buf;
 use serde::Deserialize;
 use serde_json::de;
 
-use super::core::AzdlsCore;
-use super::error::parse_error;
+use super::core::parse_error;
+use super::core::{AzdlsCore, ErrorContext};
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct AzdlsLister {
     core: Arc<AzdlsCore>,
+    ctx: OperationContext,
 
     path: String,
     limit: Option<usize>,
 }
 
 impl AzdlsLister {
-    pub fn new(core: Arc<AzdlsCore>, path: String, limit: Option<usize>) -> Self {
-        Self { core, path, limit }
+    pub fn new(
+        core: Arc<AzdlsCore>,
+        ctx: OperationContext,
+        path: String,
+        limit: Option<usize>,
+    ) -> Self {
+        Self {
+            core,
+            ctx,
+            path,
+            limit,
+        }
     }
 }
 
@@ -43,7 +54,7 @@ impl oio::PageList for AzdlsLister {
     async fn next_page(&self, ctx: &mut oio::PageContext) -> Result<()> {
         let resp = self
             .core
-            .azdls_list(&self.path, &ctx.token, self.limit)
+            .azdls_list(&self.ctx, &self.path, &ctx.token, self.limit)
             .await?;
 
         // azdls will return not found for not-exist path.
@@ -53,12 +64,15 @@ impl oio::PageList for AzdlsLister {
         }
 
         if resp.status() != http::StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListPaths")),
+                resp,
+            ));
         }
 
         // Return self at the first page.
         if ctx.token.is_empty() && !ctx.done {
-            let e = oio::Entry::new(&self.path, Metadata::new(EntryMode::DIR));
+            let e = oio::Entry::new(&self.path, MetadataBuilder::dir().build());
             ctx.entries.push_back(e);
         }
 
@@ -86,21 +100,24 @@ impl oio::PageList for AzdlsLister {
                 EntryMode::FILE
             };
 
-            let meta = Metadata::new(mode)
-                // Keep fit with ETag header.
-                .with_etag(format!("\"{}\"", &object.etag))
-                .with_content_length(object.content_length.parse().map_err(|err| {
-                    Error::new(ErrorKind::Unexpected, "content length is not valid integer")
-                        .set_source(err)
-                })?)
-                .with_last_modified(Timestamp::parse_rfc2822(&object.last_modified)?);
+            let content_length = object.content_length.parse().map_err(|err| {
+                Error::new(ErrorKind::Unexpected, "content length is not valid integer")
+                    .set_source(err)
+            })?;
+            let mut meta = if mode == EntryMode::FILE {
+                MetadataBuilder::file(content_length)
+            } else {
+                MetadataBuilder::dir()
+            };
+            meta.etag(format!("\"{}\"", object.etag))
+                .last_modified(Timestamp::parse_rfc2822(&object.last_modified)?);
 
             let mut path = build_rel_path(&self.core.root, &object.name);
             if mode.is_dir() {
                 path += "/"
             };
 
-            let de = oio::Entry::new(&path, meta);
+            let de = oio::Entry::new(&path, meta.build());
 
             ctx.entries.push_back(de);
         }

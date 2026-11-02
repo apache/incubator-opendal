@@ -1,6 +1,6 @@
-# Capabilities
+## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [ ] create_dir
 - [x] stat
@@ -12,25 +12,30 @@ This service can be used to:
 - [ ] rename
 - [x] presign
 
-# Configuration
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
 
-- `root`: Set the work dir for backend.
-- `bucket`: Set the container name for backend.
-- `endpoint`: Set the endpoint for backend.
-- `addressing_style`: Set the addressing style for endpoint.
-- `presign_endpoint`: Set the endpoint for presign.
-- `presign_addressing_style`: Set the addressing style for presign endpoint.
-- `access_key_id`: Set the access_key_id for backend.
-- `access_key_secret`: Set the access_key_secret for backend.
-- `role_arn`: Set the role of backend.
-- `oidc_token`: Set the oidc_token for backend.
-- `allow_anonymous`: Set the backend access OSS in anonymous way.
+## Configuration
 
-Refer to [`OssBuilder`]'s public API docs for more information.
+Use [`crate::OssConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
-# Example
+### Credential resolution
 
-## Via Builder
+OSS tries explicit access keys, environment credentials, OIDC assume-role
+credentials, and ECS instance RAM role credentials, in that order. The first
+provider that returns credentials is used. In ACK RRSA deployments, OIDC
+credentials therefore take precedence over the node's ECS metadata credentials.
+If a provider returns no credentials or fails, the chain tries the next provider.
+An OSS permission error does not trigger a switch to another credential provider.
+
+When `role_arn` is set in the service configuration, these providers supply the
+base credentials for the additional AK-based AssumeRole request.
+
+## Example
+
+### Via Builder
 
 ```rust,no_run
 use opendal_core::Operator;
@@ -61,7 +66,7 @@ async fn main() -> Result<()> {
         .access_key_id("access_key_id")
         .access_key_secret("access_key_secret");
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
 
     Ok(())
 }

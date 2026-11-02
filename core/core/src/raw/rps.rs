@@ -17,7 +17,6 @@
 
 use http::Request;
 
-use crate::raw::*;
 use crate::*;
 
 /// Reply for `create_dir` operation
@@ -98,58 +97,32 @@ impl<T: Default> From<PresignedRequest> for Request<T> {
 }
 
 /// Reply for `read` operation.
+///
+/// `RpRead` can carry metadata observed while opening this read operation.
+/// Services should set it only when the metadata is returned natively by the
+/// read operation. In particular, `metadata.content_length()` is the full
+/// object size, even if this read only returns a range of the object.
 #[derive(Debug, Clone, Default)]
 pub struct RpRead {
-    /// Size is the size of the reader returned by this read operation.
-    ///
-    /// - `Some(size)` means the reader has at most size bytes.
-    /// - `None` means the reader has unknown size.
-    ///
-    /// It's ok to leave size as empty, but it's recommended to set size if possible. We will use
-    /// this size as hint to do some optimization like avoid an extra stat or read.
-    size: Option<u64>,
-    /// Range is the range of the reader returned by this read operation.
-    ///
-    /// - `Some(range)` means the reader's content range inside the whole file.
-    /// - `None` means the reader's content range is unknown.
-    ///
-    /// It's ok to leave range as empty, but it's recommended to set range if possible. We will use
-    /// this range as hint to do some optimization like avoid an extra stat or read.
-    range: Option<BytesContentRange>,
+    metadata: Option<Metadata>,
 }
 
 impl RpRead {
     /// Create a new reply for `read`.
-    pub fn new() -> Self {
-        RpRead::default()
+    pub fn new(metadata: Metadata) -> Self {
+        Self {
+            metadata: Some(metadata),
+        }
     }
 
-    /// Got the size of the reader returned by this read operation.
-    ///
-    /// - `Some(size)` means the reader has at most size bytes.
-    /// - `None` means the reader has unknown size.
-    pub fn size(&self) -> Option<u64> {
-        self.size
+    /// Get metadata returned by this read operation.
+    pub fn metadata(&self) -> Option<&Metadata> {
+        self.metadata.as_ref()
     }
 
-    /// Set the size of the reader returned by this read operation.
-    pub fn with_size(mut self, size: Option<u64>) -> Self {
-        self.size = size;
-        self
-    }
-
-    /// Got the range of the reader returned by this read operation.
-    ///
-    /// - `Some(range)` means the reader has content range inside the whole file.
-    /// - `None` means the reader has unknown size.
-    pub fn range(&self) -> Option<BytesContentRange> {
-        self.range
-    }
-
-    /// Set the range of the reader returned by this read operation.
-    pub fn with_range(mut self, range: Option<BytesContentRange>) -> Self {
-        self.range = range;
-        self
+    /// Consume RpRead to get the inner metadata.
+    pub fn into_metadata(self) -> Option<Metadata> {
+        self.metadata
     }
 }
 
@@ -205,6 +178,17 @@ pub struct RpRename {}
 
 impl RpRename {
     /// Create a new reply for `rename`.
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+/// Reply for `restore` operation.
+#[derive(Debug, Clone, Default)]
+pub struct RpRestore {}
+
+impl RpRestore {
+    /// Create a new reply for `restore`.
     pub fn new() -> Self {
         Self {}
     }

@@ -81,6 +81,7 @@ fn make_field(field: ViaDeserialize<Config>) -> Result<String, minijinja::Error>
             ConfigType::Usize | ConfigType::U64 | ConfigType::I64 => "Long",
             ConfigType::U32 | ConfigType::U16 => "Integer",
             ConfigType::Vec => "List<String>",
+            ConfigType::HashMap => "Map<String, String>",
         }
     } else {
         match field.value {
@@ -90,6 +91,7 @@ fn make_field(field: ViaDeserialize<Config>) -> Result<String, minijinja::Error>
             ConfigType::Usize | ConfigType::U64 | ConfigType::I64 => "long",
             ConfigType::U32 | ConfigType::U16 => "int",
             ConfigType::Vec => "@NonNull List<String>",
+            ConfigType::HashMap => "@NonNull Map<String, String>",
         }
     };
 
@@ -134,6 +136,7 @@ fn make_populate_map(field: ViaDeserialize<Config>) -> Result<String, minijinja:
             field.name,
             case_java_field_name(&field.name)
         ),
+        ConfigType::HashMap => format!("map.putAll({});", case_java_field_name(&field.name)),
     };
 
     if field.optional {

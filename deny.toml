@@ -21,7 +21,10 @@ allow = [
   "Apache-2.0 WITH LLVM-exception",
   "BSD-2-Clause",
   "BSD-3-Clause",
+  "BSL-1.0",
   "CC0-1.0",
+  # ASF LEGAL-732 treats CDLA-Permissive-2.0 as Category A.
+  "CDLA-Permissive-2.0",
   "ISC",
   "MIT",
   "OpenSSL",
@@ -33,6 +36,22 @@ exceptions = [
   # cbindgen is used to generate C bindings; it is only a build dependency
   # so it won't be included in the final library
   { crate = "cbindgen", allow = [
+    "MPL-2.0",
+  ] },
+
+  # colored and option-ext are runtime dependencies of the Hugging Face Xet
+  # client enabled by the Java, .NET, Node.js, and Python release builds. Their
+  # source is not bundled in ASF source releases.
+  { crate = "colored", allow = [
+    "MPL-2.0",
+  ] },
+  { crate = "option-ext", allow = [
+    "MPL-2.0",
+  ] },
+
+  # persy implements the Persy service enabled by the Java, .NET, Node.js, and
+  # Python release builds. Its source is not bundled in ASF source releases.
+  { crate = "persy", allow = [
     "MPL-2.0",
   ] },
 
@@ -54,12 +73,9 @@ exceptions = [
     "LGPL-3.0-only",
   ] },
 
-  # open data licenses that SHOULD be OK
+  # open data license that SHOULD be OK
   { crate = "unicode_names2", allow = [
     "Unicode-DFS-2016",
-  ] },
-  { crate = "webpki-roots", allow = [
-    "CDLA-Permissive-2.0",
   ] },
 ]
 

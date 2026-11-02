@@ -25,6 +25,7 @@ import opendal
 
 load_dotenv()
 pytest_plugins = ("pytest_asyncio",)
+CAPABILITY_OVERRIDES_ENV = "OPENDAL_TEST_CAPABILITY_OVERRIDES"
 
 
 def pytest_configure(config):
@@ -59,12 +60,16 @@ def setup_config(service_name):
 
 @pytest.fixture(scope="session")
 def async_operator(service_name, setup_config):
-    return (
+    operator = (
         opendal.AsyncOperator(service_name, **setup_config)
         .layer(opendal.layers.RetryLayer())
         .layer(opendal.layers.ConcurrentLimitLayer(1024))
         .layer(opendal.layers.MimeGuessLayer())
     )
+    overrides = os.environ.get(CAPABILITY_OVERRIDES_ENV)
+    if overrides:
+        operator = operator.layer(opendal.layers.CapabilityOverrideLayer(overrides))
+    return operator
 
 
 @pytest.fixture(scope="session")

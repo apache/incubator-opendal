@@ -58,8 +58,40 @@ pub(crate) fn format_std_io_error(err: Error) -> io::Error {
     let kind = match err.kind() {
         ErrorKind::NotFound => io::ErrorKind::NotFound,
         ErrorKind::PermissionDenied => io::ErrorKind::PermissionDenied,
-        _ => io::ErrorKind::Interrupted,
+        _ => io::ErrorKind::Other,
     };
 
     io::Error::new(kind, err)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_read_to_end_stops_on_persistent_error() {
+        struct ErrorThenEof {
+            calls: usize,
+        }
+
+        impl io::Read for ErrorThenEof {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                self.calls += 1;
+                if self.calls == 1 {
+                    return Err(format_std_io_error(
+                        Error::new(ErrorKind::Unexpected, "retry exhausted").set_persistent(),
+                    ));
+                }
+                Ok(0)
+            }
+        }
+
+        let mut reader = ErrorThenEof { calls: 0 };
+        let mut buf = Vec::new();
+        assert!(
+            io::Read::read_to_end(&mut reader, &mut buf).is_err(),
+            "calls: {}",
+            reader.calls
+        );
+    }
 }

@@ -36,6 +36,18 @@ pub struct SwiftConfig {
     pub root: Option<String>,
     /// The token for Swift.
     pub token: Option<String>,
+    /// The TempURL key for generating presigned URLs.
+    ///
+    /// This corresponds to the `X-Account-Meta-Temp-URL-Key` or
+    /// `X-Container-Meta-Temp-URL-Key` header value configured on the
+    /// Swift account or container.
+    pub temp_url_key: Option<String>,
+    /// The hash algorithm for TempURL signing.
+    ///
+    /// Supported values: `sha1`, `sha256`, `sha512`. Defaults to `sha256`.
+    /// The cluster must have the chosen algorithm in its
+    /// `tempurl.allowed_digests` (check `GET /info`).
+    pub temp_url_hash_algorithm: Option<String>,
 }
 
 impl Debug for SwiftConfig {

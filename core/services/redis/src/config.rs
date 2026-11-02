@@ -59,7 +59,7 @@ pub struct RedisConfig {
     /// default is db 0
     pub db: i64,
     /// The default ttl for put operations.
-    pub default_ttl: Option<Duration>,
+    pub default_ttl: Option<SignedDuration>,
 }
 
 impl Debug for RedisConfig {
@@ -92,27 +92,27 @@ impl Configurator for RedisConfig {
             .with_context("service", REDIS_SCHEME));
         }
 
-        if let Some(path) = uri.root() {
-            if !path.is_empty() {
-                if let Some((first, rest)) = path.split_once('/') {
-                    if let Ok(db) = first.parse::<i64>() {
-                        map.insert("db".to_string(), db.to_string());
-                        if !rest.is_empty() {
-                            map.insert("root".to_string(), rest.to_string());
-                        }
-                    } else {
-                        let mut root_value = first.to_string();
-                        if !rest.is_empty() {
-                            root_value.push('/');
-                            root_value.push_str(rest);
-                        }
-                        map.insert("root".to_string(), root_value);
-                    }
-                } else if let Ok(db) = path.parse::<i64>() {
+        if let Some(path) = uri.root()
+            && !path.is_empty()
+        {
+            if let Some((first, rest)) = path.split_once('/') {
+                if let Ok(db) = first.parse::<i64>() {
                     map.insert("db".to_string(), db.to_string());
+                    if !rest.is_empty() {
+                        map.insert("root".to_string(), rest.to_string());
+                    }
                 } else {
-                    map.insert("root".to_string(), path.to_string());
+                    let mut root_value = first.to_string();
+                    if !rest.is_empty() {
+                        root_value.push('/');
+                        root_value.push_str(rest);
+                    }
+                    map.insert("root".to_string(), root_value);
                 }
+            } else if let Ok(db) = path.parse::<i64>() {
+                map.insert("db".to_string(), db.to_string());
+            } else {
+                map.insert("root".to_string(), path.to_string());
             }
         }
 
@@ -120,7 +120,10 @@ impl Configurator for RedisConfig {
     }
 
     fn into_builder(self) -> Self::Builder {
-        RedisBuilder { config: self }
+        RedisBuilder {
+            config: self,
+            default_ttl: None,
+        }
     }
 }
 
@@ -153,6 +156,14 @@ mod tests {
         assert_eq!(cfg.endpoint.as_deref(), Some("redis://localhost:6379"));
         assert_eq!(cfg.db, 0);
         assert_eq!(cfg.root.as_deref(), Some("app/data"));
+        Ok(())
+    }
+
+    #[test]
+    fn from_iter_parses_default_ttl() -> Result<()> {
+        let cfg = RedisConfig::from_iter([("default_ttl".to_string(), "5s".to_string())])?;
+
+        assert_eq!(cfg.default_ttl, Some(SignedDuration::from_secs(5)));
         Ok(())
     }
 

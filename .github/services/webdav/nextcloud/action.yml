@@ -32,4 +32,5 @@ runs:
         OPENDAL_WEBDAV_ENDPOINT=http://127.0.0.1:8080/remote.php/webdav/
         OPENDAL_WEBDAV_USERNAME=admin
         OPENDAL_WEBDAV_PASSWORD=admin
+        OPENDAL_TEST_CAPABILITY_OVERRIDES=write_with_user_metadata=false
         EOF

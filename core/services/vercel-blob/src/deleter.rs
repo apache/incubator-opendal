@@ -18,21 +18,23 @@
 use std::sync::Arc;
 
 use super::core::VercelBlobCore;
+use opendal_core::OperationContext;
 use opendal_core::Result;
 use opendal_core::raw::{OpDelete, oio};
 
 pub struct VercelBlobDeleter {
     core: Arc<VercelBlobCore>,
+    ctx: OperationContext,
 }
 
 impl VercelBlobDeleter {
-    pub fn new(core: Arc<VercelBlobCore>) -> Self {
-        Self { core }
+    pub fn new(core: Arc<VercelBlobCore>, ctx: OperationContext) -> Self {
+        Self { core, ctx }
     }
 }
 
 impl oio::OneShotDelete for VercelBlobDeleter {
     async fn delete_once(&self, path: String, _: OpDelete) -> Result<()> {
-        self.core.vercel_delete_blob(&path).await
+        self.core.vercel_delete_blob(&self.ctx, &path).await
     }
 }

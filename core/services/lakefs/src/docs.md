@@ -5,7 +5,7 @@ Lakefs doesn't host official HTTP API docs. Detailed HTTP request API informatio
 
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [ ] create_dir
 - [x] stat
@@ -17,16 +17,14 @@ This service can be used to:
 - [ ] rename
 - [ ] ~~presign~~
 
-## Configurations
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
 
-- `endpoint`: The endpoint of the Lakefs repository.
-- `repository`: The id of the repository.
-- `branch`: The branch of the repository.
-- `root`: Set the work directory for backend.
-- `username`: The username for accessing the repository.
-- `password`: The password for accessing the repository.
+## Configuration
 
-Refer to [`LakefsBuilder`]'s public API docs for more information.
+Use [`crate::LakefsConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
 ## Examples
 
@@ -52,7 +50,7 @@ async fn main() -> Result<()> {
         // set the password for accessing the repository
         .password("xxx");
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
 
     let stat = op.stat("README.md").await?;
     println!("{:?}", stat);

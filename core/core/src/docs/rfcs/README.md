@@ -1,6 +1,12 @@
-# RFCs - OpenDAL Active RFC List
+# RFCs - OpenDAL Design History
 
-RFCs power OpenDAL's development.
+RFCs power OpenDAL's development and preserve the history behind substantial
+design decisions.
+
+An accepted RFC is an immutable historical document. It records the proposal
+that reached consensus at the time of acceptance, but it is not the current
+contract. [OpenDAL specifications][crate::docs::specs] define the living
+contracts implemented by current releases.
 
 The "RFC" (request for comments) process is intended to provide a consistent and controlled path for changes to OpenDAL (such as new features) so that all stakeholders can be confident about the direction of the project.
 
@@ -56,7 +62,12 @@ Each accepted RFC is associated with an issue in the OpenDAL repository, which t
 If you are interested in implementing an RFC but are unsure if someone else is already working on it,
 feel free to inquire by leaving a comment on the associated issue.
 
+After implementation, update or add a specification when the RFC establishes
+portable user-visible behavior. Later contract changes update the specification
+and, when substantial, require a new RFC. They do not rewrite the accepted RFC.
+
 ## Some useful tips
 
 - The author of an RFC may not be the same one as the implementer. Therefore, when submitting an RFC, it is advisable to include sufficient information.
-- If modifications are needed for an accepted RFC, please submit a new pull request or create a new RFC to propose changes.
+- Do not modify an accepted RFC. Correct the current contract in a specification
+  and create a new RFC when the change is substantial.

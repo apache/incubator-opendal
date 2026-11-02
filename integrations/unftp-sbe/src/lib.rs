@@ -39,10 +39,8 @@
 //!             ("secret_key".to_string(), "my_secret_key".to_string()),
 //!             ("endpoint".to_string(), "my_endpoint".to_string()),
 //!             ("region".to_string(), "my_region".to_string()),
-//!         ]
-//!             .into_iter()
-//!             .collect(),
-//!     )?.finish();
+//!         ],
+//!     )?;
 //!
 //!     // Wrap the operator with `OpendalStorage`
 //!     let backend = OpendalStorage::new(op);
@@ -60,10 +58,11 @@
 use std::fmt::Debug;
 use std::path::{Path, PathBuf};
 
-use libunftp::auth::UserDetail;
-use libunftp::storage::{self, Error, StorageBackend};
 use opendal::Operator;
+use unftp_core::auth::UserDetail;
+use unftp_core::storage::{self, Error, StorageBackend};
 
+use tokio::io::AsyncReadExt;
 use tokio::io::AsyncWriteExt;
 use tokio_util::compat::{FuturesAsyncReadCompatExt, FuturesAsyncWriteCompatExt};
 
@@ -135,6 +134,25 @@ fn convert_path(path: &Path) -> storage::Result<&str> {
             "Path is not a valid UTF-8 string",
         )
     })
+}
+
+async fn copy_read_write_loop<R, W>(input: &mut R, output: &mut W) -> std::io::Result<u64>
+where
+    R: tokio::io::AsyncRead + Unpin + ?Sized,
+    W: tokio::io::AsyncWrite + Unpin + ?Sized,
+{
+    let mut copied = 0u64;
+    let mut buf = [0u8; 8 * 1024];
+
+    loop {
+        let n = input.read(&mut buf).await?;
+        if n == 0 {
+            return Ok(copied);
+        }
+
+        output.write_all(&buf[..n]).await?;
+        copied += n as u64;
+    }
 }
 
 #[async_trait::async_trait]
@@ -214,7 +232,8 @@ impl<User: UserDetail> StorageBackend<User> for OpendalStorage {
             .map_err(convert_err)?
             .into_futures_async_write()
             .compat_write();
-        let copy_result = tokio::io::copy(&mut input, &mut w).await;
+        // Avoid `tokio::io::copy`'s pending-read flush path and keep buffering policy explicit.
+        let copy_result = copy_read_write_loop(&mut input, &mut w).await;
         let shutdown_result = w.shutdown().await;
         match (copy_result, shutdown_result) {
             (Ok(len), Ok(())) => Ok(len),

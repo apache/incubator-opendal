@@ -19,43 +19,56 @@ use std::sync::Arc;
 
 use http::StatusCode;
 
+use super::core::parse_error;
 use super::core::*;
-use super::error::parse_error;
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct WebdavWriter {
     core: Arc<WebdavCore>,
+    ctx: OperationContext,
 
     op: OpWrite,
     path: String,
 }
 
 impl WebdavWriter {
-    pub fn new(core: Arc<WebdavCore>, op: OpWrite, path: String) -> Self {
-        WebdavWriter { core, op, path }
+    pub fn new(core: Arc<WebdavCore>, ctx: OperationContext, op: OpWrite, path: String) -> Self {
+        WebdavWriter {
+            core,
+            ctx,
+            op,
+            path,
+        }
     }
 
     fn parse_metadata(headers: &http::HeaderMap) -> Result<Metadata> {
-        let mut metadata = Metadata::default();
+        let mut metadata = MetadataBuilder::unknown();
 
         if let Some(etag) = parse_etag(headers)? {
-            metadata.set_etag(etag);
+            metadata.etag(etag);
         }
 
         if let Some(last_modified) = parse_last_modified(headers)? {
-            metadata.set_last_modified(last_modified);
+            metadata.last_modified(last_modified);
         }
 
-        Ok(metadata)
+        Ok(metadata.build())
     }
 }
 
 impl oio::OneShotWrite for WebdavWriter {
     async fn write_once(&self, bs: Buffer) -> Result<Metadata> {
+        // Ensure parent path exists unless disabled for servers that don't support PROPFIND.
+        if !self.core.disable_create_dir {
+            self.core
+                .webdav_mkcol(&self.ctx, get_parent(&self.path))
+                .await?;
+        }
+
         let resp = self
             .core
-            .webdav_put(&self.path, Some(bs.len() as u64), &self.op, bs)
+            .webdav_put(&self.ctx, &self.path, Some(bs.len() as u64), &self.op, bs)
             .await?;
 
         let status = resp.status();
@@ -66,9 +79,13 @@ impl oio::OneShotWrite for WebdavWriter {
 
                 // Set user metadata using PROPPATCH if provided
                 if let Some(user_metadata) = self.op.user_metadata() {
+                    let user_metadata = user_metadata
+                        .into_iter()
+                        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+                        .collect();
                     let proppatch_resp = self
                         .core
-                        .webdav_proppatch(&self.path, user_metadata)
+                        .webdav_proppatch(&self.ctx, &self.path, &user_metadata)
                         .await?;
 
                     let proppatch_status = proppatch_resp.status();
@@ -79,13 +96,19 @@ impl oio::OneShotWrite for WebdavWriter {
                         let xml = String::from_utf8_lossy(&body);
                         check_proppatch_response(&xml)?;
                     } else if !proppatch_status.is_success() {
-                        return Err(parse_error(proppatch_resp));
+                        return Err(parse_error(
+                            ErrorContext::new(ServiceOperation("Proppatch")),
+                            proppatch_resp,
+                        ));
                     }
                 }
 
                 Ok(metadata)
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Put")),
+                resp,
+            )),
         }
     }
 }

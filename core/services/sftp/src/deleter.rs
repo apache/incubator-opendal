@@ -18,8 +18,8 @@
 use std::sync::Arc;
 
 use super::core::SftpCore;
-use super::error::is_not_found;
-use super::error::parse_sftp_error;
+use super::core::is_not_found;
+use super::core::parse_sftp_error;
 use opendal_core::raw::*;
 use opendal_core::*;
 

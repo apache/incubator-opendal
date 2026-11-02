@@ -20,8 +20,8 @@ use std::sync::Arc;
 use bytes::Buf;
 use quick_xml::de;
 
+use super::core::parse_error;
 use super::core::*;
-use super::error::parse_error;
 use opendal_core::raw::oio::PageContext;
 use opendal_core::raw::*;
 use opendal_core::*;
@@ -30,6 +30,7 @@ pub type OssListers = TwoWays<oio::PageLister<OssLister>, oio::PageLister<OssObj
 
 pub struct OssLister {
     core: Arc<OssCore>,
+    ctx: OperationContext,
 
     path: String,
     delimiter: &'static str,
@@ -42,6 +43,7 @@ pub struct OssLister {
 impl OssLister {
     pub fn new(
         core: Arc<OssCore>,
+        ctx: OperationContext,
         path: &str,
         recursive: bool,
         limit: Option<usize>,
@@ -50,6 +52,7 @@ impl OssLister {
         let delimiter = if recursive { "" } else { "/" };
         Self {
             core,
+            ctx,
             path: path.to_string(),
             delimiter,
             limit,
@@ -63,6 +66,7 @@ impl oio::PageList for OssLister {
         let resp = self
             .core
             .oss_list_object(
+                &self.ctx,
                 &self.path,
                 &ctx.token,
                 self.delimiter,
@@ -76,7 +80,10 @@ impl oio::PageList for OssLister {
             .await?;
 
         if resp.status() != http::StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListObjectsV2")),
+                resp,
+            ));
         }
 
         let bs = resp.into_body();
@@ -90,7 +97,7 @@ impl oio::PageList for OssLister {
         for prefix in output.common_prefixes {
             let de = oio::Entry::new(
                 &build_rel_path(&self.core.root, &prefix.prefix),
-                Metadata::new(EntryMode::DIR),
+                MetadataBuilder::dir().build(),
             );
             ctx.entries.push_back(de);
         }
@@ -104,14 +111,17 @@ impl oio::PageList for OssLister {
                 continue;
             }
 
-            let mut meta = Metadata::new(EntryMode::from_path(&path));
-            meta.set_is_current(true);
-            meta.set_etag(&object.etag);
-            meta.set_content_md5(object.etag.trim_matches('"'));
-            meta.set_content_length(object.size);
-            meta.set_last_modified(object.last_modified.parse::<Timestamp>()?);
+            let mut meta = if path.ends_with('/') {
+                MetadataBuilder::dir()
+            } else {
+                MetadataBuilder::file(object.size)
+            };
+            meta.is_current(Some(true));
+            meta.etag(&object.etag);
+            meta.content_md5(object.etag.trim_matches('"'));
+            meta.last_modified(object.last_modified.parse::<Timestamp>()?);
 
-            let de = oio::Entry::with(path, meta);
+            let de = oio::Entry::with(path, meta.build());
             ctx.entries.push_back(de);
         }
 
@@ -122,6 +132,7 @@ impl oio::PageList for OssLister {
 /// refer: https://help.aliyun.com/zh/oss/developer-reference/listobjectversions?spm=a2c4g.11186623.help-menu-31815.d_3_1_1_5_5_2.53f67237GJlMPw&scm=20140722.H_112467._.OR_help-T_cn~zh-V_1
 pub struct OssObjectVersionsLister {
     core: Arc<OssCore>,
+    ctx: OperationContext,
 
     prefix: String,
     args: OpList,
@@ -131,7 +142,7 @@ pub struct OssObjectVersionsLister {
 }
 
 impl OssObjectVersionsLister {
-    pub fn new(core: Arc<OssCore>, path: &str, args: OpList) -> Self {
+    pub fn new(core: Arc<OssCore>, ctx: OperationContext, path: &str, args: OpList) -> Self {
         let delimiter = if args.recursive() { "" } else { "/" };
         let abs_start_after = args
             .start_after()
@@ -139,6 +150,7 @@ impl OssObjectVersionsLister {
 
         Self {
             core,
+            ctx,
             prefix: path.to_string(),
             args,
             delimiter,
@@ -161,6 +173,7 @@ impl oio::PageList for OssObjectVersionsLister {
         let resp = self
             .core
             .oss_list_object_versions(
+                &self.ctx,
                 &self.prefix,
                 self.delimiter,
                 self.args.limit(),
@@ -169,7 +182,10 @@ impl oio::PageList for OssObjectVersionsLister {
             )
             .await?;
         if resp.status() != http::StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListObjectVersions")),
+                resp,
+            ));
         }
 
         let body = resp.into_body();
@@ -196,7 +212,7 @@ impl oio::PageList for OssObjectVersionsLister {
         for prefix in output.common_prefixes {
             let de = oio::Entry::new(
                 &build_rel_path(&self.core.root, &prefix.prefix),
-                Metadata::new(EntryMode::DIR),
+                MetadataBuilder::dir().build(),
             );
             ctx.entries.push_back(de);
         }
@@ -215,17 +231,20 @@ impl oio::PageList for OssObjectVersionsLister {
                 path = "/".to_owned();
             }
 
-            let mut meta = Metadata::new(EntryMode::from_path(&path));
-            meta.set_version(&version_object.version_id);
-            meta.set_is_current(version_object.is_latest);
-            meta.set_content_length(version_object.size);
-            meta.set_last_modified(version_object.last_modified.parse::<Timestamp>()?);
+            let mut meta = if path.ends_with('/') {
+                MetadataBuilder::dir()
+            } else {
+                MetadataBuilder::file(version_object.size)
+            };
+            meta.version(&version_object.version_id);
+            meta.is_current(Some(version_object.is_latest));
+            meta.last_modified(version_object.last_modified.parse::<Timestamp>()?);
             if let Some(etag) = version_object.etag {
-                meta.set_etag(&etag);
-                meta.set_content_md5(etag.trim_matches('"'));
+                meta.etag(&etag);
+                meta.content_md5(etag.trim_matches('"'));
             }
 
-            let entry = oio::Entry::new(&path, meta);
+            let entry = oio::Entry::new(&path, meta.build());
             ctx.entries.push_back(entry);
         }
 
@@ -236,13 +255,17 @@ impl oio::PageList for OssObjectVersionsLister {
                     path = "/".to_owned();
                 }
 
-                let mut meta = Metadata::new(EntryMode::FILE);
-                meta.set_version(&delete_marker.version_id);
-                meta.set_is_deleted(true);
-                meta.set_is_current(delete_marker.is_latest);
-                meta.set_last_modified(delete_marker.last_modified.parse::<Timestamp>()?);
+                let mut meta = if path.ends_with('/') {
+                    MetadataBuilder::dir()
+                } else {
+                    MetadataBuilder::file(0)
+                };
+                meta.version(&delete_marker.version_id);
+                meta.is_deleted(true);
+                meta.is_current(Some(delete_marker.is_latest));
+                meta.last_modified(delete_marker.last_modified.parse::<Timestamp>()?);
 
-                let entry = oio::Entry::new(&path, meta);
+                let entry = oio::Entry::new(&path, meta.build());
                 ctx.entries.push_back(entry);
             }
         }

@@ -22,7 +22,8 @@ use futures::StreamExt;
 
 use crate::*;
 
-/// StdIterator is the adapter of [`Iterator`] for [`BlockingReader`][crate::BlockingReader].
+/// `StdBytesIterator` adapts a [`crate::blocking::Reader`] into an
+/// [`Iterator`].
 ///
 /// Users can use this adapter in cases where they need to use [`Iterator`] trait.
 ///

@@ -19,21 +19,22 @@ use std::sync::Arc;
 
 use http::StatusCode;
 
-use super::core::DbfsCore;
-use super::error::parse_error;
+use super::core::parse_error;
+use super::core::{DbfsCore, ErrorContext};
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct DbfsWriter {
     core: Arc<DbfsCore>,
+    ctx: OperationContext,
     path: String,
 }
 
 impl DbfsWriter {
     const MAX_SIMPLE_SIZE: usize = 1024 * 1024;
 
-    pub fn new(core: Arc<DbfsCore>, _op: OpWrite, path: String) -> Self {
-        DbfsWriter { core, path }
+    pub fn new(core: Arc<DbfsCore>, ctx: OperationContext, _op: OpWrite, path: String) -> Self {
+        DbfsWriter { core, ctx, path }
     }
 }
 
@@ -53,12 +54,15 @@ impl oio::OneShotWrite for DbfsWriter {
             .core
             .dbfs_create_file_request(&self.path, bs.to_bytes())?;
 
-        let resp = self.core.client.send(req).await?;
+        let resp = self.ctx.http_transport().send(req).await?;
 
         let status = resp.status();
         match status {
-            StatusCode::CREATED | StatusCode::OK => Ok(Metadata::default()),
-            _ => Err(parse_error(resp)),
+            StatusCode::CREATED | StatusCode::OK => Ok(MetadataBuilder::unknown().build()),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Put")),
+                resp,
+            )),
         }
     }
 }

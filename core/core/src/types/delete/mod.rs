@@ -16,7 +16,6 @@
 // under the License.
 
 mod input;
-pub use input::DeleteInput;
 pub use input::IntoDeleteInput;
 
 mod deleter;

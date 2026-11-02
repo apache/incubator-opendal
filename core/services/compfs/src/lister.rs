@@ -52,23 +52,37 @@ fn normalize(path: &Path, root: &Path) -> String {
 }
 
 fn next_entry(read_dir: &mut ReadDir, root: &Path) -> std::io::Result<Option<oio::Entry>> {
-    let Some(entry) = read_dir.next().transpose()? else {
-        return Ok(None);
-    };
-    let path = entry.path();
-    let rel_path = normalize(&path, root);
+    loop {
+        let Some(entry) = read_dir.next().transpose()? else {
+            return Ok(None);
+        };
+        let path = entry.path();
+        let rel_path = normalize(&path, root);
 
-    let file_type = entry.file_type()?;
+        let file_type = match entry.file_type() {
+            Ok(file_type) => file_type,
+            Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(err) => return Err(err),
+        };
 
-    let entry = if file_type.is_file() {
-        oio::Entry::new(&rel_path, Metadata::new(EntryMode::FILE))
-    } else if file_type.is_dir() {
-        oio::Entry::new(&format!("{rel_path}/"), Metadata::new(EntryMode::DIR))
-    } else {
-        oio::Entry::new(&rel_path, Metadata::new(EntryMode::Unknown))
-    };
+        let entry = if file_type.is_file() {
+            let de_metadata = match entry.metadata() {
+                Ok(de_metadata) => de_metadata,
+                Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(err) => return Err(err),
+            };
+            oio::Entry::new(&rel_path, {
+                let metadata = MetadataBuilder::file(de_metadata.len());
+                metadata.build()
+            })
+        } else if file_type.is_dir() {
+            oio::Entry::new(&format!("{rel_path}/"), MetadataBuilder::dir().build())
+        } else {
+            oio::Entry::new(&rel_path, MetadataBuilder::unknown().build())
+        };
 
-    Ok(Some(entry))
+        return Ok(Some(entry));
+    }
 }
 
 impl oio::List for CompfsLister {
@@ -76,7 +90,7 @@ impl oio::List for CompfsLister {
         if let Some(root) = self.root.take() {
             return Ok(Some(oio::Entry::new(
                 &format!("{root}/"),
-                Metadata::new(EntryMode::DIR),
+                MetadataBuilder::dir().build(),
             )));
         }
         let Some(mut read_dir) = self.read_dir.take() else {

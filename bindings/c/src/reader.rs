@@ -96,7 +96,7 @@ impl opendal_reader {
                         core::ErrorKind::Unexpected,
                         "undefined whence",
                     )),
-                }
+                };
             }
         };
 

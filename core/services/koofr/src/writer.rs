@@ -21,8 +21,8 @@ use bytes::Buf;
 use http::StatusCode;
 
 use super::core::File;
-use super::core::KoofrCore;
-use super::error::parse_error;
+use super::core::parse_error;
+use super::core::{ErrorContext, KoofrCore};
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -30,12 +30,13 @@ pub type KoofrWriters = oio::OneShotWriter<KoofrWriter>;
 
 pub struct KoofrWriter {
     core: Arc<KoofrCore>,
+    ctx: OperationContext,
     path: String,
 }
 
 impl KoofrWriter {
-    pub fn new(core: Arc<KoofrCore>, path: String) -> Self {
-        KoofrWriter { core, path }
+    pub fn new(core: Arc<KoofrCore>, ctx: OperationContext, path: String) -> Self {
+        KoofrWriter { core, ctx, path }
     }
 
     fn parse_metadata(file: &File) -> Result<Metadata> {
@@ -45,20 +46,23 @@ impl KoofrWriter {
             EntryMode::FILE
         };
 
-        let mut meta = Metadata::new(mode);
-        meta.set_content_length(file.size);
-        meta.set_content_type(&file.content_type);
-        meta.set_last_modified(Timestamp::from_millisecond(file.modified)?);
+        let mut meta = if mode == EntryMode::FILE {
+            MetadataBuilder::file(file.size)
+        } else {
+            MetadataBuilder::dir()
+        };
+        meta.content_type(&file.content_type);
+        meta.last_modified(Timestamp::from_millisecond(file.modified)?);
 
-        Ok(meta)
+        Ok(meta.build())
     }
 }
 
 impl oio::OneShotWrite for KoofrWriter {
     async fn write_once(&self, bs: Buffer) -> Result<Metadata> {
-        self.core.ensure_dir_exists(&self.path).await?;
+        self.core.ensure_dir_exists(&self.ctx, &self.path).await?;
 
-        let resp = self.core.put(&self.path, bs).await?;
+        let resp = self.core.put(&self.ctx, &self.path, bs).await?;
 
         let status = resp.status();
 
@@ -70,7 +74,10 @@ impl oio::OneShotWrite for KoofrWriter {
                 let metadata = Self::parse_metadata(&file)?;
                 Ok(metadata)
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("FilesPut")),
+                resp,
+            )),
         }
     }
 }

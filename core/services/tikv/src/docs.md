@@ -1,6 +1,6 @@
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [ ] create_dir
 - [x] stat
@@ -12,15 +12,14 @@ This service can be used to:
 - [ ] rename
 - [ ] ~~presign~~
 
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
+
 ## Configuration
 
-- `endpoints`: Set the endpoints to the tikv cluster
-- `insecure`: Set the insecure flag to the tikv cluster
-- `ca_path`: Set the ca path to the tikv connection
-- `cert_path`: Set the cert path to the tikv connection
-- `key_path`: Set the key path to the tikv connection
-
-You can refer to [`TikvBuilder`]'s docs for more information
+Use [`crate::TikvConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
 ## Example
 
@@ -36,7 +35,7 @@ async fn main() -> Result<()> {
     let mut builder = Tikv::default()
         .endpoints(vec!["127.0.0.1:2379".to_string()]);
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
     Ok(())
 }
 ```

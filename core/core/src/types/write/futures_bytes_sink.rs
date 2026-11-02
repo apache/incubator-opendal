@@ -87,14 +87,16 @@ mod tests {
     async fn test_trait() {
         let op = Operator::via_iter(services::MEMORY_SCHEME, []).unwrap();
 
-        let acc = op.into_inner();
+        let ctx = op.context().clone();
+        let srv = op.service().clone();
         let ctx = Arc::new(WriteContext::new(
-            acc,
+            ctx,
+            srv,
             "test".to_string(),
             OpWrite::new(),
             OpWriter::new().with_chunk(1),
         ));
-        let write_gen = WriteGenerator::create(ctx).await.unwrap();
+        let write_gen = WriteGenerator::create(ctx).unwrap();
 
         let v = FuturesBytesSink::new(write_gen);
 

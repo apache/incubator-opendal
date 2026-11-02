@@ -16,27 +16,34 @@
 # under the License.
 
 # ruff: noqa: D104
-import builtins
+from __future__ import annotations
 
-from opendal._opendal import (  # noqa: F403
-    capability,
-    exceptions,
-    file,
-    layers,
-    services,
-    types,
+# `_opendal` registers the submodules in `sys.modules` on import (see
+# `register_submodules`), so import it before importing from them.
+from opendal import _opendal as _opendal
+from opendal._opendal import __version__ as __version__
+from opendal.operator import AsyncOperator, Operator
+
+from opendal import (  # isort: skip
+    capability as capability,
+    config as config,
+    exceptions as exceptions,
+    file as file,
+    layers as layers,
+    operator as operator,
+    services as services,
+    types as types,
 )
-from opendal.operator import AsyncOperator, Operator  # pyright:ignore
-
-__version__: builtins.str
 
 __all__ = [
+    "AsyncOperator",
+    "Operator",
     "capability",
+    "config",
     "exceptions",
     "file",
     "layers",
+    "operator",
     "services",
     "types",
-    "AsyncOperator",
-    "Operator",
 ]

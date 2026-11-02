@@ -17,16 +17,29 @@
 
 use std::fmt::Debug;
 use std::io;
-use std::io::SeekFrom;
 use std::sync::Arc;
 
 use opendal_core::raw::*;
 use opendal_core::*;
 
+fn map_hdfs_rename_error(err: io::Error, if_not_exists: bool, to_path: &str) -> Error {
+    if if_not_exists && err.kind() == io::ErrorKind::AlreadyExists {
+        return Error::new(
+            ErrorKind::ConditionNotMatch,
+            "target path already exists while if_not_exists is set",
+        )
+        .with_context("to", to_path)
+        .set_source(err);
+    }
+
+    new_std_io_error(err)
+}
+
 /// HdfsCore contains code that directly interacts with HDFS.
 #[derive(Clone)]
 pub struct HdfsCore {
-    pub info: Arc<AccessorInfo>,
+    pub info: ServiceInfo,
+    pub capability: Capability,
     pub root: String,
     pub atomic_write_dir: Option<String>,
     pub client: Arc<hdrs::Client>,
@@ -59,31 +72,24 @@ impl HdfsCore {
         } else {
             EntryMode::Unknown
         };
-        let mut m = Metadata::new(mode);
-        m.set_content_length(meta.len());
-        m.set_last_modified(Timestamp::try_from(meta.modified())?);
+        let mut m = match mode {
+            EntryMode::FILE => MetadataBuilder::file(meta.len()),
+            EntryMode::DIR => MetadataBuilder::dir(),
+            EntryMode::Unknown => MetadataBuilder::unknown(),
+        };
+        m.last_modified(Timestamp::try_from(meta.modified())?);
 
-        Ok(m)
+        Ok(m.build())
     }
 
-    pub async fn hdfs_read(&self, path: &str, args: &OpRead) -> Result<hdrs::AsyncFile> {
+    pub async fn hdfs_open(&self, path: &str) -> Result<hdrs::File> {
         let p = build_rooted_abs_path(&self.root, path);
 
         let client = self.client.clone();
-        let mut f = client
-            .open_file()
-            .read(true)
-            .async_open(&p)
+        let f = tokio::task::spawn_blocking(move || client.open_file().read(true).open(&p))
             .await
+            .map_err(|e| Error::new(ErrorKind::Unexpected, "tokio task join failed").set_source(e))?
             .map_err(new_std_io_error)?;
-
-        if args.range().offset() != 0 {
-            use futures::AsyncSeekExt;
-
-            f.seek(SeekFrom::Start(args.range().offset()))
-                .await
-                .map_err(new_std_io_error)?;
-        }
 
         Ok(f)
     }
@@ -118,8 +124,7 @@ impl HdfsCore {
         });
 
         if !target_exists {
-            let parent = get_parent(&target_path);
-            self.client.create_dir(parent).map_err(new_std_io_error)?;
+            self.ensure_parent_dir(&target_path)?;
         }
         if !should_append {
             initial_size = 0;
@@ -156,7 +161,7 @@ impl HdfsCore {
         }
     }
 
-    pub fn hdfs_rename(&self, from: &str, to: &str) -> Result<()> {
+    pub fn hdfs_rename(&self, from: &str, to: &str, args: &OpRename) -> Result<()> {
         let from_path = build_rooted_abs_path(&self.root, from);
         self.client.metadata(&from_path).map_err(new_std_io_error)?;
 
@@ -169,37 +174,100 @@ impl HdfsCore {
                     return Err(new_std_io_error(err));
                 }
 
-                let parent = std::path::PathBuf::from(&to_path)
-                    .parent()
-                    .ok_or_else(|| {
-                        Error::new(
-                            ErrorKind::Unexpected,
-                            "path should have parent but not, it must be malformed",
-                        )
-                        .with_context("input", &to_path)
-                    })?
-                    .to_path_buf();
-
-                self.client
-                    .create_dir(&parent.to_string_lossy())
-                    .map_err(new_std_io_error)?;
+                self.ensure_parent_dir(&to_path)?;
             }
             Ok(metadata) => {
                 if metadata.is_file() {
+                    if args.if_not_exists() {
+                        return Err(Error::new(
+                            ErrorKind::ConditionNotMatch,
+                            "target path already exists while if_not_exists is set",
+                        )
+                        .with_context("to", &to_path));
+                    }
                     self.client
                         .remove_file(&to_path)
                         .map_err(new_std_io_error)?;
                 } else {
                     return Err(Error::new(ErrorKind::IsADirectory, "path should be a file")
-                        .with_context("input", &to_path));
+                        .with_context("to", &to_path));
                 }
             }
         }
 
         self.client
             .rename_file(&from_path, &to_path)
-            .map_err(new_std_io_error)?;
+            .map_err(|err| map_hdfs_rename_error(err, args.if_not_exists(), &to_path))?;
 
         Ok(())
+    }
+
+    pub async fn hdfs_copy(&self, from: &str, to: &str) -> Result<Metadata> {
+        let from_path = build_rooted_abs_path(&self.root, from);
+        // OpenDAL copy is file-to-file only. Reject directory sources before
+        // the HDFS API can recursively copy their contents.
+        let from_meta = self.client.metadata(&from_path).map_err(new_std_io_error)?;
+        if !from_meta.is_file() {
+            return Err(
+                Error::new(ErrorKind::IsADirectory, "from path should be a file")
+                    .with_context("from", &from_path),
+            );
+        }
+
+        let to_path = build_rooted_abs_path(&self.root, to);
+        match self.client.metadata(&to_path) {
+            Ok(meta) => {
+                // OpenDAL treats `to` as the exact destination file path. Reject
+                // an existing directory instead of copying the source into it.
+                if meta.is_dir() {
+                    return Err(
+                        Error::new(ErrorKind::IsADirectory, "to path should be a file")
+                            .with_context("to", &to_path),
+                    );
+                }
+                // The HDFS copy API does not replace an existing destination,
+                // so remove it first to preserve OpenDAL's overwrite semantics.
+                self.client
+                    .remove_file(&to_path)
+                    .map_err(new_std_io_error)?;
+            }
+            Err(err) if err.kind() == io::ErrorKind::NotFound => {
+                // hdrs copy_file requires the destination parent to already exist.
+                self.ensure_parent_dir(&to_path)?;
+            }
+            Err(err) => return Err(new_std_io_error(err)),
+        }
+
+        let client = self.client.clone();
+        let copy_from = from_path.clone();
+        let copy_to = to_path.clone();
+        tokio::task::spawn_blocking(move || client.copy_file(&copy_from, &copy_to))
+            .await
+            .map_err(|e| Error::new(ErrorKind::Unexpected, "tokio task join failed").set_source(e))?
+            .map_err(new_std_io_error)?;
+
+        Ok(MetadataBuilder::file(from_meta.len()).build())
+    }
+
+    fn ensure_parent_dir(&self, path: &str) -> Result<()> {
+        self.client
+            .create_dir(get_parent(path))
+            .map_err(new_std_io_error)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn map_existing_target_error_to_condition_not_match() {
+        let err = map_hdfs_rename_error(
+            io::Error::new(io::ErrorKind::AlreadyExists, "target exists"),
+            true,
+            "/target",
+        );
+
+        assert_eq!(err.kind(), ErrorKind::ConditionNotMatch);
     }
 }

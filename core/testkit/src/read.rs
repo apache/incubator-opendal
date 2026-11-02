@@ -17,35 +17,34 @@
 
 use bytes::Bytes;
 use opendal_core::*;
-use rand::RngCore;
-use rand::thread_rng;
-use sha2::Digest;
-use sha2::Sha256;
+use rand::Rng;
+use rand::rng;
 
-/// ReadAction represents a read action.
+use crate::utils::sha256_digest;
+
+/// A reader operation executed by [`ReadChecker`].
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ReadAction {
-    /// Read represents a read action with given input buf size.
+    /// Read `size` bytes beginning at `offset`.
     ///
-    /// # NOTE
-    ///
-    /// The size is the input buf size, it's possible that the actual read size is smaller.
+    /// The first field is the offset and the second field is the requested
+    /// size. A reader can return fewer bytes at the end of an object.
     Read(usize, usize),
 }
 
-/// ReadChecker is used to check the correctness of the read process.
+/// Generates reference data and verifies reads against it.
 pub struct ReadChecker {
-    /// Raw Data is the data we write to the storage.
+    /// Data that callers write to the storage before checking reads.
     raw_data: Bytes,
 }
 
 impl ReadChecker {
-    /// Create a new read checker by given size and range.
+    /// Create a checker containing `size` bytes of random reference data.
     ///
-    /// It's by design that we use a random generator to generate the raw data. The content of data
-    /// is not important, we only care about the correctness of the read process.
+    /// Random input makes the checker sensitive to misplaced or repeated data;
+    /// callers should not depend on the generated content.
     pub fn new(size: usize) -> Self {
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut data = vec![0; size];
         rng.fill_bytes(&mut data);
 
@@ -54,7 +53,7 @@ impl ReadChecker {
         Self { raw_data }
     }
 
-    /// Return the raw data of this read checker.
+    /// Return the reference data that should be written before a check.
     pub fn data(&self) -> Bytes {
         self.raw_data.clone()
     }
@@ -91,17 +90,18 @@ impl ReadChecker {
 
         let expected = &self.raw_data[offset..offset + output.len()];
 
-        // Check the read result
-        assert_eq!(
-            format!("{:x}", Sha256::digest(output)),
-            format!("{:x}", Sha256::digest(expected)),
-            "check read failed: output bs is different with expected bs",
-        );
+        if output != expected {
+            assert_eq!(
+                sha256_digest(output),
+                sha256_digest(expected),
+                "check read failed: output bs is different with expected bs",
+            );
+        }
     }
 
-    /// Check will check the correctness of the read process via given actions.
+    /// Execute `actions` and verify each result against the reference data.
     ///
-    /// Check will panic if any check failed.
+    /// This method panics if a read fails or returns incorrect data.
     pub async fn check(&mut self, r: Reader, actions: &[ReadAction]) {
         for action in actions {
             match *action {

@@ -1,3 +1,258 @@
+# Unreleased
+
+## Raw API
+
+### Submit tasks through `ConcurrentTasks::execute`
+
+`raw::ConcurrentTasks::create_task` has been removed. Submit inputs with `execute()` and collect outputs in submission order with `next()`. These methods keep task ownership, completion accounting, and retry handling inside the queue. If code needs input data after successful completion, include that data in the factory's output type.
+
+# Upgrade to v0.59
+
+## Public API
+
+### Construct `Metadata` with `MetadataBuilder`
+
+`Metadata::new`, `Default`, direct metadata setters, and `with_*` methods have been removed. Construct metadata with `MetadataBuilder::file(content_length)`, `MetadataBuilder::dir()`, or `MetadataBuilder::unknown()`, set optional fields on the builder, then call `build()`:
+
+```diff
+-let mut metadata = Metadata::new(EntryMode::FILE);
+-metadata.set_content_length(size);
+-metadata.set_content_type("text/plain");
++let mut builder = MetadataBuilder::file(size);
++builder.content_type("text/plain");
++let metadata = builder.build();
+```
+
+Consume existing metadata with `into_builder()` when creating a modified value. Use `set_file(content_length)`, `set_dir()`, or `set_unknown()` on the builder to change its mode.
+
+`Metadata::user_metadata()` now returns a borrowed `UserMetadata` view instead of `&HashMap<String, String>`. The view supports `get`, `len`, `is_empty`, and `IntoIterator`; collect owned string pairs at boundaries that require a map.
+
+Every file `Metadata` contains an explicit full-object content length by construction. Raw services use `Unknown` for incomplete metadata and promote it with `set_file(content_length)` only when the full length is authoritative.
+
+Compact metadata and finalized raw-operation value blocks are limited to `u16::MAX` encoded bytes, including indexes. `MetadataBuilder::build`, raw option freezing, and raw listed-entry construction panic when a block exceeds this bound.
+
+### Delete inputs use `DeleteOptions`
+
+`DeleteInput` has been removed. Pass `(String, DeleteOptions)` to `Deleter`, delete iterators, streams, and sinks when an entry needs options. Plain paths and `Entry` values remain supported through `IntoDeleteInput`. Custom `IntoDeleteInput` implementations must now return `(String, DeleteOptions)` from `into_delete_input`. `(String, OpDelete)` is no longer accepted by the public delete APIs because raw arguments are already capability-resolved.
+
+```diff
+-deleter.delete(DeleteInput {
+-    path,
+-    version,
+-    recursive: false,
+-});
++deleter.delete((
++    path,
++    DeleteOptions {
++        version,
++        ..Default::default()
++    },
++));
+```
+
+### Existing option and capability literals require defaults
+
+OpenDAL added fields to `Capability`, `ReadOptions`, `ReaderOptions`, `StatOptions`, `WriteOptions`, `DeleteOptions`, and `CopyOptions`. Code that constructs any of these types with an exhaustive struct literal must initialize the new fields. Prefer update syntax so later additions remain source-compatible:
+
+```rust
+use opendal_core::Capability;
+use opendal_core::options::DeleteOptions;
+
+let options = DeleteOptions {
+    recursive: true,
+    ..Default::default()
+};
+
+let capability = Capability {
+    read: true,
+    ..Default::default()
+};
+```
+
+### Conditional errors distinguish conflicts
+
+Failed conditions supplied through operation options return `ErrorKind::ConditionNotMatch`. Conflicts reported independently by a service return the new `ErrorKind::Conflict`; inspect `Error::is_temporary()` to decide whether the receiving OpenDAL layer can replay the same operation. Unsupported conditions return `ErrorKind::Unsupported`, and a missing target observed by `stat` or `read` remains `ErrorKind::NotFound` even when the request was conditional. Update error recovery code that previously treated every service conflict as `ConditionNotMatch` or `Unexpected`.
+
+## Raw API
+
+### `OpCopier` merged into `OpCopy`
+
+`OpCopier` has been removed. `Service::copy` and `ServiceDyn::copy_dyn` now receive a single `OpCopy` argument, and raw services read `chunk`, `concurrent`, and `source_content_length_hint` from `OpCopy`.
+
+### Raw operation arguments are frozen from public options
+
+Public `with_*` mutation methods have been removed from `OpRead`, `OpStat`, `OpWrite`, `OpDelete`, `OpCopy`, and `OpList`. Construct non-empty read, stat, list, and restore arguments by converting the corresponding public `*Options`. Use the capability-aware `from_options(&capability, options)` constructors for `OpWrite`, `OpDelete`, `OpCopy`, and `OpCompose`; `new` and `Default` remain available for empty arguments.
+
+The direct `From<WriteOptions>`, `From<DeleteOptions>`, and `From<CopyOptions>` conversions have been removed. The capability-aware constructors lower `if_not_changed` before freezing, so raw arguments contain only service-ready primitive conditions. `OpWrite::from_options` still returns `(OpWrite, OpWriter)`, while copy execution settings now live directly in `OpCopy`. `OpWrite::user_metadata()` returns the same borrowed `UserMetadata` view as `Metadata`.
+
+### Listed entries contain finalized metadata
+
+`raw::oio::Entry::set_mode` and `metadata_mut` have been removed. Build the final `Metadata` first and pass it to `raw::oio::Entry::new` or `with`. To modify an existing raw entry, consume it with `into_parts`, rebuild its metadata, and construct a replacement entry:
+
+```rust
+use opendal_core::MetadataBuilder;
+use opendal_core::raw;
+
+let entry = raw::oio::Entry::new("path", MetadataBuilder::file(0).build());
+let (path, metadata) = entry.into_parts();
+let mut builder = metadata.into_builder();
+builder.content_type("text/plain");
+let entry = raw::oio::Entry::new(&path, builder.build());
+```
+
+The metadata mode must continue to match the path: directory paths end in `/`, while file paths do not.
+
+### Do not use numeric `Operation` discriminants
+
+The new `Compose` and `Restore` variants changed the implicit numeric discriminants of later `Operation` variants. Code that casts `Operation` with `as usize` must migrate to `Operation::into_static()` or `Display` for stable operation names. `Operation` has no numeric representation contract.
+
+## Services
+
+### Duration config fields use `SignedDuration`
+
+The public `default_ttl` fields on `CloudflareKvConfig`, `MemcachedConfig`, and `RedisConfig` now use `Option<raw::SignedDuration>` instead of `Option<std::time::Duration>`. This allows configuration maps and serialized configuration to parse duration strings. Direct config construction can use the re-exported duration type:
+
+```diff
+-default_ttl: Some(std::time::Duration::from_secs(30)),
++default_ttl: Some(opendal::raw::SignedDuration::from_secs(30)),
+```
+
+The corresponding builder methods continue to accept `std::time::Duration`.
+
+# Upgrade to v0.58
+
+## Public API
+
+### `Operator::new` returns a finished operator
+
+`Operator::new(builder)` now returns `Result<Operator>` directly. Remove the old `finish()` call from construction code:
+
+```diff
+- let op = Operator::new(builder)?.finish();
++ let op = Operator::new(builder)?;
+```
+
+### Runtime composition APIs consolidated
+
+Operator runtime resources now live in `OperationContext`, which is exported from the crate root instead of `raw`.
+
+- Replace `raw::OperationContext` imports with `opendal::OperationContext`.
+- Replace `Operator::http_transport(...)` and `Operator::executor(...)` with `Operator::with_context(...)`.
+- Replace `Operator::from_service(...)` with `Operator::from_parts(ctx, service)`.
+- Replace `Operator::inner()`, `Operator::into_inner()`, and `Operator::executor_ref()` with `service()`, `context()`, or `into_parts()` depending on whether you need borrowed or owned composed state.
+- `Operator::from_inner(...)` is deprecated; use `Operator::from_parts(...)`.
+
+### Native and full capability APIs removed
+
+`OperatorInfo::native_capability()` has been removed. `OperatorInfo::capability()` is now the public availability contract for the composed operator stack.
+
+### Suffix reads use public `BytesRange`
+
+`BytesRange` is now part of the public type layer. Reader APIs accept values convertible into `BytesRange`, and suffix reads can be requested with `BytesRange::suffix(size)`. Code that imported raw HTTP range helpers should use `opendal::BytesRange` instead.
+
+## Raw API
+
+### Services and layers use the new composition boundary
+
+Out-of-tree services must implement `raw::Service` instead of the old accessor pipeline. Services now return immutable identity through `ServiceInfo`, report availability through `capability()`, and receive `&OperationContext` at each operation boundary.
+
+Out-of-tree layers must implement `Layer::apply_service` and, when they replace runtime resources, `Layer::apply_context`. The old typed layer pipeline, including `TypedLayer`, `RuntimeResourceLayer`, `TypeEraseLayer`, `OperatorBuilder<S>`, and `typed_layer`, has been removed.
+
+### Stateful operation factories are synchronous
+
+`Service` and `ServiceDyn` factories for `read`, `write`, `delete`, `list`, and `copy` now return OIO bodies synchronously. Move asynchronous work into the returned body implementation instead of returning `(Rp*, body)` futures from the factory.
+
+### Removed raw helpers
+
+The unused `raw::AtomicContentLength`, `raw::PathCacher`, and `raw::PathQuery` helpers have been removed. The `internal-path-cache` feature has also been removed.
+
+# Upgrade to v0.57
+
+## Public API
+
+### Read response metadata
+
+Read operations can now expose metadata returned by the underlying service while opening the read response. `Reader::metadata()` returns the complete object metadata already observed by this reader, and `BufferStream::metadata()` can open the read response and return metadata before the response body is consumed.
+
+`Operator::read`, `read_with`, and `read_options` still return `Buffer`.
+
+### Copy APIs return `Metadata`
+
+`Operator::copy`, `copy_options`, `copy_with`, and their blocking equivalents now return `Metadata` instead of `()`, matching write completion behavior.
+
+Out-of-tree raw services and layers that implement copy must migrate to the new copier flow:
+
+- `Access::copy` returns `(RpCopy, Self::Copier)`.
+- `Access` implementations define a `type Copier`.
+- `oio::Copy::close` returns the server-side completion `Metadata`.
+
+### `RetryInterceptor::intercept` takes `RetryEvent`
+
+`RetryInterceptor::intercept` now receives a single `RetryEvent<'_>` argument instead of `(&Error, Duration)`. The event carries the operation being retried and a 1-based retry attempt counter, and is `#[non_exhaustive]` so future fields can be added without another break.
+
+### HTTP metrics include `service_operation`
+
+HTTP metrics emitted by the metrics layers now include a `service_operation` label for backend-specific request names such as `GetObject` or `UploadPart`. Metrics consumers and dashboards that assume the previous HTTP metric label set must be updated.
+
+## Raw API
+
+### `RpRead` carries optional `Metadata`
+
+`RpRead` now carries optional complete object `Metadata` observed while opening a read operation. The old size/range fields have been removed.
+
+Out-of-tree services should return:
+
+- `RpRead::new(metadata)` when the read response natively provides metadata.
+- `RpRead::default()` when the service does not provide read metadata.
+
+The `metadata.content_length()` value must describe the full object size, even for range reads.
+
+## Services
+
+### `allow_anonymous` renamed to `skip_signature`
+
+S3-compatible services now use `skip_signature` to describe requests that bypass credential loading and request signing:
+
+- For S3, OSS, and GCS, `allow_anonymous` is kept as a deprecated compatibility alias. New code should use `skip_signature()` on builders or `skip_signature = true` in config.
+- For TOS, migrate from `allow_anonymous(true)` / `allow_anonymous = true` to `skip_signature()` / `skip_signature = true`.
+- For GCS, the behavior changed from fallback-on-credential-error to an unconditional signing bypass. If requests should be signed, do not set either `skip_signature` or the deprecated `allow_anonymous` alias.
+
+### Hugging Face `repo_type` is required
+
+The Hugging Face service no longer defaults `repo_type` to `model`. Set it explicitly when constructing the service:
+
+```diff
+ let builder = opendal_service_hf::Hf::default()
++    .repo_type("model")
+     .repo_id("username/repo");
+```
+
+For config maps and environment-driven setup, add `repo_type = "model"` or the correct repository type: `model`, `dataset`, `space`, or `bucket`.
+
+The service also adds a `download_mode` option. The default is `xet`; set `download_mode = "http"` to force plain HTTP downloads.
+
+### TOS versioning option removed
+
+`TosBuilder::enable_versioning` and `TosConfig::enable_versioning` have been removed. TOS now declares versioned stat/read/delete capabilities natively.
+
+# Upgrade to v0.56
+
+## Public API
+
+### Deprecated HTTP client builder hooks removed
+
+The long-deprecated `http_client` customization hooks on service builders have been removed. Configure custom HTTP behavior with the layered HTTP client APIs instead of mutating service builders directly.
+
+### `TimeoutLayer::with_speed` removed
+
+`TimeoutLayer::with_speed` has been removed after a deprecation cycle. Use `with_io_timeout` to enforce per-IO deadlines instead.
+
+## Raw API
+
+### Test helpers moved to `opendal_testkit`
+
+The old `opendal::raw::tests` module has been split into the standalone `opendal-testkit` crate. If you maintain out-of-tree services or integrations, replace imports from `opendal::raw::tests` with `opendal::tests` or depend on `opendal-testkit` directly.
+
 # Upgrade to v0.55
 
 ## Public API
@@ -20,7 +275,7 @@ All public metadata APIs that previously exposed `chrono::DateTime<Utc>` now use
 
 ### KV-style services no longer pretend to support `list`
 
-Services that never returned meaningful results for `Operator::list` (such as D1, FoundationDB, GridFS, Memcached, MongoDB, MySQL, Persy, PostgreSQL, Redb, Redis, SurrealDB, TiKV, etc.) now rely on the default `Unsupported` implementation. Those features will be implemented later.
+Services that never returned meaningful results for `Operator::list` (such as D1, FoundationDB, GridFS, Memcached, MongoDB, MySQL, Persy, PostgreSQL, Redb, Redis, SurrealDB, TiKV, etc.) now return explicit `Unsupported` errors from their service implementations. Those features will be implemented later.
 
 ## Raw API
 
@@ -82,8 +337,8 @@ op.write_options("path/to/file", data, options).await?;
 All `stat_has_*` and `list_has_*` capability check APIs have been removed. Instead, check capabilities directly on the `Capability` struct:
 
 ```diff
-- if op.info().full_capability().stat_has_content_length() {
-+ if op.info().full_capability().stat.content_length {
+- if op.info().capability().stat_has_content_length() {
++ if op.info().capability().stat.content_length {
     // ...
 }
 ```
@@ -102,13 +357,13 @@ The following services have been removed due to lack of maintainers:
 
 If you need these services, please consider maintaining them or use alternative services.
 
-### HttpClientLayer replaces `update_http_client`
+### `Operator::http_client` replaces `update_http_client`
 
-The `Operator::update_http_client()` method has been replaced by `HttpClientLayer`:
+The `Operator::update_http_client()` method has been replaced by `Operator::http_client`:
 
 ```diff
 - op.update_http_client(client);
-+ op = op.layer(HttpClientLayer::new(client));
++ op = op.http_client(client);
 ```
 
 ### Expose `presign_xxx_options` API
@@ -254,7 +509,7 @@ The following new APIs have been added:
 - [`Deleter::flush`]
 - [`Deleter::close`]
 - [`Deleter::into_sink`]
-- [`DeleteInput`]
+- `DeleteInput`
 - [`IntoDeleteInput`]
 - [`FuturesDeleteSink`]
 
@@ -371,8 +626,8 @@ Since v0.48, the `customed_credential_load` function has been renamed to `custom
 Since v0.48, Operator's new APIs `from_iter` and `via_iter` methods have deprecated the `from_map` and `via_map` methods.
 
 ```diff
-- Operator::from_map::<Fs>(map)?.finish();
-+ Operator::from_iter::<Fs>(map)?.finish();
+- Operator::from_map::<Fs>(map)?;
++ Operator::from_iter::<Fs>(map)?;
 ```
 
 New API `from_iter` and `via_iter` should cover all use cases of `from_map` and `via_map`.
@@ -386,7 +641,7 @@ Since v0.48, all service builder now takes ownership `self` instead of `&mut sel
 - builder.bucket("test");
 - builder.root("/path/to/root");
 + let builder = S3::default().bucket("test").root("/path/to/root");
-  let op = Operator::new(builder)?.finish();
+  let op = Operator::new(builder)?;
 ```
 
 ## Raw API
@@ -1063,14 +1318,14 @@ To reduce the understanding overhead, we move all `OpXxx` into `opendal::ops` no
 
 In v0.26 we have replaced all internal dynamic dispatch usage with static dispatch. With this change, we can ensure that all operations performed inside OpenDAL are zero cost.
 
-Due to this change, we have to refactor the logic of `Operator`'s init logic. In v0.26, we added `opendal::Builder` trait and `opendal::OperatorBuilder`. For the first glance, the only change to existing code will be like:
+Due to this change, we had to refactor the logic of `Operator`'s init logic. In v0.26, we added `opendal::Builder` trait and a generic operator build step. The public `Operator::new` API now returns a complete operator directly:
 
 ```diff
 - let op = Operator::new(builder.build()?);
-+ let op = Operator::new(builder.build()?).finish();
++ let op = Operator::new(builder)?;
 ```
 
-By adding a `finish()` call, we will erase all generic types so that `Operator` can still be easily used everywhere as before.
+No `finish()` call is required.
 
 ## Accessor
 

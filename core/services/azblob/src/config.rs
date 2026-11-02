@@ -57,7 +57,10 @@ pub struct AzblobConfig {
     )]
     pub account_key: Option<String>,
 
-    /// The encryption key of Azblob service backend.
+    /// The Base64-encoded AES-256 customer-provided encryption key.
+    ///
+    /// The key must decode to exactly 32 bytes. Building an operator returns
+    /// `ConfigInvalid` for invalid Base64 or a different decoded length.
     pub encryption_key: Option<String>,
 
     /// The encryption key sha256 of Azblob service backend.
@@ -74,8 +77,16 @@ pub struct AzblobConfig {
     )]
     pub sas_token: Option<String>,
 
-    /// The maximum batch operations of Azblob service backend.
+    /// Deprecated: Azblob delete batch capability is enabled by default with Azure Blob's 256-operation batch limit.
+    #[deprecated(
+        since = "0.57.0",
+        note = "Azblob delete batch capability is enabled by default with Azure Blob's 256-operation batch limit. Use CapabilityOverrideLayer to override delete_max_size for specific endpoints."
+    )]
     pub batch_max_operations: Option<usize>,
+
+    /// Skip signature will skip loading credentials and signing requests.
+    #[serde(default)]
+    pub skip_signature: bool,
 }
 
 impl Debug for AzblobConfig {
@@ -107,7 +118,10 @@ impl opendal_core::Configurator for AzblobConfig {
 
     #[allow(deprecated)]
     fn into_builder(self) -> Self::Builder {
-        AzblobBuilder { config: self }
+        AzblobBuilder {
+            config: self,
+            credential_providers: None,
+        }
     }
 }
 

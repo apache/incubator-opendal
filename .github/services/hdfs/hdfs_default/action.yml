@@ -23,13 +23,12 @@ runs:
   steps:
     - name: Setup hadoop
       uses: ./.github/actions/setup-hadoop
-      with:
-        need-hadoop: true
+
     - name: Setup OpenDAL env
       shell: bash
       run: |
         cat << EOF >> $GITHUB_ENV
         OPENDAL_HDFS_ROOT=/tmp/opendal/
         OPENDAL_HDFS_NAME_NODE=default
-        OPENDAL_HDFS_ENABLE_APPEND=false
+        OPENDAL_TEST_CAPABILITY_OVERRIDES=write_can_append=false
         EOF

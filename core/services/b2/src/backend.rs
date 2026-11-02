@@ -18,21 +18,21 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use asyncband::rwlock::RwLock;
 use http::Request;
-use http::Response;
 use http::StatusCode;
 use log::debug;
-use mea::rwlock::RwLock;
 
 use super::B2_SCHEME;
 use super::config::B2Config;
-use super::core::B2Core;
 use super::core::B2Signer;
 use super::core::constants;
+use super::core::parse_error;
 use super::core::parse_file_info;
+use super::core::{B2Core, ErrorContext};
 use super::deleter::B2Deleter;
-use super::error::parse_error;
 use super::lister::B2Lister;
+use super::reader::*;
 use super::writer::B2Writer;
 use super::writer::B2Writers;
 use opendal_core::raw::*;
@@ -110,11 +110,11 @@ impl Builder for B2Builder {
     type Config = B2Config;
 
     /// Builds the backend and returns the result of B2Backend.
-    fn build(self) -> Result<impl Access> {
-        debug!("backend build started: {:?}", &self);
+    fn build(self) -> Result<impl Service> {
+        debug!("backend build started: {:?}", self);
 
         let root = normalize_root(&self.config.root.clone().unwrap_or_default());
-        debug!("backend use root {}", &root);
+        debug!("backend use root {}", root);
 
         // Handle bucket.
         if self.config.bucket.is_empty() {
@@ -123,7 +123,7 @@ impl Builder for B2Builder {
                 .with_context("service", B2_SCHEME));
         }
 
-        debug!("backend use bucket {}", &self.config.bucket);
+        debug!("backend use bucket {}", self.config.bucket);
 
         // Handle bucket_id.
         if self.config.bucket_id.is_empty() {
@@ -132,7 +132,7 @@ impl Builder for B2Builder {
                 .with_context("service", B2_SCHEME));
         }
 
-        debug!("backend bucket_id {}", &self.config.bucket_id);
+        debug!("backend bucket_id {}", self.config.bucket_id);
 
         let application_key_id = match &self.config.application_key_id {
             Some(application_key_id) => Ok(application_key_id.clone()),
@@ -160,52 +160,47 @@ impl Builder for B2Builder {
 
         Ok(B2Backend {
             core: Arc::new(B2Core {
-                info: {
-                    let am = AccessorInfo::default();
-                    am.set_scheme(B2_SCHEME)
-                        .set_root(&root)
-                        .set_native_capability(Capability {
-                            stat: true,
+                info: ServiceInfo::new(B2_SCHEME, &root, ""),
+                capability: Capability {
+                    stat: true,
 
-                            read: true,
+                    read: true,
+                    read_with_suffix: true,
 
-                            write: true,
-                            write_can_empty: true,
-                            write_can_multi: true,
-                            write_with_content_type: true,
-                            write_with_user_metadata: true,
-                            // The min multipart size of b2 is 5 MiB.
-                            //
-                            // ref: <https://www.backblaze.com/docs/cloud-storage-large-files>
-                            write_multi_min_size: Some(5 * 1024 * 1024),
-                            // The max multipart size of b2 is 5 Gb.
-                            //
-                            // ref: <https://www.backblaze.com/docs/cloud-storage-large-files>
-                            write_multi_max_size: if cfg!(target_pointer_width = "64") {
-                                Some(5 * 1024 * 1024 * 1024)
-                            } else {
-                                Some(usize::MAX)
-                            },
+                    write: true,
+                    write_can_empty: true,
+                    write_can_multi: true,
+                    write_with_content_type: true,
+                    write_with_user_metadata: true,
+                    // The min multipart size of b2 is 5 MiB.
+                    //
+                    // ref: <https://www.backblaze.com/docs/cloud-storage-large-files>
+                    write_multi_min_size: Some(5 * 1024 * 1024),
+                    // The max multipart size of b2 is 5 Gb.
+                    //
+                    // ref: <https://www.backblaze.com/docs/cloud-storage-large-files>
+                    write_multi_max_size: if cfg!(target_pointer_width = "64") {
+                        Some(5 * 1024 * 1024 * 1024)
+                    } else {
+                        Some(usize::MAX)
+                    },
 
-                            delete: true,
-                            copy: true,
+                    delete: true,
+                    copy: true,
 
-                            list: true,
-                            list_with_limit: true,
-                            list_with_start_after: true,
-                            list_with_recursive: true,
+                    list: true,
+                    list_with_limit: true,
+                    list_with_start_after: true,
+                    list_with_recursive: true,
 
-                            presign: true,
-                            presign_read: true,
-                            presign_write: true,
-                            presign_stat: true,
+                    presign: true,
+                    presign_read: true,
+                    presign_write: true,
+                    presign_stat: true,
 
-                            shared: true,
+                    shared: true,
 
-                            ..Default::default()
-                        });
-
-                    am.into()
+                    ..Default::default()
                 },
                 signer: Arc::new(RwLock::new(signer)),
                 root,
@@ -220,115 +215,176 @@ impl Builder for B2Builder {
 /// Backend for b2 services.
 #[derive(Debug, Clone)]
 pub struct B2Backend {
-    core: Arc<B2Core>,
+    pub(crate) core: Arc<B2Core>,
 }
 
-impl Access for B2Backend {
-    type Reader = HttpBody;
+impl Service for B2Backend {
+    type Reader = oio::StreamReader<B2Reader>;
     type Writer = B2Writers;
     type Lister = oio::PageLister<B2Lister>;
     type Deleter = oio::OneShotDeleter<B2Deleter>;
+    type Copier = oio::OneShotCopier;
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
+    fn info(&self) -> ServiceInfo {
         self.core.info.clone()
+    }
+
+    fn capability(&self) -> Capability {
+        self.core.capability
+    }
+
+    async fn create_dir(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
     }
 
     /// B2 have a get_file_info api required a file_id field, but field_id need call list api, list api also return file info
     /// So we call list api to get file info
-    async fn stat(&self, path: &str, _args: OpStat) -> Result<RpStat> {
+    async fn stat(&self, ctx: &OperationContext, path: &str, _args: OpStat) -> Result<RpStat> {
         // Stat root always returns a DIR.
         if path == "/" {
-            return Ok(RpStat::new(Metadata::new(EntryMode::DIR)));
+            return Ok(RpStat::new(MetadataBuilder::dir().build()));
         }
 
         let delimiter = if path.ends_with('/') { Some("/") } else { None };
 
-        let file_info = self.core.get_file_info(path, delimiter).await?;
+        let file_info = self.core.get_file_info(ctx, path, delimiter).await?;
         let meta = parse_file_info(&file_info);
         Ok(RpStat::new(meta))
     }
+    fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
+        let output: oio::StreamReader<B2Reader> = {
+            Ok(oio::StreamReader::new(B2Reader::new(
+                self.clone(),
+                ctx.clone(),
+                path,
+                args,
+            )))
+        }?;
 
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let resp = self
-            .core
-            .download_file_by_name(path, args.range(), &args)
-            .await?;
-
-        let status = resp.status();
-        match status {
-            StatusCode::OK | StatusCode::PARTIAL_CONTENT => {
-                Ok((RpRead::default(), resp.into_body()))
-            }
-            _ => {
-                let (part, mut body) = resp.into_parts();
-                let buf = body.to_buffer().await?;
-                Err(parse_error(Response::from_parts(part, buf)))
-            }
-        }
+        Ok(output)
     }
 
-    async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        let concurrent = args.concurrent();
-        let writer = B2Writer::new(self.core.clone(), path, args);
+    fn write(&self, ctx: &OperationContext, path: &str, args: OpWrite) -> Result<Self::Writer> {
+        let output: B2Writers = {
+            let concurrent = args.concurrent();
+            let writer = B2Writer::new(self.core.clone(), ctx.clone(), path, args);
 
-        let w = oio::MultipartWriter::new(self.core.info.clone(), writer, concurrent);
+            let w = oio::MultipartWriter::new(ctx.executor().clone(), writer, concurrent);
 
-        Ok((RpWrite::default(), w))
+            Ok(w)
+        }?;
+
+        Ok(output)
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        Ok((
-            RpDelete::default(),
-            oio::OneShotDeleter::new(B2Deleter::new(self.core.clone())),
-        ))
-    }
-
-    async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
-        Ok((
-            RpList::default(),
-            oio::PageLister::new(B2Lister::new(
+    fn delete(&self, ctx: &OperationContext) -> Result<Self::Deleter> {
+        let output: oio::OneShotDeleter<B2Deleter> = {
+            Ok(oio::OneShotDeleter::new(B2Deleter::new(
                 self.core.clone(),
+                ctx.clone(),
+            )))
+        }?;
+
+        Ok(output)
+    }
+
+    fn list(&self, ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
+        let output: oio::PageLister<B2Lister> = {
+            Ok(oio::PageLister::new(B2Lister::new(
+                self.core.clone(),
+                ctx.clone(),
                 path,
                 args.recursive(),
                 args.limit(),
                 args.start_after(),
-            )),
+            )))
+        }?;
+
+        Ok(output)
+    }
+
+    fn copy(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        _args: OpCopy,
+    ) -> Result<Self::Copier> {
+        let core = self.core.clone();
+        let ctx = ctx.clone();
+        let from = from.to_string();
+        let to = to.to_string();
+
+        Ok(oio::OneShotCopier::new(async move {
+            let file_info = core.get_file_info(&ctx, &from, None).await?;
+            let source_file_id = file_info.file_id;
+            let source_content_length = file_info.content_length;
+
+            let Some(source_file_id) = source_file_id else {
+                return Err(Error::new(ErrorKind::IsADirectory, "is a directory"));
+            };
+
+            let resp = core.copy_file(&ctx, source_file_id, &to).await?;
+
+            let status = resp.status();
+
+            match status {
+                StatusCode::OK => {
+                    let metadata = MetadataBuilder::file(source_content_length);
+                    Ok(metadata.build())
+                }
+                _ => Err(parse_error(
+                    ErrorContext::new(ServiceOperation("CopyFile")),
+                    resp,
+                )),
+            }
+        }))
+    }
+
+    async fn rename(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpRename,
+    ) -> Result<RpRename> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
         ))
     }
 
-    async fn copy(&self, from: &str, to: &str, _args: OpCopy) -> Result<RpCopy> {
-        let file_info = self.core.get_file_info(from, None).await?;
-
-        let source_file_id = file_info.file_id;
-
-        let Some(source_file_id) = source_file_id else {
-            return Err(Error::new(ErrorKind::IsADirectory, "is a directory"));
-        };
-
-        let resp = self.core.copy_file(source_file_id, to).await?;
-
-        let status = resp.status();
-
-        match status {
-            StatusCode::OK => Ok(RpCopy::default()),
-            _ => Err(parse_error(resp)),
-        }
-    }
-
-    async fn presign(&self, path: &str, args: OpPresign) -> Result<RpPresign> {
+    async fn presign(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpPresign,
+    ) -> Result<RpPresign> {
         match args.operation() {
             PresignOperation::Stat(_) => {
                 let resp = self
                     .core
-                    .get_download_authorization(path, args.expire())
+                    .get_download_authorization(ctx, path, args.expire())
                     .await?;
                 let path = build_abs_path(&self.core.root, path);
 
-                let auth_info = self.core.get_auth_info().await?;
+                let auth_info = self.core.get_auth_info(ctx).await?;
 
                 let url = format!(
                     "{}/file/{}/{}?Authorization={}",
-                    auth_info.download_url, self.core.bucket, path, resp.authorization_token
+                    auth_info.download_url,
+                    self.core.bucket,
+                    percent_encode_path(&path),
+                    resp.authorization_token
                 );
 
                 let req = Request::get(url);
@@ -344,21 +400,27 @@ impl Access for B2Backend {
                     parts.headers,
                 )))
             }
-            PresignOperation::Read(_) => {
+            PresignOperation::Read(range, _) => {
                 let resp = self
                     .core
-                    .get_download_authorization(path, args.expire())
+                    .get_download_authorization(ctx, path, args.expire())
                     .await?;
                 let path = build_abs_path(&self.core.root, path);
 
-                let auth_info = self.core.get_auth_info().await?;
+                let auth_info = self.core.get_auth_info(ctx).await?;
 
                 let url = format!(
                     "{}/file/{}/{}?Authorization={}",
-                    auth_info.download_url, self.core.bucket, path, resp.authorization_token
+                    auth_info.download_url,
+                    self.core.bucket,
+                    percent_encode_path(&path),
+                    resp.authorization_token
                 );
 
-                let req = Request::get(url);
+                let mut req = Request::get(url);
+                if !range.is_full() {
+                    req = req.header(http::header::RANGE, range.to_header());
+                }
 
                 let req = req.body(Buffer::new()).map_err(new_request_build_error)?;
 
@@ -372,12 +434,15 @@ impl Access for B2Backend {
                 )))
             }
             PresignOperation::Write(_) => {
-                let resp = self.core.get_upload_url().await?;
+                let resp = self.core.get_upload_url(ctx).await?;
 
                 let mut req = Request::post(&resp.upload_url);
 
                 req = req.header(http::header::AUTHORIZATION, resp.authorization_token);
-                req = req.header("X-Bz-File-Name", build_abs_path(&self.core.root, path));
+                req = req.header(
+                    "X-Bz-File-Name",
+                    percent_encode_path(&build_abs_path(&self.core.root, path)),
+                );
                 req = req.header(http::header::CONTENT_TYPE, "b2/x-auto");
                 req = req.header(constants::X_BZ_CONTENT_SHA1, "do_not_verify");
 

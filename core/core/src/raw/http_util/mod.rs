@@ -22,17 +22,6 @@
 //! This mod is not a part of OpenDAL's public API. We expose them out to make
 //! it easier to develop services and layers outside opendal.
 
-mod client;
-/// temporary client used by several features
-#[allow(unused_imports)]
-pub use client::GLOBAL_REQWEST_CLIENT;
-pub use client::HttpClient;
-pub use client::HttpFetch;
-pub use client::HttpFetcher;
-
-mod body;
-pub use body::HttpBody;
-
 mod header;
 pub use header::build_header_value;
 pub use header::format_authorization_by_basic;
@@ -64,9 +53,6 @@ pub use error::new_request_build_error;
 pub use error::new_request_credential_error;
 pub use error::new_request_sign_error;
 pub use error::with_error_response_context;
-
-mod bytes_range;
-pub use bytes_range::BytesRange;
 
 mod bytes_content_range;
 pub use bytes_content_range::BytesContentRange;

@@ -23,17 +23,18 @@ use opendal_core::*;
 
 pub struct SeafileDeleter {
     core: Arc<SeafileCore>,
+    ctx: OperationContext,
 }
 
 impl SeafileDeleter {
-    pub fn new(core: Arc<SeafileCore>) -> Self {
-        Self { core }
+    pub fn new(core: Arc<SeafileCore>, ctx: OperationContext) -> Self {
+        Self { core, ctx }
     }
 }
 
 impl oio::OneShotDelete for SeafileDeleter {
     async fn delete_once(&self, path: String, _: OpDelete) -> Result<()> {
-        self.core.delete(&path).await?;
+        self.core.delete(&self.ctx, &path).await?;
 
         Ok(())
     }

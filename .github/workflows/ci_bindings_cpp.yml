@@ -23,14 +23,16 @@ on:
       - main
     tags:
       - '*'
+    paths: &paths
+      - "bindings/cpp/**"
+      - "core/**"
+      - ".github/actions/setup/**"
+      - ".github/workflows/ci_bindings_cpp.yml"
+      - "examples/cpp/**"
   pull_request:
     branches:
       - main
-    paths:
-      - "bindings/cpp/**"
-      - "core/**"
-      - ".github/workflows/ci_bindings_cpp.yml"
-      - "examples/cpp/**"
+    paths: *paths
   workflow_dispatch:
 
 concurrency:
@@ -43,20 +45,25 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-24.04
+
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install ninja-build valgrind doxygen
+          sudo apt-get install -y ninja-build valgrind doxygen
 
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
-      
+
+      # Useful for debugging
+      - name: Print Clippy version
+        working-directory: "bindings/cpp"
+        run: cargo clippy --version
+
       - name: Clippy Check
         working-directory: "bindings/cpp"
-        run: |
-          cargo clippy -- -D warnings
+        run: cargo clippy -- -D warnings
 
       - name: Build Cpp binding && Run tests
         working-directory: "bindings/cpp"
@@ -101,3 +108,7 @@ jobs:
           cd build
           cmake -GNinja ..
           ninja
+
+      - name: Run getting-started example
+        working-directory: "examples/cpp/build"
+        run: ./getting-started

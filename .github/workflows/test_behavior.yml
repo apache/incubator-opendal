@@ -42,7 +42,7 @@ jobs:
       plan: ${{ steps.plan.outputs.plan }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           # fetch depth set to 0 to make sure we have correct diff result.
           fetch-depth: 0
@@ -133,6 +133,20 @@ jobs:
     with:
       os: ${{ matrix.os }}
       cases: ${{ toJson(matrix.cases) }}
+  
+  test_binding_ruby:
+    name: binding_ruby / ${{ matrix.os }}
+    needs: [ plan ]
+    if: fromJson(needs.plan.outputs.plan).components.binding_ruby
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.plan.outputs.plan).binding_ruby }}
+    uses: ./.github/workflows/test_behavior_binding_ruby.yml
+    with:
+      os: ${{ matrix.os }}
+      cases: ${{ toJson(matrix.cases) }}
 
   test_binding_nodejs:
     name: binding_nodejs / ${{ matrix.os }}
@@ -186,6 +200,20 @@ jobs:
       matrix:
         include: ${{ fromJson(needs.plan.outputs.plan).binding_cpp }}
     uses: ./.github/workflows/test_behavior_binding_cpp.yml
+    with:
+      os: ${{ matrix.os }}
+      cases: ${{ toJson(matrix.cases) }}
+
+  test_binding_dotnet:
+    name: binding_dotnet / ${{ matrix.os }}
+    needs: [ plan ]
+    if: fromJson(needs.plan.outputs.plan).components.binding_dotnet
+    secrets: inherit
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.plan.outputs.plan).binding_dotnet }}
+    uses: ./.github/workflows/test_behavior_binding_dotnet.yml
     with:
       os: ${{ matrix.os }}
       cases: ${{ toJson(matrix.cases) }}

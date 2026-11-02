@@ -16,8 +16,8 @@
 // under the License.
 
 use anyhow::Result;
+use asyncband::mutex::Mutex;
 use cxx_async::CxxAsyncException;
-use mea::mutex::Mutex;
 use opendal as od;
 use std::collections::HashMap;
 use std::future::Future;
@@ -52,7 +52,7 @@ mod ffi {
 
         fn new_operator(scheme: &str, configs: Vec<HashMapValue>) -> Result<Box<Operator>>;
         unsafe fn operator_read(op: OperatorPtr, path: String) -> RustFutureRead;
-        unsafe fn operator_write(op: OperatorPtr, path: String, bs: Vec<u8>) -> RustFutureWrite;
+        unsafe fn operator_write(op: OperatorPtr, path: String, bs: &[u8]) -> RustFutureWrite;
         unsafe fn operator_list(op: OperatorPtr, path: String) -> RustFutureList;
         unsafe fn operator_exists(op: OperatorPtr, path: String) -> RustFutureBool;
         unsafe fn operator_create_dir(op: OperatorPtr, path: String) -> RustFutureWrite;
@@ -182,7 +182,9 @@ unsafe fn operator_read(op: ffi::OperatorPtr, path: String) -> RustFutureRead {
     })
 }
 
-unsafe fn operator_write(op: ffi::OperatorPtr, path: String, bs: Vec<u8>) -> RustFutureWrite {
+unsafe fn operator_write(op: ffi::OperatorPtr, path: String, bs: &[u8]) -> RustFutureWrite {
+    // Copy before building the future, which outlives the borrowed slice.
+    let bs = bs.to_vec();
     RustFutureWrite::fallible(async move {
         op.0.write(&path, bs)
             .await
@@ -221,6 +223,7 @@ unsafe fn operator_copy(op: ffi::OperatorPtr, from: String, to: String) -> RustF
     RustFutureWrite::fallible(async move {
         op.0.copy(&from, &to)
             .await
+            .map(|_| ())
             .map_err(|e| CxxAsyncException::new(e.to_string().into_boxed_str()))
     })
 }

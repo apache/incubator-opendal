@@ -51,10 +51,10 @@ impl opendal_core::Configurator for DbfsConfig {
             map.insert("endpoint".to_string(), format!("https://{authority}"));
         }
 
-        if let Some(root) = uri.root() {
-            if !root.is_empty() {
-                map.insert("root".to_string(), root.to_string());
-            }
+        if let Some(root) = uri.root()
+            && !root.is_empty()
+        {
+            map.insert("root".to_string(), root.to_string());
         }
 
         Self::from_iter(map)

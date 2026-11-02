@@ -21,25 +21,26 @@ use bytes::Buf;
 use http::StatusCode;
 use serde::Deserialize;
 
-use super::core::DbfsCore;
-use super::error::parse_error;
+use super::core::parse_error;
+use super::core::{DbfsCore, ErrorContext};
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct DbfsLister {
     core: Arc<DbfsCore>,
+    ctx: OperationContext,
     path: String,
 }
 
 impl DbfsLister {
-    pub fn new(core: Arc<DbfsCore>, path: String) -> Self {
-        Self { core, path }
+    pub fn new(core: Arc<DbfsCore>, ctx: OperationContext, path: String) -> Self {
+        Self { core, ctx, path }
     }
 }
 
 impl oio::PageList for DbfsLister {
     async fn next_page(&self, ctx: &mut oio::PageContext) -> Result<()> {
-        let response = self.core.dbfs_list(&self.path).await?;
+        let response = self.core.dbfs_list(&self.ctx, &self.path).await?;
 
         let status_code = response.status();
         if !status_code.is_success() {
@@ -47,7 +48,7 @@ impl oio::PageList for DbfsLister {
                 ctx.done = true;
                 return Ok(());
             }
-            let error = parse_error(response);
+            let error = parse_error(ErrorContext::new(ServiceOperation("List")), response);
             return Err(error);
         }
 
@@ -58,18 +59,18 @@ impl oio::PageList for DbfsLister {
         ctx.done = true;
 
         for status in decoded_response.files {
+            let path = build_rel_path(&self.core.root, &status.path);
             let entry: oio::Entry = match status.is_dir {
                 true => {
-                    let normalized_path = format!("{}/", &status.path);
-                    let mut meta = Metadata::new(EntryMode::DIR);
-                    meta.set_last_modified(Timestamp::from_millisecond(status.modification_time)?);
-                    oio::Entry::new(&normalized_path, meta)
+                    let normalized_path = format!("{path}/");
+                    let mut meta = MetadataBuilder::dir();
+                    meta.last_modified(Timestamp::from_millisecond(status.modification_time)?);
+                    oio::Entry::new(&normalized_path, meta.build())
                 }
                 false => {
-                    let mut meta = Metadata::new(EntryMode::FILE);
-                    meta.set_last_modified(Timestamp::from_millisecond(status.modification_time)?);
-                    meta.set_content_length(status.file_size as u64);
-                    oio::Entry::new(&status.path, meta)
+                    let mut meta = MetadataBuilder::file(status.file_size as u64);
+                    meta.last_modified(Timestamp::from_millisecond(status.modification_time)?);
+                    oio::Entry::new(&path, meta.build())
                 }
             };
             ctx.entries.push_back(entry);

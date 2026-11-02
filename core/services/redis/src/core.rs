@@ -18,8 +18,8 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use asyncband::pool::{ManageObject, ObjectStatus, bounded};
 use bytes::Bytes;
-use fastpool::{ManageObject, ObjectStatus, bounded};
 use redis::AsyncCommands;
 use redis::Client;
 use redis::Cmd;
@@ -173,6 +173,21 @@ impl RedisCore {
         let mut conn = self.conn().await?;
         let result: Option<Bytes> = conn.get(key).await.map_err(format_redis_error)?;
         Ok(result.map(Buffer::from))
+    }
+
+    pub async fn len(&self, key: &str) -> Result<Option<usize>> {
+        let mut conn = self.conn().await?;
+        let exists: bool = conn.exists(key).await.map_err(format_redis_error)?;
+        if !exists {
+            return Ok(None);
+        }
+
+        let len: usize = redis::cmd("STRLEN")
+            .arg(key)
+            .query_async(&mut *conn)
+            .await
+            .map_err(format_redis_error)?;
+        Ok(Some(len))
     }
 
     pub async fn get_range(&self, key: &str, start: isize, end: isize) -> Result<Option<Buffer>> {

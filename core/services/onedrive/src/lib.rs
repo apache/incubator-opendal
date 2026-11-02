@@ -15,27 +15,32 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-//! Microsoft OneDrive service implementation for Apache OpenDAL.
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
 
 mod backend;
-mod builder;
 mod config;
 mod core;
 mod deleter;
-mod error;
 mod graph_model;
 mod lister;
+mod reader;
 mod writer;
 
-pub use builder::OnedriveBuilder as Onedrive;
+pub use backend::OnedriveBuilder as Onedrive;
 pub use config::OnedriveConfig;
 
-/// Default scheme for onedrive service.
+/// URI scheme used for service registration and scheme-driven construction.
 pub const ONEDRIVE_SCHEME: &str = "onedrive";
 
-/// Register this service into the given registry.
+/// Register this service's URI scheme or schemes with an operator registry.
+///
+/// Registration enables scheme-driven construction through
+/// [`opendal_core::Operator::from_uri`] and
+/// [`opendal_core::Operator::via_iter`]. Direct construction through
+/// [`opendal_core::Operator::new`] does not require registration.
 pub fn register_onedrive_service(registry: &opendal_core::OperatorRegistry) {
     registry.register::<Onedrive>(ONEDRIVE_SCHEME);
 }

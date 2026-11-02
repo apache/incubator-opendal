@@ -43,10 +43,7 @@ struct ODMetadata {
 
 impl UserData for ODMetadata {}
 
-fn operator_new<'a>(
-    lua: &'a Lua,
-    (scheme, option): (String, LuaTable<'a>),
-) -> LuaResult<LuaTable<'a>> {
+fn operator_new(lua: &Lua, (scheme, option): (String, LuaTable)) -> LuaResult<LuaTable> {
     if scheme.is_empty() {
         return Err(LuaError::external("scheme is empty"));
     }
@@ -81,8 +78,8 @@ fn operator_new<'a>(
     Ok(operator)
 }
 
-fn operator_is_exist<'a>(_: &'a Lua, (operator, path): (LuaTable<'a>, String)) -> LuaResult<bool> {
-    let op = operator.get::<_, ODOperator>("_operator")?;
+fn operator_is_exist(_: &Lua, (operator, path): (LuaTable, String)) -> LuaResult<bool> {
+    let op = operator.get::<ODOperator>("_operator")?;
     let op = op.operator;
 
     if path.is_empty() {
@@ -97,8 +94,8 @@ fn operator_is_exist<'a>(_: &'a Lua, (operator, path): (LuaTable<'a>, String)) -
     }
 }
 
-fn operator_delete<'a>(_: &'a Lua, (operator, path): (LuaTable<'a>, String)) -> LuaResult<()> {
-    let op = operator.get::<_, ODOperator>("_operator")?;
+fn operator_delete(_: &Lua, (operator, path): (LuaTable, String)) -> LuaResult<()> {
+    let op = operator.get::<ODOperator>("_operator")?;
     let op = op.operator;
 
     if path.is_empty() {
@@ -113,11 +110,8 @@ fn operator_delete<'a>(_: &'a Lua, (operator, path): (LuaTable<'a>, String)) -> 
     }
 }
 
-fn operator_write<'a>(
-    _: &'a Lua,
-    (operator, path, bytes): (LuaTable<'a>, String, String),
-) -> LuaResult<()> {
-    let op = operator.get::<_, ODOperator>("_operator")?;
+fn operator_write(_: &Lua, (operator, path, bytes): (LuaTable, String, String)) -> LuaResult<()> {
+    let op = operator.get::<ODOperator>("_operator")?;
     let op = op.operator;
 
     if path.is_empty() {
@@ -132,8 +126,8 @@ fn operator_write<'a>(
     }
 }
 
-fn operator_create_dir<'a>(_: &'a Lua, (operator, path): (LuaTable<'a>, String)) -> LuaResult<()> {
-    let op = operator.get::<_, ODOperator>("_operator")?;
+fn operator_create_dir(_: &Lua, (operator, path): (LuaTable, String)) -> LuaResult<()> {
+    let op = operator.get::<ODOperator>("_operator")?;
     let op = op.operator;
 
     let res = op.create_dir(path.as_str());
@@ -143,11 +137,8 @@ fn operator_create_dir<'a>(_: &'a Lua, (operator, path): (LuaTable<'a>, String))
     }
 }
 
-fn operator_rename<'a>(
-    _: &'a Lua,
-    (operator, src, dst): (LuaTable<'a>, String, String),
-) -> LuaResult<()> {
-    let op = operator.get::<_, ODOperator>("_operator")?;
+fn operator_rename(_: &Lua, (operator, src, dst): (LuaTable, String, String)) -> LuaResult<()> {
+    let op = operator.get::<ODOperator>("_operator")?;
     let op = op.operator;
 
     let res = op.rename(&src, &dst);
@@ -157,11 +148,8 @@ fn operator_rename<'a>(
     }
 }
 
-fn operator_read<'a>(
-    lua: &'a Lua,
-    (operator, path): (LuaTable<'a>, String),
-) -> LuaResult<LuaString<'a>> {
-    let op = operator.get::<_, ODOperator>("_operator")?;
+fn operator_read(lua: &Lua, (operator, path): (LuaTable, String)) -> LuaResult<LuaString> {
+    let op = operator.get::<ODOperator>("_operator")?;
     let op = op.operator;
 
     if path.is_empty() {
@@ -176,32 +164,29 @@ fn operator_read<'a>(
     }
 }
 
-fn metadata_content_length<'a>(_: &'a Lua, metadata: LuaTable<'a>) -> LuaResult<LuaNumber> {
-    let metadata = metadata.get::<_, ODMetadata>("_meta")?;
+fn metadata_content_length(_: &Lua, metadata: LuaTable) -> LuaResult<LuaNumber> {
+    let metadata = metadata.get::<ODMetadata>("_meta")?;
     let metadata = metadata.metadata;
 
     Ok(metadata.content_length() as f64)
 }
 
-fn metadata_is_file<'a>(_: &'a Lua, metadata: LuaTable<'a>) -> LuaResult<bool> {
-    let metadata = metadata.get::<_, ODMetadata>("_meta")?;
+fn metadata_is_file(_: &Lua, metadata: LuaTable) -> LuaResult<bool> {
+    let metadata = metadata.get::<ODMetadata>("_meta")?;
     let metadata = metadata.metadata;
 
     Ok(metadata.is_file())
 }
 
-fn metadata_is_dir<'a>(_: &'a Lua, metadata: LuaTable<'a>) -> LuaResult<bool> {
-    let metadata = metadata.get::<_, ODMetadata>("_meta")?;
+fn metadata_is_dir(_: &Lua, metadata: LuaTable) -> LuaResult<bool> {
+    let metadata = metadata.get::<ODMetadata>("_meta")?;
     let metadata = metadata.metadata;
 
     Ok(metadata.is_dir())
 }
 
-fn operator_stat<'a>(
-    lua: &'a Lua,
-    (operator, path): (LuaTable<'a>, String),
-) -> LuaResult<LuaTable<'a>> {
-    let op = operator.get::<_, ODOperator>("_operator")?;
+fn operator_stat(lua: &Lua, (operator, path): (LuaTable, String)) -> LuaResult<LuaTable> {
+    let op = operator.get::<ODOperator>("_operator")?;
     let op = op.operator;
 
     if path.is_empty() {
@@ -227,7 +212,7 @@ fn operator_stat<'a>(
 }
 
 #[mlua::lua_module]
-fn opendal(lua: &Lua) -> LuaResult<LuaTable<'_>> {
+fn opendal(lua: &Lua) -> LuaResult<LuaTable> {
     let exports = lua.create_table()?;
     let operator = lua.create_table()?;
     operator.set("new", lua.create_function(operator_new)?)?;

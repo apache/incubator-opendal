@@ -120,7 +120,16 @@ class BlockingWriteStream extends Writable {
 }
 
 import * as generated from './generated.js'
-const { Operator, RetryLayer, ConcurrentLimitLayer, BlockingReader, Reader, BlockingWriter, Writer } = generated
+const {
+  Operator,
+  CapabilityOverrideLayer,
+  RetryLayer,
+  ConcurrentLimitLayer,
+  BlockingReader,
+  Reader,
+  BlockingWriter,
+  Writer,
+} = generated
 
 BlockingReader.prototype.createReadStream = function (options) {
   return new BlockingReadStream(this, options)
@@ -139,6 +148,7 @@ Writer.prototype.createWriteStream = function (options) {
 }
 
 export const layers = {
+  CapabilityOverrideLayer,
   RetryLayer,
   ConcurrentLimitLayer,
 }

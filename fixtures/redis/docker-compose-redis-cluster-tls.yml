@@ -15,9 +15,23 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# The image has no healthcheck; --wait would accept nodes during cluster creation.
+x-cluster-healthcheck: &cluster-healthcheck
+  test:
+    - CMD-SHELL
+    - >-
+      cluster_info="$$(REDISCLI_AUTH="$$REDIS_PASSWORD" redis-cli --tls
+      --cacert /etc/redis/ssl/ca.crt CLUSTER INFO | tr -d '\r')" &&
+      printf '%s\n' "$$cluster_info" | grep -qx 'cluster_state:ok' &&
+      printf '%s\n' "$$cluster_info" | grep -qx 'cluster_slots_assigned:16384'
+  interval: 1s
+  timeout: 3s
+  retries: 60
+
 services:
   redis-node-0:
     image: docker.io/bitnamilegacy/redis-cluster:7.4.3-debian-12-r0
+    healthcheck: *cluster-healthcheck
     networks:
       redis_cluster:
         ipv4_address: 172.30.0.2
@@ -36,6 +50,7 @@ services:
 
   redis-node-1:
     image: docker.io/bitnamilegacy/redis-cluster:7.4.3-debian-12-r0
+    healthcheck: *cluster-healthcheck
     networks:
       redis_cluster:
         ipv4_address: 172.30.0.3
@@ -54,6 +69,7 @@ services:
 
   redis-node-2:
     image: docker.io/bitnamilegacy/redis-cluster:7.4.3-debian-12-r0
+    healthcheck: *cluster-healthcheck
     networks:
       redis_cluster:
         ipv4_address: 172.30.0.4
@@ -72,6 +88,7 @@ services:
 
   redis-node-3:
     image: docker.io/bitnamilegacy/redis-cluster:7.4.3-debian-12-r0
+    healthcheck: *cluster-healthcheck
     networks:
       redis_cluster:
         ipv4_address: 172.30.0.5
@@ -90,6 +107,7 @@ services:
 
   redis-node-4:
     image: docker.io/bitnamilegacy/redis-cluster:7.4.3-debian-12-r0
+    healthcheck: *cluster-healthcheck
     networks:
       redis_cluster:
         ipv4_address: 172.30.0.6
@@ -108,6 +126,7 @@ services:
 
   redis-node-5:
     image: docker.io/bitnamilegacy/redis-cluster:7.4.3-debian-12-r0
+    healthcheck: *cluster-healthcheck
     networks:
       redis_cluster:
         ipv4_address: 172.30.0.7

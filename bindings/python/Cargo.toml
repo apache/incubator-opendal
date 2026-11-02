@@ -24,8 +24,9 @@ edition = "2024"
 homepage = "https://opendal.apache.org/"
 license = "Apache-2.0"
 repository = "https://github.com/apache/opendal"
-rust-version = "1.85"
-version = "0.47.0"
+rust-version = "1.91"
+# Release candidate builds derive prerelease versions from tags in release_python.yml.
+version = "0.47.12"
 
 [features]
 default = [
@@ -58,9 +59,11 @@ services-all = [
   'services-dashmap',
   'services-dropbox',
   'services-ftp',
+  'services-gcs-grpc',
   'services-gdrive',
   'services-gridfs',
-  'services-huggingface',
+  'services-hdfs-native',
+  'services-hf',
   'services-ipfs',
   'services-koofr',
   'services-memcached',
@@ -78,6 +81,7 @@ services-all = [
   'services-sqlite',
   'services-swift',
   'services-upyun',
+  'services-tos',
   'services-vercel-artifacts',
   'services-yandex-disk',
 ]
@@ -109,21 +113,27 @@ services-etcd = [
 services-foundationdb = [
   "opendal/services-foundationdb",
 ] # FIXME EXCLUDED: this service needs preinstalled fdb library
+services-foyer = ["opendal/services-foyer"]
 services-fs = ["opendal/services-fs"]
 services-ftp = ["opendal/services-ftp"]
 services-gcs = ["opendal/services-gcs"]
+services-gcs-grpc = ["opendal/services-gcs-grpc"]
 services-gdrive = ["opendal/services-gdrive"]
 services-ghac = ["opendal/services-ghac"]
 services-github = [
   "opendal/services-github",
 ] # FIXME EXCLUDED: Needs tests/ maintenance
+services-goosefs = [
+  "opendal/services-goosefs",
+] # FIXME EXCLUDED: armhf build failure because of tokiofs dependency
 services-gridfs = ["opendal/services-gridfs"]
 services-hdfs = [
   "opendal/services-hdfs",
 ] # FIXME EXCLUDED: how to support HDFS services in bindings?
 services-hdfs-native = ["opendal/services-hdfs-native"]
+services-hf = ["opendal/services-hf"]
 services-http = ["opendal/services-http"]
-services-huggingface = ["opendal/services-huggingface"]
+services-huggingface = ["services-hf"]
 services-ipfs = ["opendal/services-ipfs"]
 services-ipmfs = ["opendal/services-ipmfs"]
 services-koofr = ["opendal/services-koofr"]
@@ -167,6 +177,7 @@ services-swift = ["opendal/services-swift"]
 services-tikv = [
   "opendal/services-tikv",
 ] # FIXME EXCLUDED: this service needs protoc
+services-tos = ["opendal/services-tos"]
 services-upyun = ["opendal/services-upyun"]
 services-vercel-artifacts = ["opendal/services-vercel-artifacts"]
 services-vercel-blob = [
@@ -183,32 +194,27 @@ abi3 = ["pyo3/abi3-py311"]
 [target.'cfg(not(windows))'.features]
 services-all = ["services-sftp"]
 
-# Conditionally include sftp only on non-windows targets
-[target.'cfg(not(target_arch = "arm"))'.features]
-services-all = ["services-hdfs-native"]
-
-[[bin]]
-doc = false
-name = "stub_gen"
-
 [lib]
-crate-type = ["cdylib", "rlib"]
+crate-type = ["cdylib"]
 doc = false
 name = "_opendal"
 
 [dependencies]
-bytes = "1.5.0"
+asyncband = { version = "0.7.1", features = ["mutex"] }
+bytes = "1.10.1"
 futures = "0.3.28"
 jiff = { version = "0.2.15" }
-mea = "0.6"
 # this crate won't be published, we always use the local version
 opendal = { version = ">=0", path = "../../core", features = [
   "blocking",
   "layers-mime-guess",
 ] }
-pyo3 = { version = "0.27.2", features = ["generate-import-lib", "jiff-02"] }
-pyo3-async-runtimes = { version = "0.27.0", features = ["tokio-runtime"] }
-pyo3-stub-gen = { version = "0.17" }
+pyo3 = { version = "0.29.1", features = [
+  "experimental-inspect",
+  "generate-import-lib",
+  "jiff-02",
+] }
+pyo3-async-runtimes = { version = "0.29.0", features = ["tokio-runtime"] }
 tokio = "1"
 
 [profile.release]

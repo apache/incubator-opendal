@@ -18,6 +18,7 @@
 [package]
 description = "Apache OpenDAL Upyun service implementation"
 name = "opendal-service-upyun"
+readme = "README.md"
 
 authors = { workspace = true }
 edition = { workspace = true }
@@ -33,15 +34,15 @@ all-features = true
 [dependencies]
 base64 = { workspace = true }
 bytes = { workspace = true }
-hmac = "0.12.1"
+hmac = "0.13.0"
 http = { workspace = true }
 log = { workspace = true }
-md-5 = "0.10"
-opendal-core = { path = "../../core", version = "0.55.0", default-features = false }
+md-5 = "0.11.0"
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false }
 quick-xml = { workspace = true, features = ["serialize", "overlapped-lists"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-sha1 = "0.10.6"
+sha1 = "0.11.0"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

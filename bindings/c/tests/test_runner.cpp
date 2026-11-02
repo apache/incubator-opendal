@@ -169,7 +169,7 @@ int main(int argc, char* argv[])
         return 1;
     }
 
-    opendal_capability cap = opendal_operator_info_get_full_capability(info);
+    opendal_capability cap = opendal_operator_info_get_capability(info);
 
     // Check operator availability - only perform list-based check if list is supported
     if (cap.list) {

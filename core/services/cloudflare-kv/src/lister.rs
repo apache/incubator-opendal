@@ -21,27 +21,46 @@ use bytes::Buf;
 use opendal_core::raw::*;
 use opendal_core::*;
 
-use super::core::CloudflareKvCore;
-use super::error::parse_error;
+use super::core::parse_error;
+use super::core::{CloudflareKvCore, ErrorContext};
 use super::model::{CfKvListKey, CfKvListResponse};
 
 pub struct CloudflareKvLister {
     core: Arc<CloudflareKvCore>,
+    ctx: OperationContext,
 
     path: String,
     limit: Option<usize>,
     recursive: bool,
 }
 
+/// Strip the service root from a root-prefixed key.
+///
+/// The keys returned by the KV API carry the service root as a prefix, so only that prefix may be
+/// removed. `str::replace` removes *every* occurrence anywhere in the key, which silently mangles
+/// any key that repeats the root as an inner path segment.
+///
+/// The sibling object-store listers reach for `build_rel_path` here, but that helper
+/// `debug_assert!`s that the path really does start with the root -- a guarantee this service does
+/// not enforce on the values the API hands back -- so this stays total and leaves a
+/// non-root-prefixed key untouched.
+fn relative_to_root(root: &str, name: &str) -> String {
+    name.strip_prefix(root.trim_start_matches('/'))
+        .unwrap_or(name)
+        .to_string()
+}
+
 impl CloudflareKvLister {
     pub fn new(
         core: Arc<CloudflareKvCore>,
+        ctx: OperationContext,
         path: &str,
         recursive: bool,
         limit: Option<usize>,
     ) -> Self {
         Self {
             core,
+            ctx,
 
             path: path.to_string(),
             limit,
@@ -57,7 +76,7 @@ impl CloudflareKvLister {
             name += "/";
         }
 
-        let mut name = name.replace(root.trim_start_matches('/'), "");
+        let mut name = relative_to_root(root, &name);
 
         // If it is the root directory, it needs to be processed as /
         if name.is_empty() {
@@ -65,14 +84,15 @@ impl CloudflareKvLister {
         }
 
         let entry_metadata = if name.ends_with('/') {
-            Metadata::new(EntryMode::DIR)
-                .with_etag(build_tmp_path_of(&name))
-                .with_content_length(0)
+            let mut metadata = MetadataBuilder::dir();
+            metadata.etag(build_tmp_path_of(&name));
+            metadata.build()
         } else {
-            Metadata::new(EntryMode::FILE)
-                .with_etag(metadata.etag)
-                .with_content_length(metadata.content_length as u64)
-                .with_last_modified(metadata.last_modified.parse::<Timestamp>()?)
+            let mut result = MetadataBuilder::file(metadata.content_length as u64);
+            result
+                .etag(&metadata.etag)
+                .last_modified(metadata.last_modified.parse::<Timestamp>()?);
+            result.build()
         };
 
         Ok(oio::Entry::new(&name, entry_metadata))
@@ -88,13 +108,12 @@ impl CloudflareKvLister {
             let entry = self.build_entry_for_item(item, root)?;
             ctx.entries.push_back(entry);
         } else if !result.is_empty() {
-            let path_name = self.path.replace(root.trim_start_matches('/'), "");
-            let entry = oio::Entry::new(
-                &format!("{path_name}/"),
-                Metadata::new(EntryMode::DIR)
-                    .with_etag(build_tmp_path_of(&path_name))
-                    .with_content_length(0),
-            );
+            let path_name = relative_to_root(root, &self.path);
+            let entry = oio::Entry::new(&format!("{path_name}/"), {
+                let mut metadata = MetadataBuilder::dir();
+                metadata.etag(build_tmp_path_of(&path_name));
+                metadata.build()
+            });
             ctx.entries.push_back(entry);
         }
         ctx.done = true;
@@ -107,11 +126,14 @@ impl oio::PageList for CloudflareKvLister {
         let new_path = self.path.trim_end_matches('/');
         let resp = self
             .core
-            .list(new_path, self.limit, Some(ctx.token.clone()))
+            .list(&self.ctx, new_path, self.limit, Some(ctx.token.clone()))
             .await?;
 
         if resp.status() != http::StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListKeys")),
+                resp,
+            ));
         }
 
         let bs = resp.into_body();
@@ -166,5 +188,35 @@ impl oio::PageList for CloudflareKvLister {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relative_to_root_strips_only_the_prefix() {
+        // The root repeated as an inner segment must survive; only the leading copy goes.
+        assert_eq!(
+            relative_to_root("/data/", "data/backup/data/file.txt"),
+            "backup/data/file.txt"
+        );
+        assert_eq!(relative_to_root("/data/", "data/file.txt"), "file.txt");
+    }
+
+    #[test]
+    fn relative_to_root_does_not_match_mid_key() {
+        // "replace" would turn this into "xfile.txt" by deleting a substring that is not a prefix.
+        assert_eq!(
+            relative_to_root("/data/", "xdata/file.txt"),
+            "xdata/file.txt"
+        );
+    }
+
+    #[test]
+    fn relative_to_root_handles_the_root_itself_and_a_bare_root() {
+        assert_eq!(relative_to_root("/data/", "data/"), "");
+        assert_eq!(relative_to_root("/", "file.txt"), "file.txt");
     }
 }

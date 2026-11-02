@@ -18,13 +18,15 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use mea::once::OnceCell;
+use asyncband::once::OnceCell;
 use sqlx::mysql::MySqlConnectOptions;
 
 use super::MYSQL_SCHEME;
 use super::config::MysqlConfig;
 use super::core::*;
 use super::deleter::MysqlDeleter;
+use super::lister::MysqlLazyLister;
+use super::reader::*;
 use super::writer::MysqlWriter;
 use opendal_core::raw::oio;
 use opendal_core::raw::*;
@@ -103,7 +105,7 @@ impl MysqlBuilder {
 impl Builder for MysqlBuilder {
     type Config = MysqlConfig;
 
-    fn build(self) -> Result<impl Access> {
+    fn build(self) -> Result<impl Service> {
         let conn = match self.config.connection_string {
             Some(v) => v,
             None => {
@@ -151,85 +153,163 @@ impl Builder for MysqlBuilder {
 /// Backend for mysql service
 #[derive(Clone, Debug)]
 pub struct MysqlBackend {
-    core: Arc<MysqlCore>,
-    root: String,
-    info: Arc<AccessorInfo>,
+    pub(crate) core: Arc<MysqlCore>,
+    pub(crate) root: String,
+    pub(crate) info: ServiceInfo,
+    pub(crate) capability: Capability,
 }
 
 impl MysqlBackend {
     pub fn new(core: MysqlCore) -> Self {
-        let info = AccessorInfo::default();
-        info.set_scheme(MYSQL_SCHEME);
-        info.set_name(&core.table);
-        info.set_root("/");
-        info.set_native_capability(Capability {
+        let info = ServiceInfo::new(MYSQL_SCHEME, "/", &core.table);
+        let capability = Capability {
             read: true,
+            list: true,
+            list_with_recursive: true,
             stat: true,
             write: true,
             write_can_empty: true,
             delete: true,
             shared: true,
             ..Default::default()
-        });
+        };
 
         Self {
             core: Arc::new(core),
             root: "/".to_string(),
-            info: Arc::new(info),
+            info,
+            capability,
         }
     }
 
     fn with_normalized_root(mut self, root: String) -> Self {
-        self.info.set_root(&root);
+        self.info = self.info.with_root(&root);
         self.root = root;
         self
     }
 }
 
-impl Access for MysqlBackend {
-    type Reader = Buffer;
+impl Service for MysqlBackend {
+    type Reader = oio::StreamReader<MysqlReader>;
     type Writer = MysqlWriter;
-    type Lister = ();
+    type Lister = oio::HierarchyLister<MysqlLazyLister>;
     type Deleter = oio::OneShotDeleter<MysqlDeleter>;
+    type Copier = ();
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
+    fn info(&self) -> ServiceInfo {
         self.info.clone()
     }
 
-    async fn stat(&self, path: &str, _: OpStat) -> Result<RpStat> {
+    fn capability(&self) -> Capability {
+        self.capability
+    }
+
+    async fn create_dir(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn stat(&self, _ctx: &OperationContext, path: &str, _: OpStat) -> Result<RpStat> {
         let p = build_abs_path(&self.root, path);
 
         if p == build_abs_path(&self.root, "") {
-            Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+            Ok(RpStat::new(MetadataBuilder::dir().build()))
         } else {
-            let bs = self.core.get(&p).await?;
-            match bs {
-                Some(bs) => Ok(RpStat::new(
-                    Metadata::new(EntryMode::FILE).with_content_length(bs.len() as u64),
-                )),
+            match self.core.get_length(&p).await? {
+                Some(length) => Ok(RpStat::new({
+                    let metadata = MetadataBuilder::file(length as u64);
+                    metadata.build()
+                })),
                 None => Err(Error::new(ErrorKind::NotFound, "kv not found in mysql")),
             }
         }
     }
+    fn read(&self, _ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
+        let output: oio::StreamReader<MysqlReader> = {
+            Ok(oio::StreamReader::new(MysqlReader::new(
+                self.clone(),
+                path,
+                args,
+            )))
+        }?;
 
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let p = build_abs_path(&self.root, path);
-        let bs = match self.core.get(&p).await? {
-            Some(bs) => bs,
-            None => return Err(Error::new(ErrorKind::NotFound, "kv not found in mysql")),
-        };
-        Ok((RpRead::new(), bs.slice(args.range().to_range_as_usize())))
+        Ok(output)
     }
 
-    async fn write(&self, path: &str, _: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        let p = build_abs_path(&self.root, path);
-        Ok((RpWrite::new(), MysqlWriter::new(self.core.clone(), p)))
+    fn write(&self, _ctx: &OperationContext, path: &str, _: OpWrite) -> Result<Self::Writer> {
+        let output: MysqlWriter = {
+            let p = build_abs_path(&self.root, path);
+            Ok(MysqlWriter::new(self.core.clone(), p))
+        }?;
+
+        Ok(output)
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        Ok((
-            RpDelete::default(),
-            oio::OneShotDeleter::new(MysqlDeleter::new(self.core.clone(), self.root.clone())),
+    fn delete(&self, _ctx: &OperationContext) -> Result<Self::Deleter> {
+        let output: oio::OneShotDeleter<MysqlDeleter> = {
+            Ok(oio::OneShotDeleter::new(MysqlDeleter::new(
+                self.core.clone(),
+                self.root.clone(),
+            )))
+        }?;
+
+        Ok(output)
+    }
+
+    fn list(&self, _ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
+        let output: oio::HierarchyLister<MysqlLazyLister> = {
+            let lister =
+                MysqlLazyLister::new(self.core.clone(), self.root.clone(), path.to_string());
+            let lister = oio::HierarchyLister::new(lister, path, args.recursive());
+            Ok(lister)
+        }?;
+
+        Ok(output)
+    }
+
+    fn copy(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpCopy,
+    ) -> Result<Self::Copier> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn rename(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpRename,
+    ) -> Result<RpRename> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn presign(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpPresign,
+    ) -> Result<RpPresign> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
         ))
     }
 }

@@ -30,7 +30,7 @@ use crate::*;
 ///
 /// - Services impl `PageList`
 /// - `PageLister` impl `List`
-/// - Expose `PageLister` as `Accessor::Lister`
+/// - Expose `PageLister` as `Service::Lister`
 pub trait PageList: Send + Sync + Unpin + 'static {
     /// next_page is used to fetch next page of entries from underlying storage.
     fn next_page(&self, ctx: &mut PageContext) -> impl Future<Output = Result<()>> + MaybeSend;

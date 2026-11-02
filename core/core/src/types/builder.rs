@@ -24,58 +24,56 @@ use crate::raw::*;
 use crate::types::OperatorUri;
 use crate::*;
 
-/// Builder is used to set up underlying services.
+/// OpenDAL uses `Builder` to set up a service.
 ///
-/// This trait allows the developer to define a builder struct that can:
+/// A `Builder` allows developers to:
 ///
-/// - build a service via builder style API.
-/// - configure in-memory options like `customized_credential_load`.
+/// - Build a service through a builder-style API.
+/// - Configure in-memory options, such as `customized_credential_load`.
 ///
-/// Usually, users don't need to use or import this trait directly, they can use `Operator` API instead.
-///
-/// For example:
+/// Users can usually use the [`Operator`] API instead of importing and using
+/// `Builder` directly. For example:
 ///
 /// ```
 /// # use anyhow::Result;
 /// use opendal_core::services::Memory;
 /// use opendal_core::Operator;
 /// async fn test() -> Result<()> {
-///     // Create memory backend builder.
+///     // Create a memory backend builder.
 ///     let builder = Memory::default();
 ///
 ///     // Build an `Operator` to start operating the storage.
-///     let op: Operator = Operator::new(builder)?.finish();
+///     let op: Operator = Operator::new(builder)?;
 ///
 ///     Ok(())
 /// }
 /// ```
 pub trait Builder: Default + 'static {
-    /// Associated configuration for this builder.
+    /// Associated configuration.
     type Config: Configurator;
 
-    /// Consume the accessor builder to build a service.
-    fn build(self) -> Result<impl Access>;
+    /// Consume the builder to build a service.
+    fn build(self) -> Result<impl Service>;
 }
 
 /// Dummy implementation of builder
 impl Builder for () {
     type Config = ();
 
-    fn build(self) -> Result<impl Access> {
+    fn build(self) -> Result<impl Service> {
         Ok(())
     }
 }
 
-/// Configurator is used to configure the underlying service.
+/// OpenDAL uses `Configurator` to configure a service.
 ///
 /// This trait allows the developer to define a configuration struct that can:
 ///
-/// - deserialize from an iterator like hashmap or vector.
-/// - convert into a service builder and finally build the underlying services.
+/// - Deserialize from an iterator such as a hash map or vector.
+/// - Convert into a service builder and then build a concrete service.
 ///
-/// Usually, users don't need to use or import this trait directly, they can use `Operator` API instead.
-///
-/// For example:
+/// Users can usually use the [`Operator`] API instead of importing and using
+/// `Configurator` directly. For example:
 ///
 /// ```
 /// # use anyhow::Result;
@@ -88,7 +86,7 @@ impl Builder for () {
 ///     cfg.root = Some("/".to_string());
 ///
 ///     // Build an `Operator` to start operating the storage.
-///     let op: Operator = Operator::from_config(cfg)?.finish();
+///     let op: Operator = Operator::from_config(cfg)?;
 ///
 ///     Ok(())
 /// }
@@ -97,14 +95,14 @@ pub trait Configurator: Serialize + DeserializeOwned + Debug + 'static {
     /// Associated builder for this configuration.
     type Builder: Builder;
 
-    /// Build configuration from a parsed URI plus merged options.
+    /// Build configuration from a parsed URI with merged options.
     fn from_uri(_uri: &OperatorUri) -> Result<Self> {
         Err(Error::new(ErrorKind::Unsupported, "uri is not supported"))
     }
 
     /// Deserialize from an iterator.
     ///
-    /// This API is provided by opendal, developer should not implement it.
+    /// OpenDAL provides this method; service developers should not need to override it.
     fn from_iter(iter: impl IntoIterator<Item = (String, String)>) -> Result<Self> {
         let cfg = ConfigDeserializer::new(iter.into_iter().collect());
 

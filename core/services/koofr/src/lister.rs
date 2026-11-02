@@ -19,25 +19,27 @@ use std::sync::Arc;
 
 use bytes::Buf;
 
-use super::core::KoofrCore;
 use super::core::ListResponse;
-use super::error::parse_error;
-use opendal_core::EntryMode;
-use opendal_core::Metadata;
+use super::core::parse_error;
+use super::core::{ErrorContext, KoofrCore};
+use opendal_core::MetadataBuilder;
+use opendal_core::OperationContext;
 use opendal_core::Result;
 use opendal_core::raw::oio::Entry;
 use opendal_core::raw::*;
 
 pub struct KoofrLister {
     core: Arc<KoofrCore>,
+    ctx: OperationContext,
 
     path: String,
 }
 
 impl KoofrLister {
-    pub(super) fn new(core: Arc<KoofrCore>, path: &str) -> Self {
+    pub(super) fn new(core: Arc<KoofrCore>, ctx: OperationContext, path: &str) -> Self {
         KoofrLister {
             core,
+            ctx,
             path: path.to_string(),
         }
     }
@@ -45,7 +47,7 @@ impl KoofrLister {
 
 impl oio::PageList for KoofrLister {
     async fn next_page(&self, ctx: &mut oio::PageContext) -> Result<()> {
-        let resp = self.core.list(&self.path).await?;
+        let resp = self.core.list(&self.ctx, &self.path).await?;
 
         if resp.status() == http::StatusCode::NOT_FOUND {
             ctx.done = true;
@@ -55,7 +57,10 @@ impl oio::PageList for KoofrLister {
         match resp.status() {
             http::StatusCode::OK => {}
             _ => {
-                return Err(parse_error(resp));
+                return Err(parse_error(
+                    ErrorContext::new(ServiceOperation("FilesList")),
+                    resp,
+                ));
             }
         }
 
@@ -69,13 +74,12 @@ impl oio::PageList for KoofrLister {
 
             let entry = if file.ty == "dir" {
                 let path = format!("{path}/");
-                Entry::new(&path, Metadata::new(EntryMode::DIR))
+                Entry::new(&path, MetadataBuilder::dir().build())
             } else {
-                let m = Metadata::new(EntryMode::FILE)
-                    .with_content_length(file.size)
-                    .with_content_type(file.content_type)
-                    .with_last_modified(Timestamp::from_millisecond(file.modified)?);
-                Entry::new(&path, m)
+                let mut m = MetadataBuilder::file(file.size);
+                m.content_type(file.content_type)
+                    .last_modified(Timestamp::from_millisecond(file.modified)?);
+                Entry::new(&path, m.build())
             };
 
             ctx.entries.push_back(entry);

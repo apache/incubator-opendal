@@ -16,7 +16,6 @@
 // under the License.
 
 use std::fmt::Debug;
-use std::sync::Arc;
 
 use bytes::Bytes;
 use http::Request;
@@ -29,17 +28,16 @@ use http::header::IF_MATCH;
 use http::header::IF_MODIFIED_SINCE;
 use http::header::IF_NONE_MATCH;
 use http::header::IF_UNMODIFIED_SINCE;
-use reqsign::TencentCosCredential;
-use reqsign::TencentCosCredentialLoader;
-use reqsign::TencentCosSigner;
+use reqsign_core::{Context, Signer};
+use reqsign_tencent_cos::Credential;
 use serde::Deserialize;
 use serde::Serialize;
 
 use opendal_core::Buffer;
-use opendal_core::Error;
-use opendal_core::ErrorKind;
+use opendal_core::BytesRange;
 use opendal_core::Result;
 use opendal_core::raw::*;
+use opendal_core::*;
 
 pub mod constants {
     pub const COS_QUERY_VERSION_ID: &str = "versionId";
@@ -48,13 +46,13 @@ pub mod constants {
 }
 
 pub struct CosCore {
-    pub info: Arc<AccessorInfo>,
+    pub info: ServiceInfo,
+    pub capability: Capability,
     pub bucket: String,
     pub root: String,
     pub endpoint: String,
 
-    pub signer: TencentCosSigner,
-    pub loader: TencentCosCredentialLoader,
+    pub signer: Signer<Credential>,
 }
 
 impl Debug for CosCore {
@@ -68,63 +66,64 @@ impl Debug for CosCore {
 }
 
 impl CosCore {
-    async fn load_credential(&self) -> Result<Option<TencentCosCredential>> {
-        let cred = self
-            .loader
-            .load()
+    fn signer(&self, ctx: &OperationContext) -> Signer<Credential> {
+        self.signer.clone().with_context(
+            Context::new()
+                .with_file_read(reqsign_file_read_tokio::TokioFileRead)
+                .with_http_send(ctx.http_transport().clone())
+                .with_env(reqsign_core::OsEnv),
+        )
+    }
+
+    pub async fn sign<T>(&self, ctx: &OperationContext, req: Request<T>) -> Result<Request<T>> {
+        let (mut parts, body) = req.into_parts();
+
+        self.signer(ctx)
+            .sign(&mut parts, None)
             .await
-            .map_err(new_request_credential_error)?;
+            .map_err(|e| new_request_sign_error(e.into()))?;
 
-        if let Some(cred) = cred {
-            return Ok(Some(cred));
-        }
-
-        Err(Error::new(
-            ErrorKind::PermissionDenied,
-            "no valid credential found and anonymous access is not allowed",
-        ))
+        Ok(Request::from_parts(parts, body))
     }
 
-    pub async fn sign<T>(&self, req: &mut Request<T>) -> Result<()> {
-        let cred = if let Some(cred) = self.load_credential().await? {
-            cred
-        } else {
-            return Ok(());
-        };
+    pub async fn sign_query<T>(
+        &self,
+        ctx: &OperationContext,
+        req: Request<T>,
+        duration: Duration,
+    ) -> Result<Request<T>> {
+        let (mut parts, body) = req.into_parts();
 
-        self.signer.sign(req, &cred).map_err(new_request_sign_error)
-    }
+        self.signer(ctx)
+            .sign(&mut parts, Some(duration))
+            .await
+            .map_err(|e| new_request_sign_error(e.into()))?;
 
-    pub async fn sign_query<T>(&self, req: &mut Request<T>, duration: Duration) -> Result<()> {
-        let cred = if let Some(cred) = self.load_credential().await? {
-            cred
-        } else {
-            return Ok(());
-        };
-
-        self.signer
-            .sign_query(req, duration, &cred)
-            .map_err(new_request_sign_error)
+        Ok(Request::from_parts(parts, body))
     }
 
     #[inline]
-    pub async fn send(&self, req: Request<Buffer>) -> Result<Response<Buffer>> {
-        self.info.http_client().send(req).await
+    pub async fn send(
+        &self,
+        ctx: &OperationContext,
+        req: Request<Buffer>,
+    ) -> Result<Response<Buffer>> {
+        ctx.http_transport().send(req).await
     }
 }
 
 impl CosCore {
     pub async fn cos_get_object(
         &self,
+        ctx: &OperationContext,
         path: &str,
         range: BytesRange,
         args: &OpRead,
     ) -> Result<Response<HttpBody>> {
-        let mut req = self.cos_get_object_request(path, range, args)?;
+        let req = self.cos_get_object_request(path, range, args)?;
+        let req = self.sign(ctx, req).await?;
 
-        self.sign(&mut req).await?;
-
-        self.info.http_client().fetch(req).await
+        ctx.http_transport().fetch(req).await
     }
 
     pub fn cos_get_object_request(
@@ -171,7 +170,9 @@ impl CosCore {
             req = req.header(IF_UNMODIFIED_SINCE, if_unmodified_since.format_http_date());
         }
 
-        let req = req.extension(Operation::Read);
+        let req = req
+            .extension(Operation::Read)
+            .extension(ServiceOperation("GetObject"));
 
         let req = req.body(Buffer::new()).map_err(new_request_build_error)?;
 
@@ -223,19 +224,25 @@ impl CosCore {
             }
         }
 
-        let req = req.extension(Operation::Write);
+        let req = req
+            .extension(Operation::Write)
+            .extension(ServiceOperation("PutObject"));
 
         let req = req.body(body).map_err(new_request_build_error)?;
 
         Ok(req)
     }
 
-    pub async fn cos_head_object(&self, path: &str, args: &OpStat) -> Result<Response<Buffer>> {
-        let mut req = self.cos_head_object_request(path, args)?;
+    pub async fn cos_head_object(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: &OpStat,
+    ) -> Result<Response<Buffer>> {
+        let req = self.cos_head_object_request(path, args)?;
+        let req = self.sign(ctx, req).await?;
 
-        self.sign(&mut req).await?;
-
-        self.send(req).await
+        self.send(ctx, req).await
     }
 
     pub fn cos_head_object_request(&self, path: &str, args: &OpStat) -> Result<Request<Buffer>> {
@@ -265,14 +272,21 @@ impl CosCore {
             req = req.header(IF_NONE_MATCH, if_none_match);
         }
 
-        let req = req.extension(Operation::Stat);
+        let req = req
+            .extension(Operation::Stat)
+            .extension(ServiceOperation("HeadObject"));
 
         let req = req.body(Buffer::new()).map_err(new_request_build_error)?;
 
         Ok(req)
     }
 
-    pub async fn cos_delete_object(&self, path: &str, args: &OpDelete) -> Result<Response<Buffer>> {
+    pub async fn cos_delete_object(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: &OpDelete,
+    ) -> Result<Response<Buffer>> {
         let p = build_abs_path(&self.root, path);
 
         let mut url = format!("{}/{}", self.endpoint, percent_encode_path(&p));
@@ -291,13 +305,14 @@ impl CosCore {
 
         let req = Request::delete(&url);
 
-        let req = req.extension(Operation::Delete);
+        let req = req
+            .extension(Operation::Delete)
+            .extension(ServiceOperation("DeleteObject"));
 
-        let mut req = req.body(Buffer::new()).map_err(new_request_build_error)?;
+        let req = req.body(Buffer::new()).map_err(new_request_build_error)?;
+        let req = self.sign(ctx, req).await?;
 
-        self.sign(&mut req).await?;
-
-        self.send(req).await
+        self.send(ctx, req).await
     }
 
     pub fn cos_append_object_request(
@@ -332,32 +347,54 @@ impl CosCore {
             req = req.header(CACHE_CONTROL, cache_control)
         }
 
-        let req = req.extension(Operation::Write);
+        let req = req
+            .extension(Operation::Write)
+            .extension(ServiceOperation("AppendObject"));
 
         let req = req.body(body).map_err(new_request_build_error)?;
         Ok(req)
     }
 
-    pub async fn cos_copy_object(&self, from: &str, to: &str) -> Result<Response<Buffer>> {
+    pub async fn cos_copy_object(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: &OpCopy,
+    ) -> Result<Response<Buffer>> {
         let source = build_abs_path(&self.root, from);
         let target = build_abs_path(&self.root, to);
 
-        let source = format!("/{}/{}", self.bucket, percent_encode_path(&source));
+        let mut source = format!("/{}/{}", self.bucket, percent_encode_path(&source));
+        if let Some(version) = args.source_version() {
+            source.push_str("?versionId=");
+            source.push_str(&percent_encode_path(version));
+        }
         let url = format!("{}/{}", self.endpoint, percent_encode_path(&target));
 
         let mut req = Request::put(&url)
             .extension(Operation::Copy)
-            .header("x-cos-copy-source", &source)
-            .body(Buffer::new())
-            .map_err(new_request_build_error)?;
+            .extension(ServiceOperation("CopyObject"))
+            .header("x-cos-copy-source", &source);
 
-        self.sign(&mut req).await?;
+        // For a bucket which has never enabled versioning, x-cos-forbid-overwrite
+        // tells COS to reject the copy when the destination object already exists.
+        //
+        // ref: https://www.tencentcloud.com/document/product/436/10881
+        if args.if_not_exists() {
+            req = req.header("x-cos-forbid-overwrite", "true");
+        }
 
-        self.send(req).await
+        let req = req.body(Buffer::new()).map_err(new_request_build_error)?;
+
+        let req = self.sign(ctx, req).await?;
+
+        self.send(ctx, req).await
     }
 
     pub async fn cos_list_objects(
         &self,
+        ctx: &OperationContext,
         path: &str,
         next_marker: &str,
         delimiter: &str,
@@ -377,21 +414,23 @@ impl CosCore {
             url = url.push("max-keys", &limit.to_string());
         }
         if !next_marker.is_empty() {
-            url = url.push("marker", next_marker);
+            url = url.push("marker", &percent_encode_path(next_marker));
         }
 
-        let mut req = Request::get(url.finish())
+        let req = Request::get(url.finish())
             .extension(Operation::List)
+            .extension(ServiceOperation("ListObjects"))
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
 
-        self.sign(&mut req).await?;
+        let req = self.sign(ctx, req).await?;
 
-        self.send(req).await
+        self.send(ctx, req).await
     }
 
     pub async fn cos_initiate_multipart_upload(
         &self,
+        ctx: &OperationContext,
         path: &str,
         args: &OpWrite,
     ) -> Result<Response<Buffer>> {
@@ -413,6 +452,16 @@ impl CosCore {
             req = req.header(CACHE_CONTROL, cache_control)
         }
 
+        // COS evaluates x-cos-forbid-overwrite on both InitiateMultipartUpload and
+        // CompleteMultipartUpload, so a multipart if_not_exists write has to carry it
+        // on both requests. Setting it only on the simple PutObject path lets large
+        // uploads silently overwrite an existing object.
+        //
+        // ref: https://www.tencentcloud.com/document/product/436/7746
+        if args.if_not_exists() {
+            req = req.header("x-cos-forbid-overwrite", "true");
+        }
+
         // Set user metadata headers.
         if let Some(user_metadata) = args.user_metadata() {
             for (key, value) in user_metadata {
@@ -420,17 +469,19 @@ impl CosCore {
             }
         }
 
-        let req = req.extension(Operation::Write);
+        let req = req
+            .extension(Operation::Write)
+            .extension(ServiceOperation("InitiateMultipartUpload"));
 
-        let mut req = req.body(Buffer::new()).map_err(new_request_build_error)?;
+        let req = req.body(Buffer::new()).map_err(new_request_build_error)?;
+        let req = self.sign(ctx, req).await?;
 
-        self.sign(&mut req).await?;
-
-        self.send(req).await
+        self.send(ctx, req).await
     }
 
     pub async fn cos_upload_part_request(
         &self,
+        ctx: &OperationContext,
         path: &str,
         upload_id: &str,
         part_number: usize,
@@ -450,21 +501,24 @@ impl CosCore {
         let mut req = Request::put(&url);
         req = req.header(CONTENT_LENGTH, size);
 
-        let req = req.extension(Operation::Write);
+        let req = req
+            .extension(Operation::Write)
+            .extension(ServiceOperation("UploadPart"));
 
         // Set body
-        let mut req = req.body(body).map_err(new_request_build_error)?;
+        let req = req.body(body).map_err(new_request_build_error)?;
+        let req = self.sign(ctx, req).await?;
 
-        self.sign(&mut req).await?;
-
-        self.send(req).await
+        self.send(ctx, req).await
     }
 
     pub async fn cos_complete_multipart_upload(
         &self,
+        ctx: &OperationContext,
         path: &str,
         upload_id: &str,
         parts: Vec<CompleteMultipartUploadRequestPart>,
+        args: &OpWrite,
     ) -> Result<Response<Buffer>> {
         let p = build_abs_path(&self.root, path);
 
@@ -475,29 +529,39 @@ impl CosCore {
             percent_encode_path(upload_id)
         );
 
-        let req = Request::post(&url);
+        let mut req = Request::post(&url);
 
         let content = quick_xml::se::to_string(&CompleteMultipartUploadRequest { part: parts })
             .map_err(new_xml_serialize_error)?;
         // Make sure content length has been set to avoid post with chunked encoding.
-        let req = req.header(CONTENT_LENGTH, content.len());
+        req = req.header(CONTENT_LENGTH, content.len());
         // Set content-type to `application/xml` to avoid mixed with form post.
-        let req = req.header(CONTENT_TYPE, "application/xml");
+        req = req.header(CONTENT_TYPE, "application/xml");
+        // CompleteMultipartUpload is the request that commits the object, so the
+        // if_not_exists guard has to be repeated here alongside InitiateMultipartUpload.
+        //
+        // ref: https://www.tencentcloud.com/document/product/436/7742
+        if args.if_not_exists() {
+            req = req.header("x-cos-forbid-overwrite", "true");
+        }
 
-        let req = req.extension(Operation::Write);
+        let req = req
+            .extension(Operation::Write)
+            .extension(ServiceOperation("CompleteMultipartUpload"));
 
-        let mut req = req
+        let req = req
             .body(Buffer::from(Bytes::from(content)))
             .map_err(new_request_build_error)?;
 
-        self.sign(&mut req).await?;
+        let req = self.sign(ctx, req).await?;
 
-        self.send(req).await
+        self.send(ctx, req).await
     }
 
     /// Abort an on-going multipart upload.
     pub async fn cos_abort_multipart_upload(
         &self,
+        ctx: &OperationContext,
         path: &str,
         upload_id: &str,
     ) -> Result<Response<Buffer>> {
@@ -510,16 +574,18 @@ impl CosCore {
             percent_encode_path(upload_id)
         );
 
-        let mut req = Request::delete(&url)
+        let req = Request::delete(&url)
             .extension(Operation::Delete)
+            .extension(ServiceOperation("AbortMultipartUpload"))
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
-        self.sign(&mut req).await?;
-        self.send(req).await
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 
     pub async fn cos_list_object_versions(
         &self,
+        ctx: &OperationContext,
         prefix: &str,
         delimiter: &str,
         limit: Option<usize>,
@@ -547,14 +613,15 @@ impl CosCore {
             url = url.push("version-id-marker", &percent_encode_path(version_id_marker));
         }
 
-        let mut req = Request::get(url.finish())
+        let req = Request::get(url.finish())
             .extension(Operation::List)
+            .extension(ServiceOperation("ListObjectVersions"))
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
 
-        self.sign(&mut req).await?;
+        let req = self.sign(ctx, req).await?;
 
-        self.send(req).await
+        self.send(ctx, req).await
     }
 }
 
@@ -641,6 +708,9 @@ pub struct CommonPrefix {
 #[serde(default, rename_all = "PascalCase")]
 pub struct ListObjectsOutputContent {
     pub key: String,
+    pub last_modified: String,
+    #[serde(rename = "ETag")]
+    pub etag: Option<String>,
     pub size: u64,
 }
 
@@ -746,11 +816,223 @@ mod tests {
             [9, 10],
         );
         assert_eq!(
+            out.contents
+                .iter()
+                .map(|v| v.last_modified.clone())
+                .collect::<Vec<String>>(),
+            ["2015-07-01T02:11:19.775Z", "2015-07-01T02:11:19.775Z"],
+        );
+        assert_eq!(
+            out.contents
+                .iter()
+                .map(|v| v.etag.clone())
+                .collect::<Vec<Option<String>>>(),
+            [
+                Some("\"a72e382246ac83e86bd203389849e71d\"".to_string()),
+                Some("\"a72e382246ac83e86bd203389849e71d\"".to_string()),
+            ],
+        );
+        assert_eq!(
             out.common_prefixes
                 .iter()
                 .map(|v| v.prefix.clone())
                 .collect::<Vec<String>>(),
             ["hello", "world"],
         )
+    }
+
+    #[test]
+    fn test_parse_error() {
+        let bs = bytes::Bytes::from(
+            r#"
+<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+<Code>NoSuchKey</Code>
+<Message>The resource you requested does not exist</Message>
+<Resource>/example-bucket/object</Resource>
+<RequestId>001B21A61C6C0000013402C4616D5285</RequestId>
+<HostId>RkRCRDJENDc5MzdGQkQ4OUY3MTI4NTQ3NDk2Mjg0M0FBQUFBQUFBYmJiYmJiYmJD</HostId>
+</Error>
+"#,
+        );
+
+        let out: CosError = de::from_reader(bs.reader()).expect("must success");
+        println!("{out:?}");
+
+        assert_eq!(out.code, "NoSuchKey");
+        assert_eq!(out.message, "The resource you requested does not exist");
+        assert_eq!(out.resource, "/example-bucket/object");
+        assert_eq!(out.request_id, "001B21A61C6C0000013402C4616D5285");
+        assert_eq!(
+            out.host_id,
+            "RkRCRDJENDc5MzdGQkQ4OUY3MTI4NTQ3NDk2Mjg0M0FBQUFBQUFBYmJiYmJiYmJD"
+        );
+    }
+}
+
+use bytes::Buf;
+use http::StatusCode;
+use quick_xml::de;
+
+use opendal_core::Error;
+use opendal_core::ErrorKind;
+
+/// CosError is the error returned by cos service.
+#[derive(Default, Debug, Deserialize)]
+#[serde(default, rename_all = "PascalCase")]
+struct CosError {
+    code: String,
+    message: String,
+    resource: String,
+    request_id: String,
+    host_id: String,
+}
+
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+    caller_condition: bool,
+    if_not_exists: bool,
+}
+
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self {
+            service_operation,
+            caller_condition: false,
+            if_not_exists: false,
+        }
+    }
+
+    pub(crate) const fn with_caller_condition(mut self, caller_condition: bool) -> Self {
+        self.caller_condition = caller_condition;
+        self
+    }
+
+    pub(crate) const fn with_if_not_exists(mut self, if_not_exists: bool) -> Self {
+        self.caller_condition = self.caller_condition || if_not_exists;
+        self.if_not_exists = if_not_exists;
+        self
+    }
+}
+
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
+    let (parts, body) = resp.into_parts();
+    let bs = body.to_bytes();
+
+    let cos_error = de::from_reader::<_, CosError>(bs.clone().reader()).ok();
+
+    let (mut kind, mut retryable) = match parts.status {
+        StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
+        StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, false),
+        StatusCode::PRECONDITION_FAILED | StatusCode::NOT_MODIFIED if ctx.caller_condition => {
+            (ErrorKind::ConditionNotMatch, false)
+        }
+        StatusCode::INTERNAL_SERVER_ERROR
+        | StatusCode::BAD_GATEWAY
+        | StatusCode::SERVICE_UNAVAILABLE
+        | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
+        // COS could return `520 Origin Error` errors which should be retried.
+        v if v.as_u16() == 520 => (ErrorKind::Unexpected, true),
+
+        _ => (ErrorKind::Unexpected, false),
+    };
+
+    if let Some(cos_error) = &cos_error {
+        match cos_error.code.as_str() {
+            "PreconditionFailed" if ctx.caller_condition => {
+                (kind, retryable) = (ErrorKind::ConditionNotMatch, false);
+            }
+            "FileAlreadyExists" if ctx.if_not_exists => {
+                (kind, retryable) = (ErrorKind::ConditionNotMatch, false);
+            }
+            "FileAlreadyExists"
+            | "PathConflict"
+            | "UploadConflict"
+            | "InvalidBucketState"
+            | "ObjectLocked"
+            | "InvalidObjectState"
+            | "RestoreAlreadyInProgress"
+            | "ObjectNotAppendable" => {
+                (kind, retryable) = (ErrorKind::Conflict, false);
+            }
+            _ if matches!(
+                parts.status,
+                StatusCode::CONFLICT | StatusCode::PRECONDITION_FAILED
+            ) =>
+            {
+                (kind, retryable) = (ErrorKind::Unexpected, false);
+            }
+            _ => {}
+        }
+    }
+
+    let message = match cos_error {
+        Some(cos_error) => format!("{cos_error:?}"),
+        None => String::from_utf8_lossy(&bs).into_owned(),
+    };
+
+    let mut err = Error::new(kind, message);
+
+    err = err.with_context("service_operation", ctx.service_operation.0);
+    err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
+    err
+}
+
+#[cfg(test)]
+mod error_tests {
+    use super::*;
+
+    fn parse_cos_error(ctx: ErrorContext, status: StatusCode, code: &str) -> Error {
+        let body = Buffer::from(format!(
+            "<Error><Code>{code}</Code><Message>test</Message></Error>"
+        ));
+        let resp = Response::builder()
+            .status(status)
+            .body(body)
+            .expect("response must build");
+        parse_error(ctx, resp)
+    }
+
+    #[test]
+    fn conflict_classification_uses_native_code_and_condition() {
+        let conditional = ErrorContext::new(ServiceOperation("PutObject")).with_if_not_exists(true);
+        assert_eq!(
+            parse_cos_error(conditional, StatusCode::CONFLICT, "FileAlreadyExists").kind(),
+            ErrorKind::ConditionNotMatch
+        );
+        assert_eq!(
+            parse_cos_error(
+                conditional,
+                StatusCode::PRECONDITION_FAILED,
+                "PreconditionFailed"
+            )
+            .kind(),
+            ErrorKind::ConditionNotMatch
+        );
+
+        let unconditional = ErrorContext::new(ServiceOperation("PutObject"));
+        for code in [
+            "PathConflict",
+            "UploadConflict",
+            "ObjectLocked",
+            "InvalidObjectState",
+        ] {
+            assert_eq!(
+                parse_cos_error(unconditional, StatusCode::CONFLICT, code).kind(),
+                ErrorKind::Conflict,
+                "native code {code}"
+            );
+        }
+        assert_eq!(
+            parse_cos_error(unconditional, StatusCode::CONFLICT, "UnknownConflict").kind(),
+            ErrorKind::Unexpected
+        );
     }
 }

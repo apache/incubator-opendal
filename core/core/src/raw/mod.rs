@@ -26,19 +26,14 @@
 //! - Raw APIs are far less stable than public API, please don't rely on
 //!   them whenever possible.
 
-mod accessor;
-pub use accessor::*;
+mod service;
+pub use service::*;
 
 mod layer;
 pub use layer::*;
 
 mod path;
 pub use path::*;
-
-#[cfg(feature = "internal-path-cache")]
-mod path_cache;
-#[cfg(feature = "internal-path-cache")]
-pub use path_cache::*;
 
 mod operation;
 pub use operation::*;
@@ -77,9 +72,6 @@ pub use futures_util::MaybeSend;
 
 mod enum_utils;
 pub use enum_utils::*;
-
-mod atomic_util;
-pub use atomic_util::*;
 
 // Expose as a pub mod to avoid confusing.
 pub mod oio;

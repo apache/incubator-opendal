@@ -22,118 +22,92 @@ use crate::raw::*;
 use crate::types::IntoOperatorUri;
 use crate::*;
 
-/// # Operator build API
-///
-/// Operator should be built via [`OperatorBuilder`]. We recommend to use [`Operator::new`] to get started:
-///
-/// ```
-/// # use anyhow::Result;
-/// use opendal_core::services::Memory;
-/// use opendal_core::Operator;
-/// async fn test() -> Result<()> {
-///     // Create memory backend builder.
-///     let builder = Memory::default();
-///
-///     // Build an `Operator` to start operating the storage.
-///     let op: Operator = Operator::new(builder)?.finish();
-///
-///     Ok(())
-/// }
-/// ```
 impl Operator {
     /// Create a new operator with input builder.
     ///
-    /// OpenDAL will call `builder.build()` internally, so we don't need
-    /// to import `opendal::Builder` trait.
+    /// OpenDAL calls [`Builder::build`] internally and returns a ready-to-use
+    /// [`Operator`].
     ///
     /// # Examples
     ///
-    /// Read more backend init examples in [examples](https://github.com/apache/opendal/tree/main/examples).
-    ///
     /// ```
-    /// # use anyhow::Result;
     /// use opendal_core::services::Memory;
-    /// use opendal_core::Operator;
-    /// async fn test() -> Result<()> {
-    ///     // Create memory backend builder.
-    ///     let builder = Memory::default();
+    /// use opendal_core::{Operator, Result};
     ///
-    ///     // Build an `Operator` to start operating the storage.
-    ///     let op: Operator = Operator::new(builder)?.finish();
-    ///
-    ///     Ok(())
-    /// }
+    /// # fn example() -> Result<()> {
+    /// let op = Operator::new(Memory::default())?;
+    /// # let _ = op;
+    /// # Ok(())
+    /// # }
     /// ```
-    #[allow(clippy::new_ret_no_self)]
-    pub fn new<B: Builder>(ab: B) -> Result<OperatorBuilder<impl Access>> {
-        let acc = ab.build()?;
-        Ok(OperatorBuilder::new(acc))
+    pub fn new<B: Builder>(ab: B) -> Result<Operator> {
+        let service = Arc::new(ab.build()?) as Servicer;
+        Ok(Operator::from_parts(OperationContext::default(), service)
+            .layer(ErrorContextLayer)
+            .layer(SimulateLayer::default())
+            .layer(CompleteLayer)
+            .layer(CorrectnessCheckLayer))
     }
 
     /// Create a new operator from given config.
     ///
+    /// The config is converted into its corresponding builder and then follows
+    /// the same construction path as [`Operator::new`].
+    ///
     /// # Examples
     ///
     /// ```
-    /// # use anyhow::Result;
-    /// use std::collections::HashMap;
-    ///
     /// use opendal_core::services::MemoryConfig;
-    /// use opendal_core::Operator;
-    /// async fn test() -> Result<()> {
-    ///     let cfg = MemoryConfig::default();
+    /// use opendal_core::{Operator, Result};
     ///
-    ///     // Build an `Operator` to start operating the storage.
-    ///     let op: Operator = Operator::from_config(cfg)?.finish();
-    ///
-    ///     Ok(())
-    /// }
+    /// # fn example() -> Result<()> {
+    /// let op = Operator::from_config(MemoryConfig::default())?;
+    /// # let _ = op;
+    /// # Ok(())
+    /// # }
     /// ```
-    pub fn from_config<C: Configurator>(cfg: C) -> Result<OperatorBuilder<impl Access>> {
+    pub fn from_config<C: Configurator>(cfg: C) -> Result<Operator> {
         let builder = cfg.into_builder();
-        let acc = builder.build()?;
-        Ok(OperatorBuilder::new(acc))
+        Operator::new(builder)
     }
 
-    /// Create a new operator from given iterator in static dispatch.
+    /// Create a new operator from given iterator.
     ///
-    /// # Notes
-    ///
-    /// `from_iter` generates a `OperatorBuilder` which allows adding layer in zero-cost way.
+    /// The service builder type is selected statically by `B`, while config
+    /// values are parsed from the provided key-value iterator.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use anyhow::Result;
     /// use std::collections::HashMap;
     ///
     /// use opendal_core::services::Memory;
-    /// use opendal_core::Operator;
-    /// async fn test() -> Result<()> {
-    ///     let map = HashMap::new();
+    /// use opendal_core::{Operator, Result};
     ///
-    ///     // Build an `Operator` to start operating the storage.
-    ///     let op: Operator = Operator::from_iter::<Memory>(map)?.finish();
-    ///
-    ///     Ok(())
-    /// }
+    /// # fn example() -> Result<()> {
+    /// let cfg: HashMap<String, String> = HashMap::new();
+    /// let op = Operator::from_iter::<Memory>(cfg)?;
+    /// # let _ = op;
+    /// # Ok(())
+    /// # }
     /// ```
     #[allow(clippy::should_implement_trait)]
     pub fn from_iter<B: Builder>(
         iter: impl IntoIterator<Item = (String, String)>,
-    ) -> Result<OperatorBuilder<impl Access>> {
+    ) -> Result<Operator> {
         let builder = B::Config::from_iter(iter)?.into_builder();
-        let acc = builder.build()?;
-        Ok(OperatorBuilder::new(acc))
+        Operator::new(builder)
     }
 
     /// Create a new operator by parsing configuration from a URI.
     ///
+    /// The URI scheme is resolved through [`OperatorRegistry`], so this only
+    /// works for services registered in the current build.
+    ///
     /// # Examples
     ///
     /// ```
-    /// # use anyhow::Result;
-    /// use opendal_core::Operator;
+    /// use opendal_core::{Operator, Result};
     ///
     /// # fn example() -> Result<()> {
     /// let op = Operator::from_uri("memory://localhost/")?;
@@ -142,184 +116,33 @@ impl Operator {
     /// # }
     /// ```
     pub fn from_uri(uri: impl IntoOperatorUri) -> Result<Operator> {
-        crate::DEFAULT_OPERATOR_REGISTRY.load(uri)
+        OperatorRegistry::get().load(uri)
     }
 
-    /// Create a new operator via given scheme and iterator of config value in dynamic dispatch.
+    /// Create a new operator via given scheme and iterator of config value.
     ///
-    /// # Notes
-    ///
-    /// `via_iter` generates a `Operator` which allows building operator without generic type.
+    /// This is the scheme-driven variant of [`Operator::from_iter`]. It
+    /// delegates to the registry, allowing callers to construct an operator
+    /// without naming the builder type at compile time.
     ///
     /// # Examples
     ///
     /// ```
-    /// # use anyhow::Result;
-    /// use std::collections::HashMap;
-    ///
-    /// use opendal_core::Operator;
     /// use opendal_core::services;
+    /// use opendal_core::{Operator, Result};
     ///
-    /// async fn test() -> Result<()> {
-    ///     let map: Vec<(String, String)> = vec![];
-    ///
-    ///     // Build an `Operator` to start operating the storage.
-    ///     let op: Operator = Operator::via_iter(services::MEMORY_SCHEME, map)?;
-    ///
-    ///     Ok(())
-    /// }
+    /// # fn example() -> Result<()> {
+    /// let cfg = Vec::<(String, String)>::new();
+    /// let op = Operator::via_iter(services::MEMORY_SCHEME, cfg)?;
+    /// # let _ = op;
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn via_iter(
         scheme: impl AsRef<str>,
         iter: impl IntoIterator<Item = (String, String)>,
     ) -> Result<Operator> {
         Operator::from_uri((scheme.as_ref(), iter))
-    }
-
-    /// Create a new layer with dynamic dispatch.
-    ///
-    /// Please note that `Layer` can modify internal contexts such as `HttpClient`
-    /// and `Runtime` for the operator. Therefore, it is recommended to add layers
-    /// before interacting with the storage. Adding or duplicating layers after
-    /// accessing the storage may result in unexpected behavior.
-    ///
-    /// # Notes
-    ///
-    /// `OperatorBuilder::layer()` is using static dispatch which is zero
-    /// cost. `Operator::layer()` is using dynamic dispatch which has a
-    /// bit runtime overhead with an extra vtable lookup and unable to
-    /// inline.
-    ///
-    /// It's always recommended to use `OperatorBuilder::layer()` instead.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # use std::sync::Arc;
-    /// #
-    /// # use opendal_core::Result;
-    /// # use opendal_core::layers::HttpClientLayer;
-    /// # use opendal_core::raw::HttpClient;
-    /// # use opendal_core::services::Memory;
-    /// # use opendal_core::Operator;
-    /// #
-    /// # async fn test() -> Result<()> {
-    /// let client = HttpClient::new()?;
-    /// let op = Operator::new(Memory::default())?.finish();
-    /// let op = op.layer(HttpClientLayer::new(client));
-    /// // All operations will go through the new_layer
-    /// let _ = op.read("test_file").await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    #[must_use]
-    pub fn layer<L: Layer<Accessor>>(self, layer: L) -> Self {
-        Self::from_inner(Arc::new(
-            TypeEraseLayer.layer(layer.layer(self.into_inner())),
-        ))
-    }
-}
-
-/// OperatorBuilder is a typed builder to build an Operator.
-///
-/// # Notes
-///
-/// OpenDAL uses static dispatch internally and only performs dynamic
-/// dispatch at the outmost type erase layer. OperatorBuilder is the only
-/// public API provided by OpenDAL come with generic parameters.
-///
-/// It's required to call `finish` after the operator built.
-///
-/// # Examples
-///
-/// For users who want to support many services, we can build a helper function like the following:
-///
-/// ```
-/// use std::collections::HashMap;
-///
-/// use opendal_core::services;
-/// use opendal_core::Builder;
-/// use opendal_core::Operator;
-/// use opendal_core::Result;
-///
-/// fn init_service<B: Builder>(cfg: HashMap<String, String>) -> Result<Operator> {
-///     let op = Operator::from_iter::<B>(cfg)?
-///         // add layers
-///         // .layer(LoggingLayer::default())
-///         // .layer(RetryLayer::new())
-///         .finish();
-///
-///     Ok(op)
-/// }
-///
-/// async fn init(scheme: &str, cfg: HashMap<String, String>) -> Result<()> {
-///     let _ = match scheme {
-///         services::MEMORY_SCHEME => init_service::<services::Memory>(cfg)?,
-///         _ => todo!(),
-///     };
-///
-///     Ok(())
-/// }
-/// ```
-pub struct OperatorBuilder<A: Access> {
-    accessor: A,
-}
-
-impl<A: Access> OperatorBuilder<A> {
-    /// Create a new operator builder.
-    #[allow(clippy::new_ret_no_self)]
-    pub fn new(accessor: A) -> OperatorBuilder<impl Access> {
-        // Make sure error context layer has been attached.
-        OperatorBuilder { accessor }
-            .layer(ErrorContextLayer)
-            .layer(SimulateLayer::default())
-            .layer(CompleteLayer)
-            .layer(CorrectnessCheckLayer)
-    }
-
-    /// Create a new layer with static dispatch.
-    ///
-    /// # Notes
-    ///
-    /// `OperatorBuilder::layer()` is using static dispatch which is zero
-    /// cost. `Operator::layer()` is using dynamic dispatch which has a
-    /// bit runtime overhead with an extra vtable lookup and unable to
-    /// inline.
-    ///
-    /// It's always recommended to use `OperatorBuilder::layer()` instead.
-    ///
-    /// # Examples
-    ///
-    /// ```no_run
-    /// # use std::sync::Arc;
-    /// #
-    /// # use opendal_core::Result;
-    /// # use opendal_core::layers::HttpClientLayer;
-    /// # use opendal_core::raw::HttpClient;
-    /// # use opendal_core::services::Memory;
-    /// # use opendal_core::Operator;
-    /// #
-    /// # async fn test() -> Result<()> {
-    /// let client = HttpClient::new()?;
-    /// let op = Operator::new(Memory::default())?
-    ///     .layer(HttpClientLayer::new(client))
-    ///     .finish();
-    /// // All operations will go through the new_layer
-    /// let _ = op.read("test_file").await?;
-    /// # Ok(())
-    /// # }
-    /// ```
-    #[must_use]
-    pub fn layer<L: Layer<A>>(self, layer: L) -> OperatorBuilder<L::LayeredAccess> {
-        OperatorBuilder {
-            accessor: layer.layer(self.accessor),
-        }
-    }
-
-    /// Finish the building to construct an Operator.
-    pub fn finish(self) -> Operator {
-        let ob = self.layer(TypeEraseLayer);
-        Operator::from_inner(Arc::new(ob.accessor) as Accessor)
     }
 }
 
@@ -333,5 +156,11 @@ mod tests {
         let op = Operator::via_iter(services::MEMORY_SCHEME, [])
             .expect("memory scheme should be registered");
         let _ = op;
+    }
+
+    #[test]
+    fn new_returns_finished_operator() {
+        let op = Operator::new(services::Memory::default()).expect("memory builder should build");
+        assert_eq!(op.info().scheme(), services::MEMORY_SCHEME);
     }
 }

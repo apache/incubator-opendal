@@ -1,6 +1,6 @@
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [ ] create_dir
 - [x] stat
@@ -12,13 +12,14 @@ This service can be used to:
 - [ ] ~~rename~~
 - [ ] ~~presign~~
 
-## Configurations
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
 
-- `endpoint`: Set the endpoint for backend.
-- `container`: Swift container.
-- `token`: Swift personal access token.
+## Configuration
 
-Refer to [`SwiftBuilder`]'s public API docs for more information.
+Use [`crate::SwiftConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
 ## Examples
 
@@ -42,7 +43,7 @@ async fn main() -> Result<()> {
         // set the auth token for builder
         .token("token");
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
 
     Ok(())
 }

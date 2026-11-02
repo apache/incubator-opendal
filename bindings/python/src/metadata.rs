@@ -26,7 +26,6 @@ use std::collections::HashMap;
 /// -----
 /// If this entry is a directory, ``path`` **must** end with ``/``.
 /// Otherwise, ``path`` **must not** end with ``/``.
-#[gen_stub_pyclass]
 #[pyclass(module = "opendal.types")]
 pub struct Entry(ocore::Entry);
 
@@ -35,8 +34,6 @@ impl Entry {
         Self(entry)
     }
 }
-
-#[gen_stub_pymethods]
 #[pymethods]
 impl Entry {
     /// The path of entry relative to the operator's root.
@@ -56,13 +53,9 @@ impl Entry {
     pub fn metadata(&self) -> Metadata {
         Metadata::new(self.0.metadata().clone())
     }
-
-    #[gen_stub(skip)]
     fn __str__(&self) -> &str {
         self.0.path()
     }
-
-    #[gen_stub(skip)]
     fn __repr__(&self) -> String {
         format!(
             "Entry(path={:?}, metadata={})",
@@ -83,7 +76,6 @@ impl Entry {
 /// In systems that support versioning, such as AWS S3, the metadata may
 /// represent a specific version of a file. Use :attr:`version` to get
 /// the version of a file if it is available.
-#[gen_stub_pyclass]
 #[pyclass(module = "opendal.types")]
 pub struct Metadata(ocore::Metadata);
 
@@ -92,8 +84,6 @@ impl Metadata {
         Self(meta)
     }
 }
-
-#[gen_stub_pymethods]
 #[pymethods]
 impl Metadata {
     /// The content disposition of this entry.
@@ -151,7 +141,6 @@ impl Metadata {
     }
 
     /// The last modified timestamp of this entry.
-    #[gen_stub(override_return_type(type_repr = "datetime.datetime", imports=("datetime")))]
     #[getter]
     pub fn last_modified(&self) -> Option<jiff::Timestamp> {
         self.0.last_modified().map(Into::into)
@@ -165,11 +154,14 @@ impl Metadata {
 
     /// The user-defined metadata of this entry.
     #[getter]
-    pub fn user_metadata(&self) -> Option<&HashMap<String, String>> {
-        self.0.user_metadata()
+    pub fn user_metadata(&self) -> Option<HashMap<String, String>> {
+        self.0.user_metadata().map(|metadata| {
+            metadata
+                .into_iter()
+                .map(|(key, value)| (key.to_string(), value.to_string()))
+                .collect()
+        })
     }
-
-    #[gen_stub(skip)]
     pub fn __repr__(&self) -> String {
         let mut parts = vec![];
 
@@ -194,8 +186,14 @@ impl Metadata {
 /// EntryMode
 ///
 /// The mode of an entry, indicating if it is a file or a directory.
-#[gen_stub_pyclass_enum]
-#[pyclass(eq, eq_int, hash, frozen, module = "opendal.types")]
+#[pyclass(
+    eq,
+    eq_int,
+    hash,
+    frozen,
+    module = "opendal.types",
+    skip_from_py_object
+)]
 #[pyo3(rename_all = "PascalCase")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EntryMode {
@@ -216,8 +214,6 @@ impl EntryMode {
         }
     }
 }
-
-#[gen_stub_pymethods]
 #[pymethods]
 impl EntryMode {
     /// Check if the entry mode is `File`.

@@ -16,6 +16,7 @@
 // under the License.
 
 use std::mem;
+use std::ops::Deref;
 use std::ops::DerefMut;
 
 use bytes::Bytes;
@@ -27,22 +28,86 @@ use crate::*;
 /// Reader is a type erased [`Read`].
 pub type Reader = Box<dyn ReadDyn>;
 
-/// Read is the internal trait used by OpenDAL to read data from storage.
+/// Read is the internal trait used by OpenDAL to read ranges from storage.
 ///
-/// Users should not use or import this trait unless they are implementing an `Accessor`.
+/// Users should not use or import this trait unless they are implementing a `Service`.
 ///
-/// # Notes
-///
-/// ## Object Safety
-///
-/// `Read` uses `async in trait`, making it not object safe, preventing the use of `Box<dyn Read>`.
-/// To address this, we've introduced [`ReadDyn`] and its compatible type `Box<dyn ReadDyn>`.
-///
-/// `ReadDyn` uses `Box::pin()` to transform the returned future into a [`BoxedFuture`], introducing
-/// an additional layer of indirection and an extra allocation. Ideally, `ReadDyn` should occur only
-/// once, at the outermost level of our API.
+/// This trait returns `impl Future`, so it is not object safe. Use [`ReadDyn`] when
+/// type erasure is required.
 pub trait Read: Unpin + Send + Sync {
-    /// Read at the given offset with the given size.
+    /// Open a range stream for the given range.
+    fn open(
+        &self,
+        range: BytesRange,
+    ) -> impl Future<Output = Result<(RpRead, Box<dyn ReadStreamDyn>)>> + MaybeSend;
+
+    /// Read an exact bounded range into [`Buffer`].
+    fn read(&self, range: BytesRange)
+    -> impl Future<Output = Result<(RpRead, Buffer)>> + MaybeSend;
+}
+
+impl Read for () {
+    async fn open(&self, _: BytesRange) -> Result<(RpRead, Box<dyn ReadStreamDyn>)> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "output reader doesn't support open",
+        ))
+    }
+
+    async fn read(&self, _: BytesRange) -> Result<(RpRead, Buffer)> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "output reader doesn't support read",
+        ))
+    }
+}
+
+/// ReadDyn is the dyn-compatible adapter for [`Read`].
+///
+/// It boxes returned futures to support `Box<dyn ReadDyn>`, adding one allocation
+/// per call at the type-erasure boundary.
+pub trait ReadDyn: Unpin + Send + Sync {
+    /// The dyn version of [`Read::open`].
+    fn open_dyn(
+        &self,
+        range: BytesRange,
+    ) -> BoxedFuture<'_, Result<(RpRead, Box<dyn ReadStreamDyn>)>>;
+
+    /// The dyn version of [`Read::read`].
+    fn read_dyn(&self, range: BytesRange) -> BoxedFuture<'_, Result<(RpRead, Buffer)>>;
+}
+
+impl<T: Read + ?Sized> ReadDyn for T {
+    fn open_dyn(
+        &self,
+        range: BytesRange,
+    ) -> BoxedFuture<'_, Result<(RpRead, Box<dyn ReadStreamDyn>)>> {
+        Box::pin(self.open(range))
+    }
+
+    fn read_dyn(&self, range: BytesRange) -> BoxedFuture<'_, Result<(RpRead, Buffer)>> {
+        Box::pin(self.read(range))
+    }
+}
+
+impl<T: ReadDyn + ?Sized> Read for Box<T> {
+    async fn open(&self, range: BytesRange) -> Result<(RpRead, Box<dyn ReadStreamDyn>)> {
+        self.deref().open_dyn(range).await
+    }
+
+    async fn read(&self, range: BytesRange) -> Result<(RpRead, Buffer)> {
+        self.deref().read_dyn(range).await
+    }
+}
+
+/// ReadStream is the internal trait used by OpenDAL to stream data from storage.
+///
+/// Users should not use or import this trait unless they are implementing a `Service`.
+///
+/// This trait returns `impl Future`, so it is not object safe. Use [`ReadStreamDyn`]
+/// when type erasure is required.
+pub trait ReadStream: Unpin + Send + Sync {
+    /// Read the next data chunk from the stream.
     fn read(&mut self) -> impl Future<Output = Result<Buffer>> + MaybeSend;
 
     /// Read all data from the reader.
@@ -61,7 +126,7 @@ pub trait Read: Unpin + Send + Sync {
     }
 }
 
-impl Read for () {
+impl ReadStream for () {
     async fn read(&mut self) -> Result<Buffer> {
         Err(Error::new(
             ErrorKind::Unsupported,
@@ -70,31 +135,31 @@ impl Read for () {
     }
 }
 
-impl Read for Bytes {
+impl ReadStream for Bytes {
     async fn read(&mut self) -> Result<Buffer> {
         Ok(Buffer::from(self.split_off(0)))
     }
 }
 
-impl Read for Buffer {
+impl ReadStream for Buffer {
     async fn read(&mut self) -> Result<Buffer> {
         Ok(mem::take(self))
     }
 }
 
-/// ReadDyn is the dyn version of [`Read`] make it possible to use as
-/// `Box<dyn ReadDyn>`.
-pub trait ReadDyn: Unpin + Send + Sync {
-    /// The dyn version of [`Read::read`].
-    ///
-    /// This function returns a boxed future to make it object safe.
+/// ReadStreamDyn is the dyn-compatible adapter for [`ReadStream`].
+///
+/// It boxes returned futures to support `Box<dyn ReadStreamDyn>`, adding one
+/// allocation per call at the type-erasure boundary.
+pub trait ReadStreamDyn: Unpin + Send + Sync {
+    /// The dyn version of [`ReadStream::read`].
     fn read_dyn(&mut self) -> BoxedFuture<'_, Result<Buffer>>;
 
-    /// The dyn version of [`Read::read_all`]
+    /// The dyn version of [`ReadStream::read_all`].
     fn read_all_dyn(&mut self) -> BoxedFuture<'_, Result<Buffer>>;
 }
 
-impl<T: Read + ?Sized> ReadDyn for T {
+impl<T: ReadStream + ?Sized> ReadStreamDyn for T {
     fn read_dyn(&mut self) -> BoxedFuture<'_, Result<Buffer>> {
         Box::pin(self.read())
     }
@@ -108,7 +173,7 @@ impl<T: Read + ?Sized> ReadDyn for T {
 ///
 /// Take care about the `deref_mut()` here. This makes sure that we are calling functions
 /// upon `&mut T` instead of `&mut Box<T>`. The later could result in infinite recursion.
-impl<T: ReadDyn + ?Sized> Read for Box<T> {
+impl<T: ReadStreamDyn + ?Sized> ReadStream for Box<T> {
     async fn read(&mut self) -> Result<Buffer> {
         self.deref_mut().read_dyn().await
     }

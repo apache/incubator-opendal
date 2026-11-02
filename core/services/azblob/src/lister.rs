@@ -21,13 +21,15 @@ use bytes::Buf;
 use quick_xml::de;
 
 use super::core::AzblobCore;
+use super::core::ErrorContext;
 use super::core::ListBlobsOutput;
-use super::error::parse_error;
+use super::core::parse_error;
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct AzblobLister {
     core: Arc<AzblobCore>,
+    ctx: OperationContext,
 
     path: String,
     delimiter: &'static str,
@@ -35,11 +37,18 @@ pub struct AzblobLister {
 }
 
 impl AzblobLister {
-    pub fn new(core: Arc<AzblobCore>, path: String, recursive: bool, limit: Option<usize>) -> Self {
+    pub fn new(
+        core: Arc<AzblobCore>,
+        ctx: OperationContext,
+        path: String,
+        recursive: bool,
+        limit: Option<usize>,
+    ) -> Self {
         let delimiter = if recursive { "" } else { "/" };
 
         Self {
             core,
+            ctx,
             path,
             delimiter,
             limit,
@@ -51,11 +60,20 @@ impl oio::PageList for AzblobLister {
     async fn next_page(&self, ctx: &mut oio::PageContext) -> Result<()> {
         let resp = self
             .core
-            .azblob_list_blobs(&self.path, &ctx.token, self.delimiter, self.limit)
+            .azblob_list_blobs(
+                &self.ctx,
+                &self.path,
+                &ctx.token,
+                self.delimiter,
+                self.limit,
+            )
             .await?;
 
         if resp.status() != http::StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListBlobs")),
+                resp,
+            ));
         }
 
         let bs = resp.into_body();
@@ -76,7 +94,7 @@ impl oio::PageList for AzblobLister {
         for prefix in prefixes {
             let de = oio::Entry::new(
                 &build_rel_path(&self.core.root, &prefix.name),
-                Metadata::new(EntryMode::DIR),
+                MetadataBuilder::dir().build(),
             );
 
             ctx.entries.push_back(de)
@@ -88,17 +106,19 @@ impl oio::PageList for AzblobLister {
                 path = "/".to_string();
             }
 
-            let meta = Metadata::new(EntryMode::from_path(&path))
-                // Keep fit with ETag header.
-                .with_etag(format!("\"{}\"", object.properties.etag.as_str()))
-                .with_content_length(object.properties.content_length)
-                .with_content_md5(object.properties.content_md5)
-                .with_content_type(object.properties.content_type)
-                .with_last_modified(Timestamp::parse_rfc2822(
+            let mut meta = if path.ends_with('/') {
+                MetadataBuilder::dir()
+            } else {
+                MetadataBuilder::file(object.properties.content_length)
+            };
+            meta.etag(format!("\"{}\"", object.properties.etag.as_str()))
+                .content_md5(object.properties.content_md5)
+                .content_type(object.properties.content_type)
+                .last_modified(Timestamp::parse_rfc2822(
                     object.properties.last_modified.as_str(),
                 )?);
 
-            let de = oio::Entry::with(path, meta);
+            let de = oio::Entry::with(path, meta.build());
             ctx.entries.push_back(de);
         }
 

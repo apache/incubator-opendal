@@ -49,8 +49,9 @@ services-gdrive = ["opendal/services-gdrive"]
 services-ghac = ["opendal/services-ghac"]
 services-gridfs = ["opendal/services-gridfs"]
 services-hdfs = ["opendal/services-hdfs"]
+services-hf = ["opendal/services-hf"]
 services-http = ["opendal/services-http"]
-services-huggingface = ["opendal/services-huggingface"]
+services-huggingface = ["services-hf"]
 services-ipfs = ["opendal/services-ipfs"]
 services-ipmfs = ["opendal/services-ipmfs"]
 services-memcached = ["opendal/services-memcached"]
@@ -84,8 +85,18 @@ arbitrary = { version = "1.4.2", features = ["derive"] }
 libfuzzer-sys = "0.4"
 log = { workspace = true }
 logforth = { workspace = true }
-opendal = { path = "..", features = ["tests"] }
+opendal = { path = "..", features = ["tests", "services-fs"] }
 uuid = { workspace = true, features = ["v4"] }
+
+[[bin]]
+name = "fuzz_from_uri"
+path = "fuzz_from_uri.rs"
+test = false
+
+[[bin]]
+name = "fuzz_path"
+path = "fuzz_path.rs"
+test = false
 
 [[bin]]
 name = "fuzz_reader"

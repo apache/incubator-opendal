@@ -19,30 +19,35 @@ use std::sync::Arc;
 
 use http::StatusCode;
 
+use super::core::parse_error;
 use super::core::*;
-use super::error::parse_error;
+use opendal_core::OperationContext;
 use opendal_core::Result;
 use opendal_core::raw::*;
 
 pub struct CosDeleter {
     core: Arc<CosCore>,
+    ctx: OperationContext,
 }
 
 impl CosDeleter {
-    pub fn new(core: Arc<CosCore>) -> Self {
-        Self { core }
+    pub fn new(core: Arc<CosCore>, ctx: OperationContext) -> Self {
+        Self { core, ctx }
     }
 }
 
 impl oio::OneShotDelete for CosDeleter {
     async fn delete_once(&self, path: String, args: OpDelete) -> Result<()> {
-        let resp = self.core.cos_delete_object(&path, &args).await?;
+        let resp = self.core.cos_delete_object(&self.ctx, &path, &args).await?;
 
         let status = resp.status();
 
         match status {
             StatusCode::NO_CONTENT | StatusCode::ACCEPTED | StatusCode::NOT_FOUND => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("DeleteObject")),
+                resp,
+            )),
         }
     }
 }

@@ -1,6 +1,6 @@
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [x] create_dir
 - [x] stat
@@ -12,9 +12,22 @@ This service can be used to:
 - [x] rename
 - [ ] presign
 
-# Configuration
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
 
-- `root`: Set the work directory for backend
+## Behavior Notes
+
+Google Drive allows duplicate file or directory names under the same parent.
+When multiple entries match the same path, OpenDAL resolves the most recently
+modified match, falling back to the newer creation time if needed.
+
+Concurrent directory creation through an operator and its clones reuses work for shared ancestors and allows independent paths to progress concurrently.
+
+## Configuration
+
+Use [`crate::GdriveConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
 ### Credentials related
 
@@ -42,7 +55,19 @@ And your OAuth scope contains `https://www.googleapis.com/auth/drive`.
 Please refer to [GoogleDrive OAuth2 Flow](https://developers.google.com/identity/protocols/oauth2/)
 for more information.
 
-You can refer to [`GdriveBuilder`]'s docs for more information
+### Shared drives
+
+- `drive_id`: set the id of a shared drive (formerly Team Drive)
+
+By default, OpenDAL resolves `root` inside the user's My Drive. When `drive_id`
+is set, OpenDAL resolves `root` inside that shared drive instead and scopes
+every lookup and listing to it. The id appears at the end of the shared drive
+URL, for example `https://drive.google.com/drive/folders/<drive_id>`.
+
+The authorized user must be a member of the shared drive. Write and create_dir
+require the Contributor role or higher. Delete, rename, and copy onto an
+existing path move items or send them to the trash, which requires the Content
+manager role or higher.
 
 ## Example
 
@@ -59,7 +84,26 @@ async fn main() -> Result<()> {
         .root("/test")
         .access_token("<token>");
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
+    Ok(())
+}
+```
+
+### Via Builder with a shared drive
+
+```rust,no_run
+use opendal_core::Operator;
+use opendal_core::Result;
+use opendal_service_gdrive::Gdrive;
+
+#[tokio::main]
+async fn main() -> Result<()> {
+    let mut builder = Gdrive::default()
+        .drive_id("<drive_id>")
+        .root("/test")
+        .access_token("<token>");
+
+    let op: Operator = Operator::new(builder)?;
     Ok(())
 }
 ```

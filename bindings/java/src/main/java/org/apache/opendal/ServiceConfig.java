@@ -51,7 +51,7 @@ public interface ServiceConfig {
     Map<String, String> configMap();
 
     /**
-     * Configuration for service aliyun_drive.
+     * Configuration for service aliyun-drive.
      */
     @Builder
     @Data
@@ -94,7 +94,7 @@ public interface ServiceConfig {
 
         @Override
         public String scheme() {
-            return "aliyun_drive";
+            return "aliyun-drive";
         }
 
         @Override
@@ -173,7 +173,9 @@ public interface ServiceConfig {
          */
         public final String accountName;
         /**
-         * <p>The maximum batch operations of Azblob service backend.</p>
+         * <p>Deprecated: Azblob delete batch capability is enabled by default with Azure Blob's 256-operation batch limit.</p>
+         *
+         * @deprecated Azblob delete batch capability is enabled by default with Azure Blob's 256-operation batch limit. Use CapabilityOverrideLayer to override delete_max_size for specific endpoints.
          */
         public final Long batchMaxOperations;
         /**
@@ -185,7 +187,9 @@ public interface ServiceConfig {
          */
         public final String encryptionAlgorithm;
         /**
-         * <p>The encryption key of Azblob service backend.</p>
+         * <p>The Base64-encoded AES-256 customer-provided encryption key.</p>
+         * <p>The key must decode to exactly 32 bytes. Building an operator returns
+         * <code>ConfigInvalid</code> for invalid Base64 or a different decoded length.</p>
          */
         public final String encryptionKey;
         /**
@@ -210,6 +214,10 @@ public interface ServiceConfig {
          * <p>The sas token of Azblob service backend.</p>
          */
         public final String sasToken;
+        /**
+         * <p>Skip signature will skip loading credentials and signing requests.</p>
+         */
+        public final Boolean skipSignature;
 
         @Override
         public String scheme() {
@@ -246,6 +254,9 @@ public interface ServiceConfig {
             }
             if (sasToken != null) {
                 map.put("sas_token", sasToken);
+            }
+            if (skipSignature != null) {
+                map.put("skip_signature", String.valueOf(skipSignature));
             }
             return map;
         }
@@ -294,6 +305,14 @@ public interface ServiceConfig {
          * </ul>
          */
         public final String clientSecret;
+        /**
+         * <p>Whether hierarchical namespace (HNS) is enabled for the storage account.
+         * When enabled, recursive deletion can use pagination to avoid timeouts on large directories.</p>
+         * <ul>
+         * <li>default value: <code>false</code></li>
+         * </ul>
+         */
+        public final Boolean enableHns;
         /**
          * <p>Endpoint of this backend.</p>
          */
@@ -345,6 +364,9 @@ public interface ServiceConfig {
             }
             if (clientSecret != null) {
                 map.put("client_secret", clientSecret);
+            }
+            if (enableHns != null) {
+                map.put("enable_hns", String.valueOf(enableHns));
             }
             if (endpoint != null) {
                 map.put("endpoint", endpoint);
@@ -513,7 +535,7 @@ public interface ServiceConfig {
     }
 
     /**
-     * Configuration for service cloudflare_kv.
+     * Configuration for service cloudflare-kv.
      */
     @Builder
     @Data
@@ -542,7 +564,7 @@ public interface ServiceConfig {
 
         @Override
         public String scheme() {
-            return "cloudflare_kv";
+            return "cloudflare-kv";
         }
 
         @Override
@@ -611,7 +633,9 @@ public interface ServiceConfig {
          */
         public final Boolean disableConfigLoad;
         /**
-         * <p>is bucket versioning enabled for this bucket</p>
+         * <p>Deprecated: COS versioning capability is enabled by default.</p>
+         *
+         * @deprecated COS versioning capability is enabled by default and this option is no longer needed.
          */
         public final Boolean enableVersioning;
         /**
@@ -630,6 +654,19 @@ public interface ServiceConfig {
          * <p>Secret key of this backend.</p>
          */
         public final String secretKey;
+        /**
+         * <p>Security token (a.k.a. session token) of this backend.</p>
+         * <p>This is used for temporary credentials issued by Tencent Cloud STS
+         * (e.g. <code>GetFederationToken</code> / <code>AssumeRole</code>). When <code>security_token</code> is
+         * provided, it will be used together with <code>secret_id</code> and <code>secret_key</code>
+         * to sign requests, and the <code>x-cos-security-token</code> header will be
+         * attached automatically by the signer.</p>
+         * <p>If this field is not set, OpenDAL will also fall back to reading
+         * the token from environment variables <code>TENCENTCLOUD_TOKEN</code>,
+         * <code>TENCENTCLOUD_SECURITY_TOKEN</code> or <code>QCLOUD_SECRET_TOKEN</code> (unless
+         * <code>disable_config_load</code> is enabled).</p>
+         */
+        public final String securityToken;
 
         @Override
         public String scheme() {
@@ -659,6 +696,9 @@ public interface ServiceConfig {
             }
             if (secretKey != null) {
                 map.put("secret_key", secretKey);
+            }
+            if (securityToken != null) {
+                map.put("security_token", securityToken);
             }
             return map;
         }
@@ -864,27 +904,39 @@ public interface ServiceConfig {
     @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
     class Etcd implements ServiceConfig {
         /**
-         * <p>certificate authority file path</p>
+         * <p>PEM certificate authority file used to verify the server.
+         * Enables TLS independently of <code>cert_path</code> and <code>key_path</code>.</p>
          * <p>default is None</p>
          */
         public final String caPath;
         /**
-         * <p>cert path</p>
+         * <p>PEM client certificate file used for mutual TLS.
+         * Must be configured together with <code>key_path</code>.</p>
          * <p>default is None</p>
          */
         public final String certPath;
         /**
          * <p>network address of the Etcd services.
-         * If use https, must set TLS options: <code>ca_path</code>, <code>cert_path</code>, <code>key_path</code>.
+         * Use HTTPS endpoints for TLS. Set <code>ca_path</code> to trust a custom certificate authority.
+         * Client authentication additionally requires both <code>cert_path</code> and <code>key_path</code>.
          * e.g. &quot;127.0.0.1:23790,127.0.0.1:23791,127.0.0.1:23792&quot; or &quot;http://127.0.0.1:23790,http://127.0.0.1:23791,http://127.0.0.1:23792&quot; or &quot;https://127.0.0.1:23790,https://127.0.0.1:23791,https://127.0.0.1:23792&quot;</p>
          * <p>default is &quot;http://127.0.0.1:2379&quot;</p>
          */
         public final String endpoints;
         /**
-         * <p>key path</p>
+         * <p>PEM client private key file used for mutual TLS.
+         * Must be configured together with <code>cert_path</code>.</p>
          * <p>default is None</p>
          */
         public final String keyPath;
+        /**
+         * <p>the maximum size in bytes of a gRPC response that the etcd client decodes.</p>
+         * <p>Set this to read values larger than the etcd client's own limit. The etcd
+         * server must also allow responses of that size.</p>
+         * <p>Refer to <a href="https://docs.rs/etcd-client/latest/etcd_client/struct.KvClient.html#method.max_decoding_message_size"><code>etcd_client::KvClient::max_decoding_message_size</code></a></p>
+         * <p>default is None, which keeps the etcd client default of 4 MiB</p>
+         */
+        public final Long maxDecodingMessageSize;
         /**
          * <p>the password for authentication</p>
          * <p>default is None</p>
@@ -921,6 +973,9 @@ public interface ServiceConfig {
             if (keyPath != null) {
                 map.put("key_path", keyPath);
             }
+            if (maxDecodingMessageSize != null) {
+                map.put("max_decoding_message_size", String.valueOf(maxDecodingMessageSize));
+            }
             if (password != null) {
                 map.put("password", password);
             }
@@ -929,6 +984,94 @@ public interface ServiceConfig {
             }
             if (username != null) {
                 map.put("username", username);
+            }
+            return map;
+        }
+    }
+
+    /**
+     * Configuration for service foyer.
+     */
+    @Builder
+    @Data
+    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
+    class Foyer implements ServiceConfig {
+        /**
+         * <p>Disk cache total capacity in bytes.
+         * Only used when <code>disk_path</code> is set.</p>
+         */
+        public final Long diskCapacity;
+        /**
+         * <p>Individual cache file size in bytes.</p>
+         * <p>Default is 1 MiB.
+         * Only used when <code>disk_path</code> is set.</p>
+         */
+        public final Long diskFileSize;
+        /**
+         * <p>Disk cache directory path.</p>
+         * <p>If set, enables hybrid cache with disk storage. Data will be persisted to
+         * this directory when memory cache is full.</p>
+         */
+        public final String diskPath;
+        /**
+         * <p>Memory capacity in bytes for the cache.</p>
+         */
+        public final Long memory;
+        /**
+         * <p>Name for this cache instance.</p>
+         */
+        public final String name;
+        /**
+         * <p>Recovery mode when starting the cache.</p>
+         * <p>Valid values: &quot;none&quot; (default), &quot;quiet&quot;, &quot;strict&quot;.</p>
+         * <ul>
+         * <li>&quot;none&quot;: Don't recover from disk</li>
+         * <li>&quot;quiet&quot;: Recover and skip errors</li>
+         * <li>&quot;strict&quot;: Recover and panic on errors</li>
+         * </ul>
+         */
+        public final String recoverMode;
+        /**
+         * <p>Root path of this backend.</p>
+         */
+        public final String root;
+        /**
+         * <p>Number of shards for concurrent access.</p>
+         * <p>Default is 1. Higher values improve concurrency but increase overhead.</p>
+         */
+        public final Long shards;
+
+        @Override
+        public String scheme() {
+            return "foyer";
+        }
+
+        @Override
+        public Map<String, String> configMap() {
+            final HashMap<String, String> map = new HashMap<>();
+            if (diskCapacity != null) {
+                map.put("disk_capacity", String.valueOf(diskCapacity));
+            }
+            if (diskFileSize != null) {
+                map.put("disk_file_size", String.valueOf(diskFileSize));
+            }
+            if (diskPath != null) {
+                map.put("disk_path", diskPath);
+            }
+            if (memory != null) {
+                map.put("memory", String.valueOf(memory));
+            }
+            if (name != null) {
+                map.put("name", name);
+            }
+            if (recoverMode != null) {
+                map.put("recover_mode", recoverMode);
+            }
+            if (root != null) {
+                map.put("root", root);
+            }
+            if (shards != null) {
+                map.put("shards", String.valueOf(shards));
             }
             return map;
         }
@@ -978,6 +1121,8 @@ public interface ServiceConfig {
         /**
          * <p>Allow opendal to send requests without signing when credentials are not
          * loaded.</p>
+         *
+         * @deprecated Please use `skip_signature` instead of `allow_anonymous`
          */
         public final Boolean allowAnonymous;
         /**
@@ -1027,6 +1172,10 @@ public interface ServiceConfig {
          */
         public final String serviceAccount;
         /**
+         * <p>Skip signature will skip loading credentials and signing requests.</p>
+         */
+        public final Boolean skipSignature;
+        /**
          * <p>A Google Cloud OAuth2 token.</p>
          * <p>Takes precedence over <code>credential</code> and <code>credential_path</code>.</p>
          */
@@ -1074,6 +1223,104 @@ public interface ServiceConfig {
             if (serviceAccount != null) {
                 map.put("service_account", serviceAccount);
             }
+            if (skipSignature != null) {
+                map.put("skip_signature", String.valueOf(skipSignature));
+            }
+            if (token != null) {
+                map.put("token", token);
+            }
+            return map;
+        }
+    }
+
+    /**
+     * Configuration for service gcs-grpc.
+     */
+    @Builder
+    @Data
+    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
+    class GcsGrpc implements ServiceConfig {
+        /**
+         * <p>Bucket name.</p>
+         */
+        public final @NonNull String bucket;
+        /**
+         * <p>Base64-encoded service account credential.</p>
+         */
+        public final String credential;
+        /**
+         * <p>Path to a service account credential file.</p>
+         */
+        public final String credentialPath;
+        /**
+         * <p>Disable environment and well-known credential loading.</p>
+         */
+        public final Boolean disableConfigLoad;
+        /**
+         * <p>Disable the GCE metadata credential provider.</p>
+         */
+        public final Boolean disableVmMetadata;
+        /**
+         * <p>gRPC endpoint.</p>
+         */
+        public final String endpoint;
+        /**
+         * <p>Root path for all operations.</p>
+         */
+        public final String root;
+        /**
+         * <p>OAuth 2.0 scope.</p>
+         */
+        public final String scope;
+        /**
+         * <p>Service account used by the GCE metadata server.</p>
+         */
+        public final String serviceAccount;
+        /**
+         * <p>Send requests without authentication.</p>
+         */
+        public final Boolean skipSignature;
+        /**
+         * <p>OAuth 2.0 access token.</p>
+         */
+        public final String token;
+
+        @Override
+        public String scheme() {
+            return "gcs-grpc";
+        }
+
+        @Override
+        public Map<String, String> configMap() {
+            final HashMap<String, String> map = new HashMap<>();
+            map.put("bucket", bucket);
+            if (credential != null) {
+                map.put("credential", credential);
+            }
+            if (credentialPath != null) {
+                map.put("credential_path", credentialPath);
+            }
+            if (disableConfigLoad != null) {
+                map.put("disable_config_load", String.valueOf(disableConfigLoad));
+            }
+            if (disableVmMetadata != null) {
+                map.put("disable_vm_metadata", String.valueOf(disableVmMetadata));
+            }
+            if (endpoint != null) {
+                map.put("endpoint", endpoint);
+            }
+            if (root != null) {
+                map.put("root", root);
+            }
+            if (scope != null) {
+                map.put("scope", scope);
+            }
+            if (serviceAccount != null) {
+                map.put("service_account", serviceAccount);
+            }
+            if (skipSignature != null) {
+                map.put("skip_signature", String.valueOf(skipSignature));
+            }
             if (token != null) {
                 map.put("token", token);
             }
@@ -1101,6 +1348,12 @@ public interface ServiceConfig {
          */
         public final String clientSecret;
         /**
+         * <p>Shared drive (formerly Team Drive) id for gdrive.</p>
+         * <p>When set, gdrive resolves <code>root</code> inside this shared drive instead of
+         * the user's My Drive.</p>
+         */
+        public final String driveId;
+        /**
          * <p>Refresh token for gdrive.</p>
          */
         public final String refreshToken;
@@ -1125,6 +1378,9 @@ public interface ServiceConfig {
             }
             if (clientSecret != null) {
                 map.put("client_secret", clientSecret);
+            }
+            if (driveId != null) {
+                map.put("drive_id", driveId);
             }
             if (refreshToken != null) {
                 map.put("refresh_token", refreshToken);
@@ -1235,6 +1491,106 @@ public interface ServiceConfig {
     }
 
     /**
+     * Configuration for service goosefs.
+     */
+    @Builder
+    @Data
+    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
+    class Goosefs implements ServiceConfig {
+        /**
+         * <p>Authentication type.</p>
+         * <p>Supported values: <code>&quot;nosasl&quot;</code>, <code>&quot;simple&quot;</code>.
+         * Default: <code>&quot;simple&quot;</code> — PLAIN SASL with username.
+         * <code>&quot;nosasl&quot;</code> — skip authentication entirely.</p>
+         */
+        public final String authType;
+        /**
+         * <p>Authentication username.</p>
+         * <p>Used in SIMPLE mode as the login identity.
+         * Default: current OS user (<code>$USER</code> / <code>$USERNAME</code>).</p>
+         */
+        public final String authUsername;
+        /**
+         * <p>Block size in bytes for new files (default: 64 MiB).</p>
+         */
+        public final Long blockSize;
+        /**
+         * <p>Chunk size in bytes for streaming RPCs (default: 1 MiB).</p>
+         */
+        public final Long chunkSize;
+        /**
+         * <p>Master address(es) in <code>host:port</code> format.</p>
+         * <p>For single master: <code>&quot;10.0.0.1:9200&quot;</code>
+         * For HA (comma-separated): <code>&quot;10.0.0.1:9200,10.0.0.2:9200,10.0.0.3:9200&quot;</code></p>
+         * <p>When multiple addresses are provided, the client uses
+         * <code>PollingMasterInquireClient</code> to discover the Primary Master automatically.</p>
+         * <p>Resolution precedence at <code>build()</code> time (highest → lowest), following
+         * <a href="https://github.com/Tencent/tencent-goosefs-rust-sdk/blob/main/docs/CLIENT_CONFIGURATION.md">goosefs-sdk <code>docs/CLIENT_CONFIGURATION.md</code></a> §1:</p>
+         * <ol>
+         * <li><code>GOOSEFS_MASTER_ADDR</code> environment variable</li>
+         * <li><code>goosefs.master.rpc.addresses</code> / <code>goosefs.master.hostname</code> in
+         * <code>goosefs-site.properties</code></li>
+         * <li>This field (from the builder, the OpenDAL config map, or the URI
+         * authority of <code>goosefs://host:port/path</code>)</li>
+         * </ol>
+         * <p>A site file that declares masters therefore outranks this field: the
+         * file carries the deployment's whole HA master list, which a single URI
+         * authority cannot express. Set <code>GOOSEFS_MASTER_ADDR</code> to override a
+         * deployed site file for one process.</p>
+         * <p><code>build()</code> fails with <code>ConfigInvalid</code> when <strong>none</strong> of the above
+         * supplies a master address.</p>
+         */
+        public final String masterAddr;
+        /**
+         * <p>Root path of this backend.</p>
+         * <p>All operations will happen under this root.
+         * Default to <code>/</code> if not set.</p>
+         */
+        public final String root;
+        /**
+         * <p>Default write type for new files.</p>
+         * <p>Supported values: <code>&quot;must_cache&quot;</code>, <code>&quot;try_cache&quot;</code>, <code>&quot;cache_through&quot;</code>,
+         * <code>&quot;through&quot;</code>, <code>&quot;async_through&quot;</code>. Matching is case-insensitive.
+         * <code>build()</code> fails with <code>ConfigInvalid</code> when the value is not one of
+         * these.
+         * Default: <code>&quot;must_cache&quot;</code>.</p>
+         */
+        public final String writeType;
+
+        @Override
+        public String scheme() {
+            return "goosefs";
+        }
+
+        @Override
+        public Map<String, String> configMap() {
+            final HashMap<String, String> map = new HashMap<>();
+            if (authType != null) {
+                map.put("auth_type", authType);
+            }
+            if (authUsername != null) {
+                map.put("auth_username", authUsername);
+            }
+            if (blockSize != null) {
+                map.put("block_size", String.valueOf(blockSize));
+            }
+            if (chunkSize != null) {
+                map.put("chunk_size", String.valueOf(chunkSize));
+            }
+            if (masterAddr != null) {
+                map.put("master_addr", masterAddr);
+            }
+            if (root != null) {
+                map.put("root", root);
+            }
+            if (writeType != null) {
+                map.put("write_type", writeType);
+            }
+            return map;
+        }
+    }
+
+    /**
      * Configuration for service gridfs.
      */
     @Builder
@@ -1290,14 +1646,16 @@ public interface ServiceConfig {
     }
 
     /**
-     * Configuration for service hdfs_native.
+     * Configuration for service hdfs-native.
      */
     @Builder
     @Data
     @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
     class HdfsNative implements ServiceConfig {
         /**
-         * <p>enable the append capacity</p>
+         * <p>Deprecated: HDFS Native append capability is enabled by default.</p>
+         *
+         * @deprecated HDFS Native append capability is enabled by default and this option is no longer needed.
          */
         public final Boolean enableAppend;
         /**
@@ -1305,13 +1663,17 @@ public interface ServiceConfig {
          */
         public final String nameNode;
         /**
+         * <p>other options for hdfs client</p>
+         */
+        public final Map<String, String> options;
+        /**
          * <p>work dir of this backend</p>
          */
         public final String root;
 
         @Override
         public String scheme() {
-            return "hdfs_native";
+            return "hdfs-native";
         }
 
         @Override
@@ -1323,8 +1685,112 @@ public interface ServiceConfig {
             if (nameNode != null) {
                 map.put("name_node", nameNode);
             }
+            if (options != null) {
+                map.putAll(options);
+            }
             if (root != null) {
                 map.put("root", root);
+            }
+            return map;
+        }
+    }
+
+    /**
+     * Configuration for service hf.
+     */
+    @Builder
+    @Data
+    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
+    class Hf implements ServiceConfig {
+        /**
+         * <p>Disable loading config from the environment.</p>
+         * <p>When set, the service ignores <code>HF_ENDPOINT</code>, <code>HF_HUB_DISABLE_XET</code>,
+         * <code>HF_TOKEN</code>, <code>HF_TOKEN_PATH</code>, and the <code>token</code> file under <code>HF_HOME</code>,
+         * <code>$XDG_CACHE_HOME/huggingface</code> or <code>~/.cache/huggingface</code>.</p>
+         */
+        public final Boolean disableConfigLoad;
+        /**
+         * <p>Download mode. Either <code>xet</code> (default) or <code>http</code>.</p>
+         * <p>When unset, the mode is resolved from the <code>HF_HUB_DISABLE_XET</code>
+         * environment variable: a non-empty value forces <code>http</code>, otherwise it
+         * defaults to <code>xet</code>. An explicit value here takes precedence.</p>
+         * <p>See <a href="https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfhubdisablexet">https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfhubdisablexet</a>.</p>
+         */
+        public final String downloadMode;
+        /**
+         * <p>Enable caching of resolved HTTP download addresses and XET file metadata.</p>
+         * <p>Defaults to <code>false</code>. Set to <code>true</code> to share resolve results across readers
+         * on the same backend. Changed files may remain invisible while cached
+         * results are reused. A reader retains XET metadata from its first read for
+         * its lifetime. Create a new reader to resolve the path again when this
+         * option is disabled.
+         * See [<code>HfBuilder::enable_resolve_cache</code>] for freshness semantics.</p>
+         */
+        public final Boolean enableResolveCache;
+        /**
+         * <p>Endpoint of the Hugging Face Hub.</p>
+         * <p>The default is <code>https://huggingface.co</code>.</p>
+         */
+        public final String endpoint;
+        /**
+         * <p>Repo id of this backend.</p>
+         * <p>This is required.</p>
+         */
+        public final String repoId;
+        /**
+         * <p>Repo type of this backend. Required.</p>
+         */
+        public final String repoType;
+        /**
+         * <p>Revision of this backend.</p>
+         * <p>Default is main.</p>
+         */
+        public final String revision;
+        /**
+         * <p>Root of this backend. Can be &quot;/path/to/dir&quot;.</p>
+         * <p>Default is &quot;/&quot;.</p>
+         */
+        public final String root;
+        /**
+         * <p>Token of this backend.</p>
+         * <p>This is optional.</p>
+         */
+        public final String token;
+
+        @Override
+        public String scheme() {
+            return "hf";
+        }
+
+        @Override
+        public Map<String, String> configMap() {
+            final HashMap<String, String> map = new HashMap<>();
+            if (disableConfigLoad != null) {
+                map.put("disable_config_load", String.valueOf(disableConfigLoad));
+            }
+            if (downloadMode != null) {
+                map.put("download_mode", downloadMode);
+            }
+            if (enableResolveCache != null) {
+                map.put("enable_resolve_cache", String.valueOf(enableResolveCache));
+            }
+            if (endpoint != null) {
+                map.put("endpoint", endpoint);
+            }
+            if (repoId != null) {
+                map.put("repo_id", repoId);
+            }
+            if (repoType != null) {
+                map.put("repo_type", repoType);
+            }
+            if (revision != null) {
+                map.put("revision", revision);
+            }
+            if (root != null) {
+                map.put("root", root);
+            }
+            if (token != null) {
+                map.put("token", token);
             }
             return map;
         }
@@ -1380,70 +1846,6 @@ public interface ServiceConfig {
             }
             if (username != null) {
                 map.put("username", username);
-            }
-            return map;
-        }
-    }
-
-    /**
-     * Configuration for service huggingface.
-     */
-    @Builder
-    @Data
-    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
-    class Huggingface implements ServiceConfig {
-        /**
-         * <p>Repo id of this backend.</p>
-         * <p>This is required.</p>
-         */
-        public final String repoId;
-        /**
-         * <p>Repo type of this backend. Default is model.</p>
-         * <p>Available values:</p>
-         * <ul>
-         * <li>model</li>
-         * <li>dataset</li>
-         * </ul>
-         */
-        public final String repoType;
-        /**
-         * <p>Revision of this backend.</p>
-         * <p>Default is main.</p>
-         */
-        public final String revision;
-        /**
-         * <p>Root of this backend. Can be &quot;/path/to/dir&quot;.</p>
-         * <p>Default is &quot;/&quot;.</p>
-         */
-        public final String root;
-        /**
-         * <p>Token of this backend.</p>
-         * <p>This is optional.</p>
-         */
-        public final String token;
-
-        @Override
-        public String scheme() {
-            return "huggingface";
-        }
-
-        @Override
-        public Map<String, String> configMap() {
-            final HashMap<String, String> map = new HashMap<>();
-            if (repoId != null) {
-                map.put("repo_id", repoId);
-            }
-            if (repoType != null) {
-                map.put("repo_type", repoType);
-            }
-            if (revision != null) {
-                map.put("revision", revision);
-            }
-            if (root != null) {
-                map.put("root", root);
-            }
-            if (token != null) {
-                map.put("token", token);
             }
             return map;
         }
@@ -1641,7 +2043,7 @@ public interface ServiceConfig {
          * <p>The maximum number of connections allowed.</p>
          * <p>default is 10</p>
          */
-        public final Integer connectionPoolMaxSize;
+        public final Long connectionPoolMaxSize;
         /**
          * <p>The default ttl for put operations.</p>
          */
@@ -2002,7 +2404,9 @@ public interface ServiceConfig {
          */
         public final String bucket;
         /**
-         * <p>Is bucket versioning enabled for this bucket</p>
+         * <p>Deprecated: OBS versioning capability is not controlled by service config.</p>
+         *
+         * @deprecated OBS versioning capability is not controlled by this option and this option is no longer needed.
          */
         public final Boolean enableVersioning;
         /**
@@ -2068,7 +2472,9 @@ public interface ServiceConfig {
          */
         public final String clientSecret;
         /**
-         * <p>Enabling version support</p>
+         * <p>Deprecated: OneDrive supports version listing without this option.</p>
+         *
+         * @deprecated OneDrive supports version listing without this option.
          */
         public final Boolean enableVersioning;
         /**
@@ -2117,6 +2523,10 @@ public interface ServiceConfig {
     @Data
     @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
     class Opfs implements ServiceConfig {
+        /**
+         * <p>Root directory for this backend.</p>
+         */
+        public final String root;
 
         @Override
         public String scheme() {
@@ -2126,6 +2536,9 @@ public interface ServiceConfig {
         @Override
         public Map<String, String> configMap() {
             final HashMap<String, String> map = new HashMap<>();
+            if (root != null) {
+                map.put("root", root);
+            }
             return map;
         }
     }
@@ -2141,7 +2554,7 @@ public interface ServiceConfig {
          * <p>Access key id for oss.</p>
          * <ul>
          * <li>this field if it's <code>is_some</code></li>
-         * <li>env value: [<code>ALIBABA_CLOUD_ACCESS_KEY_ID</code>]</li>
+         * <li>env value: <code>ALIBABA_CLOUD_ACCESS_KEY_ID</code></li>
          * </ul>
          */
         public final String accessKeyId;
@@ -2149,7 +2562,7 @@ public interface ServiceConfig {
          * <p>Access key secret for oss.</p>
          * <ul>
          * <li>this field if it's <code>is_some</code></li>
-         * <li>env value: [<code>ALIBABA_CLOUD_ACCESS_KEY_SECRET</code>]</li>
+         * <li>env value: <code>ALIBABA_CLOUD_ACCESS_KEY_SECRET</code></li>
          * </ul>
          */
         public final String accessKeySecret;
@@ -2159,12 +2572,14 @@ public interface ServiceConfig {
         public final String addressingStyle;
         /**
          * <p>Allow anonymous for oss.</p>
+         *
+         * @deprecated Please use `skip_signature` instead of `allow_anonymous`
          */
         public final Boolean allowAnonymous;
         /**
-         * <p>The size of max batch operations.</p>
+         * <p>Deprecated: OSS delete batch capability is enabled by default.</p>
          *
-         * @deprecated Please use `delete_max_size` instead of `batch_max_operations`
+         * @deprecated OSS delete batch capability is enabled by default. Use CapabilityOverrideLayer to override delete_max_size for specific endpoints.
          */
         public final Long batchMaxOperations;
         /**
@@ -2172,11 +2587,15 @@ public interface ServiceConfig {
          */
         public final @NonNull String bucket;
         /**
-         * <p>The size of max delete operations.</p>
+         * <p>Deprecated: OSS delete batch capability is enabled by default.</p>
+         *
+         * @deprecated OSS delete batch capability is enabled by default. Use CapabilityOverrideLayer to override delete_max_size for specific endpoints.
          */
         public final Long deleteMaxSize;
         /**
-         * <p>is bucket versioning enabled for this bucket</p>
+         * <p>Deprecated: OSS versioning capability is enabled by default.</p>
+         *
+         * @deprecated OSS versioning capability is enabled by default and this option is no longer needed.
          */
         public final Boolean enableVersioning;
         /**
@@ -2184,10 +2603,14 @@ public interface ServiceConfig {
          */
         public final String endpoint;
         /**
+         * <p>external_id for this backend.</p>
+         */
+        public final String externalId;
+        /**
          * <p><code>oidc_provider_arn</code> will be loaded from</p>
          * <ul>
          * <li>this field if it's <code>is_some</code></li>
-         * <li>env value: [<code>ALIBABA_CLOUD_OIDC_PROVIDER_ARN</code>]</li>
+         * <li>env value: <code>ALIBABA_CLOUD_OIDC_PROVIDER_ARN</code></li>
          * </ul>
          */
         public final String oidcProviderArn;
@@ -2195,7 +2618,7 @@ public interface ServiceConfig {
          * <p><code>oidc_token_file</code> will be loaded from</p>
          * <ul>
          * <li>this field if it's <code>is_some</code></li>
-         * <li>env value: [<code>ALIBABA_CLOUD_OIDC_TOKEN_FILE</code>]</li>
+         * <li>env value: <code>ALIBABA_CLOUD_OIDC_TOKEN_FILE</code></li>
          * </ul>
          */
         public final String oidcTokenFile;
@@ -2212,7 +2635,7 @@ public interface ServiceConfig {
          * credential to assume role with <code>role_arn</code>.</p>
          * <ul>
          * <li>this field if it's <code>is_some</code></li>
-         * <li>env value: [<code>ALIBABA_CLOUD_ROLE_ARN</code>]</li>
+         * <li>env value: <code>ALIBABA_CLOUD_ROLE_ARN</code></li>
          * </ul>
          */
         public final String roleArn;
@@ -2228,7 +2651,7 @@ public interface ServiceConfig {
          * <p><code>security_token</code> will be loaded from</p>
          * <ul>
          * <li>this field if it's <code>is_some</code></li>
-         * <li>env value: [<code>ALIBABA_CLOUD_SECURITY_TOKEN</code>]</li>
+         * <li>env value: <code>ALIBABA_CLOUD_SECURITY_TOKEN</code></li>
          * </ul>
          */
         public final String securityToken;
@@ -2241,10 +2664,14 @@ public interface ServiceConfig {
          */
         public final String serverSideEncryptionKeyId;
         /**
+         * <p>Skip signature will skip loading credentials and signing requests.</p>
+         */
+        public final Boolean skipSignature;
+        /**
          * <p><code>sts_endpoint</code> will be loaded from</p>
          * <ul>
          * <li>this field if it's <code>is_some</code></li>
-         * <li>env value: [<code>ALIBABA_CLOUD_STS_ENDPOINT</code>]</li>
+         * <li>env value: <code>ALIBABA_CLOUD_STS_ENDPOINT</code></li>
          * </ul>
          */
         public final String stsEndpoint;
@@ -2282,6 +2709,9 @@ public interface ServiceConfig {
             if (endpoint != null) {
                 map.put("endpoint", endpoint);
             }
+            if (externalId != null) {
+                map.put("external_id", externalId);
+            }
             if (oidcProviderArn != null) {
                 map.put("oidc_provider_arn", oidcProviderArn);
             }
@@ -2311,6 +2741,9 @@ public interface ServiceConfig {
             }
             if (serverSideEncryptionKeyId != null) {
                 map.put("server_side_encryption_key_id", serverSideEncryptionKeyId);
+            }
+            if (skipSignature != null) {
+                map.put("skip_signature", String.valueOf(skipSignature));
             }
             if (stsEndpoint != null) {
                 map.put("sts_endpoint", stsEndpoint);
@@ -2528,7 +2961,7 @@ public interface ServiceConfig {
          * <p>The maximum number of connections allowed.</p>
          * <p>default is 10</p>
          */
-        public final Integer connectionPoolMaxSize;
+        public final Long connectionPoolMaxSize;
         /**
          * <p>the number of DBs redis can take is unlimited</p>
          * <p>default is db 0</p>
@@ -2611,15 +3044,22 @@ public interface ServiceConfig {
         /**
          * <p>Allow anonymous will allow opendal to send request without signing
          * when credential is not loaded.</p>
+         *
+         * @deprecated Please use `skip_signature` instead of `allow_anonymous`
          */
         public final Boolean allowAnonymous;
         /**
-         * <p>Set maximum batch operations of this backend.</p>
-         * <p>Some compatible services have a limit on the number of operations in a batch request.
-         * For example, R2 could return <code>Internal Error</code> while batch delete 1000 files.</p>
-         * <p>Please tune this value based on services' document.</p>
+         * <p>assume_role_duration_seconds for this backend.</p>
+         */
+        public final Integer assumeRoleDurationSeconds;
+        /**
+         * <p>assume_role_session_tags for this backend.</p>
+         */
+        public final Map<String, String> assumeRoleSessionTags;
+        /**
+         * <p>Deprecated: S3 delete batch capability is enabled by default.</p>
          *
-         * @deprecated Please use `delete_max_size` instead of `batch_max_operations`
+         * @deprecated S3 delete batch capability is enabled by default. Use CapabilityOverrideLayer to override delete_max_size for specific endpoints.
          */
         public final Long batchMaxOperations;
         /**
@@ -2633,9 +3073,15 @@ public interface ServiceConfig {
          * <p>Available options:</p>
          * <ul>
          * <li>&quot;crc32c&quot;</li>
+         * <li>&quot;md5&quot;</li>
          * </ul>
          */
         public final String checksumAlgorithm;
+        /**
+         * <p>Default ACL for new objects.
+         * Note that some s3 services like minio do not support this option.</p>
+         */
+        public final String defaultAcl;
         /**
          * <p>default storage_class for this backend.</p>
          * <p>Available values:</p>
@@ -2655,10 +3101,9 @@ public interface ServiceConfig {
          */
         public final String defaultStorageClass;
         /**
-         * <p>Set the maximum delete size of this backend.</p>
-         * <p>Some compatible services have a limit on the number of operations in a batch request.
-         * For example, R2 could return <code>Internal Error</code> while batch delete 1000 files.</p>
-         * <p>Please tune this value based on services' document.</p>
+         * <p>Deprecated: S3 delete batch capability is enabled by default.</p>
+         *
+         * @deprecated S3 delete batch capability is enabled by default. Use CapabilityOverrideLayer to override delete_max_size for specific endpoints.
          */
         public final Long deleteMaxSize;
         /**
@@ -2674,7 +3119,7 @@ public interface ServiceConfig {
         /**
          * <p>Disable load credential from ec2 metadata.</p>
          * <p>This option is used to disable the default behavior of opendal
-         * to load credential from ec2 metadata, a.k.a, IMDSv2</p>
+         * to load credential from ec2 metadata, a.k.a., IMDSv2</p>
          */
         public final Boolean disableEc2Metadata;
         /**
@@ -2684,13 +3129,15 @@ public interface ServiceConfig {
          */
         public final Boolean disableListObjectsV2;
         /**
-         * <p>Disable stat with override so that opendal will not send stat request with override queries.</p>
-         * <p>For example, R2 doesn't support stat with <code>response_content_type</code> query.</p>
+         * <p>Deprecated: S3 stat override capabilities are enabled by default.</p>
+         *
+         * @deprecated S3 stat override capabilities are enabled by default. Use CapabilityOverrideLayer to override them for specific endpoints.
          */
         public final Boolean disableStatWithOverride;
         /**
-         * <p>Disable write with if match so that opendal will not send write request with if match headers.</p>
-         * <p>For example, Ceph RADOS S3 doesn't support write with if match.</p>
+         * <p>Deprecated: S3 write with If-Match capability is enabled by default.</p>
+         *
+         * @deprecated S3 write with If-Match capability is enabled by default and this option is no longer needed.
          */
         public final Boolean disableWriteWithIfMatch;
         /**
@@ -2698,7 +3145,9 @@ public interface ServiceConfig {
          */
         public final Boolean enableRequestPayer;
         /**
-         * <p>is bucket versioning enabled for this bucket</p>
+         * <p>Deprecated: S3 versioning capability is enabled by default.</p>
+         *
+         * @deprecated S3 versioning capability is enabled by default and this option is no longer needed.
          */
         public final Boolean enableVersioning;
         /**
@@ -2711,7 +3160,9 @@ public interface ServiceConfig {
          */
         public final Boolean enableVirtualHostStyle;
         /**
-         * <p>Enable write with append so that opendal will send write request with append headers.</p>
+         * <p>Deprecated: S3 append capability is enabled by default.</p>
+         *
+         * @deprecated S3 append capability is enabled by default and this option is no longer needed.
          */
         public final Boolean enableWriteWithAppend;
         /**
@@ -2737,6 +3188,17 @@ public interface ServiceConfig {
          * <p>external_id for this backend.</p>
          */
         public final String externalId;
+        /**
+         * <p>AWS profile.</p>
+         * <p>By default, reqsign which is the default credential provider, supplies profile in order:</p>
+         * <ul>
+         * <li>explicit option</li>
+         * <li><code>AWS_PROFILE</code> environment variable, from which reqsign reads profile from:</li>
+         * <li><code>~/.aws/credentials</code> (or the path specified by <code>AWS_SHARED_CREDENTIALS_FILE</code>)</li>
+         * <li><code>~/.aws/config</code> (or the path specified by <code>AWS_CONFIG_FILE</code>)</li>
+         * </ul>
+         */
+        public final String profile;
         /**
          * <p>Region represent the signing region of this endpoint. This is required
          * if you are using the default AWS S3 endpoint.</p>
@@ -2812,6 +3274,10 @@ public interface ServiceConfig {
          * by hand.</p>
          */
         public final String sessionToken;
+        /**
+         * <p>Skip signature will skip loading credentials and signing requests.</p>
+         */
+        public final Boolean skipSignature;
 
         @Override
         public String scheme() {
@@ -2827,12 +3293,21 @@ public interface ServiceConfig {
             if (allowAnonymous != null) {
                 map.put("allow_anonymous", String.valueOf(allowAnonymous));
             }
+            if (assumeRoleDurationSeconds != null) {
+                map.put("assume_role_duration_seconds", String.valueOf(assumeRoleDurationSeconds));
+            }
+            if (assumeRoleSessionTags != null) {
+                map.putAll(assumeRoleSessionTags);
+            }
             if (batchMaxOperations != null) {
                 map.put("batch_max_operations", String.valueOf(batchMaxOperations));
             }
             map.put("bucket", bucket);
             if (checksumAlgorithm != null) {
                 map.put("checksum_algorithm", checksumAlgorithm);
+            }
+            if (defaultAcl != null) {
+                map.put("default_acl", defaultAcl);
             }
             if (defaultStorageClass != null) {
                 map.put("default_storage_class", defaultStorageClass);
@@ -2873,6 +3348,9 @@ public interface ServiceConfig {
             if (externalId != null) {
                 map.put("external_id", externalId);
             }
+            if (profile != null) {
+                map.put("profile", profile);
+            }
             if (region != null) {
                 map.put("region", region);
             }
@@ -2905,6 +3383,9 @@ public interface ServiceConfig {
             }
             if (sessionToken != null) {
                 map.put("session_token", sessionToken);
+            }
+            if (skipSignature != null) {
+                map.put("skip_signature", String.valueOf(skipSignature));
             }
             return map;
         }
@@ -2973,7 +3454,9 @@ public interface ServiceConfig {
     @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
     class Sftp implements ServiceConfig {
         /**
-         * <p>enable_copy of this backend</p>
+         * <p>Deprecated: SFTP copy capability is enabled by default.</p>
+         *
+         * @deprecated SFTP copy capability is enabled by default and this option is no longer needed.
          */
         public final Boolean enableCopy;
         /**
@@ -3237,6 +3720,20 @@ public interface ServiceConfig {
          */
         public final String root;
         /**
+         * <p>The hash algorithm for TempURL signing.</p>
+         * <p>Supported values: <code>sha1</code>, <code>sha256</code>, <code>sha512</code>. Defaults to <code>sha256</code>.
+         * The cluster must have the chosen algorithm in its
+         * <code>tempurl.allowed_digests</code> (check <code>GET /info</code>).</p>
+         */
+        public final String tempUrlHashAlgorithm;
+        /**
+         * <p>The TempURL key for generating presigned URLs.</p>
+         * <p>This corresponds to the <code>X-Account-Meta-Temp-URL-Key</code> or
+         * <code>X-Container-Meta-Temp-URL-Key</code> header value configured on the
+         * Swift account or container.</p>
+         */
+        public final String tempUrlKey;
+        /**
          * <p>The token for Swift.</p>
          */
         public final String token;
@@ -3258,8 +3755,126 @@ public interface ServiceConfig {
             if (root != null) {
                 map.put("root", root);
             }
+            if (tempUrlHashAlgorithm != null) {
+                map.put("temp_url_hash_algorithm", tempUrlHashAlgorithm);
+            }
+            if (tempUrlKey != null) {
+                map.put("temp_url_key", tempUrlKey);
+            }
             if (token != null) {
                 map.put("token", token);
+            }
+            return map;
+        }
+    }
+
+    /**
+     * Configuration for service tos.
+     */
+    @Builder
+    @Data
+    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
+    class Tos implements ServiceConfig {
+        /**
+         * <p>access_key_id of this backend.</p>
+         * <ul>
+         * <li>If access_key_id is set, we will take user's input first.</li>
+         * <li>If not, we will try to load it from environment.</li>
+         * </ul>
+         */
+        public final String accessKeyId;
+        /**
+         * <p>bucket name of this backend.</p>
+         * <p>required.</p>
+         */
+        public final @NonNull String bucket;
+        /**
+         * <p>Disable config load so that opendal will not load config from
+         * environment.</p>
+         * <p>For examples:</p>
+         * <ul>
+         * <li>envs like <code>TOS_ACCESS_KEY_ID</code></li>
+         * </ul>
+         */
+        public final Boolean disableConfigLoad;
+        /**
+         * <p>endpoint of this backend.</p>
+         * <p>Endpoint must be full uri, e.g.</p>
+         * <ul>
+         * <li>TOS: <code>https://tos-cn-beijing.volces.com</code></li>
+         * <li>TOS with region: <code>https://tos-{region}.volces.com</code></li>
+         * </ul>
+         * <p>If user inputs endpoint without scheme like &quot;tos-cn-beijing.volces.com&quot;, we
+         * will prepend &quot;https://&quot; before it.</p>
+         */
+        public final String endpoint;
+        /**
+         * <p>Region represent the signing region of this endpoint.</p>
+         * <p>Required if endpoint is not provided.</p>
+         * <ul>
+         * <li>If region is set, we will take user's input first.</li>
+         * <li>If not, we will try to load it from environment.</li>
+         * <li>If still not set, default to <code>cn-beijing</code>.</li>
+         * </ul>
+         */
+        public final String region;
+        /**
+         * <p>root of this backend.</p>
+         * <p>All operations will happen under this root.</p>
+         * <p>default to <code>/</code> if not set.</p>
+         */
+        public final String root;
+        /**
+         * <p>secret_access_key of this backend.</p>
+         * <ul>
+         * <li>If secret_access_key is set, we will take user's input first.</li>
+         * <li>If not, we will try to load it from environment.</li>
+         * </ul>
+         */
+        public final String secretAccessKey;
+        /**
+         * <p>security_token of this backend.</p>
+         * <p>This token will expire after sometime, it's recommended to set security_token
+         * by hand.</p>
+         */
+        public final String securityToken;
+        /**
+         * <p>Skip signature will skip loading credentials and signing requests.</p>
+         */
+        public final Boolean skipSignature;
+
+        @Override
+        public String scheme() {
+            return "tos";
+        }
+
+        @Override
+        public Map<String, String> configMap() {
+            final HashMap<String, String> map = new HashMap<>();
+            if (accessKeyId != null) {
+                map.put("access_key_id", accessKeyId);
+            }
+            map.put("bucket", bucket);
+            if (disableConfigLoad != null) {
+                map.put("disable_config_load", String.valueOf(disableConfigLoad));
+            }
+            if (endpoint != null) {
+                map.put("endpoint", endpoint);
+            }
+            if (region != null) {
+                map.put("region", region);
+            }
+            if (root != null) {
+                map.put("root", root);
+            }
+            if (secretAccessKey != null) {
+                map.put("secret_access_key", secretAccessKey);
+            }
+            if (securityToken != null) {
+                map.put("security_token", securityToken);
+            }
+            if (skipSignature != null) {
+                map.put("skip_signature", String.valueOf(skipSignature));
             }
             return map;
         }
@@ -3313,7 +3928,7 @@ public interface ServiceConfig {
     }
 
     /**
-     * Configuration for service vercel_artifacts.
+     * Configuration for service vercel-artifacts.
      */
     @Builder
     @Data
@@ -3323,10 +3938,25 @@ public interface ServiceConfig {
          * <p>The access token for Vercel.</p>
          */
         public final String accessToken;
+        /**
+         * <p>The endpoint for the Vercel artifacts API.</p>
+         * <p>Defaults to <code>https://api.vercel.com</code>.</p>
+         */
+        public final String endpoint;
+        /**
+         * <p>The Vercel team ID. When set, the <code>teamId</code> query parameter
+         * is appended to all API requests.</p>
+         */
+        public final String teamId;
+        /**
+         * <p>The Vercel team slug. When set, the <code>slug</code> query parameter
+         * is appended to all API requests.</p>
+         */
+        public final String teamSlug;
 
         @Override
         public String scheme() {
-            return "vercel_artifacts";
+            return "vercel-artifacts";
         }
 
         @Override
@@ -3335,12 +3965,21 @@ public interface ServiceConfig {
             if (accessToken != null) {
                 map.put("access_token", accessToken);
             }
+            if (endpoint != null) {
+                map.put("endpoint", endpoint);
+            }
+            if (teamId != null) {
+                map.put("team_id", teamId);
+            }
+            if (teamSlug != null) {
+                map.put("team_slug", teamSlug);
+            }
             return map;
         }
     }
 
     /**
-     * Configuration for service vercel_blob.
+     * Configuration for service vercel-blob.
      */
     @Builder
     @Data
@@ -3358,7 +3997,7 @@ public interface ServiceConfig {
 
         @Override
         public String scheme() {
-            return "vercel_blob";
+            return "vercel-blob";
         }
 
         @Override
@@ -3382,9 +4021,33 @@ public interface ServiceConfig {
     @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
     class Webdav implements ServiceConfig {
         /**
-         * <p>WebDAV Service doesn't support copy.</p>
+         * <p>Deprecated: WebDAV copy capability is enabled by default.</p>
+         *
+         * @deprecated WebDAV copy capability is enabled by default and this option is no longer needed.
          */
         public final Boolean disableCopy;
+        /**
+         * <p>Disable automatic parent directory creation before write operations.</p>
+         * <p>By default, OpenDAL creates parent directories using MKCOL before writing files.
+         * This requires PROPFIND support to check directory existence.</p>
+         * <p>Some WebDAV-compatible servers (e.g., bazel-remote) don't support PROPFIND
+         * or don't require explicit directory creation. Enable this option to skip
+         * the MKCOL calls and write files directly.</p>
+         * <p>Default: false</p>
+         */
+        public final Boolean disableCreateDir;
+        /**
+         * <p>Deprecated: WebDAV conditional read capabilities are enabled by default.</p>
+         *
+         * @deprecated WebDAV conditional read capabilities are enabled by default. Use CapabilityOverrideLayer to override read_with_if_match, read_with_if_none_match, read_with_if_modified_since and read_with_if_unmodified_since for endpoints without ETag support.
+         */
+        public final Boolean enableConditionalRead;
+        /**
+         * <p>Deprecated: WebDAV user metadata capability is enabled by default.</p>
+         *
+         * @deprecated WebDAV user metadata capability is enabled by default. Use CapabilityOverrideLayer to override write_with_user_metadata for endpoints without PROPPATCH support.
+         */
+        public final Boolean enableUserMetadata;
         /**
          * <p>endpoint of this backend</p>
          */
@@ -3402,6 +4065,21 @@ public interface ServiceConfig {
          */
         public final String token;
         /**
+         * <p>The XML namespace prefix for user metadata properties.</p>
+         * <p>This prefix is used in PROPPATCH/PROPFIND XML requests.
+         * Different servers may require different prefixes.</p>
+         * <p>Default: &quot;opendal&quot;</p>
+         */
+        public final String userMetadataPrefix;
+        /**
+         * <p>The XML namespace URI for user metadata properties.</p>
+         * <p>This URI uniquely identifies the namespace for custom properties.
+         * Different servers may require different namespace URIs.
+         * For example, Nextcloud might work better with its own namespace.</p>
+         * <p>Default: <code>https://opendal.apache.org/ns</code></p>
+         */
+        public final String userMetadataUri;
+        /**
          * <p>username of this backend</p>
          */
         public final String username;
@@ -3417,6 +4095,15 @@ public interface ServiceConfig {
             if (disableCopy != null) {
                 map.put("disable_copy", String.valueOf(disableCopy));
             }
+            if (disableCreateDir != null) {
+                map.put("disable_create_dir", String.valueOf(disableCreateDir));
+            }
+            if (enableConditionalRead != null) {
+                map.put("enable_conditional_read", String.valueOf(enableConditionalRead));
+            }
+            if (enableUserMetadata != null) {
+                map.put("enable_user_metadata", String.valueOf(enableUserMetadata));
+            }
             if (endpoint != null) {
                 map.put("endpoint", endpoint);
             }
@@ -3428,6 +4115,12 @@ public interface ServiceConfig {
             }
             if (token != null) {
                 map.put("token", token);
+            }
+            if (userMetadataPrefix != null) {
+                map.put("user_metadata_prefix", userMetadataPrefix);
+            }
+            if (userMetadataUri != null) {
+                map.put("user_metadata_uri", userMetadataUri);
             }
             if (username != null) {
                 map.put("username", username);
@@ -3499,7 +4192,7 @@ public interface ServiceConfig {
     }
 
     /**
-     * Configuration for service yandex_disk.
+     * Configuration for service yandex-disk.
      */
     @Builder
     @Data
@@ -3517,7 +4210,7 @@ public interface ServiceConfig {
 
         @Override
         public String scheme() {
-            return "yandex_disk";
+            return "yandex-disk";
         }
 
         @Override

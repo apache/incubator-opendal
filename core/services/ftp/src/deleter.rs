@@ -22,7 +22,7 @@ use suppaftp::Status;
 use suppaftp::types::Response;
 
 use super::core::FtpCore;
-use super::err::format_ftp_error;
+use super::core::format_ftp_error;
 use opendal_core::raw::*;
 use opendal_core::*;
 

@@ -16,15 +16,16 @@
 // under the License.
 
 use std::fmt::Debug;
-use std::sync::Arc;
 
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
+use bytes::Buf;
 use bytes::Bytes;
 use constants::X_MS_META_PREFIX;
 use http::HeaderValue;
 use http::Request;
 use http::Response;
+use http::StatusCode;
 use http::header::CONTENT_LENGTH;
 use http::header::CONTENT_TYPE;
 use http::header::HeaderName;
@@ -32,9 +33,10 @@ use http::header::IF_MATCH;
 use http::header::IF_MODIFIED_SINCE;
 use http::header::IF_NONE_MATCH;
 use http::header::IF_UNMODIFIED_SINCE;
-use reqsign::AzureStorageCredential;
-use reqsign::AzureStorageLoader;
-use reqsign::AzureStorageSigner;
+use opendal_service_azure_common::with_azure_error_response_context;
+use quick_xml::de;
+use reqsign_azure_storage::Credential;
+use reqsign_core::{Context, Signer};
 use serde::Deserialize;
 use serde::Serialize;
 use uuid::Uuid;
@@ -43,12 +45,21 @@ use opendal_core::raw::*;
 use opendal_core::*;
 
 pub mod constants {
+    pub const AZBLOB_COPY_MIN_BLOCK_SIZE: usize = 1;
+    // Put Block From URL supports blocks up to 4,000 MiB with API version
+    // 2020-04-08 and later.
+    //
+    // ref: <https://learn.microsoft.com/en-us/rest/api/storageservices/put-block-from-url>
+    pub const AZBLOB_COPY_MAX_BLOCK_SIZE: usize = 4000 * 1024 * 1024;
+
     // Indicates the Blob Storage version that was used to execute the request
     pub const X_MS_VERSION: &str = "x-ms-version";
 
     pub const X_MS_BLOB_TYPE: &str = "x-ms-blob-type";
     pub const X_MS_COPY_SOURCE: &str = "x-ms-copy-source";
+    pub const X_MS_COPY_SOURCE_RANGE: &str = "x-ms-source-range";
     pub const X_MS_BLOB_CACHE_CONTROL: &str = "x-ms-blob-cache-control";
+    pub const X_MS_BLOB_CONTENT_TYPE: &str = "x-ms-blob-content-type";
     pub const X_MS_BLOB_CONDITION_APPENDPOS: &str = "x-ms-blob-condition-appendpos";
     pub const X_MS_META_PREFIX: &str = "x-ms-meta-";
 
@@ -62,15 +73,16 @@ pub mod constants {
 }
 
 pub struct AzblobCore {
-    pub info: Arc<AccessorInfo>,
+    pub info: ServiceInfo,
+    pub capability: Capability,
     pub container: String,
     pub root: String,
     pub endpoint: String,
     pub encryption_key: Option<HeaderValue>,
     pub encryption_key_sha256: Option<HeaderValue>,
     pub encryption_algorithm: Option<HeaderValue>,
-    pub loader: AzureStorageLoader,
-    pub signer: AzureStorageSigner,
+    pub skip_signature: bool,
+    pub signer: Signer<Credential>,
 }
 
 impl Debug for AzblobCore {
@@ -84,35 +96,39 @@ impl Debug for AzblobCore {
 }
 
 impl AzblobCore {
-    async fn load_credential(&self) -> Result<AzureStorageCredential> {
-        let cred = self
-            .loader
-            .load()
-            .await
-            .map_err(new_request_credential_error)?;
+    fn signer(&self, ctx: &OperationContext) -> Signer<Credential> {
+        self.signer.clone().with_context(
+            Context::new()
+                .with_file_read(reqsign_file_read_tokio::TokioFileRead)
+                .with_http_send(ctx.http_transport().clone())
+                .with_env(reqsign_core::OsEnv),
+        )
+    }
 
-        if let Some(cred) = cred {
-            Ok(cred)
-        } else {
-            Err(Error::new(
-                ErrorKind::ConfigInvalid,
-                "no valid credential found",
-            ))
+    pub async fn sign_query<T>(
+        &self,
+        ctx: &OperationContext,
+        req: Request<T>,
+    ) -> Result<Request<T>> {
+        if self.skip_signature {
+            return Ok(req);
         }
+
+        let (mut parts, body) = req.into_parts();
+
+        self.signer(ctx)
+            .sign(&mut parts, Some(Duration::from_secs(3600)))
+            .await
+            .map_err(|e| new_request_sign_error(e.into()))?;
+
+        Ok(Request::from_parts(parts, body))
     }
 
-    pub async fn sign_query<T>(&self, req: &mut Request<T>) -> Result<()> {
-        let cred = self.load_credential().await?;
+    pub async fn sign<T>(&self, ctx: &OperationContext, req: Request<T>) -> Result<Request<T>> {
+        let (mut parts, body) = req.into_parts();
 
-        self.signer
-            .sign_query(req, Duration::from_secs(3600), &cred)
-            .map_err(new_request_sign_error)
-    }
-
-    pub async fn sign<T>(&self, req: &mut Request<T>) -> Result<()> {
-        let cred = self.load_credential().await?;
         // Insert x-ms-version header for normal requests.
-        req.headers_mut().insert(
+        parts.headers.insert(
             HeaderName::from_static(constants::X_MS_VERSION),
             // 2022-11-02 is the version supported by Azurite V3 and
             // used by Azure Portal, We use this version to make
@@ -121,17 +137,42 @@ impl AzblobCore {
             // In the future, we could allow users to configure this value.
             HeaderValue::from_static("2022-11-02"),
         );
-        self.signer.sign(req, &cred).map_err(new_request_sign_error)
+
+        // x-ms-version must be set even when signing is skipped.
+        if self.skip_signature {
+            return Ok(Request::from_parts(parts, body));
+        }
+
+        self.signer(ctx)
+            .sign(&mut parts, None)
+            .await
+            .map_err(|e| new_request_sign_error(e.into()))?;
+
+        Ok(Request::from_parts(parts, body))
     }
 
-    async fn batch_sign<T>(&self, req: &mut Request<T>) -> Result<()> {
-        let cred = self.load_credential().await?;
-        self.signer.sign(req, &cred).map_err(new_request_sign_error)
+    async fn batch_sign<T>(&self, ctx: &OperationContext, req: Request<T>) -> Result<Request<T>> {
+        if self.skip_signature {
+            return Ok(req);
+        }
+
+        let (mut parts, body) = req.into_parts();
+
+        self.signer(ctx)
+            .sign(&mut parts, None)
+            .await
+            .map_err(|e| new_request_sign_error(e.into()))?;
+
+        Ok(Request::from_parts(parts, body))
     }
 
     #[inline]
-    pub async fn send(&self, req: Request<Buffer>) -> Result<Response<Buffer>> {
-        self.info.http_client().send(req).await
+    pub async fn send(
+        &self,
+        ctx: &OperationContext,
+        req: Request<Buffer>,
+    ) -> Result<Response<Buffer>> {
+        ctx.http_transport().send(req).await
     }
 
     pub fn insert_sse_headers(&self, mut req: http::request::Builder) -> http::request::Builder {
@@ -218,6 +259,7 @@ impl AzblobCore {
 
         let req = req
             .extension(Operation::Read)
+            .extension(ServiceOperation("GetBlob"))
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
 
@@ -226,15 +268,15 @@ impl AzblobCore {
 
     pub async fn azblob_get_blob(
         &self,
+        ctx: &OperationContext,
         path: &str,
         range: BytesRange,
         args: &OpRead,
     ) -> Result<Response<HttpBody>> {
-        let mut req = self.azblob_get_blob_request(path, range, args)?;
+        let req = self.azblob_get_blob_request(path, range, args)?;
+        let req = self.sign(ctx, req).await?;
 
-        self.sign(&mut req).await?;
-
-        self.info.http_client().fetch(req).await
+        ctx.http_transport().fetch(req).await
     }
 
     pub fn azblob_put_blob_request(
@@ -264,9 +306,12 @@ impl AzblobCore {
         if args.if_not_exists() {
             req = req.header(IF_NONE_MATCH, "*");
         }
-
         if let Some(v) = args.if_none_match() {
             req = req.header(IF_NONE_MATCH, v);
+        }
+
+        if let Some(v) = args.if_match() {
+            req = req.header(IF_MATCH, v);
         }
 
         if let Some(cache_control) = args.cache_control() {
@@ -284,6 +329,7 @@ impl AzblobCore {
 
         let req = req
             .extension(Operation::Write)
+            .extension(ServiceOperation("PutBlob"))
             .body(body)
             .map_err(new_request_build_error)?;
 
@@ -292,15 +338,15 @@ impl AzblobCore {
 
     pub async fn azblob_put_blob(
         &self,
+        ctx: &OperationContext,
         path: &str,
         size: Option<u64>,
         args: &OpWrite,
         body: Buffer,
     ) -> Result<Response<Buffer>> {
-        let mut req = self.azblob_put_blob_request(path, size, args, body)?;
-
-        self.sign(&mut req).await?;
-        self.send(req).await
+        let req = self.azblob_put_blob_request(path, size, args, body)?;
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 
     /// For appendable object, it could be created by `put` an empty blob
@@ -338,6 +384,10 @@ impl AzblobCore {
             "AppendBlob",
         );
 
+        if args.if_not_exists() {
+            req = req.header(IF_NONE_MATCH, "*");
+        }
+
         if let Some(ty) = args.content_type() {
             req = req.header(CONTENT_TYPE, ty)
         }
@@ -348,6 +398,7 @@ impl AzblobCore {
 
         let req = req
             .extension(Operation::Write)
+            .extension(ServiceOperation("PutBlob"))
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
 
@@ -356,13 +407,13 @@ impl AzblobCore {
 
     pub async fn azblob_init_appendable_blob(
         &self,
+        ctx: &OperationContext,
         path: &str,
         args: &OpWrite,
     ) -> Result<Response<Buffer>> {
-        let mut req = self.azblob_init_appendable_blob_request(path, args)?;
-
-        self.sign(&mut req).await?;
-        self.send(req).await
+        let req = self.azblob_init_appendable_blob_request(path, args)?;
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 
     /// Append content to an appendable blob.
@@ -383,7 +434,7 @@ impl AzblobCore {
         size: u64,
         body: Buffer,
     ) -> Result<Request<Buffer>> {
-        let url = format!("{}?comp=appendblock", &self.build_path_url(path));
+        let url = format!("{}?comp=appendblock", self.build_path_url(path));
 
         let mut req = Request::put(&url)
             .header(CONTENT_LENGTH, size)
@@ -394,6 +445,7 @@ impl AzblobCore {
 
         let req = req
             .extension(Operation::Write)
+            .extension(ServiceOperation("AppendBlock"))
             .body(body)
             .map_err(new_request_build_error)?;
 
@@ -402,15 +454,15 @@ impl AzblobCore {
 
     pub async fn azblob_append_blob(
         &self,
+        ctx: &OperationContext,
         path: &str,
         position: u64,
         size: u64,
         body: Buffer,
     ) -> Result<Response<Buffer>> {
-        let mut req = self.azblob_append_blob_request(path, position, size, body)?;
-
-        self.sign(&mut req).await?;
-        self.send(req).await
+        let req = self.azblob_append_blob_request(path, position, size, body)?;
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 
     pub fn azblob_put_block_request(
@@ -448,6 +500,7 @@ impl AzblobCore {
 
         let req = req
             .extension(Operation::Write)
+            .extension(ServiceOperation("PutBlock"))
             .body(body)
             .map_err(new_request_build_error)?;
 
@@ -456,16 +509,77 @@ impl AzblobCore {
 
     pub async fn azblob_put_block(
         &self,
+        ctx: &OperationContext,
         path: &str,
         block_id: Uuid,
         size: Option<u64>,
         args: &OpWrite,
         body: Buffer,
     ) -> Result<Response<Buffer>> {
-        let mut req = self.azblob_put_block_request(path, block_id, size, args, body)?;
+        let req = self.azblob_put_block_request(path, block_id, size, args, body)?;
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
+    }
 
-        self.sign(&mut req).await?;
-        self.send(req).await
+    pub fn azblob_put_block_from_url_request(
+        &self,
+        source: &str,
+        to: &str,
+        block_id: Uuid,
+        range: BytesRange,
+    ) -> Result<Request<Buffer>> {
+        let url = QueryPairsWriter::new(&self.build_path_url(to))
+            .push("comp", "block")
+            .push(
+                "blockid",
+                &percent_encode_path(&BASE64_STANDARD.encode(block_id.as_bytes())),
+            )
+            .finish();
+
+        let mut req = Request::put(&url)
+            .header(constants::X_MS_COPY_SOURCE, source)
+            .header(CONTENT_LENGTH, 0);
+
+        if !range.is_full() {
+            req = req.header(constants::X_MS_COPY_SOURCE_RANGE, range.to_header());
+        }
+
+        let req = self.insert_sse_headers(req);
+        let req = req
+            .extension(Operation::Copy)
+            .extension(ServiceOperation("PutBlockFromUrl"))
+            .body(Buffer::new())
+            .map_err(new_request_build_error)?;
+
+        Ok(req)
+    }
+
+    pub async fn azblob_put_block_from_url(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        source_version: Option<&str>,
+        block_id: Uuid,
+        range: BytesRange,
+    ) -> Result<Response<Buffer>> {
+        let mut source_url = self.build_path_url(from);
+        if let Some(version) = source_version {
+            source_url = QueryPairsWriter::new(&source_url)
+                .push("versionid", &percent_encode_path(version))
+                .finish();
+        }
+
+        let source = Request::get(source_url)
+            .extension(Operation::Copy)
+            .extension(ServiceOperation("GetBlob"))
+            .body(Buffer::new())
+            .map_err(new_request_build_error)?;
+        let source = self.sign_query(ctx, source).await?;
+        let source = source.uri().to_string();
+        let req = self.azblob_put_block_from_url_request(&source, to, block_id, range)?;
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 
     fn azblob_complete_put_block_list_request(
@@ -474,7 +588,7 @@ impl AzblobCore {
         block_ids: Vec<Uuid>,
         args: &OpWrite,
     ) -> Result<Request<Buffer>> {
-        let url = format!("{}?comp=blocklist", &self.build_path_url(path));
+        let url = format!("{}?comp=blocklist", self.build_path_url(path));
 
         let req = Request::put(&url);
 
@@ -482,6 +596,31 @@ impl AzblobCore {
         let mut req = self.insert_sse_headers(req);
         if let Some(cache_control) = args.cache_control() {
             req = req.header(constants::X_MS_BLOB_CACHE_CONTROL, cache_control);
+        }
+
+        // Put Block List is where Azure applies the blob's properties and metadata;
+        // the headers on the individual Put Block requests are ignored.
+        if let Some(ty) = args.content_type() {
+            req = req.header(constants::X_MS_BLOB_CONTENT_TYPE, ty);
+        }
+        if let Some(user_metadata) = args.user_metadata() {
+            for (key, value) in user_metadata {
+                req = req.header(format!("{X_MS_META_PREFIX}{key}"), value);
+            }
+        }
+
+        // Put Block List is the request that actually commits a blocked write, so the
+        // write's preconditions have to be evaluated here rather than on Put Block.
+        if args.if_not_exists() {
+            req = req.header(IF_NONE_MATCH, "*");
+        }
+
+        if let Some(v) = args.if_none_match() {
+            req = req.header(IF_NONE_MATCH, v);
+        }
+
+        if let Some(v) = args.if_match() {
+            req = req.header(IF_MATCH, v);
         }
 
         let content = quick_xml::se::to_string(&PutBlockListRequest {
@@ -499,6 +638,7 @@ impl AzblobCore {
 
         let req = req
             .extension(Operation::Write)
+            .extension(ServiceOperation("PutBlockList"))
             .body(Buffer::from(Bytes::from(content)))
             .map_err(new_request_build_error)?;
 
@@ -507,19 +647,77 @@ impl AzblobCore {
 
     pub async fn azblob_complete_put_block_list(
         &self,
+        ctx: &OperationContext,
         path: &str,
         block_ids: Vec<Uuid>,
         args: &OpWrite,
     ) -> Result<Response<Buffer>> {
-        let mut req = self.azblob_complete_put_block_list_request(path, block_ids, args)?;
+        let req = self.azblob_complete_put_block_list_request(path, block_ids, args)?;
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
+    }
 
-        self.sign(&mut req).await?;
+    fn azblob_complete_copy_block_list_request(
+        &self,
+        path: &str,
+        block_ids: Vec<Uuid>,
+        args: &OpCopy,
+    ) -> Result<Request<Buffer>> {
+        let url = format!("{}?comp=blocklist", self.build_path_url(path));
 
-        self.send(req).await
+        let mut req = Request::put(&url);
+
+        if args.if_not_exists() {
+            req = req.header(IF_NONE_MATCH, "*");
+        }
+        if let Some(if_match) = args.if_match() {
+            req = req.header(IF_MATCH, if_match);
+        }
+        if let Some(if_none_match) = args.if_none_match() {
+            req = req.header(IF_NONE_MATCH, if_none_match);
+        }
+
+        let content = quick_xml::se::to_string(&PutBlockListRequest {
+            latest: block_ids
+                .into_iter()
+                .map(|block_id| BASE64_STANDARD.encode(block_id.as_bytes()))
+                .collect(),
+        })
+        .map_err(new_xml_serialize_error)?;
+
+        req = req.header(CONTENT_LENGTH, content.len());
+
+        let req = self.insert_sse_headers(req);
+        let req = req
+            .extension(Operation::Copy)
+            .extension(ServiceOperation("PutBlockList"))
+            .body(Buffer::from(Bytes::from(content)))
+            .map_err(new_request_build_error)?;
+
+        Ok(req)
+    }
+
+    pub async fn azblob_complete_copy_block_list(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        block_ids: Vec<Uuid>,
+        args: &OpCopy,
+    ) -> Result<Response<Buffer>> {
+        let req = self.azblob_complete_copy_block_list_request(path, block_ids, args)?;
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 
     pub fn azblob_head_blob_request(&self, path: &str, args: &OpStat) -> Result<Request<Buffer>> {
-        let mut req = Request::head(self.build_path_url(path));
+        let mut url = self.build_path_url(path);
+        if let Some(version) = args.version() {
+            url = QueryPairsWriter::new(&url)
+                .push("versionid", &percent_encode_path(version))
+                .finish();
+        }
+
+        let mut req = Request::head(url);
 
         // Set SSE headers.
         req = self.insert_sse_headers(req);
@@ -534,6 +732,7 @@ impl AzblobCore {
 
         let req = req
             .extension(Operation::Stat)
+            .extension(ServiceOperation("GetBlobProperties"))
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
 
@@ -542,37 +741,55 @@ impl AzblobCore {
 
     pub async fn azblob_get_blob_properties(
         &self,
+        ctx: &OperationContext,
         path: &str,
         args: &OpStat,
     ) -> Result<Response<Buffer>> {
-        let mut req = self.azblob_head_blob_request(path, args)?;
-
-        self.sign(&mut req).await?;
-        self.send(req).await
+        let req = self.azblob_head_blob_request(path, args)?;
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 
-    fn azblob_delete_blob_request(&self, path: &str) -> Result<Request<Buffer>> {
-        Request::delete(self.build_path_url(path))
-            .header(CONTENT_LENGTH, 0)
+    fn azblob_delete_blob_request(&self, path: &str, args: &OpDelete) -> Result<Request<Buffer>> {
+        let mut req = Request::delete(self.build_path_url(path));
+        if let Some(if_match) = args.if_match() {
+            req = req.header(IF_MATCH, if_match);
+        }
+        if let Some(if_none_match) = args.if_none_match() {
+            req = req.header(IF_NONE_MATCH, if_none_match);
+        }
+
+        req.header(CONTENT_LENGTH, 0)
             .extension(Operation::Delete)
+            .extension(ServiceOperation("DeleteBlob"))
             .body(Buffer::new())
             .map_err(new_request_build_error)
     }
 
-    pub async fn azblob_delete_blob(&self, path: &str) -> Result<Response<Buffer>> {
-        let mut req = self.azblob_delete_blob_request(path)?;
-
-        self.sign(&mut req).await?;
-        self.send(req).await
+    pub async fn azblob_delete_blob(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: &OpDelete,
+    ) -> Result<Response<Buffer>> {
+        let req = self.azblob_delete_blob_request(path, args)?;
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 
     pub async fn azblob_copy_blob(
         &self,
+        ctx: &OperationContext,
         from: &str,
         to: &str,
         args: OpCopy,
     ) -> Result<Response<Buffer>> {
-        let source = self.build_path_url(from);
+        let mut source = self.build_path_url(from);
+        if let Some(version) = args.source_version() {
+            source = QueryPairsWriter::new(&source)
+                .push("versionid", &percent_encode_path(version))
+                .finish();
+        }
         let target = self.build_path_url(to);
 
         let mut req = Request::put(&target)
@@ -583,18 +800,26 @@ impl AzblobCore {
         if args.if_not_exists() {
             req = req.header(IF_NONE_MATCH, "*");
         }
+        if let Some(if_match) = args.if_match() {
+            req = req.header(IF_MATCH, if_match);
+        }
+        if let Some(if_none_match) = args.if_none_match() {
+            req = req.header(IF_NONE_MATCH, if_none_match);
+        }
 
-        let mut req = req
+        let req = req
             .extension(Operation::Copy)
+            .extension(ServiceOperation("CopyBlob"))
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
 
-        self.sign(&mut req).await?;
-        self.send(req).await
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 
     pub async fn azblob_list_blobs(
         &self,
+        ctx: &OperationContext,
         path: &str,
         next_marker: &str,
         delimiter: &str,
@@ -615,19 +840,24 @@ impl AzblobCore {
             url = url.push("delimiter", delimiter);
         }
         if !next_marker.is_empty() {
-            url = url.push("marker", next_marker);
+            url = url.push("marker", &percent_encode_path(next_marker));
         }
 
-        let mut req = Request::get(url.finish())
+        let req = Request::get(url.finish())
             .extension(Operation::List)
+            .extension(ServiceOperation("ListBlobs"))
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
 
-        self.sign(&mut req).await?;
-        self.send(req).await
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 
-    pub async fn azblob_batch_delete(&self, paths: &[String]) -> Result<Response<Buffer>> {
+    pub async fn azblob_batch_delete(
+        &self,
+        ctx: &OperationContext,
+        batch: &[(String, OpDelete)],
+    ) -> Result<Response<Buffer>> {
         let url = format!(
             "{}/{}?restype=container&comp=batch",
             self.endpoint, self.container
@@ -635,20 +865,21 @@ impl AzblobCore {
 
         let mut multipart = Multipart::new();
 
-        for (idx, path) in paths.iter().enumerate() {
-            let mut req = self.azblob_delete_blob_request(path)?;
-            self.batch_sign(&mut req).await?;
+        for (idx, (path, args)) in batch.iter().enumerate() {
+            let req = self.azblob_delete_blob_request(path, args)?;
+            let req = self.batch_sign(ctx, req).await?;
 
             multipart = multipart.part(
                 MixedPart::from_request(req).part_header("content-id".parse().unwrap(), idx.into()),
             );
         }
 
-        let req = Request::post(url);
-        let mut req = multipart.apply(req)?;
-
-        self.sign(&mut req).await?;
-        self.send(req).await
+        let req = Request::post(url)
+            .extension(Operation::Delete)
+            .extension(ServiceOperation("BatchDeleteBlobs"));
+        let req = multipart.apply(req)?;
+        let req = self.sign(ctx, req).await?;
+        self.send(ctx, req).await
     }
 }
 
@@ -708,6 +939,29 @@ mod tests {
     use quick_xml::de;
 
     use super::*;
+    use std::collections::HashMap;
+
+    use reqsign_azure_storage::RequestSigner;
+    use reqsign_azure_storage::StaticCredentialProvider;
+
+    fn test_core() -> AzblobCore {
+        AzblobCore {
+            info: ServiceInfo::new("azblob", "/", "c"),
+            capability: Capability::default(),
+            container: "c".to_string(),
+            root: "/".to_string(),
+            endpoint: "https://acc.blob.core.windows.net".to_string(),
+            encryption_key: None,
+            encryption_key_sha256: None,
+            encryption_algorithm: None,
+            skip_signature: true,
+            signer: Signer::new(
+                Context::new(),
+                StaticCredentialProvider::new_shared_key("acc", "a2V5"),
+                RequestSigner::new(),
+            ),
+        }
+    }
 
     #[test]
     fn test_parse_xml() {
@@ -889,6 +1143,69 @@ mod tests {
     }
 
     /// This example is from https://learn.microsoft.com/en-us/rest/api/storageservices/put-block-list?tabs=microsoft-entra-id
+    /// Put Block List is the commit point of a blocked write, and the only request
+    /// in that sequence where Azure applies blob properties and metadata. azblob
+    /// declares `write_with_content_type` and `write_with_user_metadata`, so both
+    /// have to be carried here as well as on the one-shot Put Blob path.
+    #[test]
+    fn test_put_block_list_carries_content_type_and_user_metadata() {
+        let core = test_core();
+
+        let mut meta = HashMap::new();
+        meta.insert("k".to_string(), "v".to_string());
+        let (args, _) = OpWrite::from_options(
+            &Capability::default(),
+            options::WriteOptions {
+                content_type: Some("application/json".to_owned()),
+                user_metadata: Some(meta),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let req = core
+            .azblob_complete_put_block_list_request("a.txt", vec![Uuid::nil()], &args)
+            .expect("must build");
+
+        assert_eq!(
+            req.headers()
+                .get(constants::X_MS_BLOB_CONTENT_TYPE)
+                .map(|v| v.to_str().unwrap()),
+            Some("application/json")
+        );
+        assert_eq!(
+            req.headers()
+                .get("x-ms-meta-k")
+                .map(|v| v.to_str().unwrap()),
+            Some("v")
+        );
+    }
+
+    #[test]
+    fn init_appendable_blob_carries_if_not_exists() {
+        let core = test_core();
+        let (args, _) = OpWrite::from_options(
+            &Capability {
+                write_with_if_not_exists: true,
+                ..Default::default()
+            },
+            options::WriteOptions {
+                if_not_exists: true,
+                ..Default::default()
+            },
+        )
+        .expect("options must lower");
+
+        let req = core
+            .azblob_init_appendable_blob_request("a.txt", &args)
+            .expect("request must build");
+
+        assert_eq!(
+            req.headers().get(IF_NONE_MATCH),
+            Some(&HeaderValue::from_static("*"))
+        );
+    }
+
     #[test]
     fn test_serialize_put_block_list_request() {
         let req = PutBlockListRequest {
@@ -923,6 +1240,252 @@ mod tests {
         assert_eq!(
             out.latest,
             vec!["1".to_string(), "2".to_string(), "3".to_string()]
+        );
+    }
+}
+
+/// AzblobError is the error returned by azure blob service.
+#[derive(Default, Deserialize)]
+#[serde(default, rename_all = "PascalCase")]
+struct AzblobError {
+    code: String,
+    message: String,
+    query_parameter_name: String,
+    query_parameter_value: String,
+    reason: String,
+}
+
+impl Debug for AzblobError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut de = f.debug_struct("AzblobError");
+        de.field("code", &self.code);
+        // replace `\n` to ` ` for better reading.
+        de.field("message", &self.message.replace('\n', " "));
+
+        if !self.query_parameter_name.is_empty() {
+            de.field("query_parameter_name", &self.query_parameter_name);
+        }
+        if !self.query_parameter_value.is_empty() {
+            de.field("query_parameter_value", &self.query_parameter_value);
+        }
+        if !self.reason.is_empty() {
+            de.field("reason", &self.reason);
+        }
+
+        de.finish()
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ErrorContext {
+    service_operation: ServiceOperation,
+    caller_condition: bool,
+    if_not_exists: bool,
+    is_append_blob_initialization: bool,
+}
+
+impl ErrorContext {
+    pub const fn new(service_operation: ServiceOperation) -> Self {
+        Self {
+            service_operation,
+            caller_condition: false,
+            if_not_exists: false,
+            is_append_blob_initialization: false,
+        }
+    }
+
+    pub const fn with_caller_condition(mut self, caller_condition: bool) -> Self {
+        self.caller_condition = caller_condition;
+        self
+    }
+
+    pub const fn with_if_not_exists(mut self, if_not_exists: bool) -> Self {
+        self.caller_condition = self.caller_condition || if_not_exists;
+        self.if_not_exists = if_not_exists;
+        self
+    }
+
+    pub const fn with_append_blob_initialization(
+        mut self,
+        is_append_blob_initialization: bool,
+    ) -> Self {
+        self.is_append_blob_initialization = is_append_blob_initialization;
+        self
+    }
+}
+
+/// Parse error response into Error.
+pub fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
+    let (parts, body) = resp.into_parts();
+    let bs = body.to_bytes();
+
+    let bs_content = bs.chunk();
+    let mut azblob_error = de::from_reader::<_, AzblobError>(bs_content.reader()).ok();
+
+    if azblob_error.as_ref().is_none_or(|err| err.code.is_empty())
+        && let Some(code) = parts
+            .headers
+            .get("x-ms-error-code")
+            .and_then(|v| v.to_str().ok())
+    {
+        azblob_error.get_or_insert_with(AzblobError::default).code = code.to_string();
+    }
+
+    let (mut kind, mut retryable) = match parts.status {
+        StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
+        StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, false),
+        StatusCode::NOT_MODIFIED | StatusCode::PRECONDITION_FAILED if ctx.caller_condition => {
+            (ErrorKind::ConditionNotMatch, false)
+        }
+        StatusCode::TOO_MANY_REQUESTS => (ErrorKind::RateLimited, true),
+        StatusCode::INTERNAL_SERVER_ERROR
+        | StatusCode::BAD_GATEWAY
+        | StatusCode::SERVICE_UNAVAILABLE
+        | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
+        _ => (ErrorKind::Unexpected, false),
+    };
+
+    if let Some(azblob_error) = &azblob_error
+        && !azblob_error.code.is_empty()
+    {
+        if let Some(classification) = parse_azblob_error_code(ctx, &azblob_error.code, parts.status)
+        {
+            (kind, retryable) = classification;
+        } else if matches!(
+            parts.status,
+            StatusCode::CONFLICT | StatusCode::PRECONDITION_FAILED
+        ) {
+            (kind, retryable) = (ErrorKind::Unexpected, false);
+        }
+    }
+
+    let message = azblob_error
+        .map(|err| format!("{err:?}"))
+        .unwrap_or_else(|| String::from_utf8_lossy(&bs).into_owned());
+
+    let mut err =
+        Error::new(kind, &message).with_context("service_operation", ctx.service_operation.0);
+
+    err = with_azure_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
+
+    err
+}
+
+/// Classify documented Blob Storage state errors by native code and status.
+///
+/// Reference: <https://learn.microsoft.com/rest/api/storageservices/blob-service-error-codes>
+fn parse_azblob_error_code(
+    ctx: ErrorContext,
+    code: &str,
+    status: StatusCode,
+) -> Option<(ErrorKind, bool)> {
+    match code {
+        "ConditionNotMet" | "SourceConditionNotMet" | "TargetConditionNotMet"
+            if ctx.caller_condition
+                && matches!(
+                    status,
+                    StatusCode::NOT_MODIFIED | StatusCode::PRECONDITION_FAILED
+                ) =>
+        {
+            Some((ErrorKind::ConditionNotMatch, false))
+        }
+        "BlobAlreadyExists" | "ContainerAlreadyExists" | "ResourceAlreadyExists" => {
+            let classification = if ctx.if_not_exists {
+                (ErrorKind::ConditionNotMatch, false)
+            } else if ctx.is_append_blob_initialization {
+                (ErrorKind::Conflict, true)
+            } else {
+                (ErrorKind::AlreadyExists, false)
+            };
+            Some(classification)
+        }
+        "DirectorySasNotSupportedVersion"
+        | "FeatureVersionMismatch"
+        | "PreviousSnapshotOperationNotSupported" => Some((ErrorKind::Unsupported, false)),
+        "SnapshotOperationRateExceeded" => Some((ErrorKind::RateLimited, true)),
+        "AppendPositionConditionNotMet"
+        | "BlobArchived"
+        | "BlobBeingRehydrated"
+        | "BlobImmutableDueToLegalHold"
+        | "BlobImmutableDueToPolicy"
+        | "BlobNotArchived"
+        | "BlobOperationNotSupported"
+        | "BlobOverwritten"
+        | "BlobTierInadequateForContentLength"
+        | "BlockCountExceedsLimit"
+        | "CannotChangeToLowerTier"
+        | "ContainerBeingDeleted"
+        | "ContainerDisabled"
+        | "ContainerHasLegalHold"
+        | "ContainerImmutabilityPolicyLocked"
+        | "ContentLengthLargerThanTierLimit"
+        | "CopyIdMismatch"
+        | "IncrementalCopyBlobMismatch"
+        | "IncrementalCopyOfEarlierSnapshotNotAllowed"
+        | "IncrementalCopyOfEarlierVersionSnapshotNotAllowed"
+        | "IncrementalCopySourceMustBeSnapshot"
+        | "InvalidBlobType"
+        | "InvalidSourceBlobType"
+        | "InvalidSourceBlobUrl"
+        | "LeaseAlreadyBroken"
+        | "LeaseAlreadyPresent"
+        | "LeaseIdMismatchWithBlobOperation"
+        | "LeaseIdMismatchWithContainerOperation"
+        | "LeaseIdMismatchWithLeaseOperation"
+        | "LeaseIdMissing"
+        | "LeaseIsBreakingAndCannotBeAcquired"
+        | "LeaseIsBreakingAndCannotBeChanged"
+        | "LeaseIsBrokenAndCannotBeRenewed"
+        | "LeaseLost"
+        | "LeaseNotPresentWithBlobOperation"
+        | "LeaseNotPresentWithContainerOperation"
+        | "LeaseNotPresentWithLeaseOperation"
+        | "InfiniteLeaseDurationRequired"
+        | "MaxBlobSizeConditionNotMet"
+        | "NoPendingCopyOperation"
+        | "OperationNotAllowedOnIncrementalCopyBlob"
+        | "PendingCopyOperation"
+        | "PreviousSnapshotNotFound"
+        | "SequenceNumberConditionNotMet"
+        | "SequenceNumberIncrementTooLarge"
+        | "SnapshotCountExceeded"
+        | "SnapshotsPresent"
+        | "SystemInUse"
+        | "ResourceTypeMismatch"
+            if matches!(
+                status,
+                StatusCode::CONFLICT | StatusCode::PRECONDITION_FAILED
+            ) =>
+        {
+            Some((ErrorKind::Conflict, false))
+        }
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod error_tests {
+    use super::*;
+
+    #[test]
+    fn append_blob_initialization_preserves_condition_and_retryability() {
+        let conditional = ErrorContext::new(ServiceOperation("PutBlob"))
+            .with_if_not_exists(true)
+            .with_append_blob_initialization(true);
+        assert_eq!(
+            parse_azblob_error_code(conditional, "BlobAlreadyExists", StatusCode::CONFLICT),
+            Some((ErrorKind::ConditionNotMatch, false))
+        );
+
+        let raced =
+            ErrorContext::new(ServiceOperation("PutBlob")).with_append_blob_initialization(true);
+        assert_eq!(
+            parse_azblob_error_code(raced, "BlobAlreadyExists", StatusCode::CONFLICT),
+            Some((ErrorKind::Conflict, true))
         );
     }
 }

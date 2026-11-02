@@ -17,8 +17,9 @@
 
 use std::fmt::Debug;
 
-use mea::once::OnceCell;
+use asyncband::once::OnceCell;
 use mongodb::bson::Binary;
+use mongodb::bson::Bson;
 use mongodb::bson::Document;
 use mongodb::bson::doc;
 use mongodb::options::ClientOptions;
@@ -80,6 +81,32 @@ impl MongodbCore {
         }
     }
 
+    pub async fn get_length(&self, path: &str) -> Result<Option<usize>> {
+        let collection = self.get_collection().await?;
+        let mut cursor = collection
+            .aggregate(vec![
+                doc! { "$match": { self.key_field.as_str(): path } },
+                doc! { "$limit": 1 },
+                doc! {
+                    "$project": {
+                        "_id": 0,
+                        "content_length": {
+                            "$binarySize": format!("${}", self.value_field)
+                        }
+                    }
+                },
+            ])
+            .await
+            .map_err(parse_mongodb_error)?;
+
+        if !cursor.advance().await.map_err(parse_mongodb_error)? {
+            return Ok(None);
+        }
+
+        let doc: Document = cursor.deserialize_current().map_err(parse_mongodb_error)?;
+        parse_bson_usize(doc.get("content_length"))
+    }
+
     pub async fn set(&self, path: &str, value: Buffer) -> Result<()> {
         let collection = self.get_collection().await?;
         let filter = doc! { self.key_field.as_str(): path };
@@ -110,4 +137,37 @@ fn parse_mongodb_error(err: mongodb::error::Error) -> Error {
 
 fn parse_bson_error(err: mongodb::bson::document::ValueAccessError) -> Error {
     Error::new(ErrorKind::Unexpected, "bson error").set_source(err)
+}
+
+fn parse_bson_usize(value: Option<&Bson>) -> Result<Option<usize>> {
+    let Some(value) = value else {
+        return Ok(None);
+    };
+
+    match value {
+        Bson::Int32(v) => (*v).try_into().map(Some).map_err(|err| {
+            Error::new(ErrorKind::Unexpected, "mongodb value length is invalid").set_source(err)
+        }),
+        Bson::Int64(v) => (*v).try_into().map(Some).map_err(|err| {
+            Error::new(ErrorKind::Unexpected, "mongodb value length is invalid").set_source(err)
+        }),
+        _ => Err(Error::new(
+            ErrorKind::Unexpected,
+            "mongodb value length is invalid",
+        )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_bson_usize() {
+        assert_eq!(parse_bson_usize(Some(&Bson::Int32(6))).unwrap(), Some(6));
+        assert_eq!(parse_bson_usize(Some(&Bson::Int64(6))).unwrap(), Some(6));
+        assert_eq!(parse_bson_usize(None).unwrap(), None);
+        assert!(parse_bson_usize(Some(&Bson::Int32(-1))).is_err());
+        assert!(parse_bson_usize(Some(&Bson::String("6".to_string()))).is_err());
+    }
 }

@@ -23,13 +23,15 @@ on:
       - main
     tags:
       - '*'
+    paths: &paths
+      - "bindings/c/**"
+      - "core/**"
+      - ".github/actions/setup/**"
+      - ".github/workflows/ci_bindings_c.yml"
   pull_request:
     branches:
       - main
-    paths:
-      - "bindings/c/**"
-      - "core/**"
-      - ".github/workflows/ci_bindings_c.yml"
+    paths: *paths
   workflow_dispatch:
 
 concurrency:
@@ -42,8 +44,9 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
@@ -53,12 +56,16 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential pkg-config uuid-dev libcurl4-gnutls-dev
 
+      # Useful for debugging
+      - name: Print Clippy version
+        working-directory: "bindings/c"
+        run: cargo clippy --version
+
       - name: Clippy Check
         working-directory: "bindings/c"
 
         run: |
           cargo clippy -- -D warnings
-
 
       - name: Build C binding
         working-directory: "bindings/c"
@@ -69,6 +76,10 @@ jobs:
 
       - name: Check diff
         run: git diff --exit-code
+
+      - name: Run getting-started example
+        working-directory: "bindings/c"
+        run: ./build/getting_started
 
       - name: Build and Run tests
         working-directory: "bindings/c"

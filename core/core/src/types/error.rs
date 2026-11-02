@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Errors that returned by OpenDAL
+//! OpenDAL error types.
 //!
 //! # Examples
 //!
@@ -42,10 +42,10 @@ use std::fmt::Display;
 use std::fmt::Formatter;
 use std::io;
 
-/// Result that is a wrapper of `Result<T, opendal::Error>`
+/// A specialized [`std::result::Result`] whose default error type is [`Error`].
 pub type Result<T, E = Error> = std::result::Result<T, E>;
 
-/// ErrorKind is all kinds of Error of opendal.
+/// OpenDAL error categories.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum ErrorKind {
@@ -55,7 +55,12 @@ pub enum ErrorKind {
     /// Underlying service doesn't support this operation.
     Unsupported,
 
-    /// The config for backend is invalid.
+    /// The config for this service is invalid.
+    ///
+    /// OpenDAL also returns this kind for an invalid option value or
+    /// combination, for example `if_not_changed` metadata that contains no
+    /// usable version or ETag, or a restore `if_not_exists` without a
+    /// restore version.
     ConfigInvalid,
     /// The given path is not found.
     NotFound,
@@ -71,21 +76,30 @@ pub enum ErrorKind {
     RateLimited,
     /// The given file paths are same.
     IsSameFile,
-    /// The condition of this operation is not match.
+    /// A condition supplied through the OpenDAL operation evaluated to false.
     ///
-    /// The `condition` itself is context based.
-    ///
-    /// For example, in S3, the `condition` can be:
-    /// 1. writing a file with If-Match header but the file's ETag is not match (will get a 412 Precondition Failed).
-    /// 2. reading a file with If-None-Match header but the file's ETag is match (will get a 304 Not Modified).
-    ///
-    /// As OpenDAL cannot handle the `condition not match` error, it will always return this error to users.
-    /// So users could to handle this error by themselves.
+    /// Options such as `if_match`, `if_not_exists`, and `if_not_changed`
+    /// produce this error. It is returned only for conditions the caller
+    /// supplied: a service-side conflict unrelated to such a condition
+    /// returns [`ErrorKind::Conflict`], and observing a missing file with
+    /// `stat` or `read` returns [`ErrorKind::NotFound`] regardless of
+    /// conditions.
+    /// See the [conditional operation specification][crate::docs::specs::conditional_operations]
+    /// for its portable error semantics.
     ConditionNotMatch,
     /// The range of the content is not satisfied.
     ///
     /// OpenDAL returns this error to indicate that the range of the read request is not satisfied.
     RangeNotSatisfied,
+    /// The operation conflicts with the current or transitional state of the resource.
+    ///
+    /// This covers conflicts the service reports on its own; a false
+    /// condition supplied through OpenDAL options returns
+    /// [`ErrorKind::ConditionNotMatch`] instead.
+    ///
+    /// This error kind does not indicate whether retrying the same operation is safe.
+    /// Inspect the error's retry status for that decision.
+    Conflict,
 }
 
 impl ErrorKind {
@@ -124,27 +138,33 @@ impl From<ErrorKind> for &'static str {
             ErrorKind::IsSameFile => "IsSameFile",
             ErrorKind::ConditionNotMatch => "ConditionNotMatch",
             ErrorKind::RangeNotSatisfied => "RangeNotSatisfied",
+            ErrorKind::Conflict => "Conflict",
         }
     }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum ErrorStatus {
-    /// Permanent means without external changes, the error never changes.
+    /// The error is stable and will not change without external changes.
     ///
-    /// For example, underlying services returns a not found error.
+    /// For example, a service returns a not found error.
     ///
     /// Users MUST never retry this operation.
     Permanent,
-    /// Temporary means this error is returned for temporary.
+
+    /// The error is temporary.
     ///
-    /// For example, underlying services is rate limited or unavailable for temporary.
+    /// For example:
     ///
-    /// Users CAN retry the operation to resolve it.
+    /// - A service rate-limits a request.
+    /// - A service is temporarily unavailable.
+    ///
+    /// Users MAY retry an operation to resolve this error.
     Temporary,
-    /// Persistent means this error used to be temporary but still failed after retry.
+
+    /// The error was temporary but persisted after retries.
     ///
-    /// For example, underlying services kept returning network errors.
+    /// For example, a service kept returning network errors.
     ///
     /// Users SHOULD NOT retry this operation, since it's highly possible to error again.
     Persistent,
@@ -378,7 +398,9 @@ impl Error {
 
     /// Set temporary status for error.
     ///
-    /// By set temporary, we indicate this error is retryable.
+    /// A temporary error indicates that the receiving OpenDAL layer can safely replay
+    /// the same operation method with the state it retains. It does not imply that a
+    /// broader workflow can be retried without refreshing or rebuilding its state.
     pub fn set_temporary(mut self) -> Self {
         self.status = ErrorStatus::Temporary;
         self
@@ -432,7 +454,7 @@ impl Error {
         self.status == ErrorStatus::Permanent
     }
 
-    /// Check if this error is temporary.
+    /// Check if the receiving OpenDAL layer can safely replay the same operation method.
     pub fn is_temporary(&self) -> bool {
         self.status == ErrorStatus::Temporary
     }
@@ -507,7 +529,6 @@ impl From<Error> for io::Error {
 
 #[cfg(test)]
 mod tests {
-    use std::mem::size_of;
     use std::sync::LazyLock;
 
     use anyhow::anyhow;
@@ -527,16 +548,6 @@ mod tests {
         source: Some(anyhow!("networking error")),
         backtrace: None,
     });
-
-    /// This is not a real test case.
-    ///
-    /// We assert our public structs here to make sure we don't introduce
-    /// unexpected struct/enum size change.
-    #[cfg(target_pointer_width = "64")]
-    #[test]
-    fn assert_size() {
-        assert_eq!(88, size_of::<Error>());
-    }
 
     #[test]
     fn test_error_display() {

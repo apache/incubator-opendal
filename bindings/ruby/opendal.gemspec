@@ -17,7 +17,19 @@
 
 # frozen_string_literal: true
 
-require "json"
+tracked_files_or_glob = lambda do |dir|
+  git_dir = File.join(dir, ".git")
+
+  if File.exist?(git_dir)
+    IO.popen(["git", "-C", dir, "ls-files", "-z"], &:read).split("\x0")
+  else
+    Dir.chdir(dir) do
+      Dir.glob("**/*", File::FNM_DOTMATCH).reject do |f|
+        File.directory?(f)
+      end
+    end
+  end
+end
 
 Gem::Specification.new do |spec|
   spec.name = "opendal"
@@ -28,13 +40,10 @@ Gem::Specification.new do |spec|
   # OpenDAL relies on "version" in `Cargo.toml` for the release process. You can read this gem spec with:
   # `bundle exec ruby -e 'puts Gem::Specification.load("opendal.gemspec")'`
   #
-  # keep in sync the key "opendal-ruby" with `Rakefile`.
-  #
-  # uses `cargo` to extract the version.
-  spec.version = JSON.parse(`cargo metadata --format-version 1`.strip)
-    .fetch("packages")
-    .find { |p| p["name"] == "opendal-ruby" }
-    .fetch("version")
+  # Read from Cargo.toml directly so Bundler can evaluate this gemspec from an
+  # unpacked native gem without requiring the Rust workspace or network access.
+  cargo_toml = File.read(File.join(__dir__, "Cargo.toml"))
+  spec.version = cargo_toml.match(/^\s*version\s*=\s*"([^"]+)"/)[1]
   spec.authors = ["OpenDAL Contributors"]
   spec.email = ["dev@opendal.apache.org"]
 
@@ -52,24 +61,25 @@ Gem::Specification.new do |spec|
   }
 
   # Specify which files should be added to a source release gem when we release OpenDAL Ruby gem.
-  # The `git ls-files -z` loads the files in the RubyGem that have been added into git.
+  # Prefer git-tracked files while building from a checkout, and fall back to
+  # the unpacked files when Bundler loads this gemspec from an installed gem.
   spec.files = Dir.chdir(__dir__) do
-    git_files = `git ls-files -z`.split("\x0").reject do |f|
-      f.start_with?(*%w[gems/ pkg/ target/ tmp/ .git])
+    git_files = tracked_files_or_glob.call(__dir__).reject do |f|
+      f.start_with?(*%w[.bundle/ gems/ pkg/ target/ tmp/ .git/ vendor/]) ||
+        f.end_with?(*%w[.log .tmp .bak]) ||
+        (f.end_with?(".lock") && f != "Cargo.lock") ||
+        f == "."
     end
+    git_files |= ["Cargo.lock"] if File.file?("Cargo.lock")
 
     # When building release package, include core directory files for rake build
-    core_dir = "../../core"
     distributed_core_dir = "core"
 
     if Dir.exist?(distributed_core_dir)
       # Core files should already be copied by the Rakefile's copy_core task
-      core_files = `git -C #{File.expand_path(core_dir, __dir__)} ls-files -z`
-        .split("\x0")
-        .filter_map do |f|
-          full_path = "#{distributed_core_dir}/#{f}"
-          full_path if File.exist?(full_path)
-        end
+      core_files = tracked_files_or_glob.call(File.expand_path(distributed_core_dir, __dir__)).map do |f|
+        "#{distributed_core_dir}/#{f}"
+      end
 
       git_files + core_files
     else
@@ -79,12 +89,15 @@ Gem::Specification.new do |spec|
 
   spec.require_paths = ["lib"]
 
-  spec.extensions = ["./extconf.rb"]
+  native_extension = Dir.glob(File.join(__dir__, "lib", "opendal_ruby.*")).any? do |path|
+    File.file?(path) && File.extname(path) != ".rb"
+  end
+  spec.extensions = native_extension ? [] : ["./Cargo.toml"]
 
   # Exclude non-Ruby files from RDoc to prevent parsing errors
   spec.rdoc_options = ["--exclude", "Cargo\\..*", "--exclude", "core/", "--exclude", "\\.rs$"]
 
-  spec.requirements = ["Rust >= 1.85"]
+  spec.requirements = ["Rust >= 1.91"]
   # use a Ruby version which:
   # - supports Rubygems with the ability of compilation of Rust gem
   # - not end of life

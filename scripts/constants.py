@@ -21,8 +21,8 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent.parent
 
 
-def list_packages():
-    packages = ["core"]
+def list_packages() -> list[Path]:
+    packages = [Path("core")]
 
     for dir in ["integrations", "bin", "bindings"]:
         base = ROOT_DIR / dir
@@ -39,3 +39,8 @@ def list_packages():
 
 
 PACKAGES = list_packages()
+
+PACKAGE_FEATURES: dict[Path, list[str]] = {
+    Path("bindings/nodejs"): ["services-all"],
+    Path("bindings/python"): ["services-all"],
+}

@@ -31,7 +31,7 @@ pub struct ObjectStoreLister {
 }
 
 impl ObjectStoreLister {
-    pub(crate) async fn new(
+    pub(crate) fn new(
         store: Arc<dyn ObjectStore + 'static>,
         path: &str,
         args: OpList,

@@ -19,16 +19,16 @@ use std::fmt::Debug;
 use std::sync::Arc;
 
 use bytes::Buf;
-use http::Response;
 use http::StatusCode;
 use log::debug;
 
 use super::YANDEX_DISK_SCHEME;
 use super::config::YandexDiskConfig;
+use super::core::parse_error;
 use super::core::*;
 use super::deleter::YandexDiskDeleter;
-use super::error::parse_error;
 use super::lister::YandexDiskLister;
+use super::reader::*;
 use super::writer::YandexDiskWriter;
 use super::writer::YandexDiskWriters;
 use opendal_core::raw::*;
@@ -78,11 +78,11 @@ impl Builder for YandexDiskBuilder {
     type Config = YandexDiskConfig;
 
     /// Builds the backend and returns the result of YandexDiskBackend.
-    fn build(self) -> Result<impl Access> {
-        debug!("backend build started: {:?}", &self);
+    fn build(self) -> Result<impl Service> {
+        debug!("backend build started: {:?}", self);
 
         let root = normalize_root(&self.config.root.clone().unwrap_or_default());
-        debug!("backend use root {}", &root);
+        debug!("backend use root {}", root);
 
         // Handle oauth access_token.
         if self.config.access_token.is_empty() {
@@ -95,33 +95,28 @@ impl Builder for YandexDiskBuilder {
 
         Ok(YandexDiskBackend {
             core: Arc::new(YandexDiskCore {
-                info: {
-                    let am = AccessorInfo::default();
-                    am.set_scheme(YANDEX_DISK_SCHEME)
-                        .set_root(&root)
-                        .set_native_capability(Capability {
-                            stat: true,
+                info: ServiceInfo::new(YANDEX_DISK_SCHEME, &root, ""),
+                capability: Capability {
+                    stat: true,
 
-                            create_dir: true,
+                    create_dir: true,
 
-                            read: true,
+                    read: true,
+                    read_with_suffix: true,
 
-                            write: true,
-                            write_can_empty: true,
+                    write: true,
+                    write_can_empty: true,
 
-                            delete: true,
-                            rename: true,
-                            copy: true,
+                    delete: true,
+                    rename: true,
+                    copy: true,
 
-                            list: true,
-                            list_with_limit: true,
+                    list: true,
+                    list_with_limit: true,
 
-                            shared: true,
+                    shared: true,
 
-                            ..Default::default()
-                        });
-
-                    am.into()
+                    ..Default::default()
                 },
                 root,
                 access_token: self.config.access_token.clone(),
@@ -133,67 +128,114 @@ impl Builder for YandexDiskBuilder {
 /// Backend for YandexDisk services.
 #[derive(Debug, Clone)]
 pub struct YandexDiskBackend {
-    core: Arc<YandexDiskCore>,
+    pub(crate) core: Arc<YandexDiskCore>,
 }
 
-impl Access for YandexDiskBackend {
-    type Reader = HttpBody;
+impl Service for YandexDiskBackend {
+    type Reader = oio::StreamReader<YandexDiskReader>;
     type Writer = YandexDiskWriters;
     type Lister = oio::PageLister<YandexDiskLister>;
     type Deleter = oio::OneShotDeleter<YandexDiskDeleter>;
+    type Copier = oio::OneShotCopier;
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
+    fn info(&self) -> ServiceInfo {
         self.core.info.clone()
     }
 
-    async fn create_dir(&self, path: &str, _: OpCreateDir) -> Result<RpCreateDir> {
-        self.core.ensure_dir_exists(path).await?;
+    fn capability(&self) -> Capability {
+        self.core.capability
+    }
+
+    async fn create_dir(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        _: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        self.core.ensure_dir_exists(ctx, path).await?;
 
         Ok(RpCreateDir::default())
     }
 
-    async fn rename(&self, from: &str, to: &str, _args: OpRename) -> Result<RpRename> {
-        self.core.ensure_dir_exists(to).await?;
+    async fn rename(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        _args: OpRename,
+    ) -> Result<RpRename> {
+        self.core.ensure_dir_exists(ctx, to).await?;
 
-        let resp = self.core.move_object(from, to).await?;
+        let resp = self.core.move_object(ctx, from, to).await?;
 
         let status = resp.status();
 
         match status {
             StatusCode::OK | StatusCode::CREATED => Ok(RpRename::default()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("MoveResource")),
+                resp,
+            )),
         }
     }
 
-    async fn copy(&self, from: &str, to: &str, _args: OpCopy) -> Result<RpCopy> {
-        self.core.ensure_dir_exists(to).await?;
+    fn copy(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpCopy,
+    ) -> Result<Self::Copier> {
+        let backend = self.clone();
+        let core = self.core.clone();
+        let ctx = ctx.clone();
+        let from = from.to_string();
+        let to = to.to_string();
+        let source_content_length_hint = args.source_content_length_hint();
 
-        let resp = self.core.copy(from, to).await?;
+        Ok(oio::OneShotCopier::new(async move {
+            let source_size = match source_content_length_hint {
+                Some(size) => size,
+                None => backend
+                    .stat(&ctx, &from, OpStat::default())
+                    .await?
+                    .into_metadata()
+                    .content_length(),
+            };
 
-        let status = resp.status();
+            core.ensure_dir_exists(&ctx, &to).await?;
 
-        match status {
-            StatusCode::OK | StatusCode::CREATED => Ok(RpCopy::default()),
-            _ => Err(parse_error(resp)),
-        }
-    }
+            let resp = core.copy(&ctx, &from, &to).await?;
 
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let resp = self.core.download(path, args.range()).await?;
+            let status = resp.status();
 
-        let status = resp.status();
-        match status {
-            StatusCode::OK | StatusCode::PARTIAL_CONTENT => Ok((RpRead::new(), resp.into_body())),
-            _ => {
-                let (part, mut body) = resp.into_parts();
-                let buf = body.to_buffer().await?;
-                Err(parse_error(Response::from_parts(part, buf)))
+            match status {
+                StatusCode::OK | StatusCode::CREATED => {
+                    Ok(MetadataBuilder::file(source_size).build())
+                }
+                _ => Err(parse_error(
+                    ErrorContext::new(ServiceOperation("CopyResource")),
+                    resp,
+                )),
             }
-        }
+        }))
+    }
+    fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
+        let output: oio::StreamReader<YandexDiskReader> = {
+            Ok(oio::StreamReader::new(YandexDiskReader::new(
+                self.clone(),
+                ctx.clone(),
+                path,
+                args,
+            )))
+        }?;
+
+        Ok(output)
     }
 
-    async fn stat(&self, path: &str, _args: OpStat) -> Result<RpStat> {
-        let resp = self.core.metainformation(path, None, None).await?;
+    async fn stat(&self, ctx: &OperationContext, path: &str, _args: OpStat) -> Result<RpStat> {
+        let resp = self.core.metainformation(ctx, path, None, None).await?;
 
         let status = resp.status();
 
@@ -206,27 +248,54 @@ impl Access for YandexDiskBackend {
 
                 parse_info(mf).map(RpStat::new)
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetMetainformation")),
+                resp,
+            )),
         }
     }
 
-    async fn write(&self, path: &str, _args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        let writer = YandexDiskWriter::new(self.core.clone(), path.to_string());
+    fn write(&self, ctx: &OperationContext, path: &str, _args: OpWrite) -> Result<Self::Writer> {
+        let output: YandexDiskWriters = {
+            let writer = YandexDiskWriter::new(self.core.clone(), ctx.clone(), path.to_string());
 
-        let w = oio::OneShotWriter::new(writer);
+            let w = oio::OneShotWriter::new(writer);
 
-        Ok((RpWrite::default(), w))
+            Ok(w)
+        }?;
+
+        Ok(output)
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        Ok((
-            RpDelete::default(),
-            oio::OneShotDeleter::new(YandexDiskDeleter::new(self.core.clone())),
+    fn delete(&self, ctx: &OperationContext) -> Result<Self::Deleter> {
+        let output: oio::OneShotDeleter<YandexDiskDeleter> = {
+            Ok(oio::OneShotDeleter::new(YandexDiskDeleter::new(
+                self.core.clone(),
+                ctx.clone(),
+            )))
+        }?;
+
+        Ok(output)
+    }
+
+    fn list(&self, ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
+        let output: oio::PageLister<YandexDiskLister> = {
+            let l = YandexDiskLister::new(self.core.clone(), ctx.clone(), path, args.limit());
+            Ok(oio::PageLister::new(l))
+        }?;
+
+        Ok(output)
+    }
+
+    async fn presign(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpPresign,
+    ) -> Result<RpPresign> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
         ))
-    }
-
-    async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
-        let l = YandexDiskLister::new(self.core.clone(), path, args.limit());
-        Ok((RpList::default(), oio::PageLister::new(l)))
     }
 }

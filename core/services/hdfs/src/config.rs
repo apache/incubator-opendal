@@ -37,7 +37,11 @@ pub struct HdfsConfig {
     pub kerberos_ticket_cache_path: Option<String>,
     /// user of this backend
     pub user: Option<String>,
-    /// enable the append capacity
+    /// Deprecated: HDFS append capability is enabled by default.
+    #[deprecated(
+        since = "0.57.0",
+        note = "HDFS append capability is enabled by default and this option is no longer needed."
+    )]
     pub enable_append: bool,
     /// atomic_write_dir of this backend
     pub atomic_write_dir: Option<String>,
@@ -53,7 +57,6 @@ impl Debug for HdfsConfig {
                 &self.kerberos_ticket_cache_path,
             )
             .field("user", &self.user)
-            .field("enable_append", &self.enable_append)
             .field("atomic_write_dir", &self.atomic_write_dir)
             .finish_non_exhaustive()
     }
@@ -68,15 +71,16 @@ impl opendal_core::Configurator for HdfsConfig {
             map.insert("name_node".to_string(), format!("hdfs://{authority}"));
         }
 
-        if let Some(root) = uri.root() {
-            if !root.is_empty() {
-                map.insert("root".to_string(), root.to_string());
-            }
+        if let Some(root) = uri.root()
+            && !root.is_empty()
+        {
+            map.insert("root".to_string(), root.to_string());
         }
 
         Self::from_iter(map)
     }
 
+    #[allow(deprecated)]
     fn into_builder(self) -> Self::Builder {
         HdfsBuilder { config: self }
     }

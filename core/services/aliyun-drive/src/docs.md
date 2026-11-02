@@ -1,6 +1,6 @@
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [x] create_dir
 - [x] stat
@@ -12,16 +12,14 @@ This service can be used to:
 - [x] rename
 - [ ] presign
 
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
+
 ## Configuration
 
-- `root`: Set the work dir for backend.
-- `access_token`: Set the access_token for backend.
-- `client_id`: Set the client_id for backend.
-- `client_secret`: Set the client_secret for backend.
-- `refresh_token`: Set the refresh_token for backend.
-- `drive_type`: Set the drive_type for backend.
-
-Refer to [`AliyunDriveBuilder`]'s public API docs for more information.
+Use [`crate::AliyunDriveConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
 ## Example
 
@@ -51,7 +49,7 @@ async fn main() -> Result<()> {
         // Fallback to the default type if no other types found.
         .drive_type("resource");
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
 
     Ok(())
 }

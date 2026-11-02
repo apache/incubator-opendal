@@ -36,7 +36,7 @@ use crate::*;
 ///
 /// - Services impl `PositionWrite`
 /// - `PositionWriter` impl `Write`
-/// - Expose `PositionWriter` as `Accessor::Writer`
+/// - Expose `PositionWriter` as `Service::Writer`
 ///
 /// # Requirements
 ///
@@ -79,8 +79,8 @@ pub struct PositionWriter<W: PositionWrite> {
 #[allow(dead_code)]
 impl<W: PositionWrite> PositionWriter<W> {
     /// Create a new PositionWriter.
-    pub fn new(info: Arc<AccessorInfo>, inner: W, concurrent: usize) -> Self {
-        let executor = info.executor();
+    pub fn new(executor: impl Into<Executor>, inner: W, concurrent: usize) -> Self {
+        let executor = executor.into();
 
         Self {
             w: Arc::new(inner),
@@ -88,7 +88,7 @@ impl<W: PositionWrite> PositionWriter<W> {
             next_offset: 0,
             cache: None,
 
-            tasks: ConcurrentTasks::new(executor, concurrent, 8192, |input| {
+            tasks: ConcurrentTasks::new(executor, concurrent, 0, |input| {
                 Box::pin(async move {
                     let fut = input.w.write_all_at(input.offset, input.bytes.clone());
                     match input.executor.timeout() {
@@ -177,9 +177,7 @@ mod tests {
     use std::sync::Mutex;
 
     use pretty_assertions::assert_eq;
-    use rand::Rng;
-    use rand::RngCore;
-    use rand::thread_rng;
+    use rand::{Rng, RngExt, rng};
     use tokio::time::sleep;
 
     use super::*;
@@ -207,7 +205,7 @@ mod tests {
             sleep(Duration::from_millis(50)).await;
 
             // We will have 10% percent rate for write part to fail.
-            if thread_rng().gen_bool(1.0 / 10.0) {
+            if rng().random_bool(1.0 / 10.0) {
                 return Err(
                     Error::new(ErrorKind::Unexpected, "I'm a crazy monkey!").set_temporary()
                 );
@@ -229,7 +227,7 @@ mod tests {
         }
 
         async fn close(&self, _size: u64) -> Result<Metadata> {
-            Ok(Metadata::default())
+            Ok(MetadataBuilder::unknown().build())
         }
 
         async fn abort(&self) -> Result<()> {
@@ -239,13 +237,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_position_writer_with_concurrent_errors() {
-        let mut rng = thread_rng();
+        let mut rng = rng();
 
-        let mut w = PositionWriter::new(Arc::default(), TestWrite::new(), 200);
+        let mut w = PositionWriter::new(Executor::default(), TestWrite::new(), 200);
         let mut total_size = 0u64;
 
         for _ in 0..1000 {
-            let size = rng.gen_range(1..1024);
+            let size = rng.random_range(1..1024);
             total_size += size as u64;
 
             let mut bs = vec![0; size];
@@ -281,5 +279,45 @@ mod tests {
 
         let actual_size = w.w.lock().unwrap().length;
         assert_eq!(actual_size, total_size);
+    }
+
+    struct FailingWrite;
+
+    impl PositionWrite for FailingWrite {
+        async fn write_all_at(&self, _offset: u64, _buf: Buffer) -> Result<()> {
+            Err(Error::new(ErrorKind::Unexpected, "backend write failed"))
+        }
+
+        async fn close(&self, _size: u64) -> Result<Metadata> {
+            Ok(MetadataBuilder::unknown().build())
+        }
+
+        async fn abort(&self) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_position_writer_surfaces_permanent_error_within_concurrent_window() {
+        let concurrent = 8;
+        let mut w = PositionWriter::new(Executor::default(), FailingWrite, concurrent);
+        let bs = Buffer::from(vec![0u8; 8]);
+
+        let mut first_error_at = None;
+        for i in 1..=concurrent + 4 {
+            match w.write(bs.clone()).await {
+                Ok(()) => continue,
+                Err(_) => {
+                    first_error_at = Some(i);
+                    break;
+                }
+            }
+        }
+
+        let first_error_at = first_error_at
+            .expect("write must surface the backend error inside the concurrent window");
+        // One write stays in cache; ConcurrentTasks then holds at most `concurrent`
+        // tasks when prefetch is 0. The next write awaits the queue head.
+        assert_eq!(first_error_at, concurrent + 2);
     }
 }

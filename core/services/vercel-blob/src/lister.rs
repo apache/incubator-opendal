@@ -19,21 +19,29 @@ use std::sync::Arc;
 
 use super::core::VercelBlobCore;
 use super::core::parse_blob;
+use opendal_core::OperationContext;
 use opendal_core::Result;
 use opendal_core::raw::oio::Entry;
 use opendal_core::raw::*;
 
 pub struct VercelBlobLister {
     core: Arc<VercelBlobCore>,
+    ctx: OperationContext,
 
     path: String,
     limit: Option<usize>,
 }
 
 impl VercelBlobLister {
-    pub(super) fn new(core: Arc<VercelBlobCore>, path: &str, limit: Option<usize>) -> Self {
+    pub(super) fn new(
+        core: Arc<VercelBlobCore>,
+        ctx: OperationContext,
+        path: &str,
+        limit: Option<usize>,
+    ) -> Self {
         VercelBlobLister {
             core,
+            ctx,
             path: path.to_string(),
             limit,
         }
@@ -44,12 +52,21 @@ impl oio::PageList for VercelBlobLister {
     async fn next_page(&self, ctx: &mut oio::PageContext) -> Result<()> {
         let p = build_abs_path(&self.core.root, &self.path);
 
-        let resp = self.core.list(&p, self.limit).await?;
+        let cursor = if ctx.token.is_empty() {
+            None
+        } else {
+            Some(ctx.token.as_str())
+        };
+
+        let resp = self.core.list(&self.ctx, &p, self.limit, cursor).await?;
 
         ctx.done = !resp.has_more;
 
-        if let Some(cursor) = resp.cursor {
-            ctx.token = cursor;
+        match resp.cursor {
+            Some(cursor) => ctx.token = cursor,
+            // More pages were reported but nothing was handed back to resume from. Stopping
+            // truncates the listing; the alternative is re-requesting the same page forever.
+            None => ctx.done = true,
         }
 
         for blob in resp.blobs {

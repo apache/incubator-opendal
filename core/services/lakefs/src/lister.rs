@@ -21,12 +21,13 @@ use bytes::Buf;
 use opendal_core::raw::*;
 use opendal_core::*;
 
-use super::core::LakefsCore;
 use super::core::LakefsListResponse;
-use super::error::parse_error;
+use super::core::parse_error;
+use super::core::{ErrorContext, LakefsCore};
 
 pub struct LakefsLister {
     core: Arc<LakefsCore>,
+    ctx: OperationContext,
     path: String,
     delimiter: &'static str,
     amount: Option<usize>,
@@ -36,6 +37,7 @@ pub struct LakefsLister {
 impl LakefsLister {
     pub fn new(
         core: Arc<LakefsCore>,
+        ctx: OperationContext,
         path: String,
         amount: Option<usize>,
         after: Option<&str>,
@@ -44,6 +46,7 @@ impl LakefsLister {
         let delimiter = if recursive { "" } else { "/" };
         Self {
             core,
+            ctx,
             path,
             delimiter,
             amount,
@@ -57,21 +60,23 @@ impl oio::PageList for LakefsLister {
         let response = self
             .core
             .list_objects(
+                &self.ctx,
                 &self.path,
                 self.delimiter,
                 &self.amount,
-                // start after should only be set for the first page.
+                // start_after applies to the first page; later pages resume from the
+                // cursor the previous response returned.
                 if ctx.token.is_empty() {
                     self.after.clone()
                 } else {
-                    None
+                    Some(ctx.token.clone())
                 },
             )
             .await?;
 
         let status_code = response.status();
         if !status_code.is_success() {
-            let error = parse_error(response);
+            let error = parse_error(ErrorContext::new(ServiceOperation("ListObjects")), response);
             return Err(error);
         }
 
@@ -80,7 +85,9 @@ impl oio::PageList for LakefsLister {
         let decoded_response: LakefsListResponse =
             serde_json::from_reader(bytes.reader()).map_err(new_json_deserialize_error)?;
 
-        ctx.done = true;
+        let pagination = decoded_response.pagination;
+        ctx.done = !pagination.has_more;
+        ctx.token = pagination.next_offset;
 
         for status in decoded_response.results {
             let entry_type = match status.path_type.as_str() {
@@ -89,27 +96,27 @@ impl oio::PageList for LakefsLister {
                 _ => EntryMode::Unknown,
             };
 
-            let mut meta = Metadata::new(entry_type);
+            let mut meta = match entry_type {
+                EntryMode::FILE => status
+                    .size_bytes
+                    .map_or_else(MetadataBuilder::unknown, MetadataBuilder::file),
+                EntryMode::DIR => MetadataBuilder::dir(),
+                EntryMode::Unknown => MetadataBuilder::unknown(),
+            };
 
             if status.mtime != 0 {
-                meta.set_last_modified(Timestamp::from_second(status.mtime).unwrap());
-            }
-
-            if entry_type == EntryMode::FILE {
-                if let Some(size_bytes) = status.size_bytes {
-                    meta.set_content_length(size_bytes);
-                }
+                meta.last_modified(Timestamp::from_second(status.mtime).unwrap());
             }
 
             let path = if entry_type == EntryMode::DIR {
-                format!("{}/", &status.path)
+                format!("{}/", status.path)
             } else {
                 status.path.clone()
             };
 
             ctx.entries.push_back(oio::Entry::new(
                 &build_rel_path(&self.core.root, &path),
-                meta,
+                meta.build(),
             ));
         }
 

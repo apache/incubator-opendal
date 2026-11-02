@@ -17,11 +17,11 @@
 
 use std::fmt::Debug;
 
+use asyncband::once::OnceCell;
 use futures::AsyncReadExt;
 use futures::AsyncWriteExt;
-use mea::once::OnceCell;
 use mongodb::bson::doc;
-use mongodb::gridfs::GridFsBucket;
+use mongodb::gridfs::{FilesCollectionDocument, GridFsBucket};
 use mongodb::options::ClientOptions;
 use mongodb::options::GridFsBucketOptions;
 use opendal_core::raw::*;
@@ -67,10 +67,18 @@ impl GridfsCore {
             .await
     }
 
+    async fn get_one_doc(
+        bucket: &GridFsBucket,
+        path: &str,
+    ) -> Result<Option<FilesCollectionDocument>> {
+        let filter = doc! { "filename": path };
+        let doc = bucket.find_one(filter).await.map_err(parse_mongodb_error)?;
+        Ok(doc)
+    }
+
     pub async fn get(&self, path: &str) -> Result<Option<Buffer>> {
         let bucket = self.get_bucket().await?;
-        let filter = doc! { "filename": path };
-        let Some(doc) = bucket.find_one(filter).await.map_err(parse_mongodb_error)? else {
+        let Some(doc) = Self::get_one_doc(bucket, path).await? else {
             return Ok(None);
         };
 
@@ -87,12 +95,21 @@ impl GridfsCore {
         Ok(Some(Buffer::from(destination)))
     }
 
+    /// Get the byte length of the file.
+    pub async fn get_length(&self, path: &str) -> Result<Option<usize>> {
+        let bucket = self.get_bucket().await?;
+        let Some(doc) = Self::get_one_doc(bucket, path).await? else {
+            return Ok(None);
+        };
+
+        Ok(Some(doc.length as usize))
+    }
+
     pub async fn set(&self, path: &str, value: Buffer) -> Result<()> {
         let bucket = self.get_bucket().await?;
 
         // delete old file if exists
-        let filter = doc! { "filename": path };
-        if let Some(doc) = bucket.find_one(filter).await.map_err(parse_mongodb_error)? {
+        if let Some(doc) = Self::get_one_doc(bucket, path).await? {
             let file_id = doc.id;
             bucket.delete(file_id).await.map_err(parse_mongodb_error)?;
         };
@@ -113,8 +130,7 @@ impl GridfsCore {
 
     pub async fn delete(&self, path: &str) -> Result<()> {
         let bucket = self.get_bucket().await?;
-        let filter = doc! { "filename": path };
-        let Some(doc) = bucket.find_one(filter).await.map_err(parse_mongodb_error)? else {
+        let Some(doc) = Self::get_one_doc(bucket, path).await? else {
             return Ok(());
         };
 

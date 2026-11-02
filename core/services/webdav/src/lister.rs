@@ -20,22 +20,23 @@ use std::sync::Arc;
 use http::StatusCode;
 
 use super::core::*;
-use super::error::*;
 use opendal_core::raw::oio;
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct WebdavLister {
     core: Arc<WebdavCore>,
+    ctx: OperationContext,
 
     path: String,
     args: OpList,
 }
 
 impl WebdavLister {
-    pub fn new(core: Arc<WebdavCore>, path: &str, args: OpList) -> Self {
+    pub fn new(core: Arc<WebdavCore>, ctx: OperationContext, path: &str, args: OpList) -> Self {
         Self {
             core,
+            ctx,
             path: path.to_string(),
             args,
         }
@@ -44,7 +45,10 @@ impl WebdavLister {
 
 impl oio::PageList for WebdavLister {
     async fn next_page(&self, ctx: &mut oio::PageContext) -> Result<()> {
-        let resp = self.core.webdav_list(&self.path, &self.args).await?;
+        let resp = self
+            .core
+            .webdav_list(&self.ctx, &self.path, &self.args)
+            .await?;
 
         // jfrog artifactory's webdav services have some strange behavior.
         // We add this flag to check if the server is jfrog artifactory.
@@ -62,7 +66,10 @@ impl oio::PageList for WebdavLister {
             ctx.done = true;
             return Ok(());
         } else {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("Propfind")),
+                resp,
+            ));
         };
 
         let result: Multistatus = deserialize_multistatus(&bs.to_bytes())?;
@@ -74,7 +81,7 @@ impl oio::PageList for WebdavLister {
                 .unwrap_or(&res.href)
                 .to_string();
 
-            let meta = parse_propstat(&res.propstat)?;
+            let meta = parse_propstats(&res.propstat)?;
 
             // Append `/` to path if it's a dir
             if !path.ends_with('/') && meta.is_dir() {

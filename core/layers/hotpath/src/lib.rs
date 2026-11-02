@@ -15,29 +15,25 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Hotpath layer implementation for Apache OpenDAL.
-
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
-
 use std::pin::Pin;
+use std::sync::Arc;
 use std::task::Context;
 use std::task::Poll;
 
 use futures::Stream;
 use futures::StreamExt;
-use hotpath::MeasurementGuard;
 use opendal_core::raw::*;
 use opendal_core::*;
 
 const LABEL_CREATE_DIR: &str = "opendal.create_dir";
 const LABEL_READ: &str = "opendal.read";
-const LABEL_WRITE: &str = "opendal.write";
-const LABEL_COPY: &str = "opendal.copy";
 const LABEL_RENAME: &str = "opendal.rename";
+const LABEL_RESTORE: &str = "opendal.restore";
 const LABEL_STAT: &str = "opendal.stat";
-const LABEL_DELETE: &str = "opendal.delete";
-const LABEL_LIST: &str = "opendal.list";
 const LABEL_PRESIGN: &str = "opendal.presign";
 
 const LABEL_READER_READ: &str = "opendal.reader.read";
@@ -47,15 +43,19 @@ const LABEL_WRITER_ABORT: &str = "opendal.writer.abort";
 const LABEL_LISTER_NEXT: &str = "opendal.lister.next";
 const LABEL_DELETER_DELETE: &str = "opendal.deleter.delete";
 const LABEL_DELETER_CLOSE: &str = "opendal.deleter.close";
+const LABEL_COPIER_NEXT: &str = "opendal.copier.next";
+const LABEL_COPIER_CLOSE: &str = "opendal.copier.close";
+const LABEL_COPIER_ABORT: &str = "opendal.copier.abort";
 const LABEL_HTTP_FETCH: &str = "opendal.http.fetch";
 const LABEL_HTTP_BODY_POLL: &str = "opendal.http.body.poll";
 
-/// Add [hotpath](https://docs.rs/hotpath/) profiling for every operation.
+/// `HotpathLayer` profiles every operation with
+/// [hotpath](https://docs.rs/hotpath/).
 ///
 /// # Notes
 ///
 /// When `hotpath` profiling is enabled, initialize a guard via
-/// [`hotpath::FunctionsGuardBuilder`] or `#[hotpath::main]` before running
+/// [`hotpath::HotpathGuardBuilder`] or `#[hotpath::main]` before running
 /// operations. Otherwise, hotpath will panic on the first measurement.
 ///
 /// # Examples
@@ -68,15 +68,14 @@ const LABEL_HTTP_BODY_POLL: &str = "opendal.http.body.poll";
 /// #
 /// # #[tokio::main]
 /// # async fn main() -> Result<()> {
-/// let _guard = hotpath::FunctionsGuardBuilder::new("opendal").build();
+/// let _guard = hotpath::HotpathGuardBuilder::new("opendal").build();
 /// let op = Operator::new(services::Memory::default())?
-///     .layer(HotpathLayer::new())
-///     .finish();
+///     .layer(HotpathLayer::new());
 /// op.write("test", "hello").await?;
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct HotpathLayer {}
 
@@ -87,85 +86,118 @@ impl HotpathLayer {
     }
 }
 
-impl<A: Access> Layer<A> for HotpathLayer {
-    type LayeredAccess = HotpathAccessor<A>;
+impl Layer for HotpathLayer {
+    fn apply_service(&self, inner: Servicer) -> Servicer {
+        Arc::new(self.layer(inner))
+    }
 
-    fn layer(&self, inner: A) -> Self::LayeredAccess {
-        let info = inner.info();
-        info.update_http_client(|client| {
-            HttpClient::with(HotpathHttpFetcher {
-                inner: client.into_inner(),
-            })
+    fn apply_context(&self, _srv: Servicer, inner: OperationContext) -> OperationContext {
+        let transport = HttpTransporter::new(HotpathHttpTransport {
+            inner: inner.http_transport().clone(),
         });
+        inner.with_http_transport(transport)
+    }
+}
 
+impl HotpathLayer {
+    fn layer(&self, inner: Servicer) -> HotpathAccessor {
         HotpathAccessor { inner }
     }
 }
 
 #[doc(hidden)]
 #[derive(Debug)]
-pub struct HotpathAccessor<A> {
-    inner: A,
+pub struct HotpathAccessor {
+    inner: Servicer,
 }
 
-impl<A: Access> LayeredAccess for HotpathAccessor<A> {
-    type Inner = A;
-    type Reader = HotpathWrapper<A::Reader>;
-    type Writer = HotpathWrapper<A::Writer>;
-    type Lister = HotpathWrapper<A::Lister>;
-    type Deleter = HotpathWrapper<A::Deleter>;
+impl Service for HotpathAccessor {
+    type Reader = HotpathWrapper<oio::Reader>;
+    type Writer = HotpathWrapper<oio::Writer>;
+    type Lister = HotpathWrapper<oio::Lister>;
+    type Deleter = HotpathWrapper<oio::Deleter>;
+    type Copier = HotpathWrapper<oio::Copier>;
+    type Composer = oio::Composer;
 
-    fn inner(&self) -> &Self::Inner {
-        &self.inner
+    fn info(&self) -> ServiceInfo {
+        self.inner.info()
     }
 
-    async fn create_dir(&self, path: &str, args: OpCreateDir) -> Result<RpCreateDir> {
-        let _guard = MeasurementGuard::build(LABEL_CREATE_DIR, false, true);
-        self.inner.create_dir(path, args).await
+    fn capability(&self) -> Capability {
+        self.inner.capability()
     }
 
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let _guard = MeasurementGuard::build(LABEL_READ, false, true);
-        let (rp, reader) = self.inner.read(path, args).await?;
-        Ok((rp, HotpathWrapper::new(reader)))
+    fn compose(&self, ctx: &OperationContext, to: &str, args: OpCompose) -> Result<Self::Composer> {
+        self.inner.compose(ctx, to, args)
     }
 
-    async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        let _guard = MeasurementGuard::build(LABEL_WRITE, false, true);
-        let (rp, writer) = self.inner.write(path, args).await?;
-        Ok((rp, HotpathWrapper::new(writer)))
+    async fn create_dir(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        hotpath::measure_async(LABEL_CREATE_DIR, self.inner.create_dir(ctx, path, args)).await
     }
 
-    async fn copy(&self, from: &str, to: &str, args: OpCopy) -> Result<RpCopy> {
-        let _guard = MeasurementGuard::build(LABEL_COPY, false, true);
-        self.inner.copy(from, to, args).await
+    fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
+        self.inner.read(ctx, path, args).map(HotpathWrapper::new)
     }
 
-    async fn rename(&self, from: &str, to: &str, args: OpRename) -> Result<RpRename> {
-        let _guard = MeasurementGuard::build(LABEL_RENAME, false, true);
-        self.inner.rename(from, to, args).await
+    fn write(&self, ctx: &OperationContext, path: &str, args: OpWrite) -> Result<Self::Writer> {
+        self.inner.write(ctx, path, args).map(HotpathWrapper::new)
     }
 
-    async fn stat(&self, path: &str, args: OpStat) -> Result<RpStat> {
-        let _guard = MeasurementGuard::build(LABEL_STAT, false, true);
-        self.inner.stat(path, args).await
+    fn copy(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpCopy,
+    ) -> Result<Self::Copier> {
+        self.inner
+            .copy(ctx, from, to, args)
+            .map(HotpathWrapper::new)
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        let _guard = MeasurementGuard::build(LABEL_DELETE, false, true);
-        let (rp, deleter) = self.inner.delete().await?;
-        Ok((rp, HotpathWrapper::new(deleter)))
+    async fn rename(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpRename,
+    ) -> Result<RpRename> {
+        hotpath::measure_async(LABEL_RENAME, self.inner.rename(ctx, from, to, args)).await
     }
 
-    async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
-        let _guard = MeasurementGuard::build(LABEL_LIST, false, true);
-        let (rp, lister) = self.inner.list(path, args).await?;
-        Ok((rp, HotpathWrapper::new(lister)))
+    async fn restore(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpRestore,
+    ) -> Result<RpRestore> {
+        hotpath::measure_async(LABEL_RESTORE, self.inner.restore(ctx, path, args)).await
     }
 
-    async fn presign(&self, path: &str, args: OpPresign) -> Result<RpPresign> {
-        let _guard = MeasurementGuard::build(LABEL_PRESIGN, false, true);
-        self.inner.presign(path, args).await
+    async fn stat(&self, ctx: &OperationContext, path: &str, args: OpStat) -> Result<RpStat> {
+        hotpath::measure_async(LABEL_STAT, self.inner.stat(ctx, path, args)).await
+    }
+
+    fn delete(&self, ctx: &OperationContext) -> Result<Self::Deleter> {
+        self.inner.delete(ctx).map(HotpathWrapper::new)
+    }
+
+    fn list(&self, ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
+        self.inner.list(ctx, path, args).map(HotpathWrapper::new)
+    }
+
+    async fn presign(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpPresign,
+    ) -> Result<RpPresign> {
+        hotpath::measure_async(LABEL_PRESIGN, self.inner.presign(ctx, path, args)).await
     }
 }
 
@@ -180,57 +212,81 @@ impl<R> HotpathWrapper<R> {
     }
 }
 
-impl<R: oio::Read> oio::Read for HotpathWrapper<R> {
+impl<R: oio::ReadStream> oio::ReadStream for HotpathWrapper<R> {
     async fn read(&mut self) -> Result<Buffer> {
-        let _guard = MeasurementGuard::build(LABEL_READER_READ, false, true);
-        self.inner.read().await
+        hotpath::measure_async(LABEL_READER_READ, self.inner.read()).await
+    }
+}
+
+impl<R: oio::Read> oio::Read for HotpathWrapper<R> {
+    async fn open(&self, range: BytesRange) -> Result<(RpRead, Box<dyn oio::ReadStreamDyn>)> {
+        let (rp, stream) = hotpath::measure_async(LABEL_READ, self.inner.open(range)).await?;
+        Ok((
+            rp,
+            Box::new(HotpathWrapper::new(stream)) as Box<dyn oio::ReadStreamDyn>,
+        ))
+    }
+
+    async fn read(&self, range: BytesRange) -> Result<(RpRead, Buffer)> {
+        hotpath::measure_async(LABEL_READER_READ, self.inner.read(range)).await
     }
 }
 
 impl<R: oio::Write> oio::Write for HotpathWrapper<R> {
     async fn write(&mut self, bs: Buffer) -> Result<()> {
-        let _guard = MeasurementGuard::build(LABEL_WRITER_WRITE, false, true);
-        self.inner.write(bs).await
+        hotpath::measure_async(LABEL_WRITER_WRITE, self.inner.write(bs)).await
+    }
+
+    async fn copy_from(&mut self, path: &str, args: OpRead, range: BytesRange) -> Result<()> {
+        hotpath::measure_async(LABEL_WRITER_WRITE, self.inner.copy_from(path, args, range)).await
     }
 
     async fn close(&mut self) -> Result<Metadata> {
-        let _guard = MeasurementGuard::build(LABEL_WRITER_CLOSE, false, true);
-        self.inner.close().await
+        hotpath::measure_async(LABEL_WRITER_CLOSE, self.inner.close()).await
     }
 
     async fn abort(&mut self) -> Result<()> {
-        let _guard = MeasurementGuard::build(LABEL_WRITER_ABORT, false, true);
-        self.inner.abort().await
+        hotpath::measure_async(LABEL_WRITER_ABORT, self.inner.abort()).await
     }
 }
 
 impl<R: oio::List> oio::List for HotpathWrapper<R> {
     async fn next(&mut self) -> Result<Option<oio::Entry>> {
-        let _guard = MeasurementGuard::build(LABEL_LISTER_NEXT, false, true);
-        self.inner.next().await
+        hotpath::measure_async(LABEL_LISTER_NEXT, self.inner.next()).await
     }
 }
 
 impl<R: oio::Delete> oio::Delete for HotpathWrapper<R> {
     async fn delete(&mut self, path: &str, args: OpDelete) -> Result<()> {
-        let _guard = MeasurementGuard::build(LABEL_DELETER_DELETE, false, true);
-        self.inner.delete(path, args).await
+        hotpath::measure_async(LABEL_DELETER_DELETE, self.inner.delete(path, args)).await
     }
 
     async fn close(&mut self) -> Result<()> {
-        let _guard = MeasurementGuard::build(LABEL_DELETER_CLOSE, false, true);
-        self.inner.close().await
+        hotpath::measure_async(LABEL_DELETER_CLOSE, self.inner.close()).await
     }
 }
 
-struct HotpathHttpFetcher {
-    inner: HttpFetcher,
+impl<C: oio::Copy> oio::Copy for HotpathWrapper<C> {
+    async fn next(&mut self) -> Result<Option<usize>> {
+        hotpath::measure_async(LABEL_COPIER_NEXT, self.inner.next()).await
+    }
+
+    async fn close(&mut self) -> Result<Metadata> {
+        hotpath::measure_async(LABEL_COPIER_CLOSE, self.inner.close()).await
+    }
+
+    async fn abort(&mut self) -> Result<()> {
+        hotpath::measure_async(LABEL_COPIER_ABORT, self.inner.abort()).await
+    }
 }
 
-impl HttpFetch for HotpathHttpFetcher {
+struct HotpathHttpTransport {
+    inner: HttpTransporter,
+}
+
+impl HttpTransport for HotpathHttpTransport {
     async fn fetch(&self, req: http::Request<Buffer>) -> Result<http::Response<HttpBody>> {
-        let _guard = MeasurementGuard::build(LABEL_HTTP_FETCH, false, true);
-        let resp = self.inner.fetch(req).await?;
+        let resp = hotpath::measure_async(LABEL_HTTP_FETCH, self.inner.fetch(req)).await?;
         let (parts, body) = resp.into_parts();
         let body = body.map_inner(|stream| Box::new(HotpathStream { inner: stream }));
         Ok(http::Response::from_parts(parts, body))
@@ -248,7 +304,7 @@ where
     type Item = Result<Buffer>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let _guard = MeasurementGuard::build(LABEL_HTTP_BODY_POLL, false, true);
-        self.inner.poll_next_unpin(cx)
+        let _label = LABEL_HTTP_BODY_POLL;
+        hotpath::measure_block!(_label, self.inner.poll_next_unpin(cx))
     }
 }

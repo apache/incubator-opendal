@@ -16,7 +16,6 @@
 // under the License.
 
 use std::fmt::Debug;
-use std::sync::Arc;
 
 use base64::Engine;
 use bytes::Buf;
@@ -29,14 +28,14 @@ use http::request;
 use serde::Deserialize;
 use serde::Serialize;
 
-use super::error::parse_error;
 use opendal_core::raw::*;
 use opendal_core::*;
 
 /// Core of [github contents](https://docs.github.com/en/rest/repos/contents?apiVersion=2022-11-28#create-or-update-file-contents) services support.
 #[derive(Clone)]
 pub struct GithubCore {
-    pub info: Arc<AccessorInfo>,
+    pub info: ServiceInfo,
+    pub capability: Capability,
     /// The root of this core.
     pub root: String,
     /// Github access_token.
@@ -59,8 +58,12 @@ impl Debug for GithubCore {
 
 impl GithubCore {
     #[inline]
-    pub async fn send(&self, req: Request<Buffer>) -> Result<Response<Buffer>> {
-        self.info.http_client().send(req).await
+    pub async fn send(
+        &self,
+        ctx: &OperationContext,
+        req: Request<Buffer>,
+    ) -> Result<Response<Buffer>> {
+        ctx.http_transport().send(req).await
     }
 
     pub fn sign(&self, req: request::Builder) -> Result<request::Builder> {
@@ -81,7 +84,7 @@ impl GithubCore {
 }
 
 impl GithubCore {
-    pub async fn get_file_sha(&self, path: &str) -> Result<Option<String>> {
+    pub async fn get_file_sha(&self, ctx: &OperationContext, path: &str) -> Result<Option<String>> {
         // if the token is not set, we should not try to get the sha of the file.
         if self.token.is_none() {
             return Err(Error::new(
@@ -90,7 +93,7 @@ impl GithubCore {
             ));
         }
 
-        let resp = self.stat(path).await?;
+        let resp = self.stat(ctx, path).await?;
 
         match resp.status() {
             StatusCode::OK => {
@@ -101,11 +104,14 @@ impl GithubCore {
                 Ok(Some(resp.sha))
             }
             StatusCode::NOT_FOUND => Ok(None),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetRepositoryContent")),
+                resp,
+            )),
         }
     }
 
-    pub async fn stat(&self, path: &str) -> Result<Response<Buffer>> {
+    pub async fn stat(&self, ctx: &OperationContext, path: &str) -> Result<Response<Buffer>> {
         let path = build_abs_path(&self.root, path);
 
         let url = format!(
@@ -117,7 +123,9 @@ impl GithubCore {
 
         let req = Request::get(url);
 
-        let req = req.extension(Operation::Stat);
+        let req = req
+            .extension(Operation::Stat)
+            .extension(ServiceOperation("GetRepositoryContent"));
 
         let req = self.sign(req)?;
 
@@ -126,10 +134,15 @@ impl GithubCore {
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
 
-        self.send(req).await
+        self.send(ctx, req).await
     }
 
-    pub async fn get(&self, path: &str, range: BytesRange) -> Result<Response<HttpBody>> {
+    pub async fn get(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        range: BytesRange,
+    ) -> Result<Response<HttpBody>> {
         let path = build_abs_path(&self.root, path);
 
         let url = format!(
@@ -141,7 +154,9 @@ impl GithubCore {
 
         let req = Request::get(url);
 
-        let req = req.extension(Operation::Read);
+        let req = req
+            .extension(Operation::Read)
+            .extension(ServiceOperation("GetRepositoryContent"));
 
         let req = self.sign(req)?;
 
@@ -151,11 +166,16 @@ impl GithubCore {
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
 
-        self.info.http_client().fetch(req).await
+        ctx.http_transport().fetch(req).await
     }
 
-    pub async fn upload(&self, path: &str, bs: Buffer) -> Result<Response<Buffer>> {
-        let sha = self.get_file_sha(path).await?;
+    pub async fn upload(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        bs: Buffer,
+    ) -> Result<Response<Buffer>> {
+        let sha = self.get_file_sha(ctx, path).await?;
 
         let path = build_abs_path(&self.root, path);
 
@@ -168,7 +188,9 @@ impl GithubCore {
 
         let req = Request::put(url);
 
-        let req = req.extension(Operation::Write);
+        let req = req
+            .extension(Operation::Write)
+            .extension(ServiceOperation("CreateOrUpdateFileContents"));
 
         let req = self.sign(req)?;
 
@@ -189,10 +211,10 @@ impl GithubCore {
             .body(Buffer::from(req_body))
             .map_err(new_request_build_error)?;
 
-        self.send(req).await
+        self.send(ctx, req).await
     }
 
-    pub async fn delete(&self, path: &str) -> Result<()> {
+    pub async fn delete(&self, ctx: &OperationContext, path: &str) -> Result<()> {
         // If path is a directory, we should delete path/.gitkeep
         let formatted_path = format!("{path}.gitkeep");
         let p = if path.ends_with('/') {
@@ -201,7 +223,7 @@ impl GithubCore {
             path
         };
 
-        let Some(sha) = self.get_file_sha(p).await? else {
+        let Some(sha) = self.get_file_sha(ctx, p).await? else {
             return Ok(());
         };
 
@@ -216,7 +238,9 @@ impl GithubCore {
 
         let req = Request::delete(url);
 
-        let req = req.extension(Operation::Delete);
+        let req = req
+            .extension(Operation::Delete)
+            .extension(ServiceOperation("DeleteFile"));
 
         let req = self.sign(req)?;
 
@@ -232,16 +256,19 @@ impl GithubCore {
             .body(Buffer::from(Bytes::from(req_body)))
             .map_err(new_request_build_error)?;
 
-        let resp = self.send(req).await?;
+        let resp = self.send(ctx, req).await?;
 
         match resp.status() {
             StatusCode::OK => Ok(()),
             StatusCode::NOT_FOUND => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("DeleteFile")),
+                resp,
+            )),
         }
     }
 
-    pub async fn list(&self, path: &str) -> Result<ListResponse> {
+    pub async fn list(&self, ctx: &OperationContext, path: &str) -> Result<ListResponse> {
         let path = build_abs_path(&self.root, path);
 
         let url = format!(
@@ -253,7 +280,9 @@ impl GithubCore {
 
         let req = Request::get(url);
 
-        let req = req.extension(Operation::List);
+        let req = req
+            .extension(Operation::List)
+            .extension(ServiceOperation("GetRepositoryContent"));
 
         let req = self.sign(req)?;
 
@@ -262,7 +291,7 @@ impl GithubCore {
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
 
-        let resp = self.send(req).await?;
+        let resp = self.send(ctx, req).await?;
 
         match resp.status() {
             StatusCode::OK => {
@@ -273,17 +302,26 @@ impl GithubCore {
                 Ok(resp)
             }
             StatusCode::NOT_FOUND => Ok(ListResponse::default()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetRepositoryContent")),
+                resp,
+            )),
         }
     }
 
     /// We use git_url to call github's Tree based API.
-    pub async fn list_with_recursive(&self, git_url: &str) -> Result<Vec<Tree>> {
+    pub async fn list_with_recursive(
+        &self,
+        ctx: &OperationContext,
+        git_url: &str,
+    ) -> Result<Vec<Tree>> {
         let url = format!("{git_url}?recursive=true");
 
         let req = Request::get(url);
 
-        let req = req.extension(Operation::List);
+        let req = req
+            .extension(Operation::List)
+            .extension(ServiceOperation("GetTree"));
 
         let req = self.sign(req)?;
 
@@ -292,7 +330,7 @@ impl GithubCore {
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
 
-        let resp = self.send(req).await?;
+        let resp = self.send(ctx, req).await?;
 
         match resp.status() {
             StatusCode::OK => {
@@ -302,7 +340,10 @@ impl GithubCore {
 
                 Ok(resp.tree)
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetTree")),
+                resp,
+            )),
         }
     }
 }
@@ -352,4 +393,95 @@ pub struct Entry {
 #[derive(Default, Debug, Clone, Deserialize)]
 pub struct ContentResponse {
     pub content: Entry,
+}
+
+#[derive(Default, Debug, Deserialize)]
+#[allow(dead_code)]
+struct GithubError {
+    error: GithubSubError,
+}
+
+#[derive(Default, Debug, Deserialize)]
+#[allow(dead_code)]
+struct GithubSubError {
+    message: String,
+    documentation_url: String,
+}
+
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+}
+
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self { service_operation }
+    }
+}
+
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
+    let (parts, body) = resp.into_parts();
+    let bs = body.to_bytes();
+
+    let (kind, retryable) = match parts.status.as_u16() {
+        401 | 403 => (ErrorKind::PermissionDenied, false),
+        404 => (ErrorKind::NotFound, false),
+        304 | 412 => (ErrorKind::ConditionNotMatch, false),
+        // https://github.com/apache/opendal/issues/4146
+        // https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/423
+        // We should retry it when we get 423 error.
+        423 => (ErrorKind::RateLimited, true),
+        // Service like Upyun could return 499 error with a message like:
+        // Client Disconnect, we should retry it.
+        499 => (ErrorKind::Unexpected, true),
+        500 | 502 | 503 | 504 => (ErrorKind::Unexpected, true),
+        _ => (ErrorKind::Unexpected, false),
+    };
+
+    let (message, _github_content_err) =
+        serde_json::from_reader::<_, GithubError>(bs.clone().reader())
+            .map(|github_content_err| (format!("{github_content_err:?}"), Some(github_content_err)))
+            .unwrap_or_else(|_| (String::from_utf8_lossy(&bs).into_owned(), None));
+
+    let mut err = Error::new(kind, message);
+
+    err = err.with_context("service_operation", ctx.service_operation.0);
+    err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
+
+    err
+}
+
+#[cfg(test)]
+mod tests {
+    use http::StatusCode;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_parse_error() {
+        let err_res = vec![(
+            r#"{
+                "message": "Not Found",
+                "documentation_url": "https://docs.github.com/rest/repos/contents#get-repository-content"
+            }"#,
+            ErrorKind::NotFound,
+            StatusCode::NOT_FOUND,
+        )];
+
+        for res in err_res {
+            let bs = bytes::Bytes::from(res.0);
+            let body = Buffer::from(bs);
+            let resp = Response::builder().status(res.2).body(body).unwrap();
+
+            let err = parse_error(ErrorContext::new(ServiceOperation("Test")), resp);
+
+            assert_eq!(err.kind(), res.1);
+        }
+    }
 }

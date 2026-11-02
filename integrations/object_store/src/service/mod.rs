@@ -68,19 +68,38 @@ impl ObjectStoreBuilder {
 impl Builder for ObjectStoreBuilder {
     type Config = ();
 
-    fn build(self) -> Result<impl Access> {
+    fn build(self) -> Result<impl Service> {
         let store = self.store.ok_or_else(|| {
             Error::new(ErrorKind::ConfigInvalid, "object store is required")
                 .with_context("service", OBJECT_STORE_SCHEME)
         })?;
 
-        Ok(ObjectStoreService { store })
+        Ok(ObjectStoreService {
+            store,
+            info: ServiceInfo::new(OBJECT_STORE_SCHEME, "/", "object_store"),
+            capability: Capability {
+                stat: true,
+                stat_with_if_match: true,
+                stat_with_if_unmodified_since: true,
+                read: true,
+                read_with_suffix: true,
+                write: true,
+                delete: true,
+                list: true,
+                list_with_limit: true,
+                list_with_start_after: true,
+                delete_with_version: false,
+                ..Default::default()
+            },
+        })
     }
 }
 
 /// ObjectStore backend
 pub struct ObjectStoreService {
     store: Arc<dyn ObjectStore + 'static>,
+    info: ServiceInfo,
+    capability: Capability,
 }
 
 impl Debug for ObjectStoreService {
@@ -90,34 +109,35 @@ impl Debug for ObjectStoreService {
     }
 }
 
-impl Access for ObjectStoreService {
-    type Reader = ObjectStoreReader;
+impl Service for ObjectStoreService {
+    type Reader = oio::StreamReader<ObjectStoreReader>;
     type Writer = MultipartWriter<ObjectStoreWriter>;
     type Lister = ObjectStoreLister;
     type Deleter = BatchDeleter<ObjectStoreDeleter>;
+    type Copier = ();
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
-        let info = AccessorInfo::default();
-        info.set_scheme(OBJECT_STORE_SCHEME)
-            .set_root("/")
-            .set_name("object_store")
-            .set_native_capability(Capability {
-                stat: true,
-                stat_with_if_match: true,
-                stat_with_if_unmodified_since: true,
-                read: true,
-                write: true,
-                delete: true,
-                list: true,
-                list_with_limit: true,
-                list_with_start_after: true,
-                delete_with_version: false,
-                ..Default::default()
-            });
-        Arc::new(info)
+    fn info(&self) -> ServiceInfo {
+        self.info.clone()
     }
 
-    async fn stat(&self, path: &str, args: OpStat) -> Result<RpStat> {
+    fn capability(&self) -> Capability {
+        self.capability
+    }
+
+    async fn create_dir(
+        &self,
+        _: &OperationContext,
+        _: &str,
+        _: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn stat(&self, _ctx: &OperationContext, path: &str, args: OpStat) -> Result<RpStat> {
         let path = ObjectStorePath::from(path);
         let opts = parse_op_stat(&args)?;
         let result = self
@@ -129,27 +149,54 @@ impl Access for ObjectStoreService {
         Ok(RpStat::new(metadata))
     }
 
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let reader = ObjectStoreReader::new(self.store.clone(), path, args).await?;
-        Ok((reader.rp(), reader))
+    fn read(&self, _ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
+        Ok(oio::StreamReader::new(ObjectStoreReader::new(
+            self.store.clone(),
+            path,
+            args,
+        )))
     }
 
-    async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
+    fn write(&self, ctx: &OperationContext, path: &str, args: OpWrite) -> Result<Self::Writer> {
         let writer = ObjectStoreWriter::new(self.store.clone(), path, args);
-        Ok((
-            RpWrite::default(),
-            MultipartWriter::new(self.info(), writer, 10),
+        Ok(MultipartWriter::new(ctx.executor().clone(), writer, 10))
+    }
+
+    fn delete(&self, _ctx: &OperationContext) -> Result<Self::Deleter> {
+        let deleter = BatchDeleter::new(ObjectStoreDeleter::new(self.store.clone()), Some(1000));
+        Ok(deleter)
+    }
+
+    fn list(&self, _ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
+        let lister = ObjectStoreLister::new(self.store.clone(), path, args)?;
+        Ok(lister)
+    }
+
+    fn copy(&self, _: &OperationContext, _: &str, _: &str, _: OpCopy) -> Result<Self::Copier> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
         ))
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        let deleter = BatchDeleter::new(ObjectStoreDeleter::new(self.store.clone()), Some(1000));
-        Ok((RpDelete::default(), deleter))
+    async fn rename(
+        &self,
+        _: &OperationContext,
+        _: &str,
+        _: &str,
+        _: OpRename,
+    ) -> Result<RpRename> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
     }
 
-    async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
-        let lister = ObjectStoreLister::new(self.store.clone(), path, args).await?;
-        Ok((RpList::default(), lister))
+    async fn presign(&self, _: &OperationContext, _: &str, _: OpPresign) -> Result<RpPresign> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
     }
 }
 
@@ -158,7 +205,11 @@ mod tests {
     use super::*;
     use object_store::memory::InMemory;
     use opendal::Buffer;
-    use opendal::raw::oio::{Delete, List, Read, Write};
+    use opendal::raw::oio::{Delete, List, Read, ReadStream, Write};
+
+    fn test_ctx() -> OperationContext {
+        OperationContext::new()
+    }
 
     #[tokio::test]
     async fn test_object_store_backend_builder() {
@@ -166,7 +217,7 @@ mod tests {
         let builder = ObjectStoreBuilder::new(store);
 
         let backend = builder.build().expect("build should succeed");
-        assert!(backend.info().scheme() == OBJECT_STORE_SCHEME);
+        assert_eq!(backend.info().scheme(), OBJECT_STORE_SCHEME);
     }
 
     #[tokio::test]
@@ -181,7 +232,7 @@ mod tests {
         assert_eq!(info.name(), "object_store".into());
         assert_eq!(info.root(), "/".into());
 
-        let cap = info.native_capability();
+        let cap = backend.capability();
         assert!(cap.stat);
         assert!(cap.read);
         assert!(cap.write);
@@ -195,14 +246,14 @@ mod tests {
         let backend = ObjectStoreBuilder::new(store.clone())
             .build()
             .expect("build should succeed");
+        let ctx = test_ctx();
 
         let path = "test_file.txt";
         let content = b"Hello, world!";
 
         // Test write
-        let (_, mut writer) = backend
-            .write(path, OpWrite::default())
-            .await
+        let mut writer = backend
+            .write(&ctx, path, OpWrite::default())
             .expect("write should succeed");
 
         writer
@@ -213,7 +264,7 @@ mod tests {
 
         // Test stat
         let stat_result = backend
-            .stat(path, OpStat::default())
+            .stat(&ctx, path, OpStat::default())
             .await
             .expect("stat should succeed");
 
@@ -223,12 +274,15 @@ mod tests {
         );
 
         // Test read
-        let (_, mut reader) = backend
-            .read(path, OpRead::default())
-            .await
+        let reader = backend
+            .read(&ctx, path, OpRead::default())
             .expect("read should succeed");
 
-        let buf = reader.read().await.expect("read should succeed");
+        let (_, mut stream) = reader
+            .open(BytesRange::default())
+            .await
+            .expect("open should succeed");
+        let buf = stream.read().await.expect("read should succeed");
         assert_eq!(buf.to_vec(), content);
     }
 
@@ -238,6 +292,7 @@ mod tests {
         let backend = ObjectStoreBuilder::new(store.clone())
             .build()
             .expect("build should succeed");
+        let ctx = test_ctx();
 
         let path = "test_file.txt";
         let content =
@@ -245,9 +300,8 @@ mod tests {
         let content_len = content.len();
 
         // Test multipart upload with multiple chunks
-        let (_, mut writer) = backend
-            .write(path, OpWrite::default())
-            .await
+        let mut writer = backend
+            .write(&ctx, path, OpWrite::default())
             .expect("write should succeed");
 
         // Write content in chunks to simulate multipart upload
@@ -263,7 +317,7 @@ mod tests {
 
         // Verify the uploaded file
         let stat_result = backend
-            .stat(path, OpStat::default())
+            .stat(&ctx, path, OpStat::default())
             .await
             .expect("stat should succeed");
 
@@ -273,12 +327,15 @@ mod tests {
         );
 
         // Read back and verify content
-        let (_, mut reader) = backend
-            .read(path, OpRead::default())
-            .await
+        let reader = backend
+            .read(&ctx, path, OpRead::default())
             .expect("read should succeed");
 
-        let buf = reader.read().await.expect("read should succeed");
+        let (_, mut stream) = reader
+            .open(BytesRange::default())
+            .await
+            .expect("open should succeed");
+        let buf = stream.read_all().await.expect("read should succeed");
         assert_eq!(buf.to_vec(), content);
     }
 
@@ -288,6 +345,7 @@ mod tests {
         let backend = ObjectStoreBuilder::new(store.clone())
             .build()
             .expect("build should succeed");
+        let ctx = test_ctx();
 
         // Create multiple files
         let files = vec![
@@ -297,9 +355,8 @@ mod tests {
         ];
 
         for (path, content) in &files {
-            let (_, mut writer) = backend
-                .write(path, OpWrite::default())
-                .await
+            let mut writer = backend
+                .write(&ctx, path, OpWrite::default())
                 .expect("write should succeed");
             writer
                 .write(Buffer::from(&content[..]))
@@ -309,9 +366,8 @@ mod tests {
         }
 
         // List directory
-        let (_, mut lister) = backend
-            .list("dir1/", OpList::default())
-            .await
+        let mut lister = backend
+            .list(&ctx, "dir1/", OpList::default())
             .expect("list should succeed");
 
         let mut entries = Vec::new();
@@ -330,14 +386,14 @@ mod tests {
         let backend = ObjectStoreBuilder::new(store)
             .build()
             .expect("build should succeed");
+        let ctx = test_ctx();
 
         let path = "test_delete.txt";
         let content = b"To be deleted";
 
         // Write file
-        let (_, mut writer) = backend
-            .write(path, OpWrite::default())
-            .await
+        let mut writer = backend
+            .write(&ctx, path, OpWrite::default())
             .expect("write should succeed");
         writer
             .write(Buffer::from(&content[..]))
@@ -347,12 +403,12 @@ mod tests {
 
         // Verify file exists
         backend
-            .stat(path, OpStat::default())
+            .stat(&ctx, path, OpStat::default())
             .await
             .expect("file should exist");
 
         // Delete file
-        let (_, mut deleter) = backend.delete().await.expect("delete should succeed");
+        let mut deleter = backend.delete(&ctx).expect("delete should succeed");
         deleter
             .delete(path, OpDelete::default())
             .await
@@ -360,7 +416,7 @@ mod tests {
         deleter.close().await.expect("close should succeed");
 
         // Verify file is deleted
-        let result = backend.stat(path, OpStat::default()).await;
+        let result = backend.stat(&ctx, path, OpStat::default()).await;
         assert!(result.is_err());
     }
 
@@ -370,19 +426,25 @@ mod tests {
         let backend = ObjectStoreBuilder::new(store)
             .build()
             .expect("build should succeed");
+        let ctx = test_ctx();
 
         // Test stat on non-existent file
-        let result = backend.stat("non_existent.txt", OpStat::default()).await;
+        let result = backend
+            .stat(&ctx, "non_existent.txt", OpStat::default())
+            .await;
         assert!(result.is_err());
 
         // Test read on non-existent file
-        let result = backend.read("non_existent.txt", OpRead::default()).await;
+        let reader = backend
+            .read(&ctx, "non_existent.txt", OpRead::default())
+            .expect("read should create reader");
+        let result = reader.read(BytesRange::from(0..1)).await;
         assert!(result.is_err());
 
         // Test list on non-existent directory
-        let result = backend.list("non_existent_dir/", OpList::default()).await;
+        let result = backend.list(&ctx, "non_existent_dir/", OpList::default());
         // This should succeed but return empty results
-        if let Ok((_, mut lister)) = result {
+        if let Ok(mut lister) = result {
             let entry = lister.next().await.expect("next should succeed");
             assert!(entry.is_none());
         }

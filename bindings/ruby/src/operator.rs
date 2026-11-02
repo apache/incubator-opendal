@@ -140,7 +140,7 @@ impl Operator {
     /// Gets capabilities of the current operator
     /// @return [Capability]
     fn capability(&self) -> Result<Capability, Error> {
-        let capability = self.blocking_op.info().full_capability();
+        let capability = self.blocking_op.info().capability();
         Ok(Capability::new(capability))
     }
 
@@ -223,6 +223,7 @@ impl Operator {
         rb_self
             .blocking_op
             .copy(&from, &to)
+            .map(|_| ())
             .map_err(|err| Error::new(ruby.exception_runtime_error(), err.to_string()))
     }
 

@@ -41,7 +41,7 @@ runs:
           - name: Run Test Binding Java
             shell: bash
             working-directory: bindings/java
-            run: ./mvnw test -Dtest="behavior.*Test"  -Dcargo-build.features=${{ inputs.feature }}
+            run: mvn -B -ntp test -Dtest="behavior.*Test"
             env:
               OPENDAL_TEST: ${{ inputs.service }}
         EOF

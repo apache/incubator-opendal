@@ -43,7 +43,11 @@ pub struct OssConfig {
     /// Pre sign addressing style for oss.
     pub presign_addressing_style: Option<String>,
 
-    /// is bucket versioning enabled for this bucket
+    /// Deprecated: OSS versioning capability is enabled by default.
+    #[deprecated(
+        since = "0.57.0",
+        note = "OSS versioning capability is enabled by default and this option is no longer needed."
+    )]
     pub enable_versioning: bool,
 
     // OSS features
@@ -51,7 +55,13 @@ pub struct OssConfig {
     pub server_side_encryption: Option<String>,
     /// Server side encryption key id for oss.
     pub server_side_encryption_key_id: Option<String>,
+    /// Skip signature will skip loading credentials and signing requests.
+    pub skip_signature: bool,
     /// Allow anonymous for oss.
+    #[deprecated(
+        since = "0.57.0",
+        note = "Please use `skip_signature` instead of `allow_anonymous`"
+    )]
     pub allow_anonymous: bool,
 
     // authenticate options
@@ -70,13 +80,17 @@ pub struct OssConfig {
     /// - this field if it's `is_some`
     /// - env value: `ALIBABA_CLOUD_SECURITY_TOKEN`
     pub security_token: Option<String>,
-    /// The size of max batch operations.
+    /// Deprecated: OSS delete batch capability is enabled by default.
     #[deprecated(
-        since = "0.52.0",
-        note = "Please use `delete_max_size` instead of `batch_max_operations`"
+        since = "0.57.0",
+        note = "OSS delete batch capability is enabled by default. Use CapabilityOverrideLayer to override delete_max_size for specific endpoints."
     )]
     pub batch_max_operations: Option<usize>,
-    /// The size of max delete operations.
+    /// Deprecated: OSS delete batch capability is enabled by default.
+    #[deprecated(
+        since = "0.57.0",
+        note = "OSS delete batch capability is enabled by default. Use CapabilityOverrideLayer to override delete_max_size for specific endpoints."
+    )]
     pub delete_max_size: Option<usize>,
     /// If `role_arn` is set, we will use already known config as source
     /// credential to assume role with `role_arn`.
@@ -101,6 +115,8 @@ pub struct OssConfig {
     /// - this field if it's `is_some`
     /// - env value: `ALIBABA_CLOUD_STS_ENDPOINT`
     pub sts_endpoint: Option<String>,
+    /// external_id for this backend.
+    pub external_id: Option<String>,
 }
 
 impl Debug for OssConfig {
@@ -109,7 +125,7 @@ impl Debug for OssConfig {
             .field("root", &self.root)
             .field("bucket", &self.bucket)
             .field("endpoint", &self.endpoint)
-            .field("allow_anonymous", &self.allow_anonymous)
+            .field("skip_signature", &self.skip_signature)
             .finish_non_exhaustive()
     }
 }

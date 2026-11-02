@@ -24,6 +24,16 @@ def test_capability(service_name, operator):
     assert cap.read is not None
 
 
+def test_capability_list_flags(service_name, operator):
+    cap = operator.capability()
+    assert cap is not None
+    assert cap.list_with_limit is not None
+    assert cap.list_with_start_after is not None
+    assert cap.list_with_recursive is not None
+    assert cap.list_with_versions is not None
+    assert cap.list_with_deleted is not None
+
+
 def test_capability_exception(service_name, operator):
     cap = operator.capability()
     assert cap is not None

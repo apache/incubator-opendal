@@ -22,15 +22,16 @@ use crate::raw::oio::Entry;
 use crate::raw::*;
 use crate::*;
 
-/// The boxed version of [`List`]
+/// Lister is the type-erased [`List`].
 pub type Lister = Box<dyn ListDyn>;
 
-/// Page trait is used by [`raw::Accessor`] to implement `list` operation.
+/// List is returned by [`Service`] to stream entries for a `list` operation.
 pub trait List: Unpin + Send + Sync {
-    /// Fetch a new page of [`Entry`]
+    /// Fetch the next [`Entry`].
     ///
-    /// `Ok(None)` means all pages have been returned. Any following call
-    /// to `next` will always get the same result.
+    /// `Ok(Some(entry))` means one entry is available.
+    /// `Ok(None)` means the list operation has completed. Further calls must
+    /// keep returning `Ok(None)`.
     fn next(&mut self) -> impl Future<Output = Result<Option<Entry>>> + MaybeSend;
 }
 
@@ -49,8 +50,7 @@ impl<P: List> List for Option<P> {
     }
 }
 
-/// ListDyn is the dyn version of [`List`]. Makes it possible to use as
-/// `Box<dyn ListDyn>`.
+/// ListDyn is the dyn version of [`List`].
 pub trait ListDyn: Unpin + Send + Sync {
     /// The dyn version of [`List::next`].
     fn next_dyn(&mut self) -> BoxedFuture<'_, Result<Option<Entry>>>;

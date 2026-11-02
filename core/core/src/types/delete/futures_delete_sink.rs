@@ -126,7 +126,7 @@ impl<T: IntoDeleteInput> Sink<T> for FuturesDeleteSink<T> {
                         (deleter, res)
                     };
                     self.state = State::Close(Box::pin(fut));
-                    return Poll::Ready(Ok(()));
+                    continue;
                 }
                 State::Delete(fut) => {
                     let (deleter, res) = ready!(fut.as_mut().poll(cx));

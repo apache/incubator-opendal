@@ -1,6 +1,6 @@
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [x] create_dir
 - [x] stat
@@ -12,18 +12,16 @@ This service can be used to:
 - [x] rename
 - [ ] ~~presign~~
 
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
+
 ## Configuration
 
-- `endpoint`: Set the endpoint for connection. The format is same as `openssh`, using either `[user@]hostname` or `ssh://[user@]hostname[:port]`. A username or port that is specified in the endpoint overrides the one set in the builder (but does not change the builder).
-- `root`: Set the work directory for backend. It uses the default directory set by the remote `sftp-server` as default
-- `user`: Set the login user
-- `key`: Set the public key for login
-- `known_hosts_strategy`: Set the strategy for known hosts, default to `Strict`
-- `enable_copy`: Set whether the remote server has copy-file extension
+Use [`crate::SftpConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
-For security reasons, it doesn't support password login, you can use public key or ssh-copy-id instead.
-
-You can refer to [`SftpBuilder`]'s docs for more information
+For security reasons, it doesn't support password login. Use SSH key-based authentication (e.g., configure your public key on the server via `ssh-copy-id` and provide the private key here).
 
 ## Example
 
@@ -41,7 +39,7 @@ async fn main() -> Result<()> {
         .user("test")
         .key("test_key");
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
     Ok(())
 }
 ```

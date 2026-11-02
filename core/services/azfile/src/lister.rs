@@ -22,20 +22,31 @@ use http::StatusCode;
 use quick_xml::de;
 use serde::Deserialize;
 
-use super::core::AzfileCore;
-use super::error::parse_error;
+use super::core::parse_error;
+use super::core::{AzfileCore, ErrorContext};
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct AzfileLister {
     core: Arc<AzfileCore>,
+    ctx: OperationContext,
     path: String,
     limit: Option<usize>,
 }
 
 impl AzfileLister {
-    pub fn new(core: Arc<AzfileCore>, path: String, limit: Option<usize>) -> Self {
-        Self { core, path, limit }
+    pub fn new(
+        core: Arc<AzfileCore>,
+        ctx: OperationContext,
+        path: String,
+        limit: Option<usize>,
+    ) -> Self {
+        Self {
+            core,
+            ctx,
+            path,
+            limit,
+        }
     }
 }
 
@@ -43,7 +54,7 @@ impl oio::PageList for AzfileLister {
     async fn next_page(&self, ctx: &mut oio::PageContext) -> Result<()> {
         let resp = self
             .core
-            .azfile_list(&self.path, &self.limit, &ctx.token)
+            .azfile_list(&self.ctx, &self.path, &self.limit, &ctx.token)
             .await?;
 
         let status = resp.status();
@@ -53,12 +64,15 @@ impl oio::PageList for AzfileLister {
                 ctx.done = true;
                 return Ok(());
             }
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListDirectoriesAndFiles")),
+                resp,
+            ));
         }
 
         // Return self at the first page.
         if ctx.token.is_empty() && !ctx.done {
-            let e = oio::Entry::new(&self.path, Metadata::new(EntryMode::DIR));
+            let e = oio::Entry::new(&self.path, MetadataBuilder::dir().build());
             ctx.entries.push_back(e);
         }
 
@@ -74,20 +88,25 @@ impl oio::PageList for AzfileLister {
         }
 
         for file in results.entries.file {
-            let meta = Metadata::new(EntryMode::FILE)
-                .with_etag(file.properties.etag)
-                .with_content_length(file.properties.content_length.unwrap_or(0))
-                .with_last_modified(Timestamp::parse_rfc2822(&file.properties.last_modified)?);
+            let content_length = file.properties.content_length.ok_or_else(|| {
+                Error::new(
+                    ErrorKind::Unexpected,
+                    "azfile list response does not contain file content length",
+                )
+            })?;
+            let mut meta = MetadataBuilder::file(content_length);
+            meta.etag(file.properties.etag)
+                .last_modified(Timestamp::parse_rfc2822(&file.properties.last_modified)?);
             let path = self.path.clone().trim_start_matches('/').to_string() + &file.name;
-            ctx.entries.push_back(oio::Entry::new(&path, meta));
+            ctx.entries.push_back(oio::Entry::new(&path, meta.build()));
         }
 
         for dir in results.entries.directory {
-            let meta = Metadata::new(EntryMode::DIR)
-                .with_etag(dir.properties.etag)
-                .with_last_modified(Timestamp::parse_rfc2822(&dir.properties.last_modified)?);
+            let mut meta = MetadataBuilder::dir();
+            meta.etag(dir.properties.etag)
+                .last_modified(Timestamp::parse_rfc2822(&dir.properties.last_modified)?);
             let path = self.path.clone().trim_start_matches('/').to_string() + &dir.name + "/";
-            ctx.entries.push_back(oio::Entry::new(&path, meta));
+            ctx.entries.push_back(oio::Entry::new(&path, meta.build()));
         }
 
         Ok(())

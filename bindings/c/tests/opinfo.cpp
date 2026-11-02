@@ -60,26 +60,16 @@ protected:
 // We test the capability set by **memory** service.
 TEST_F(OpendalOperatorInfoTest, CapabilityTest)
 {
-    opendal_capability full_cap = opendal_operator_info_get_full_capability(this->info);
-    opendal_capability native_cap = opendal_operator_info_get_native_capability(this->info);
+    opendal_capability cap = opendal_operator_info_get_capability(this->info);
 
-    EXPECT_TRUE(full_cap.read);
-    EXPECT_TRUE(full_cap.stat);
-    EXPECT_TRUE(full_cap.write);
-    EXPECT_TRUE(full_cap.write_can_empty);
-    EXPECT_TRUE(full_cap.create_dir);
-    EXPECT_TRUE(full_cap.delete_);
-    EXPECT_TRUE(full_cap.list);
-    EXPECT_TRUE(full_cap.list_with_recursive);
-
-    EXPECT_TRUE(native_cap.read);
-    EXPECT_TRUE(native_cap.stat);
-    EXPECT_TRUE(native_cap.write);
-    EXPECT_TRUE(native_cap.write_can_empty);
-    EXPECT_FALSE(native_cap.create_dir);
-    EXPECT_TRUE(native_cap.delete_);
-    EXPECT_TRUE(native_cap.list);
-    EXPECT_TRUE(native_cap.list_with_recursive);
+    EXPECT_TRUE(cap.read);
+    EXPECT_TRUE(cap.stat);
+    EXPECT_TRUE(cap.write);
+    EXPECT_TRUE(cap.write_can_empty);
+    EXPECT_TRUE(cap.create_dir);
+    EXPECT_TRUE(cap.delete_);
+    EXPECT_TRUE(cap.list);
+    EXPECT_TRUE(cap.list_with_recursive);
 }
 
 TEST_F(OpendalOperatorInfoTest, InfoTest)
@@ -92,6 +82,6 @@ TEST_F(OpendalOperatorInfoTest, InfoTest)
     EXPECT_TRUE(!strcmp(root, this->root.c_str()));
 
     // remember to free the strings
-    free(scheme);
-    free(root);
+    opendal_string_free(scheme);
+    opendal_string_free(root);
 }

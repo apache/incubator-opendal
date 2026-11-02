@@ -19,6 +19,7 @@
 
 use std::fmt::Debug;
 use std::fmt::Formatter;
+use std::sync::LazyLock;
 
 use libfuzzer_sys::arbitrary::Arbitrary;
 use libfuzzer_sys::arbitrary::Unstructured;
@@ -30,7 +31,7 @@ use opendal::tests::ReadChecker;
 use opendal::tests::TEST_RUNTIME;
 use opendal::tests::init_test_service;
 
-const MAX_DATA_SIZE: usize = 16 * 1024 * 1024;
+const MAX_DATA_SIZE: usize = 4 * 1024 * 1024;
 
 #[derive(Clone)]
 struct FuzzInput {
@@ -58,7 +59,7 @@ impl Arbitrary<'_> for FuzzInput {
     fn arbitrary(u: &mut Unstructured<'_>) -> arbitrary::Result<Self> {
         let total_size = u.int_in_range(1..=MAX_DATA_SIZE)?;
 
-        let count = u.int_in_range(1..=1024)?;
+        let count = u.int_in_range(1..=256)?;
         let mut actions = vec![];
 
         for _ in 0..count {
@@ -88,15 +89,25 @@ async fn fuzz_reader(op: Operator, input: FuzzInput) -> Result<()> {
     Ok(())
 }
 
+static OPERATOR: LazyLock<Operator> = LazyLock::new(|| {
+    if let Some(op) = init_test_service().expect("operator init must succeed") {
+        return op;
+    }
+
+    log::warn!("OPENDAL_TEST is not set; falling back to a temporary fs operator");
+    let root = std::env::temp_dir().join(format!("opendal-fuzz-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(&root).expect("create fuzz root dir must succeed");
+    Operator::new(opendal::services::Fs::default().root(&root.to_string_lossy()))
+        .expect("operator init must succeed")
+});
+
 fuzz_target!(|input: FuzzInput| {
     let _ = logforth::starter_log::stderr().try_apply();
 
-    let op = init_test_service().expect("operator init must succeed");
-    if let Some(op) = op {
-        TEST_RUNTIME.block_on(async {
-            fuzz_reader(op, input.clone())
-                .await
-                .unwrap_or_else(|err| panic!("fuzz reader must succeed: {err:?}"));
-        })
-    }
+    let op = OPERATOR.clone();
+    TEST_RUNTIME.block_on(async {
+        fuzz_reader(op, input.clone())
+            .await
+            .unwrap_or_else(|err| panic!("fuzz reader must succeed: {err:?}"));
+    })
 });

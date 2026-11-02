@@ -18,10 +18,14 @@
 use std::ffi::{c_char, CStr, CString};
 use std::time::Duration;
 
+use ::opendal as core;
 use opendal::raw::PresignedRequest as ocorePresignedRequest;
 
 use crate::error::opendal_error;
 use crate::operator::opendal_operator;
+use crate::types::{
+    opendal_delete_options, opendal_read_options, opendal_stat_options, opendal_write_options,
+};
 
 /// \brief The key-value pair for the headers of the presigned request.
 #[repr(C)]
@@ -81,6 +85,25 @@ impl opendal_presigned_request_inner {
     }
 }
 
+fn make_presign_result(result: core::Result<ocorePresignedRequest>) -> opendal_result_presign {
+    match result {
+        Ok(req) => {
+            let inner = Box::new(opendal_presigned_request_inner::new(req));
+            let presigned_req = Box::new(opendal_presigned_request {
+                inner: Box::into_raw(inner),
+            });
+            opendal_result_presign {
+                req: Box::into_raw(presigned_req),
+                error: std::ptr::null_mut(),
+            }
+        }
+        Err(e) => opendal_result_presign {
+            req: std::ptr::null_mut(),
+            error: opendal_error::new(e),
+        },
+    }
+}
+
 /// \brief The underlying presigned request, which contains the HTTP method, URI, and headers.
 /// This is an opaque struct, please use the accessor functions to get the fields.
 #[repr(C)]
@@ -110,22 +133,29 @@ pub unsafe extern "C" fn opendal_operator_presign_read(
     let path = CStr::from_ptr(path).to_str().expect("malformed path");
     let duration = Duration::from_secs(expire_secs);
 
-    match op.presign_read(path, duration) {
-        Ok(req) => {
-            let inner = Box::new(opendal_presigned_request_inner::new(req));
-            let presigned_req = Box::new(opendal_presigned_request {
-                inner: Box::into_raw(inner),
-            });
-            opendal_result_presign {
-                req: Box::into_raw(presigned_req),
-                error: std::ptr::null_mut(),
-            }
-        }
-        Err(e) => opendal_result_presign {
-            req: std::ptr::null_mut(),
-            error: opendal_error::new(e),
-        },
-    }
+    make_presign_result(op.presign_read(path, duration))
+}
+
+/// \brief Presign a read operation with options.
+#[no_mangle]
+pub unsafe extern "C" fn opendal_operator_presign_read_with(
+    op: &opendal_operator,
+    path: *const c_char,
+    expire_secs: u64,
+    opts: *const opendal_read_options,
+) -> opendal_result_presign {
+    assert!(!path.is_null());
+
+    let op = op.deref();
+    let path = CStr::from_ptr(path).to_str().expect("malformed path");
+    let duration = Duration::from_secs(expire_secs);
+    let opts = if opts.is_null() {
+        core::options::ReadOptions::default()
+    } else {
+        (&*opts).into()
+    };
+
+    make_presign_result(op.presign_read_options(path, duration, opts))
 }
 
 /// \brief Presign a write operation.
@@ -141,22 +171,29 @@ pub unsafe extern "C" fn opendal_operator_presign_write(
     let path = CStr::from_ptr(path).to_str().expect("malformed path");
     let duration = Duration::from_secs(expire_secs);
 
-    match op.presign_write(path, duration) {
-        Ok(req) => {
-            let inner = Box::new(opendal_presigned_request_inner::new(req));
-            let presigned_req = Box::new(opendal_presigned_request {
-                inner: Box::into_raw(inner),
-            });
-            opendal_result_presign {
-                req: Box::into_raw(presigned_req),
-                error: std::ptr::null_mut(),
-            }
-        }
-        Err(e) => opendal_result_presign {
-            req: std::ptr::null_mut(),
-            error: opendal_error::new(e),
-        },
-    }
+    make_presign_result(op.presign_write(path, duration))
+}
+
+/// \brief Presign a write operation with options.
+#[no_mangle]
+pub unsafe extern "C" fn opendal_operator_presign_write_with(
+    op: &opendal_operator,
+    path: *const c_char,
+    expire_secs: u64,
+    opts: *const opendal_write_options,
+) -> opendal_result_presign {
+    assert!(!path.is_null());
+
+    let op = op.deref();
+    let path = CStr::from_ptr(path).to_str().expect("malformed path");
+    let duration = Duration::from_secs(expire_secs);
+    let opts = if opts.is_null() {
+        core::options::WriteOptions::default()
+    } else {
+        (&*opts).into()
+    };
+
+    make_presign_result(op.presign_write_options(path, duration, opts))
 }
 
 /// \brief Presign a delete operation.
@@ -171,22 +208,45 @@ pub unsafe extern "C" fn opendal_operator_presign_delete(
     let op = op.deref();
     let path = CStr::from_ptr(path).to_str().expect("malformed path");
     let duration = Duration::from_secs(expire_secs);
-    match op.presign_delete(path, duration) {
-        Ok(req) => {
-            let inner = Box::new(opendal_presigned_request_inner::new(req));
-            let presigned_req = Box::new(opendal_presigned_request {
-                inner: Box::into_raw(inner),
-            });
-            opendal_result_presign {
-                req: Box::into_raw(presigned_req),
-                error: std::ptr::null_mut(),
-            }
+    make_presign_result(op.presign_delete(path, duration))
+}
+
+/// \brief Presign a delete operation with options.
+#[no_mangle]
+pub unsafe extern "C" fn opendal_operator_presign_delete_with(
+    op: &opendal_operator,
+    path: *const c_char,
+    expire_secs: u64,
+    opts: *const opendal_delete_options,
+) -> opendal_result_presign {
+    assert!(!path.is_null());
+
+    let op = op.deref();
+    let path = CStr::from_ptr(path).to_str().expect("malformed path");
+    let duration = Duration::from_secs(expire_secs);
+    let opts = if opts.is_null() {
+        core::options::DeleteOptions::default()
+    } else {
+        let opts = &*opts;
+        let version = if opts.version.is_null() {
+            None
+        } else {
+            Some(
+                CStr::from_ptr(opts.version)
+                    .to_str()
+                    .expect("malformed version")
+                    .to_owned(),
+            )
+        };
+        core::options::DeleteOptions {
+            version,
+            recursive: opts.recursive,
+            if_match: None,
+            ..Default::default()
         }
-        Err(e) => opendal_result_presign {
-            req: std::ptr::null_mut(),
-            error: opendal_error::new(e),
-        },
-    }
+    };
+
+    make_presign_result(op.presign_delete_options(path, duration, opts))
 }
 
 /// \brief Presign a stat operation.
@@ -202,22 +262,29 @@ pub unsafe extern "C" fn opendal_operator_presign_stat(
     let path = CStr::from_ptr(path).to_str().expect("malformed path");
     let duration = Duration::from_secs(expire_secs);
 
-    match op.presign_stat(path, duration) {
-        Ok(req) => {
-            let inner = Box::new(opendal_presigned_request_inner::new(req));
-            let presigned_req = Box::new(opendal_presigned_request {
-                inner: Box::into_raw(inner),
-            });
-            opendal_result_presign {
-                req: Box::into_raw(presigned_req),
-                error: std::ptr::null_mut(),
-            }
-        }
-        Err(e) => opendal_result_presign {
-            req: std::ptr::null_mut(),
-            error: opendal_error::new(e),
-        },
-    }
+    make_presign_result(op.presign_stat(path, duration))
+}
+
+/// \brief Presign a stat operation with options.
+#[no_mangle]
+pub unsafe extern "C" fn opendal_operator_presign_stat_with(
+    op: &opendal_operator,
+    path: *const c_char,
+    expire_secs: u64,
+    opts: *const opendal_stat_options,
+) -> opendal_result_presign {
+    assert!(!path.is_null());
+
+    let op = op.deref();
+    let path = CStr::from_ptr(path).to_str().expect("malformed path");
+    let duration = Duration::from_secs(expire_secs);
+    let opts = if opts.is_null() {
+        core::options::StatOptions::default()
+    } else {
+        (&*opts).into()
+    };
+
+    make_presign_result(op.presign_stat_options(path, duration, opts))
 }
 
 /// Get the method of the presigned request.
@@ -256,9 +323,7 @@ pub unsafe extern "C" fn opendal_presigned_request_headers_len(
 #[no_mangle]
 pub unsafe extern "C" fn opendal_presigned_request_free(req: *mut opendal_presigned_request) {
     if !req.is_null() {
-        // Drop the inner struct
         drop(Box::from_raw((*req).inner));
-        // Drop the outer struct
         drop(Box::from_raw(req));
     }
 }

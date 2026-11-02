@@ -23,14 +23,16 @@ on:
       - main
     tags:
       - "*"
-  pull_request:
-    branches:
-      - main
-    paths:
+    paths: &paths
       - "core/**"
       - "bindings/c/**"
       - "bindings/d/**"
+      - ".github/actions/setup/**"
       - ".github/workflows/ci_bindings_d.yml"
+  pull_request:
+    branches:
+      - main
+    paths: *paths
   workflow_dispatch:
 
 concurrency:
@@ -49,7 +51,7 @@ jobs:
         dlang: ["ldc-latest", "dmd-latest"]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dlang-community/setup-dlang@v2
         with:
           compiler: ${{ matrix.dlang }}
@@ -71,3 +73,9 @@ jobs:
       - name: Run tests
         working-directory: bindings/d
         run: dub test && cd test && dub
+
+      - name: Run getting-started example
+        working-directory: bindings/d/examples/getting-started
+        env:
+          OPENDAL_TEST: memory
+        run: dub run

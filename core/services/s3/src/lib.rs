@@ -15,25 +15,41 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-//! Amazon S3 service implementation for Apache OpenDAL.
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
 
 mod backend;
 mod config;
+mod copier;
 mod core;
 mod deleter;
-mod error;
 mod lister;
+mod reader;
 mod writer;
 
 pub use backend::S3Builder as S3;
 pub use config::S3Config;
 
-/// Default scheme for s3 service.
+/// Re-export of the [`reqsign_aws_v4`] crate that this service signs requests
+/// with.
+///
+/// [`S3::credential_provider_chain`] takes a chain of providers for
+/// [`reqsign_aws_v4::Credential`]. Implement providers against this re-export and
+/// [`opendal_core::reqsign_core`] rather than depending on the `reqsign` crates
+/// directly, so that the types always match the ones this service is built with.
+pub use reqsign_aws_v4;
+
+/// URI scheme used for service registration and scheme-driven construction.
 pub const S3_SCHEME: &str = "s3";
 
-/// Register this service into the given registry.
+/// Register this service's URI scheme or schemes with an operator registry.
+///
+/// Registration enables scheme-driven construction through
+/// [`opendal_core::Operator::from_uri`] and
+/// [`opendal_core::Operator::via_iter`]. Direct construction through
+/// [`opendal_core::Operator::new`] does not require registration.
 pub fn register_s3_service(registry: &opendal_core::OperatorRegistry) {
     registry.register::<S3>(S3_SCHEME);
 }

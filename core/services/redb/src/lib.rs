@@ -15,23 +15,31 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-//! Redb service implementation for Apache OpenDAL.
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
 
 mod backend;
 mod config;
 mod core;
 mod deleter;
+mod lister;
+mod reader;
 mod writer;
 
 pub use backend::RedbBuilder as Redb;
 pub use config::RedbConfig;
 
-/// Default scheme for redb service.
+/// URI scheme used for service registration and scheme-driven construction.
 pub const REDB_SCHEME: &str = "redb";
 
-/// Register this service into the given registry.
+/// Register this service's URI scheme or schemes with an operator registry.
+///
+/// Registration enables scheme-driven construction through
+/// [`opendal_core::Operator::from_uri`] and
+/// [`opendal_core::Operator::via_iter`]. Direct construction through
+/// [`opendal_core::Operator::new`] does not require registration.
 pub fn register_redb_service(registry: &opendal_core::OperatorRegistry) {
     registry.register::<Redb>(REDB_SCHEME);
 }

@@ -34,7 +34,7 @@ impl MonoiofsDeleter {
 
 impl oio::OneShotDelete for MonoiofsDeleter {
     async fn delete_once(&self, path: String, _: OpDelete) -> Result<()> {
-        let path = self.core.prepare_path(&path);
+        let path = self.core.prepare_path(&path)?;
         let meta = self
             .core
             .dispatch({

@@ -26,8 +26,6 @@ theme:
 
 plugins:
   - search
-  - mkdocs-jupyter:
-      include_source: True
   - mkdocstrings:
       enable_inventory: true
       handlers:
@@ -39,13 +37,14 @@ plugins:
 nav:
   - Overview: index.md
   - Examples:
-      - Basic: examples/basic.ipynb
-      - Pandas: examples/pandas.ipynb
-      - Polars: examples/polars.ipynb
+      - Basic: examples/basic.md
+      - Pandas: examples/pandas.md
+      - Polars: examples/polars.md
   - API Reference:
       - AsyncFile: api/async_file.md
       - AsyncOperator: api/async_operator.md
       - Capability: api/capability.md
+      - Config: api/config.md
       - Exceptions: api/exceptions.md
       - File: api/file.md
       - Layers: api/layers.md
@@ -65,9 +64,6 @@ markdown_extensions:
   - toc:
       permalink: "#"
   - attr_list
-  - pymdownx.emoji:
-      emoji_index: !!python/name:material.extensions.emoji.twemoji
-      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.superfences:
       custom_fences:
         - name: mermaid

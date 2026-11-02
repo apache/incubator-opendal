@@ -15,12 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::collections::HashMap;
 use std::fmt::Debug;
 
 use serde::Deserialize;
 use serde::Serialize;
 
 use super::backend::HdfsNativeBuilder;
+
+pub const HDFS_SCHEME_PREFIX: &str = "hdfs://";
+pub const HDFS_DEFAULT_AUTHORITY: &str = "nameservice";
+pub const HA_NAMENODES_PREFIX: &str = "dfs.ha.namenodes";
+pub const HA_NAMENODE_RPC_ADDRESS_PREFIX: &str = "dfs.namenode.rpc-address";
 
 /// Config for HdfsNative services support.
 #[derive(Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -31,8 +37,14 @@ pub struct HdfsNativeConfig {
     pub root: Option<String>,
     /// name_node of this backend
     pub name_node: Option<String>,
-    /// enable the append capacity
+    /// Deprecated: HDFS Native append capability is enabled by default.
+    #[deprecated(
+        since = "0.57.0",
+        note = "HDFS Native append capability is enabled by default and this option is no longer needed."
+    )]
     pub enable_append: bool,
+    /// other options for hdfs client
+    pub options: Option<HashMap<String, String>>,
 }
 
 impl Debug for HdfsNativeConfig {
@@ -40,7 +52,7 @@ impl Debug for HdfsNativeConfig {
         f.debug_struct("HdfsNativeConfig")
             .field("root", &self.root)
             .field("name_node", &self.name_node)
-            .field("enable_append", &self.enable_append)
+            .field("options", &self.options)
             .finish_non_exhaustive()
     }
 }
@@ -54,18 +66,49 @@ impl opendal_core::Configurator for HdfsNativeConfig {
             map.insert("name_node".to_string(), format!("hdfs://{authority}"));
         }
 
-        if let Some(root) = uri.root() {
-            if !root.is_empty() {
-                map.insert("root".to_string(), root.to_string());
-            }
+        if let Some(root) = uri.root()
+            && !root.is_empty()
+        {
+            map.insert("root".to_string(), root.to_string());
         }
 
         Self::from_iter(map)
     }
 
+    #[allow(deprecated)]
     fn into_builder(self) -> Self::Builder {
         HdfsNativeBuilder { config: self }
     }
+}
+
+pub fn init_hdfs_config(name_node_uri: &str) -> HashMap<String, String> {
+    let namenodes = name_node_uri
+        .split(",")
+        .filter_map(|s| {
+            if !s.is_empty() {
+                Some(s.trim_start_matches("hdfs://").trim_end_matches("/"))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<&str>>();
+    let mut hdfs_config = HashMap::new();
+    let mut ha_config_namenodes_vec = Vec::new();
+    for (index, namenode) in namenodes.iter().enumerate() {
+        hdfs_config.insert(
+            format!(
+                "{}.{}.nn{}",
+                HA_NAMENODE_RPC_ADDRESS_PREFIX, HDFS_DEFAULT_AUTHORITY, index
+            ),
+            namenode.to_string(),
+        );
+        ha_config_namenodes_vec.push(format!("nn{}", index));
+    }
+    hdfs_config.insert(
+        format!("{}.{}", HA_NAMENODES_PREFIX, HDFS_DEFAULT_AUTHORITY),
+        ha_config_namenodes_vec.join(","),
+    );
+    hdfs_config
 }
 
 #[cfg(test)]
@@ -93,5 +136,39 @@ mod tests {
 
         let cfg = HdfsNativeConfig::from_uri(&uri).unwrap();
         assert!(cfg.name_node.is_none());
+    }
+
+    #[test]
+    fn init_hdfs_config_from_single_namenode() {
+        let hdfs_config = init_hdfs_config("hdfs://namenode1:9000/");
+        println!("{:?}", hdfs_config);
+        assert!(!hdfs_config.is_empty() && hdfs_config.len() == 2);
+        assert_eq!(
+            hdfs_config.get("dfs.ha.namenodes.nameservice"),
+            Some(&"nn0".to_string())
+        );
+        assert_eq!(
+            hdfs_config.get("dfs.namenode.rpc-address.nameservice.nn0"),
+            Some(&"namenode1:9000".to_string())
+        );
+    }
+
+    #[test]
+    fn init_hdfs_config_from_multi_namenodes() {
+        let hdfs_config = init_hdfs_config("hdfs://namenode1:9000,namenode2:9000/");
+        println!("{:?}", hdfs_config);
+        assert!(!hdfs_config.is_empty() && hdfs_config.len() == 3);
+        assert_eq!(
+            hdfs_config.get("dfs.ha.namenodes.nameservice"),
+            Some(&"nn0,nn1".to_string())
+        );
+        assert_eq!(
+            hdfs_config.get("dfs.namenode.rpc-address.nameservice.nn0"),
+            Some(&"namenode1:9000".to_string())
+        );
+        assert_eq!(
+            hdfs_config.get("dfs.namenode.rpc-address.nameservice.nn1"),
+            Some(&"namenode2:9000".to_string())
+        );
     }
 }

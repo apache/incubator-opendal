@@ -15,10 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! OpenDAL Observability
-//!
-//! This library offers essential components to facilitate the implementation of observability in OpenDAL.
-//!
+#![doc = include_str!("../README.md")]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg))]
+#![deny(missing_docs)]
+
 //! # OpenDAL Metrics Reference
 //!
 //! This document describes all metrics exposed by OpenDAL.
@@ -71,9 +72,6 @@
 //! * **Histogram**: Distribution of values with configurable buckets, includes count, sum and quantiles
 //! * **Counter**: Cumulative metric that only increases over time (resets on restart)
 //! * **Gauge**: Point-in-time metric that can increase and decrease
-
-#![cfg_attr(docsrs, feature(doc_cfg))]
-#![deny(missing_docs)]
 
 use std::fmt::Debug;
 use std::fmt::Formatter;
@@ -202,8 +200,14 @@ pub static LABEL_OPERATION: &str = "operation";
 pub static LABEL_ERROR: &str = "error";
 /// The metric label for the http code.
 pub static LABEL_STATUS_CODE: &str = "status_code";
+/// The metric label for the service-specific operation (e.g., "GetObject", "UploadPart").
+pub static LABEL_SERVICE_OPERATION: &str = "service_operation";
 
 /// MetricLabels are the labels for the metrics.
+///
+/// `scheme`, `namespace`, and `root` always come from the final service stack's
+/// [`ServiceInfo`]. HTTP requests only provide request-level labels such as
+/// [`Operation`] and [`ServiceOperation`] through extensions.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct MetricLabels {
     /// The storage scheme identifier (e.g., "s3", "gcs", "azblob", "fs").
@@ -226,11 +230,13 @@ pub struct MetricLabels {
     /// Only populated for `HttpStatusErrorsTotal` metric.
     /// Used to track frequency of specific HTTP error status codes.
     pub status_code: Option<StatusCode>,
+    /// The service-specific operation name as an optional supplement for operation name.
+    pub service_operation: Option<&'static str>,
 }
 
 impl MetricLabels {
     /// Create a new set of MetricLabels.
-    fn new(info: Arc<AccessorInfo>, op: &'static str) -> Self {
+    fn new(info: ServiceInfo, op: &'static str) -> Self {
         MetricLabels {
             scheme: info.scheme(),
             namespace: info.name(),
@@ -433,34 +439,46 @@ pub trait MetricsIntercept: Debug + Clone + Send + Sync + Unpin + 'static {
     }
 }
 
-/// The metrics layer for opendal.
+/// `MetricsLayer` reports operation and HTTP metrics to an interceptor.
+///
+/// The layer wraps both the storage service and the HTTP transport in the
+/// operator's [`OperationContext`]. It reports the metric names and labels
+/// documented in the crate-level metrics reference through
+/// [`MetricsIntercept::observe`].
+///
+/// The interceptor must be cheap to clone because each wrapped operation and
+/// HTTP request can retain a clone.
 #[derive(Clone, Debug)]
 pub struct MetricsLayer<I: MetricsIntercept> {
     interceptor: I,
 }
 
 impl<I: MetricsIntercept> MetricsLayer<I> {
-    /// Create a new metrics layer.
+    /// Create a metrics layer that reports values to `interceptor`.
     pub fn new(interceptor: I) -> Self {
         Self { interceptor }
     }
 }
 
-impl<A: Access, I: MetricsIntercept> Layer<A> for MetricsLayer<I> {
-    type LayeredAccess = MetricsAccessor<A, I>;
+impl<I: MetricsIntercept> Layer for MetricsLayer<I> {
+    fn apply_service(&self, inner: Servicer) -> Servicer {
+        Arc::new(self.layer(inner))
+    }
 
-    fn layer(&self, inner: A) -> Self::LayeredAccess {
-        let info = inner.info();
-
-        // Update http client with metrics http fetcher.
-        info.update_http_client(|client| {
-            HttpClient::with(MetricsHttpFetcher {
-                inner: client.into_inner(),
-                info: info.clone(),
-                interceptor: self.interceptor.clone(),
-            })
+    fn apply_context(&self, srv: Servicer, inner: OperationContext) -> OperationContext {
+        // HTTP metrics share the same interceptor and service identity as operation metrics.
+        let transport = HttpTransporter::new(MetricsHttpTransport {
+            inner: inner.http_transport().clone(),
+            info: srv.info(),
+            interceptor: self.interceptor.clone(),
         });
+        inner.with_http_transport(transport)
+    }
+}
 
+impl<I: MetricsIntercept> MetricsLayer<I> {
+    fn layer(&self, inner: Servicer) -> MetricsAccessor<I> {
+        let info = inner.info();
         MetricsAccessor {
             inner,
             info,
@@ -469,15 +487,107 @@ impl<A: Access, I: MetricsIntercept> Layer<A> for MetricsLayer<I> {
     }
 }
 
-struct MetricsHttpFetcher<I: MetricsIntercept> {
-    inner: HttpFetcher,
-    info: Arc<AccessorInfo>,
+struct MetricsHttpTransport<I: MetricsIntercept> {
+    inner: HttpTransporter,
+    info: ServiceInfo,
     interceptor: I,
 }
 
-impl<I: MetricsIntercept> HttpFetch for MetricsHttpFetcher<I> {
+enum ExecutingGuardKind {
+    Http,
+    Operation,
+}
+
+/// Guard to ensure metrics accounted even if the async future is cancelled.
+struct ExecutingGuard<I: MetricsIntercept> {
+    /// The interceptor to use for recording metrics. `None` if defused.
+    interceptor: Option<I>,
+    labels: MetricLabels,
+    start: Instant,
+    kind: ExecutingGuardKind,
+    /// Whether the async operation finished.
+    completed: bool,
+}
+
+impl<I: MetricsIntercept> ExecutingGuard<I> {
+    fn new_http(interceptor: I, labels: MetricLabels, start: Instant) -> Self {
+        Self {
+            interceptor: Some(interceptor),
+            labels,
+            start,
+            kind: ExecutingGuardKind::Http,
+            completed: false,
+        }
+    }
+
+    fn new_operation(interceptor: I, labels: MetricLabels, start: Instant) -> Self {
+        Self {
+            interceptor: Some(interceptor),
+            labels,
+            start,
+            kind: ExecutingGuardKind::Operation,
+            completed: false,
+        }
+    }
+
+    fn complete(&mut self) {
+        self.completed = true;
+    }
+
+    fn defuse(&mut self) {
+        self.interceptor = None;
+    }
+}
+
+impl<I: MetricsIntercept> Drop for ExecutingGuard<I> {
+    fn drop(&mut self) {
+        let Some(ref interceptor) = self.interceptor else {
+            return;
+        };
+
+        if !self.completed {
+            match self.kind {
+                ExecutingGuardKind::Http => {
+                    interceptor
+                        .observe(self.labels.clone(), MetricValue::HttpConnectionErrorsTotal);
+                    interceptor.observe(
+                        self.labels.clone(),
+                        MetricValue::HttpRequestDurationSeconds(self.start.elapsed()),
+                    );
+                }
+                ExecutingGuardKind::Operation => {
+                    interceptor.observe(
+                        self.labels.clone().with_error(ErrorKind::Unexpected),
+                        MetricValue::OperationErrorsTotal,
+                    );
+                    interceptor.observe(
+                        self.labels.clone(),
+                        MetricValue::OperationDurationSeconds(self.start.elapsed()),
+                    );
+                }
+            }
+        }
+
+        match self.kind {
+            ExecutingGuardKind::Http => {
+                interceptor.observe(
+                    std::mem::take(&mut self.labels),
+                    MetricValue::HttpExecuting(-1),
+                );
+            }
+            ExecutingGuardKind::Operation => {
+                interceptor.observe(
+                    std::mem::take(&mut self.labels),
+                    MetricValue::OperationExecuting(-1),
+                );
+            }
+        }
+    }
+}
+
+impl<I: MetricsIntercept> HttpTransport for MetricsHttpTransport<I> {
     async fn fetch(&self, req: http::Request<Buffer>) -> Result<http::Response<HttpBody>> {
-        let labels = MetricLabels::new(
+        let mut labels = MetricLabels::new(
             self.info.clone(),
             req.extensions()
                 .get::<Operation>()
@@ -485,27 +595,26 @@ impl<I: MetricsIntercept> HttpFetch for MetricsHttpFetcher<I> {
                 .map(Operation::into_static)
                 .unwrap_or("unknown"),
         );
+        labels.service_operation = req.extensions().get::<ServiceOperation>().map(|s| s.0);
 
         let start = Instant::now();
         let req_size = req.body().len();
 
         self.interceptor
             .observe(labels.clone(), MetricValue::HttpExecuting(1));
+        let mut guard = ExecutingGuard::new_http(self.interceptor.clone(), labels.clone(), start);
 
         let res = self.inner.fetch(req).await;
+        guard.complete();
         let req_duration = start.elapsed();
 
         match res {
             Err(err) => {
                 self.interceptor
-                    .observe(labels.clone(), MetricValue::HttpExecuting(-1));
-                self.interceptor
                     .observe(labels, MetricValue::HttpConnectionErrorsTotal);
                 Err(err)
             }
-            Ok(resp) if resp.status().is_client_error() && resp.status().is_server_error() => {
-                self.interceptor
-                    .observe(labels.clone(), MetricValue::HttpExecuting(-1));
+            Ok(resp) if resp.status().is_client_error() || resp.status().is_server_error() => {
                 self.interceptor.observe(
                     labels.with_status_code(resp.status()),
                     MetricValue::HttpStatusErrorsTotal,
@@ -513,6 +622,7 @@ impl<I: MetricsIntercept> HttpFetch for MetricsHttpFetcher<I> {
                 Ok(resp)
             }
             Ok(resp) => {
+                guard.defuse();
                 self.interceptor.observe(
                     labels.clone(),
                     MetricValue::HttpRequestBytes(req_size as u64),
@@ -534,6 +644,7 @@ impl<I: MetricsIntercept> HttpFetch for MetricsHttpFetcher<I> {
                         labels: labels.clone(),
                         size: 0,
                         start: Instant::now(),
+                        succeeded: false,
                     })
                 });
 
@@ -543,13 +654,14 @@ impl<I: MetricsIntercept> HttpFetch for MetricsHttpFetcher<I> {
     }
 }
 
-struct MetricsStream<S, I> {
+struct MetricsStream<S, I: MetricsIntercept> {
     inner: S,
     interceptor: I,
 
     labels: MetricLabels,
     size: u64,
     start: Instant,
+    succeeded: bool,
 }
 
 impl<S, I> Stream for MetricsStream<S, I>
@@ -567,40 +679,48 @@ where
             }
             Some(Err(err)) => Poll::Ready(Some(Err(err))),
             None => {
-                let resp_size = self.size;
-                let resp_duration = self.start.elapsed();
-
-                self.interceptor.observe(
-                    self.labels.clone(),
-                    MetricValue::HttpResponseBytes(resp_size),
-                );
-                self.interceptor.observe(
-                    self.labels.clone(),
-                    MetricValue::HttpResponseBytesRate(
-                        resp_size as f64 / resp_duration.as_secs_f64(),
-                    ),
-                );
-                self.interceptor.observe(
-                    self.labels.clone(),
-                    MetricValue::HttpResponseDurationSeconds(resp_duration),
-                );
-                self.interceptor
-                    .observe(self.labels.clone(), MetricValue::HttpExecuting(-1));
-
+                self.succeeded = true;
                 Poll::Ready(None)
             }
         }
     }
 }
 
+impl<S, I: MetricsIntercept> Drop for MetricsStream<S, I> {
+    fn drop(&mut self) {
+        let resp_size = self.size;
+        let resp_duration = self.start.elapsed();
+
+        if !self.succeeded {
+            self.interceptor
+                .observe(self.labels.clone(), MetricValue::HttpConnectionErrorsTotal);
+        }
+
+        self.interceptor.observe(
+            self.labels.clone(),
+            MetricValue::HttpResponseBytes(resp_size),
+        );
+        self.interceptor.observe(
+            self.labels.clone(),
+            MetricValue::HttpResponseBytesRate(resp_size as f64 / resp_duration.as_secs_f64()),
+        );
+        self.interceptor.observe(
+            self.labels.clone(),
+            MetricValue::HttpResponseDurationSeconds(resp_duration),
+        );
+        self.interceptor
+            .observe(self.labels.clone(), MetricValue::HttpExecuting(-1));
+    }
+}
+
 #[doc(hidden)]
-pub struct MetricsAccessor<A: Access, I: MetricsIntercept> {
-    inner: A,
-    info: Arc<AccessorInfo>,
+pub struct MetricsAccessor<I: MetricsIntercept> {
+    inner: Servicer,
+    info: ServiceInfo,
     interceptor: I,
 }
 
-impl<A: Access, I: MetricsIntercept> Debug for MetricsAccessor<A, I> {
+impl<I: MetricsIntercept> Debug for MetricsAccessor<I> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MetricsAccessor")
             .field("inner", &self.inner)
@@ -608,28 +728,44 @@ impl<A: Access, I: MetricsIntercept> Debug for MetricsAccessor<A, I> {
     }
 }
 
-impl<A: Access, I: MetricsIntercept> LayeredAccess for MetricsAccessor<A, I> {
-    type Inner = A;
-    type Reader = MetricsWrapper<A::Reader, I>;
-    type Writer = MetricsWrapper<A::Writer, I>;
-    type Lister = MetricsWrapper<A::Lister, I>;
-    type Deleter = MetricsWrapper<A::Deleter, I>;
+impl<I: MetricsIntercept> Service for MetricsAccessor<I> {
+    type Reader = MetricsReader<oio::Reader, I>;
+    type Writer = MetricsWrapper<oio::Writer, I>;
+    type Lister = MetricsWrapper<oio::Lister, I>;
+    type Deleter = MetricsWrapper<oio::Deleter, I>;
+    type Copier = MetricsWrapper<oio::Copier, I>;
+    type Composer = oio::Composer;
 
-    fn inner(&self) -> &Self::Inner {
-        &self.inner
+    fn info(&self) -> ServiceInfo {
+        self.info.clone()
     }
 
-    async fn create_dir(&self, path: &str, args: OpCreateDir) -> Result<RpCreateDir> {
+    fn capability(&self) -> Capability {
+        self.inner.capability()
+    }
+
+    fn compose(&self, ctx: &OperationContext, to: &str, args: OpCompose) -> Result<Self::Composer> {
+        self.inner.compose(ctx, to, args)
+    }
+
+    async fn create_dir(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpCreateDir,
+    ) -> Result<RpCreateDir> {
         let labels = MetricLabels::new(self.info.clone(), Operation::CreateDir.into_static());
 
         let start = Instant::now();
 
         self.interceptor
             .observe(labels.clone(), MetricValue::OperationExecuting(1));
+        let mut guard =
+            ExecutingGuard::new_operation(self.interceptor.clone(), labels.clone(), start);
 
         let res = self
-            .inner()
-            .create_dir(path, args)
+            .inner
+            .create_dir(ctx, path, args)
             .await
             .inspect(|_| {
                 self.interceptor.observe(
@@ -644,104 +780,123 @@ impl<A: Access, I: MetricsIntercept> LayeredAccess for MetricsAccessor<A, I> {
                 );
             });
 
-        self.interceptor
-            .observe(labels, MetricValue::OperationExecuting(-1));
+        guard.complete();
         res
     }
 
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
+    fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
         let labels = MetricLabels::new(self.info.clone(), Operation::Read.into_static());
 
         let start = Instant::now();
 
         self.interceptor
             .observe(labels.clone(), MetricValue::OperationExecuting(1));
+        let mut guard =
+            ExecutingGuard::new_operation(self.interceptor.clone(), labels.clone(), start);
 
-        let (rp, reader) = self
-            .inner
-            .read(path, args)
-            .await
-            .inspect(|_| {
-                self.interceptor.observe(
-                    labels.clone(),
-                    MetricValue::OperationTtfbSeconds(start.elapsed()),
-                );
-            })
-            .inspect_err(|err| {
+        match self.inner.read(ctx, path, args) {
+            Ok(reader) => {
+                guard.complete();
+                Ok(MetricsReader::new(reader, self.interceptor.clone(), labels))
+            }
+            Err(err) => {
                 self.interceptor.observe(
                     labels.clone().with_error(err.kind()),
                     MetricValue::OperationErrorsTotal,
                 );
-            })?;
-
-        Ok((
-            rp,
-            MetricsWrapper::new(reader, self.interceptor.clone(), labels, start),
-        ))
+                guard.complete();
+                Err(err)
+            }
+        }
     }
 
-    async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
+    fn write(&self, ctx: &OperationContext, path: &str, args: OpWrite) -> Result<Self::Writer> {
         let labels = MetricLabels::new(self.info.clone(), Operation::Write.into_static());
 
         let start = Instant::now();
 
         self.interceptor
             .observe(labels.clone(), MetricValue::OperationExecuting(1));
+        let mut guard =
+            ExecutingGuard::new_operation(self.interceptor.clone(), labels.clone(), start);
 
-        let (rp, writer) = self.inner.write(path, args).await.inspect_err(|err| {
-            self.interceptor.observe(
-                labels.clone().with_error(err.kind()),
-                MetricValue::OperationErrorsTotal,
-            );
-        })?;
-
-        Ok((
-            rp,
-            MetricsWrapper::new(writer, self.interceptor.clone(), labels, start),
-        ))
+        match self.inner.write(ctx, path, args) {
+            Ok(writer) => {
+                guard.defuse();
+                Ok(MetricsWrapper::new(
+                    writer,
+                    self.interceptor.clone(),
+                    labels,
+                    start,
+                ))
+            }
+            Err(err) => {
+                self.interceptor.observe(
+                    labels.clone().with_error(err.kind()),
+                    MetricValue::OperationErrorsTotal,
+                );
+                guard.complete();
+                Err(err)
+            }
+        }
     }
 
-    async fn copy(&self, from: &str, to: &str, args: OpCopy) -> Result<RpCopy> {
+    fn copy(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpCopy,
+    ) -> Result<Self::Copier> {
         let labels = MetricLabels::new(self.info.clone(), Operation::Copy.into_static());
 
         let start = Instant::now();
 
         self.interceptor
             .observe(labels.clone(), MetricValue::OperationExecuting(1));
+        let mut guard =
+            ExecutingGuard::new_operation(self.interceptor.clone(), labels.clone(), start);
 
-        let res = self
-            .inner()
-            .copy(from, to, args)
-            .await
-            .inspect(|_| {
-                self.interceptor.observe(
-                    labels.clone(),
-                    MetricValue::OperationDurationSeconds(start.elapsed()),
-                );
-            })
-            .inspect_err(|err| {
+        match self.inner.copy(ctx, from, to, args) {
+            Ok(copier) => {
+                guard.defuse();
+                Ok(MetricsWrapper::new(
+                    copier,
+                    self.interceptor.clone(),
+                    labels,
+                    start,
+                ))
+            }
+            Err(err) => {
                 self.interceptor.observe(
                     labels.clone().with_error(err.kind()),
                     MetricValue::OperationErrorsTotal,
                 );
-            });
-
-        self.interceptor
-            .observe(labels, MetricValue::OperationExecuting(-1));
-        res
+                guard.complete();
+                Err(err)
+            }
+        }
     }
 
-    async fn rename(&self, from: &str, to: &str, args: OpRename) -> Result<RpRename> {
+    async fn rename(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpRename,
+    ) -> Result<RpRename> {
         let labels = MetricLabels::new(self.info.clone(), Operation::Rename.into_static());
 
         let start = Instant::now();
 
         self.interceptor
             .observe(labels.clone(), MetricValue::OperationExecuting(1));
+        let mut guard =
+            ExecutingGuard::new_operation(self.interceptor.clone(), labels.clone(), start);
 
         let res = self
-            .inner()
-            .rename(from, to, args)
+            .inner
+            .rename(ctx, from, to, args)
             .await
             .inspect(|_| {
                 self.interceptor.observe(
@@ -756,22 +911,58 @@ impl<A: Access, I: MetricsIntercept> LayeredAccess for MetricsAccessor<A, I> {
                 );
             });
 
-        self.interceptor
-            .observe(labels, MetricValue::OperationExecuting(-1));
+        guard.complete();
         res
     }
 
-    async fn stat(&self, path: &str, args: OpStat) -> Result<RpStat> {
+    async fn restore(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpRestore,
+    ) -> Result<RpRestore> {
+        let labels = MetricLabels::new(self.info.clone(), Operation::Restore.into_static());
+        let start = Instant::now();
+
+        self.interceptor
+            .observe(labels.clone(), MetricValue::OperationExecuting(1));
+        let mut guard =
+            ExecutingGuard::new_operation(self.interceptor.clone(), labels.clone(), start);
+
+        let res = self
+            .inner
+            .restore(ctx, path, args)
+            .await
+            .inspect(|_| {
+                self.interceptor.observe(
+                    labels.clone(),
+                    MetricValue::OperationDurationSeconds(start.elapsed()),
+                );
+            })
+            .inspect_err(|err| {
+                self.interceptor.observe(
+                    labels.clone().with_error(err.kind()),
+                    MetricValue::OperationErrorsTotal,
+                );
+            });
+
+        guard.complete();
+        res
+    }
+
+    async fn stat(&self, ctx: &OperationContext, path: &str, args: OpStat) -> Result<RpStat> {
         let labels = MetricLabels::new(self.info.clone(), Operation::Stat.into_static());
 
         let start = Instant::now();
 
         self.interceptor
             .observe(labels.clone(), MetricValue::OperationExecuting(1));
+        let mut guard =
+            ExecutingGuard::new_operation(self.interceptor.clone(), labels.clone(), start);
 
         let res = self
-            .inner()
-            .stat(path, args)
+            .inner
+            .stat(ctx, path, args)
             .await
             .inspect(|_| {
                 self.interceptor.observe(
@@ -786,64 +977,90 @@ impl<A: Access, I: MetricsIntercept> LayeredAccess for MetricsAccessor<A, I> {
                 );
             });
 
-        self.interceptor
-            .observe(labels, MetricValue::OperationExecuting(-1));
+        guard.complete();
         res
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
+    fn delete(&self, ctx: &OperationContext) -> Result<Self::Deleter> {
         let labels = MetricLabels::new(self.info.clone(), Operation::Delete.into_static());
 
         let start = Instant::now();
 
         self.interceptor
             .observe(labels.clone(), MetricValue::OperationExecuting(1));
+        let mut guard =
+            ExecutingGuard::new_operation(self.interceptor.clone(), labels.clone(), start);
 
-        let (rp, deleter) = self.inner.delete().await.inspect_err(|err| {
-            self.interceptor.observe(
-                labels.clone().with_error(err.kind()),
-                MetricValue::OperationErrorsTotal,
-            );
-        })?;
-
-        Ok((
-            rp,
-            MetricsWrapper::new(deleter, self.interceptor.clone(), labels, start),
-        ))
+        match self.inner.delete(ctx) {
+            Ok(deleter) => {
+                guard.defuse();
+                Ok(MetricsWrapper::new(
+                    deleter,
+                    self.interceptor.clone(),
+                    labels,
+                    start,
+                ))
+            }
+            Err(err) => {
+                self.interceptor.observe(
+                    labels.clone().with_error(err.kind()),
+                    MetricValue::OperationErrorsTotal,
+                );
+                guard.complete();
+                Err(err)
+            }
+        }
     }
 
-    async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
+    fn list(&self, ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
         let labels = MetricLabels::new(self.info.clone(), Operation::List.into_static());
 
         let start = Instant::now();
 
         self.interceptor
             .observe(labels.clone(), MetricValue::OperationExecuting(1));
+        let mut guard =
+            ExecutingGuard::new_operation(self.interceptor.clone(), labels.clone(), start);
 
-        let (rp, lister) = self.inner.list(path, args).await.inspect_err(|err| {
-            self.interceptor.observe(
-                labels.clone().with_error(err.kind()),
-                MetricValue::OperationErrorsTotal,
-            );
-        })?;
-
-        Ok((
-            rp,
-            MetricsWrapper::new(lister, self.interceptor.clone(), labels, start),
-        ))
+        match self.inner.list(ctx, path, args) {
+            Ok(lister) => {
+                guard.defuse();
+                Ok(MetricsWrapper::new(
+                    lister,
+                    self.interceptor.clone(),
+                    labels,
+                    start,
+                ))
+            }
+            Err(err) => {
+                self.interceptor.observe(
+                    labels.clone().with_error(err.kind()),
+                    MetricValue::OperationErrorsTotal,
+                );
+                guard.complete();
+                Err(err)
+            }
+        }
     }
 
-    async fn presign(&self, path: &str, args: OpPresign) -> Result<RpPresign> {
+    async fn presign(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpPresign,
+    ) -> Result<RpPresign> {
         let labels = MetricLabels::new(self.info.clone(), Operation::Presign.into_static());
 
         let start = Instant::now();
 
         self.interceptor
             .observe(labels.clone(), MetricValue::OperationExecuting(1));
+        let mut guard =
+            ExecutingGuard::new_operation(self.interceptor.clone(), labels.clone(), start);
 
         let res = self
-            .inner()
-            .presign(path, args)
+            .inner
+            .presign(ctx, path, args)
             .await
             .inspect(|_| {
                 self.interceptor.observe(
@@ -858,9 +1075,82 @@ impl<A: Access, I: MetricsIntercept> LayeredAccess for MetricsAccessor<A, I> {
                 );
             });
 
-        self.interceptor
-            .observe(labels, MetricValue::OperationExecuting(-1));
+        guard.complete();
         res
+    }
+}
+
+#[doc(hidden)]
+pub struct MetricsReader<R, I: MetricsIntercept> {
+    inner: R,
+    interceptor: I,
+    labels: MetricLabels,
+}
+
+impl<R, I: MetricsIntercept> MetricsReader<R, I> {
+    fn new(inner: R, interceptor: I, labels: MetricLabels) -> Self {
+        Self {
+            inner,
+            interceptor,
+            labels,
+        }
+    }
+}
+
+impl<R: oio::Read, I: MetricsIntercept> oio::Read for MetricsReader<R, I> {
+    async fn open(&self, range: BytesRange) -> Result<(RpRead, Box<dyn oio::ReadStreamDyn>)> {
+        let labels = self.labels.clone();
+        let start = Instant::now();
+
+        self.interceptor
+            .observe(labels.clone(), MetricValue::OperationExecuting(1));
+        let mut guard =
+            ExecutingGuard::new_operation(self.interceptor.clone(), labels.clone(), start);
+
+        match self.inner.open(range).await {
+            Ok((rp, stream)) => {
+                self.interceptor.observe(
+                    labels.clone(),
+                    MetricValue::OperationTtfbSeconds(start.elapsed()),
+                );
+                guard.defuse();
+                Ok((
+                    rp,
+                    Box::new(MetricsWrapper::new(
+                        stream,
+                        self.interceptor.clone(),
+                        labels,
+                        start,
+                    )) as Box<dyn oio::ReadStreamDyn>,
+                ))
+            }
+            Err(err) => {
+                self.interceptor.observe(
+                    labels.clone().with_error(err.kind()),
+                    MetricValue::OperationErrorsTotal,
+                );
+                guard.complete();
+                Err(err)
+            }
+        }
+    }
+
+    async fn read(&self, range: BytesRange) -> Result<(RpRead, Buffer)> {
+        let labels = self.labels.clone();
+        let start = Instant::now();
+
+        self.interceptor
+            .observe(labels.clone(), MetricValue::OperationExecuting(1));
+        let mut metrics = MetricsWrapper::new((), self.interceptor.clone(), labels, start);
+
+        let result = self.inner.read(range).await.inspect_err(|err| {
+            metrics.record_error(err);
+        });
+        if let Ok((_, buffer)) = &result {
+            metrics.size = buffer.len() as u64;
+            metrics.completed = true;
+        }
+        result
     }
 }
 
@@ -872,6 +1162,7 @@ pub struct MetricsWrapper<R, I: MetricsIntercept> {
 
     start: Instant,
     size: u64,
+    completed: bool,
 }
 
 impl<R, I: MetricsIntercept> Drop for MetricsWrapper<R, I> {
@@ -879,8 +1170,16 @@ impl<R, I: MetricsIntercept> Drop for MetricsWrapper<R, I> {
         let size = self.size;
         let duration = self.start.elapsed();
 
+        if !self.completed {
+            self.interceptor.observe(
+                self.labels.clone().with_error(ErrorKind::Unexpected),
+                MetricValue::OperationErrorsTotal,
+            );
+        }
+
         if self.labels.operation == Operation::Read.into_static()
             || self.labels.operation == Operation::Write.into_static()
+            || self.labels.operation == Operation::Copy.into_static()
         {
             self.interceptor
                 .observe(self.labels.clone(), MetricValue::OperationBytes(self.size));
@@ -916,24 +1215,31 @@ impl<R, I: MetricsIntercept> MetricsWrapper<R, I> {
             labels,
             start,
             size: 0,
+            completed: false,
         }
+    }
+
+    fn record_error(&mut self, err: &Error) {
+        self.completed = true;
+        self.interceptor.observe(
+            self.labels.clone().with_error(err.kind()),
+            MetricValue::OperationErrorsTotal,
+        );
     }
 }
 
-impl<R: oio::Read, I: MetricsIntercept> oio::Read for MetricsWrapper<R, I> {
+impl<R: oio::ReadStream, I: MetricsIntercept> oio::ReadStream for MetricsWrapper<R, I> {
     async fn read(&mut self) -> Result<Buffer> {
         self.inner
             .read()
             .await
             .inspect(|bs| {
+                if bs.is_empty() {
+                    self.completed = true;
+                }
                 self.size += bs.len() as u64;
             })
-            .inspect_err(|err| {
-                self.interceptor.observe(
-                    self.labels.clone().with_error(err.kind()),
-                    MetricValue::OperationErrorsTotal,
-                );
-            })
+            .inspect_err(|err| self.record_error(err))
     }
 }
 
@@ -947,30 +1253,41 @@ impl<R: oio::Write, I: MetricsIntercept> oio::Write for MetricsWrapper<R, I> {
             .inspect(|_| {
                 self.size += size as u64;
             })
-            .inspect_err(|err| {
-                self.interceptor.observe(
-                    self.labels.clone().with_error(err.kind()),
-                    MetricValue::OperationErrorsTotal,
-                );
+            .inspect_err(|err| self.record_error(err))
+    }
+
+    async fn copy_from(&mut self, path: &str, args: OpRead, range: BytesRange) -> Result<()> {
+        let size = range
+            .size()
+            .expect("writer copy range must be absolute and bounded");
+
+        self.inner
+            .copy_from(path, args, range)
+            .await
+            .inspect(|_| {
+                self.size += size;
             })
+            .inspect_err(|err| self.record_error(err))
     }
 
     async fn close(&mut self) -> Result<Metadata> {
-        self.inner.close().await.inspect_err(|err| {
-            self.interceptor.observe(
-                self.labels.clone().with_error(err.kind()),
-                MetricValue::OperationErrorsTotal,
-            );
-        })
+        let result = self
+            .inner
+            .close()
+            .await
+            .inspect_err(|err| self.record_error(err));
+        self.completed = true;
+        result
     }
 
     async fn abort(&mut self) -> Result<()> {
-        self.inner.abort().await.inspect_err(|err| {
-            self.interceptor.observe(
-                self.labels.clone().with_error(err.kind()),
-                MetricValue::OperationErrorsTotal,
-            );
-        })
+        let result = self
+            .inner
+            .abort()
+            .await
+            .inspect_err(|err| self.record_error(err));
+        self.completed = true;
+        result
     }
 }
 
@@ -979,15 +1296,14 @@ impl<R: oio::List, I: MetricsIntercept> oio::List for MetricsWrapper<R, I> {
         self.inner
             .next()
             .await
-            .inspect(|_| {
-                self.size += 1;
+            .inspect(|entry| {
+                if entry.is_some() {
+                    self.size += 1;
+                } else {
+                    self.completed = true;
+                }
             })
-            .inspect_err(|err| {
-                self.interceptor.observe(
-                    self.labels.clone().with_error(err.kind()),
-                    MetricValue::OperationErrorsTotal,
-                );
-            })
+            .inspect_err(|err| self.record_error(err))
     }
 }
 
@@ -999,20 +1315,643 @@ impl<R: oio::Delete, I: MetricsIntercept> oio::Delete for MetricsWrapper<R, I> {
             .inspect(|_| {
                 self.size += 1;
             })
-            .inspect_err(|err| {
-                self.interceptor.observe(
-                    self.labels.clone().with_error(err.kind()),
-                    MetricValue::OperationErrorsTotal,
-                );
-            })
+            .inspect_err(|err| self.record_error(err))
     }
 
     async fn close(&mut self) -> Result<()> {
-        self.inner.close().await.inspect_err(|err| {
-            self.interceptor.observe(
-                self.labels.clone().with_error(err.kind()),
-                MetricValue::OperationErrorsTotal,
+        let result = self
+            .inner
+            .close()
+            .await
+            .inspect_err(|err| self.record_error(err));
+        self.completed = true;
+        result
+    }
+}
+
+impl<C: oio::Copy, I: MetricsIntercept> oio::Copy for MetricsWrapper<C, I> {
+    async fn next(&mut self) -> Result<Option<usize>> {
+        self.inner
+            .next()
+            .await
+            .inspect(|n| match n {
+                Some(n) => self.size += *n as u64,
+                None => self.completed = true,
+            })
+            .inspect_err(|err| self.record_error(err))
+    }
+
+    async fn close(&mut self) -> Result<Metadata> {
+        let result = self
+            .inner
+            .close()
+            .await
+            .inspect_err(|err| self.record_error(err));
+        self.completed = true;
+        result
+    }
+
+    async fn abort(&mut self) -> Result<()> {
+        let result = self
+            .inner
+            .abort()
+            .await
+            .inspect_err(|err| self.record_error(err));
+        self.completed = true;
+        result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::VecDeque;
+    use std::sync::Mutex;
+    use std::time::Instant;
+
+    use futures::StreamExt;
+    use futures::stream;
+
+    use super::*;
+
+    #[derive(Debug, Clone, Default)]
+    struct MockInterceptor {
+        observations: Arc<Mutex<Vec<(MetricLabels, MetricValue)>>>,
+    }
+
+    impl MetricsIntercept for MockInterceptor {
+        fn observe(&self, labels: MetricLabels, value: MetricValue) {
+            self.observations.lock().unwrap().push((labels, value));
+        }
+    }
+
+    impl MockInterceptor {
+        fn has_metric(&self, name: &str) -> bool {
+            self.observations
+                .lock()
+                .unwrap()
+                .iter()
+                .any(|(_, v)| v.name() == name)
+        }
+
+        fn count_metric(&self, name: &str) -> usize {
+            self.observations
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(_, v)| v.name() == name)
+                .count()
+        }
+
+        fn count_metric_with_status(&self, name: &str, code: StatusCode) -> usize {
+            self.observations
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(l, v)| v.name() == name && l.status_code == Some(code))
+                .count()
+        }
+
+        fn gauge_value(&self, name: &str) -> isize {
+            self.observations
+                .lock()
+                .unwrap()
+                .iter()
+                .filter_map(|(_, v)| match v {
+                    MetricValue::HttpExecuting(n) if v.name() == name => Some(*n),
+                    MetricValue::OperationExecuting(n) if v.name() == name => Some(*n),
+                    _ => None,
+                })
+                .sum()
+        }
+
+        fn get_duration_seconds(&self, name: &str) -> Option<Duration> {
+            self.observations.lock().unwrap().iter().find_map(|(_, v)| {
+                if v.name() != name {
+                    return None;
+                }
+                match v {
+                    MetricValue::HttpRequestDurationSeconds(d)
+                    | MetricValue::HttpResponseDurationSeconds(d)
+                    | MetricValue::OperationDurationSeconds(d)
+                    | MetricValue::OperationTtfbSeconds(d) => Some(*d),
+                    _ => None,
+                }
+            })
+        }
+
+        fn get_value_u64(&self, name: &str) -> Option<u64> {
+            self.observations.lock().unwrap().iter().find_map(|(_, v)| {
+                if v.name() != name {
+                    return None;
+                }
+                match v {
+                    MetricValue::HttpResponseBytes(n)
+                    | MetricValue::HttpRequestBytes(n)
+                    | MetricValue::OperationBytes(n)
+                    | MetricValue::OperationEntries(n) => Some(*n),
+                    _ => None,
+                }
+            })
+        }
+    }
+
+    fn test_info() -> ServiceInfo {
+        ServiceInfo::new("test", "", "")
+    }
+
+    fn test_labels() -> MetricLabels {
+        MetricLabels::new(test_info(), Operation::Read.into_static())
+    }
+
+    enum MockFetchBehavior {
+        /// Return a response with the given status code and an empty body.
+        Respond(StatusCode),
+        /// Fail before receiving a response.
+        ConnectionError,
+        /// Return HTTP 200 with a body stream that yields the given items.
+        StreamBody(Vec<Result<Buffer>>),
+    }
+
+    struct MockHttpTransport {
+        behavior: Mutex<MockFetchBehavior>,
+    }
+
+    impl HttpTransport for MockHttpTransport {
+        async fn fetch(&self, _req: http::Request<Buffer>) -> Result<http::Response<HttpBody>> {
+            let behavior = std::mem::replace(
+                &mut *self.behavior.lock().unwrap(),
+                MockFetchBehavior::ConnectionError,
             );
-        })
+            match behavior {
+                MockFetchBehavior::Respond(status) => {
+                    let body = HttpBody::new(stream::empty(), None);
+                    let resp = http::Response::builder().status(status).body(body).unwrap();
+                    Ok(resp)
+                }
+                MockFetchBehavior::ConnectionError => {
+                    Err(Error::new(ErrorKind::Unexpected, "mock connection refused"))
+                }
+                MockFetchBehavior::StreamBody(items) => {
+                    let body = HttpBody::new(stream::iter(items), None);
+                    let resp = http::Response::builder()
+                        .status(StatusCode::OK)
+                        .body(body)
+                        .unwrap();
+                    Ok(resp)
+                }
+            }
+        }
+    }
+
+    fn build_metrics_http_fetcher(
+        mock: MockInterceptor,
+        behavior: MockFetchBehavior,
+    ) -> MetricsHttpTransport<MockInterceptor> {
+        let inner_fetch = MockHttpTransport {
+            behavior: Mutex::new(behavior),
+        };
+        MetricsHttpTransport {
+            inner: HttpTransporter::new(inner_fetch),
+            info: test_info(),
+            interceptor: mock,
+        }
+    }
+
+    fn build_http_request() -> http::Request<Buffer> {
+        let mut req = http::Request::new(Buffer::new());
+        *req.uri_mut() = "https://example.com/test".parse().unwrap();
+        req.extensions_mut().insert(Operation::Read);
+        req
+    }
+
+    struct MockRawReader {
+        open_result: Mutex<Option<Result<Vec<Result<Buffer>>>>>,
+        read_result: Mutex<Option<Result<Buffer>>>,
+    }
+
+    impl MockRawReader {
+        fn with_open(chunks: Vec<Result<Buffer>>) -> Self {
+            Self {
+                open_result: Mutex::new(Some(Ok(chunks))),
+                read_result: Mutex::new(None),
+            }
+        }
+
+        fn with_read(buffer: Buffer) -> Self {
+            Self {
+                open_result: Mutex::new(None),
+                read_result: Mutex::new(Some(Ok(buffer))),
+            }
+        }
+    }
+
+    impl oio::Read for MockRawReader {
+        async fn open(&self, _: BytesRange) -> Result<(RpRead, Box<dyn oio::ReadStreamDyn>)> {
+            match self
+                .open_result
+                .lock()
+                .unwrap()
+                .take()
+                .unwrap_or_else(|| Err(Error::new(ErrorKind::Unexpected, "open not configured")))
+            {
+                Ok(chunks) => Ok((
+                    RpRead::default(),
+                    Box::new(MockReadStream {
+                        chunks: chunks.into_iter().collect(),
+                    }) as Box<dyn oio::ReadStreamDyn>,
+                )),
+                Err(err) => Err(err),
+            }
+        }
+
+        async fn read(&self, _: BytesRange) -> Result<(RpRead, Buffer)> {
+            match self
+                .read_result
+                .lock()
+                .unwrap()
+                .take()
+                .unwrap_or_else(|| Err(Error::new(ErrorKind::Unexpected, "read not configured")))
+            {
+                Ok(buffer) => Ok((RpRead::default(), buffer)),
+                Err(err) => Err(err),
+            }
+        }
+    }
+
+    struct MockReadStream {
+        chunks: VecDeque<Result<Buffer>>,
+    }
+
+    impl oio::ReadStream for MockReadStream {
+        async fn read(&mut self) -> Result<Buffer> {
+            self.chunks.pop_front().unwrap_or_else(|| Ok(Buffer::new()))
+        }
+    }
+
+    #[tokio::test]
+    async fn test_http_transport_error_records_status_error() {
+        let mock = MockInterceptor::default();
+        let fetcher = build_metrics_http_fetcher(
+            mock.clone(),
+            MockFetchBehavior::Respond(StatusCode::NOT_FOUND),
+        );
+
+        let _ = fetcher.fetch(build_http_request()).await;
+
+        assert_eq!(
+            mock.count_metric_with_status(
+                "opendal_http_status_errors_total",
+                StatusCode::NOT_FOUND
+            ),
+            1
+        );
+        assert_eq!(mock.gauge_value("opendal_http_executing"), 0);
+    }
+
+    #[tokio::test]
+    async fn test_http_server_error_records_status_error() {
+        let mock = MockInterceptor::default();
+        let fetcher = build_metrics_http_fetcher(
+            mock.clone(),
+            MockFetchBehavior::Respond(StatusCode::INTERNAL_SERVER_ERROR),
+        );
+
+        let _ = fetcher.fetch(build_http_request()).await;
+
+        assert_eq!(
+            mock.count_metric_with_status(
+                "opendal_http_status_errors_total",
+                StatusCode::INTERNAL_SERVER_ERROR
+            ),
+            1
+        );
+        assert_eq!(mock.gauge_value("opendal_http_executing"), 0);
+    }
+
+    #[tokio::test]
+    async fn test_http_success_records_full_metrics() {
+        let mock = MockInterceptor::default();
+        let fetcher = build_metrics_http_fetcher(
+            mock.clone(),
+            MockFetchBehavior::StreamBody(vec![
+                Ok(Buffer::from("hello")),
+                Ok(Buffer::from(" world")),
+            ]),
+        );
+
+        let resp = fetcher.fetch(build_http_request()).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let (_, mut body) = resp.into_parts();
+        let buf = body.to_buffer().await.unwrap();
+        assert_eq!(buf.len(), 11);
+        drop(body);
+
+        assert_eq!(mock.count_metric("opendal_http_status_errors_total"), 0);
+        assert_eq!(mock.count_metric("opendal_http_connection_errors_total"), 0);
+        assert_eq!(mock.get_value_u64("opendal_http_request_bytes"), Some(0));
+        assert!(
+            mock.get_duration_seconds("opendal_http_request_duration_seconds")
+                .unwrap()
+                > Duration::ZERO
+        );
+        assert_eq!(mock.get_value_u64("opendal_http_response_bytes"), Some(11));
+        assert!(
+            mock.get_duration_seconds("opendal_http_response_duration_seconds")
+                .unwrap()
+                > Duration::ZERO
+        );
+        assert_eq!(mock.gauge_value("opendal_http_executing"), 0);
+    }
+
+    #[tokio::test]
+    async fn test_http_connection_error_records_connection_error() {
+        let mock = MockInterceptor::default();
+        let fetcher = build_metrics_http_fetcher(mock.clone(), MockFetchBehavior::ConnectionError);
+
+        let res = fetcher.fetch(build_http_request()).await;
+        assert!(res.is_err());
+
+        assert_eq!(mock.count_metric("opendal_http_connection_errors_total"), 1);
+        assert_eq!(mock.count_metric("opendal_http_status_errors_total"), 0);
+        assert_eq!(mock.gauge_value("opendal_http_executing"), 0);
+    }
+
+    #[tokio::test]
+    async fn test_http_body_read_failure_records_metrics() {
+        let mock = MockInterceptor::default();
+        let fetcher = build_metrics_http_fetcher(
+            mock.clone(),
+            MockFetchBehavior::StreamBody(vec![
+                Ok(Buffer::from("partial")),
+                Err(Error::new(ErrorKind::Unexpected, "connection reset")),
+            ]),
+        );
+
+        let resp = fetcher.fetch(build_http_request()).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let (_, mut body) = resp.into_parts();
+        let res = body.to_buffer().await;
+        assert!(res.is_err());
+        drop(body);
+
+        assert_eq!(mock.get_value_u64("opendal_http_response_bytes"), Some(7));
+        assert_eq!(mock.count_metric("opendal_http_connection_errors_total"), 1);
+        assert_eq!(mock.gauge_value("opendal_http_executing"), 0);
+    }
+
+    #[tokio::test]
+    async fn test_stream_completed_records_response_metrics() {
+        let mock = MockInterceptor::default();
+        let labels = test_labels();
+        mock.observe(labels.clone(), MetricValue::HttpExecuting(1));
+        let inner = stream::iter(vec![Ok(Buffer::from("hello"))]);
+
+        let mut s = MetricsStream {
+            inner,
+            interceptor: mock.clone(),
+            labels,
+            size: 0,
+            start: Instant::now(),
+            succeeded: false,
+        };
+
+        while s.next().await.is_some() {}
+        drop(s);
+
+        assert_eq!(mock.get_value_u64("opendal_http_response_bytes"), Some(5));
+        assert_eq!(mock.gauge_value("opendal_http_executing"), 0);
+        assert_eq!(mock.count_metric("opendal_http_connection_errors_total"), 0);
+    }
+
+    #[tokio::test]
+    async fn test_stream_dropped_early_records_response_metrics() {
+        let mock = MockInterceptor::default();
+        let labels = test_labels();
+        mock.observe(labels.clone(), MetricValue::HttpExecuting(1));
+        let inner = stream::iter(vec![Ok(Buffer::from("chunk1")), Ok(Buffer::from("chunk2"))]);
+
+        let mut s = MetricsStream {
+            inner,
+            interceptor: mock.clone(),
+            labels,
+            size: 0,
+            start: Instant::now(),
+            succeeded: false,
+        };
+
+        let _ = s.next().await;
+        drop(s);
+
+        assert_eq!(mock.get_value_u64("opendal_http_response_bytes"), Some(6));
+        assert_eq!(mock.gauge_value("opendal_http_executing"), 0);
+        assert_eq!(mock.count_metric("opendal_http_connection_errors_total"), 1);
+    }
+
+    #[tokio::test]
+    async fn test_stream_error_records_response_metrics() {
+        let mock = MockInterceptor::default();
+        let labels = test_labels();
+        mock.observe(labels.clone(), MetricValue::HttpExecuting(1));
+        let inner = stream::iter(vec![
+            Ok(Buffer::from("data")),
+            Err(Error::new(ErrorKind::Unexpected, "read error")),
+        ]);
+
+        let mut s = MetricsStream {
+            inner,
+            interceptor: mock.clone(),
+            labels,
+            size: 0,
+            start: Instant::now(),
+            succeeded: false,
+        };
+
+        while let Some(res) = s.next().await {
+            if res.is_err() {
+                break;
+            }
+        }
+        drop(s);
+
+        assert_eq!(mock.get_value_u64("opendal_http_response_bytes"), Some(4));
+        assert_eq!(mock.gauge_value("opendal_http_executing"), 0);
+        assert_eq!(mock.count_metric("opendal_http_connection_errors_total"), 1);
+    }
+
+    #[test]
+    fn test_http_guard_cancelled_records_connection_error() {
+        let mock = MockInterceptor::default();
+        let labels = test_labels();
+        mock.observe(labels.clone(), MetricValue::HttpExecuting(1));
+        let guard = ExecutingGuard::new_http(mock.clone(), labels, Instant::now());
+        drop(guard);
+
+        assert_eq!(mock.count_metric("opendal_http_connection_errors_total"), 1);
+        assert!(mock.has_metric("opendal_http_request_duration_seconds"));
+        assert_eq!(mock.gauge_value("opendal_http_executing"), 0);
+    }
+
+    #[test]
+    fn test_http_guard_completed_only_decrements_executing() {
+        let mock = MockInterceptor::default();
+        let labels = test_labels();
+        mock.observe(labels.clone(), MetricValue::HttpExecuting(1));
+        let mut guard = ExecutingGuard::new_http(mock.clone(), labels, Instant::now());
+        guard.complete();
+        drop(guard);
+
+        assert_eq!(mock.count_metric("opendal_http_connection_errors_total"), 0);
+        assert_eq!(mock.gauge_value("opendal_http_executing"), 0);
+    }
+
+    #[test]
+    fn test_http_guard_defused_records_nothing() {
+        let mock = MockInterceptor::default();
+        let labels = test_labels();
+        mock.observe(labels.clone(), MetricValue::HttpExecuting(1));
+        let mut guard = ExecutingGuard::new_http(mock.clone(), labels, Instant::now());
+        guard.complete();
+        guard.defuse();
+        drop(guard);
+
+        assert_eq!(mock.gauge_value("opendal_http_executing"), 1);
+        assert_eq!(mock.count_metric("opendal_http_connection_errors_total"), 0);
+    }
+
+    #[test]
+    fn test_operation_guard_cancelled_records_operation_error() {
+        let mock = MockInterceptor::default();
+        let labels = test_labels();
+        mock.observe(labels.clone(), MetricValue::OperationExecuting(1));
+        let guard = ExecutingGuard::new_operation(mock.clone(), labels, Instant::now());
+        drop(guard);
+
+        assert_eq!(mock.count_metric("opendal_operation_errors_total"), 1);
+        assert!(mock.has_metric("opendal_operation_duration_seconds"));
+        assert_eq!(mock.gauge_value("opendal_operation_executing"), 0);
+    }
+
+    #[test]
+    fn test_operation_guard_completed_only_decrements_executing() {
+        let mock = MockInterceptor::default();
+        let labels = test_labels();
+        mock.observe(labels.clone(), MetricValue::OperationExecuting(1));
+        let mut guard = ExecutingGuard::new_operation(mock.clone(), labels, Instant::now());
+        guard.complete();
+        drop(guard);
+
+        assert_eq!(mock.count_metric("opendal_operation_errors_total"), 0);
+        assert_eq!(mock.gauge_value("opendal_operation_executing"), 0);
+    }
+
+    #[test]
+    fn test_reader_drop_records_no_operation_metrics() {
+        let mock = MockInterceptor::default();
+        let labels = MetricLabels::new(test_info(), Operation::Read.into_static());
+
+        let reader = MetricsReader::new(
+            MockRawReader::with_read(Buffer::new()),
+            mock.clone(),
+            labels,
+        );
+        drop(reader);
+
+        assert_eq!(mock.count_metric("opendal_operation_errors_total"), 0);
+        assert_eq!(mock.get_value_u64("opendal_operation_bytes"), None);
+        assert_eq!(mock.gauge_value("opendal_operation_executing"), 0);
+    }
+
+    #[tokio::test]
+    async fn test_reader_open_stream_records_operation_metrics_on_stream_drop() {
+        let mock = MockInterceptor::default();
+        let labels = MetricLabels::new(test_info(), Operation::Read.into_static());
+        let reader = MetricsReader::new(
+            MockRawReader::with_open(vec![Ok(Buffer::from("hello"))]),
+            mock.clone(),
+            labels,
+        );
+
+        let (_, mut stream) = oio::Read::open(&reader, BytesRange::from(0_u64..5))
+            .await
+            .unwrap();
+        assert_eq!(mock.gauge_value("opendal_operation_executing"), 1);
+
+        let chunk = oio::ReadStream::read(&mut stream).await.unwrap();
+        assert_eq!(chunk.len(), 5);
+        let chunk = oio::ReadStream::read(&mut stream).await.unwrap();
+        assert!(chunk.is_empty());
+        drop(stream);
+        drop(reader);
+
+        assert_eq!(mock.count_metric("opendal_operation_errors_total"), 0);
+        assert!(mock.has_metric("opendal_operation_ttfb_seconds"));
+        assert_eq!(mock.get_value_u64("opendal_operation_bytes"), Some(5));
+        assert_eq!(mock.gauge_value("opendal_operation_executing"), 0);
+    }
+
+    #[tokio::test]
+    async fn test_reader_read_records_operation_metrics() {
+        let mock = MockInterceptor::default();
+        let labels = MetricLabels::new(test_info(), Operation::Read.into_static());
+        let reader = MetricsReader::new(
+            MockRawReader::with_read(Buffer::from("hello")),
+            mock.clone(),
+            labels,
+        );
+
+        let (_, buffer) = oio::Read::read(&reader, BytesRange::from(0_u64..5))
+            .await
+            .unwrap();
+        drop(reader);
+
+        assert_eq!(buffer.len(), 5);
+        assert_eq!(mock.count_metric("opendal_operation_errors_total"), 0);
+        assert_eq!(mock.get_value_u64("opendal_operation_bytes"), Some(5));
+        assert_eq!(mock.gauge_value("opendal_operation_executing"), 0);
+    }
+
+    #[test]
+    fn test_list_wrapper_drop_records_operation_entries() {
+        let mock = MockInterceptor::default();
+        let labels = MetricLabels::new(test_info(), Operation::List.into_static());
+        mock.observe(labels.clone(), MetricValue::OperationExecuting(1));
+
+        let mut wrapper = MetricsWrapper {
+            inner: (),
+            interceptor: mock.clone(),
+            labels,
+            start: Instant::now(),
+            size: 0,
+            completed: true,
+        };
+        wrapper.size = 42;
+        drop(wrapper);
+
+        assert_eq!(mock.get_value_u64("opendal_operation_entries"), Some(42));
+        assert!(mock.has_metric("opendal_operation_entries_rate"));
+        assert_eq!(mock.get_value_u64("opendal_operation_bytes"), None);
+        assert_eq!(mock.gauge_value("opendal_operation_executing"), 0);
+    }
+
+    #[test]
+    fn test_wrapper_cancelled_records_operation_error() {
+        let mock = MockInterceptor::default();
+        let labels = MetricLabels::new(test_info(), Operation::Read.into_static());
+        mock.observe(labels.clone(), MetricValue::OperationExecuting(1));
+
+        let wrapper = MetricsWrapper {
+            inner: (),
+            interceptor: mock.clone(),
+            labels,
+            start: Instant::now(),
+            size: 0,
+            completed: false,
+        };
+        drop(wrapper);
+
+        assert_eq!(mock.count_metric("opendal_operation_errors_total"), 1);
+        assert_eq!(mock.gauge_value("opendal_operation_executing"), 0);
     }
 }

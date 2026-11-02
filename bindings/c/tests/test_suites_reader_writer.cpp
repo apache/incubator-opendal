@@ -324,10 +324,73 @@ void test_reader_partial_read(opendal_test_context* ctx)
     opendal_operator_delete(ctx->config->operator_instance, path);
 }
 
+// Test: Reader with options
+void test_reader_with_options(opendal_test_context* ctx)
+{
+    const char* path = "test_reader_with_options.txt";
+    const char* content = "Hello, OpenDAL Reader With Options!";
+    size_t content_len = strlen(content);
+
+    // Write test data first
+    opendal_bytes data = {
+        .data = (uint8_t*)content, .len = content_len, .capacity = content_len
+    };
+
+    opendal_error* error = opendal_operator_write(ctx->config->operator_instance, path, &data);
+    OPENDAL_ASSERT_NO_ERROR(error, "Write operation should succeed");
+
+    // Build reader options exercising the concurrency knobs.
+    opendal_reader_options* options = opendal_reader_options_new();
+    OPENDAL_ASSERT_NOT_NULL(options, "Reader options should not be null");
+    opendal_reader_options_set_concurrent(options, 2);
+    opendal_reader_options_set_chunk(options, 1024 * 1024);
+    opendal_reader_options_set_gap(options, 4096);
+    opendal_reader_options_set_prefetch(options, 2);
+
+    opendal_result_operator_reader reader_result
+        = opendal_operator_reader_with(ctx->config->operator_instance, path, options);
+    opendal_reader_options_free(options);
+    OPENDAL_ASSERT_NO_ERROR(reader_result.error,
+        "Reader-with-options creation should succeed");
+    OPENDAL_ASSERT_NOT_NULL(reader_result.reader, "Reader should not be null");
+
+    // A single read() may return a short count under chunked/concurrent reads,
+    // so accumulate until the whole object has been read.
+    uint8_t buffer[100];
+    size_t total_read = 0;
+    while (total_read < content_len) {
+        opendal_result_reader_read read_result = opendal_reader_read(
+            reader_result.reader, buffer + total_read, sizeof(buffer) - total_read);
+        OPENDAL_ASSERT_NO_ERROR(read_result.error, "Read operation should succeed");
+        if (read_result.size == 0) {
+            break; // EOF
+        }
+        total_read += read_result.size;
+    }
+    OPENDAL_ASSERT_EQ(content_len, total_read,
+        "Total read size should match content length");
+    OPENDAL_ASSERT(memcmp(content, buffer, content_len) == 0,
+        "Read content should match written content");
+
+    // A NULL options pointer must behave like opendal_operator_reader.
+    opendal_result_operator_reader default_result
+        = opendal_operator_reader_with(ctx->config->operator_instance, path, NULL);
+    OPENDAL_ASSERT_NO_ERROR(default_result.error,
+        "Reader-with-NULL-options creation should succeed");
+    OPENDAL_ASSERT_NOT_NULL(default_result.reader, "Reader should not be null");
+
+    // Cleanup
+    opendal_reader_free(reader_result.reader);
+    opendal_reader_free(default_result.reader);
+    opendal_operator_delete(ctx->config->operator_instance, path);
+}
+
 // Define the reader/writer test suite
 opendal_test_case reader_writer_tests[] = {
     { "reader_basic", test_reader_basic, make_capability_read_write() },
     { "reader_seek", test_reader_seek, make_capability_read_write() },
+    { "reader_with_options", test_reader_with_options,
+        make_capability_read_write() },
     { "writer_basic", test_writer_basic, make_capability_read_write() },
     { "writer_large_data", test_writer_large_data, make_capability_write_stat() },
     { "reader_partial_read", test_reader_partial_read,

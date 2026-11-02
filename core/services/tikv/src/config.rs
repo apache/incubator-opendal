@@ -58,10 +58,10 @@ impl opendal_core::Configurator for TikvConfig {
         let map = uri.options().clone();
 
         let mut endpoints = Vec::new();
-        if let Some(authority) = uri.authority() {
-            if !authority.is_empty() {
-                endpoints.push(authority.to_string());
-            }
+        if let Some(authority) = uri.authority()
+            && !authority.is_empty()
+        {
+            endpoints.push(authority.to_string());
         }
 
         if let Some(path) = uri.root() {

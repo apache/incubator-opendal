@@ -15,25 +15,31 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-//! Cloudflare D1 service implementation for Apache OpenDAL.
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
 
 mod backend;
 mod config;
 mod core;
 mod deleter;
-mod error;
 mod model;
+mod reader;
 mod writer;
 
 pub use backend::D1Builder as D1;
 pub use config::D1Config;
 
-/// Default scheme for d1 service.
+/// URI scheme used for service registration and scheme-driven construction.
 pub const D1_SCHEME: &str = "d1";
 
-/// Register this service into the given registry.
+/// Register this service's URI scheme or schemes with an operator registry.
+///
+/// Registration enables scheme-driven construction through
+/// [`opendal_core::Operator::from_uri`] and
+/// [`opendal_core::Operator::via_iter`]. Direct construction through
+/// [`opendal_core::Operator::new`] does not require registration.
 pub fn register_d1_service(registry: &opendal_core::OperatorRegistry) {
     registry.register::<D1>(D1_SCHEME);
 }

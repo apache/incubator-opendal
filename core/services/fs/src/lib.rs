@@ -15,15 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-//! Fs service implementation for Apache OpenDAL.
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
 
 mod backend;
 mod config;
 mod core;
 mod deleter;
-mod error;
 mod lister;
 mod reader;
 mod writer;
@@ -31,12 +31,17 @@ mod writer;
 pub use backend::FsBuilder as Fs;
 pub use config::FsConfig;
 
-/// Default scheme for fs service.
+/// URI scheme used for service registration and scheme-driven construction.
 pub const FS_SCHEME: &str = "fs";
 /// Alias scheme for fs service that follows the standard URI scheme.
 pub const FILE_SCHEME: &str = "file";
 
-/// Register this service into the given registry.
+/// Register this service's URI scheme or schemes with an operator registry.
+///
+/// Registration enables scheme-driven construction through
+/// [`opendal_core::Operator::from_uri`] and
+/// [`opendal_core::Operator::via_iter`]. Direct construction through
+/// [`opendal_core::Operator::new`] does not require registration.
 pub fn register_fs_service(registry: &opendal_core::OperatorRegistry) {
     registry.register::<Fs>(FS_SCHEME);
     registry.register::<Fs>(FILE_SCHEME);

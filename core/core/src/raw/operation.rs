@@ -18,13 +18,13 @@
 use std::fmt::Display;
 use std::fmt::Formatter;
 
-/// Operation is the name of the operation that is being performed.
+/// Identifies the operation being performed.
 ///
-/// Most operations can be mapped to the methods of the `Access` trait,
-/// but we modify the names to make them more readable and clear for users.
+/// Most variants map to methods on the [`Service`][crate::raw::Service] trait,
+/// although some names differ to improve readability.
 ///
-/// The same operation might have different meanings and costs in different
-/// storage services.
+/// An operation might have different meanings and costs depending on a
+/// storage service.
 #[derive(Debug, Copy, Clone, Hash, Eq, PartialEq, Default)]
 #[non_exhaustive]
 pub enum Operation {
@@ -39,8 +39,12 @@ pub enum Operation {
     Write,
     /// Operation to copy a file.
     Copy,
+    /// Operation to compose multiple files into one file.
+    Compose,
     /// Operation to rename a file.
     Rename,
+    /// Operation to restore a file.
+    Restore,
     /// Operation to stat a file or a directory.
     Stat,
     /// Operation to delete files.
@@ -72,7 +76,9 @@ impl From<Operation> for &'static str {
             Operation::Read => "read",
             Operation::Write => "write",
             Operation::Copy => "copy",
+            Operation::Compose => "compose",
             Operation::Rename => "rename",
+            Operation::Restore => "restore",
             Operation::Stat => "stat",
             Operation::Delete => "delete",
             Operation::List => "list",
@@ -86,3 +92,13 @@ impl From<Operation> for String {
         v.into_static().to_string()
     }
 }
+
+/// A service-specific operation name attached to HTTP requests.
+///
+/// While [`Operation`] describes the OpenDAL-level operation (e.g., read, write, list),
+/// `ServiceOperation` describes the specific backend API call being made as a supplement.
+///
+/// Services attach this as an HTTP request extension so that observability layers
+/// can provide finer-grained breakdowns of HTTP traffic.
+#[derive(Debug, Copy, Clone, Hash, Eq, PartialEq)]
+pub struct ServiceOperation(pub &'static str);

@@ -24,6 +24,7 @@ members = [
   "edge/*",
   "examples/*",
   "fuzz",
+  "http-transports/*",
   "layers/*",
   "services/*",
   "testkit",
@@ -37,31 +38,32 @@ edition = "2024"
 homepage = "https://opendal.apache.org/"
 license = "Apache-2.0"
 repository = "https://github.com/apache/opendal"
-rust-version = "1.85"
-version = "0.55.0"
+rust-version = "1.91"
+version = "0.59.5"
 
 [workspace.dependencies]
-base64 = "0.22"
+asyncband = { version = "0.7.1" }
+base64 = "0.23"
 bytes = "1.10"
-ctor = "0.6"
+ctor = "1.0.7"
 futures = { version = "0.3", default-features = false }
-http = "1.1"
-log = { version = "0.4.29" }
-logforth = { version = "0.29.1", features = ["starter-log"] }
-mea = "0.6"
-quick-xml = { version = "0.38", default-features = false }
-rand = "0.8"
-reqsign = { version = "0.16.5", default-features = false }
+http = "1.4"
+log = { version = "0.4.32" }
+logforth = { version = "0.30.1", features = ["starter-log"] }
+quick-xml = { version = "0.42.0", default-features = false }
+rand = "0.10.1"
 serde = { version = "1", default-features = false }
 serde_json = "1"
-sha2 = "0.10"
-tokio = { version = "1.48", default-features = false }
+sha2 = "0.11.0"
+tokio = { version = "1.52", default-features = false }
+url = "2.5"
 uuid = { version = "1", default-features = false }
 
 [package]
 exclude = ["/tests/"]
 keywords = ["storage", "fs", "s3", "azblob", "gcs"]
 name = "opendal"
+readme = "README.md"
 
 authors = { workspace = true }
 categories = { workspace = true }
@@ -80,9 +82,14 @@ unused_async = "warn"
 all-features = true
 
 [features]
+# Install facade defaults before `main`: register enabled services and, when
+# configured, install the default HTTP transport. Disable this feature when the
+# application needs to install its own process-wide HTTP transport.
+auto-register-services = ["dep:ctor"]
 blocking = ["opendal-core/blocking"]
 default = [
-  "reqwest-rustls-tls",
+  "auto-register-services",
+  "http-transport-reqwest",
   "executors-tokio",
   "layers-concurrent-limit",
   "layers-logging",
@@ -90,7 +97,25 @@ default = [
   "layers-timeout",
 ]
 executors-tokio = ["opendal-core/executors-tokio"]
-internal-path-cache = ["opendal-core/internal-path-cache"]
+# Default http-transport-reqwest transport feature, used for:
+# - install default http transport
+# - feature gate for various of bindings dependency
+http-transport-reqwest = ["http-transport-reqwest-rustls"]
+# Use reqwest with platform TLS via native-tls.
+http-transport-reqwest-native-tls = [
+  "dep:opendal-http-transport-reqwest",
+  "opendal-http-transport-reqwest/native-tls",
+]
+# Use reqwest with Rustls, with default aws-lc-rs crypto provider.
+http-transport-reqwest-rustls = [
+  "dep:opendal-http-transport-reqwest",
+  "opendal-http-transport-reqwest/rustls",
+]
+# Use reqwest with Rustls and no built-in crypto provider.
+http-transport-reqwest-rustls-no-provider = [
+  "dep:opendal-http-transport-reqwest",
+  "opendal-http-transport-reqwest/rustls-no-provider",
+]
 internal-tokio-rt = ["opendal-core/internal-tokio-rt"]
 layers-async-backtrace = ["dep:opendal-layer-async-backtrace"]
 layers-await-tree = ["dep:opendal-layer-await-tree"]
@@ -116,7 +141,13 @@ layers-tail-cut = ["dep:opendal-layer-tail-cut"]
 layers-throttle = ["dep:opendal-layer-throttle"]
 layers-timeout = ["dep:opendal-layer-timeout"]
 layers-tracing = ["dep:opendal-layer-tracing"]
-reqwest-rustls-tls = ["opendal-core/reqwest-rustls-tls"]
+# Deprecated since 0.58; Will delete in 0.59.
+reqwest-rustls-no-provider-tls = [
+  "http-transport-reqwest",
+  "http-transport-reqwest-rustls-no-provider",
+]
+# Deprecated since 0.58; Will delete in 0.59.
+reqwest-rustls-tls = ["http-transport-reqwest", "http-transport-reqwest-rustls"]
 services-aliyun-drive = ["dep:opendal-service-aliyun-drive"]
 services-alluxio = ["dep:opendal-service-alluxio"]
 services-azblob = ["dep:opendal-service-azblob"]
@@ -133,18 +164,21 @@ services-dbfs = ["dep:opendal-service-dbfs"]
 services-dropbox = ["dep:opendal-service-dropbox"]
 services-etcd = ["dep:opendal-service-etcd"]
 services-foundationdb = ["dep:opendal-service-foundationdb"]
+services-foyer = ["dep:opendal-service-foyer"]
 services-fs = ["dep:opendal-service-fs"]
 services-ftp = ["dep:opendal-service-ftp"]
 services-gcs = ["dep:opendal-service-gcs"]
-services-git = ["dep:opendal-service-git"]
+services-gcs-grpc = ["dep:opendal-service-gcs-grpc"]
 services-gdrive = ["dep:opendal-service-gdrive"]
 services-ghac = ["dep:opendal-service-ghac"]
 services-github = ["dep:opendal-service-github"]
+services-goosefs = ["dep:opendal-service-goosefs"]
 services-gridfs = ["dep:opendal-service-gridfs"]
 services-hdfs = ["dep:opendal-service-hdfs"]
 services-hdfs-native = ["dep:opendal-service-hdfs-native"]
+services-hf = ["dep:opendal-service-hf"]
 services-http = ["dep:opendal-service-http"]
-services-huggingface = ["dep:opendal-service-huggingface"]
+services-huggingface = ["services-hf"]
 services-ipfs = ["dep:opendal-service-ipfs"]
 services-ipmfs = ["dep:opendal-service-ipmfs"]
 services-koofr = ["dep:opendal-service-koofr"]
@@ -179,6 +213,7 @@ services-sqlite = ["dep:opendal-service-sqlite"]
 services-surrealdb = ["dep:opendal-service-surrealdb"]
 services-swift = ["dep:opendal-service-swift"]
 services-tikv = ["dep:opendal-service-tikv"]
+services-tos = ["dep:opendal-service-tos"]
 services-upyun = ["dep:opendal-service-upyun"]
 services-vercel-artifacts = ["dep:opendal-service-vercel-artifacts"]
 services-vercel-blob = ["dep:opendal-service-vercel-blob"]
@@ -199,6 +234,10 @@ required-features = ["tests"]
 harness = false
 name = "types"
 
+[[bench]]
+harness = false
+name = "metadata"
+
 [[test]]
 harness = false
 name = "behavior"
@@ -206,100 +245,104 @@ path = "tests/behavior/main.rs"
 required-features = ["tests"]
 
 [dependencies]
-ctor = { workspace = true }
-opendal-core = { path = "core", version = "0.55.0", default-features = false }
-opendal-layer-async-backtrace = { path = "layers/async-backtrace", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-await-tree = { path = "layers/await-tree", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-capability-check = { path = "layers/capability-check", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-chaos = { path = "layers/chaos", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-concurrent-limit = { path = "layers/concurrent-limit", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-fastmetrics = { path = "layers/fastmetrics", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-fastrace = { path = "layers/fastrace", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-foyer = { path = "layers/foyer", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-hotpath = { path = "layers/hotpath", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-immutable-index = { path = "layers/immutable-index", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-logging = { path = "layers/logging", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-metrics = { path = "layers/metrics", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-mime-guess = { path = "layers/mime-guess", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-observe-metrics-common = { path = "layers/observe-metrics-common", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-otelmetrics = { path = "layers/otelmetrics", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-oteltrace = { path = "layers/oteltrace", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-prometheus = { path = "layers/prometheus", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-prometheus-client = { path = "layers/prometheus-client", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-retry = { path = "layers/retry", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-route = { path = "layers/route", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-tail-cut = { path = "layers/tail-cut", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-throttle = { path = "layers/throttle", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-timeout = { path = "layers/timeout", version = "0.55.0", optional = true, default-features = false }
-opendal-layer-tracing = { path = "layers/tracing", version = "0.55.0", optional = true, default-features = false }
-opendal-service-aliyun-drive = { path = "services/aliyun-drive", version = "0.55.0", optional = true, default-features = false }
-opendal-service-alluxio = { path = "services/alluxio", version = "0.55.0", optional = true, default-features = false }
-opendal-service-azblob = { path = "services/azblob", version = "0.55.0", optional = true, default-features = false }
-opendal-service-azdls = { path = "services/azdls", version = "0.55.0", optional = true, default-features = false }
-opendal-service-azfile = { path = "services/azfile", version = "0.55.0", optional = true, default-features = false }
-opendal-service-b2 = { path = "services/b2", version = "0.55.0", optional = true, default-features = false }
-opendal-service-cacache = { path = "services/cacache", version = "0.55.0", optional = true, default-features = false }
-opendal-service-cloudflare-kv = { path = "services/cloudflare-kv", version = "0.55.0", optional = true, default-features = false }
-opendal-service-compfs = { path = "services/compfs", version = "0.55.0", optional = true, default-features = false }
-opendal-service-cos = { path = "services/cos", version = "0.55.0", optional = true, default-features = false }
-opendal-service-d1 = { path = "services/d1", version = "0.55.0", optional = true, default-features = false }
-opendal-service-dashmap = { path = "services/dashmap", version = "0.55.0", optional = true, default-features = false }
-opendal-service-dbfs = { path = "services/dbfs", version = "0.55.0", optional = true, default-features = false }
-opendal-service-dropbox = { path = "services/dropbox", version = "0.55.0", optional = true, default-features = false }
-opendal-service-etcd = { path = "services/etcd", version = "0.55.0", optional = true, default-features = false }
-opendal-service-foundationdb = { path = "services/foundationdb", version = "0.55.0", optional = true, default-features = false }
-opendal-service-fs = { path = "services/fs", version = "0.55.0", optional = true, default-features = false }
-opendal-service-ftp = { path = "services/ftp", version = "0.55.0", optional = true, default-features = false }
-opendal-service-gcs = { path = "services/gcs", version = "0.55.0", optional = true, default-features = false }
-opendal-service-git = { path = "services/git", version = "0.55.0", optional = true, default-features = false }
-opendal-service-gdrive = { path = "services/gdrive", version = "0.55.0", optional = true, default-features = false }
-opendal-service-ghac = { path = "services/ghac", version = "0.55.0", optional = true, default-features = false }
-opendal-service-github = { path = "services/github", version = "0.55.0", optional = true, default-features = false }
-opendal-service-gridfs = { path = "services/gridfs", version = "0.55.0", optional = true, default-features = false }
-opendal-service-hdfs = { path = "services/hdfs", version = "0.55.0", optional = true, default-features = false }
-opendal-service-hdfs-native = { path = "services/hdfs-native", version = "0.55.0", optional = true, default-features = false }
-opendal-service-http = { path = "services/http", version = "0.55.0", optional = true, default-features = false }
-opendal-service-huggingface = { path = "services/huggingface", version = "0.55.0", optional = true, default-features = false }
-opendal-service-ipfs = { path = "services/ipfs", version = "0.55.0", optional = true, default-features = false }
-opendal-service-ipmfs = { path = "services/ipmfs", version = "0.55.0", optional = true, default-features = false }
-opendal-service-koofr = { path = "services/koofr", version = "0.55.0", optional = true, default-features = false }
-opendal-service-lakefs = { path = "services/lakefs", version = "0.55.0", optional = true, default-features = false }
-opendal-service-memcached = { path = "services/memcached", version = "0.55.0", optional = true, default-features = false }
-opendal-service-mini-moka = { path = "services/mini_moka", version = "0.55.0", optional = true, default-features = false }
-opendal-service-moka = { path = "services/moka", version = "0.55.0", optional = true, default-features = false }
-opendal-service-mongodb = { path = "services/mongodb", version = "0.55.0", optional = true, default-features = false }
-opendal-service-monoiofs = { path = "services/monoiofs", version = "0.55.0", optional = true, default-features = false }
-opendal-service-mysql = { path = "services/mysql", version = "0.55.0", optional = true, default-features = false }
-opendal-service-obs = { path = "services/obs", version = "0.55.0", optional = true, default-features = false }
-opendal-service-onedrive = { path = "services/onedrive", version = "0.55.0", optional = true, default-features = false }
-opendal-service-oss = { path = "services/oss", version = "0.55.0", optional = true, default-features = false }
-opendal-service-pcloud = { path = "services/pcloud", version = "0.55.0", optional = true, default-features = false }
-opendal-service-persy = { path = "services/persy", version = "0.55.0", optional = true, default-features = false }
-opendal-service-postgresql = { path = "services/postgresql", version = "0.55.0", optional = true, default-features = false }
-opendal-service-redb = { path = "services/redb", version = "0.55.0", optional = true, default-features = false }
-opendal-service-redis = { path = "services/redis", version = "0.55.0", optional = true, default-features = false }
-opendal-service-rocksdb = { path = "services/rocksdb", version = "0.55.0", optional = true, default-features = false }
-opendal-service-s3 = { path = "services/s3", version = "0.55.0", optional = true, default-features = false }
-opendal-service-seafile = { path = "services/seafile", version = "0.55.0", optional = true, default-features = false }
-opendal-service-sftp = { path = "services/sftp", version = "0.55.0", optional = true, default-features = false }
-opendal-service-sled = { path = "services/sled", version = "0.55.0", optional = true, default-features = false }
-opendal-service-sqlite = { path = "services/sqlite", version = "0.55.0", optional = true, default-features = false }
-opendal-service-surrealdb = { path = "services/surrealdb", version = "0.55.0", optional = true, default-features = false }
-opendal-service-swift = { path = "services/swift", version = "0.55.0", optional = true, default-features = false }
-opendal-service-tikv = { path = "services/tikv", version = "0.55.0", optional = true, default-features = false }
-opendal-service-upyun = { path = "services/upyun", version = "0.55.0", optional = true, default-features = false }
-opendal-service-vercel-artifacts = { path = "services/vercel-artifacts", version = "0.55.0", optional = true, default-features = false }
-opendal-service-vercel-blob = { path = "services/vercel-blob", version = "0.55.0", optional = true, default-features = false }
-opendal-service-webdav = { path = "services/webdav", version = "0.55.0", optional = true, default-features = false }
-opendal-service-webhdfs = { path = "services/webhdfs", version = "0.55.0", optional = true, default-features = false }
-opendal-service-yandex-disk = { path = "services/yandex-disk", version = "0.55.0", optional = true, default-features = false }
-opendal-testkit = { path = "testkit", version = "0.55.0", optional = true }
+ctor = { workspace = true, optional = true }
+opendal-core = { path = "core", version = "0.59.5", default-features = false }
+opendal-http-transport-reqwest = { path = "http-transports/reqwest", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-async-backtrace = { path = "layers/async-backtrace", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-await-tree = { path = "layers/await-tree", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-capability-check = { path = "layers/capability-check", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-chaos = { path = "layers/chaos", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-concurrent-limit = { path = "layers/concurrent-limit", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-fastmetrics = { path = "layers/fastmetrics", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-fastrace = { path = "layers/fastrace", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-foyer = { path = "layers/foyer", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-hotpath = { path = "layers/hotpath", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-immutable-index = { path = "layers/immutable-index", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-logging = { path = "layers/logging", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-metrics = { path = "layers/metrics", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-mime-guess = { path = "layers/mime-guess", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-observe-metrics-common = { path = "layers/observe-metrics-common", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-otelmetrics = { path = "layers/otelmetrics", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-oteltrace = { path = "layers/oteltrace", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-prometheus = { path = "layers/prometheus", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-prometheus-client = { path = "layers/prometheus-client", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-retry = { path = "layers/retry", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-route = { path = "layers/route", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-tail-cut = { path = "layers/tail-cut", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-throttle = { path = "layers/throttle", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-timeout = { path = "layers/timeout", version = "0.59.5", optional = true, default-features = false }
+opendal-layer-tracing = { path = "layers/tracing", version = "0.59.5", optional = true, default-features = false }
+opendal-service-aliyun-drive = { path = "services/aliyun-drive", version = "0.59.5", optional = true, default-features = false }
+opendal-service-alluxio = { path = "services/alluxio", version = "0.59.5", optional = true, default-features = false }
+opendal-service-azblob = { path = "services/azblob", version = "0.59.5", optional = true, default-features = false }
+opendal-service-azdls = { path = "services/azdls", version = "0.59.5", optional = true, default-features = false }
+opendal-service-azfile = { path = "services/azfile", version = "0.59.5", optional = true, default-features = false }
+opendal-service-b2 = { path = "services/b2", version = "0.59.5", optional = true, default-features = false }
+opendal-service-cacache = { path = "services/cacache", version = "0.59.5", optional = true, default-features = false }
+opendal-service-cloudflare-kv = { path = "services/cloudflare-kv", version = "0.59.5", optional = true, default-features = false }
+opendal-service-compfs = { path = "services/compfs", version = "0.59.5", optional = true, default-features = false }
+opendal-service-cos = { path = "services/cos", version = "0.59.5", optional = true, default-features = false }
+opendal-service-d1 = { path = "services/d1", version = "0.59.5", optional = true, default-features = false }
+opendal-service-dashmap = { path = "services/dashmap", version = "0.59.5", optional = true, default-features = false }
+opendal-service-dbfs = { path = "services/dbfs", version = "0.59.5", optional = true, default-features = false }
+opendal-service-dropbox = { path = "services/dropbox", version = "0.59.5", optional = true, default-features = false }
+opendal-service-etcd = { path = "services/etcd", version = "0.59.5", optional = true, default-features = false }
+opendal-service-foundationdb = { path = "services/foundationdb", version = "0.59.5", optional = true, default-features = false }
+opendal-service-foyer = { path = "services/foyer", version = "0.59.5", optional = true, default-features = false }
+opendal-service-fs = { path = "services/fs", version = "0.59.5", optional = true, default-features = false }
+opendal-service-ftp = { path = "services/ftp", version = "0.59.5", optional = true, default-features = false }
+opendal-service-gcs = { path = "services/gcs", version = "0.59.5", optional = true, default-features = false }
+opendal-service-gcs-grpc = { path = "services/gcs-grpc", version = "0.59.5", optional = true, default-features = false }
+opendal-service-gdrive = { path = "services/gdrive", version = "0.59.5", optional = true, default-features = false }
+opendal-service-ghac = { path = "services/ghac", version = "0.59.5", optional = true, default-features = false }
+opendal-service-github = { path = "services/github", version = "0.59.5", optional = true, default-features = false }
+opendal-service-goosefs = { path = "services/goosefs", version = "0.59.5", optional = true, default-features = false }
+opendal-service-gridfs = { path = "services/gridfs", version = "0.59.5", optional = true, default-features = false }
+opendal-service-hdfs = { path = "services/hdfs", version = "0.59.5", optional = true, default-features = false }
+opendal-service-hdfs-native = { path = "services/hdfs-native", version = "0.59.5", optional = true, default-features = false }
+opendal-service-hf = { path = "services/hf", version = "0.59.5", optional = true, default-features = false }
+opendal-service-http = { path = "services/http", version = "0.59.5", optional = true, default-features = false }
+opendal-service-ipfs = { path = "services/ipfs", version = "0.59.5", optional = true, default-features = false }
+opendal-service-ipmfs = { path = "services/ipmfs", version = "0.59.5", optional = true, default-features = false }
+opendal-service-koofr = { path = "services/koofr", version = "0.59.5", optional = true, default-features = false }
+opendal-service-lakefs = { path = "services/lakefs", version = "0.59.5", optional = true, default-features = false }
+opendal-service-memcached = { path = "services/memcached", version = "0.59.5", optional = true, default-features = false }
+opendal-service-mini-moka = { path = "services/mini_moka", version = "0.59.5", optional = true, default-features = false }
+opendal-service-moka = { path = "services/moka", version = "0.59.5", optional = true, default-features = false }
+opendal-service-mongodb = { path = "services/mongodb", version = "0.59.5", optional = true, default-features = false }
+opendal-service-monoiofs = { path = "services/monoiofs", version = "0.59.5", optional = true, default-features = false }
+opendal-service-mysql = { path = "services/mysql", version = "0.59.5", optional = true, default-features = false }
+opendal-service-obs = { path = "services/obs", version = "0.59.5", optional = true, default-features = false }
+opendal-service-onedrive = { path = "services/onedrive", version = "0.59.5", optional = true, default-features = false }
+opendal-service-oss = { path = "services/oss", version = "0.59.5", optional = true, default-features = false }
+opendal-service-pcloud = { path = "services/pcloud", version = "0.59.5", optional = true, default-features = false }
+opendal-service-persy = { path = "services/persy", version = "0.59.5", optional = true, default-features = false }
+opendal-service-postgresql = { path = "services/postgresql", version = "0.59.5", optional = true, default-features = false }
+opendal-service-redb = { path = "services/redb", version = "0.59.5", optional = true, default-features = false }
+opendal-service-redis = { path = "services/redis", version = "0.59.5", optional = true, default-features = false }
+opendal-service-rocksdb = { path = "services/rocksdb", version = "0.59.5", optional = true, default-features = false }
+opendal-service-s3 = { path = "services/s3", version = "0.59.5", optional = true, default-features = false }
+opendal-service-seafile = { path = "services/seafile", version = "0.59.5", optional = true, default-features = false }
+opendal-service-sftp = { path = "services/sftp", version = "0.59.5", optional = true, default-features = false }
+opendal-service-sled = { path = "services/sled", version = "0.59.5", optional = true, default-features = false }
+opendal-service-sqlite = { path = "services/sqlite", version = "0.59.5", optional = true, default-features = false }
+opendal-service-surrealdb = { path = "services/surrealdb", version = "0.59.5", optional = true, default-features = false }
+opendal-service-swift = { path = "services/swift", version = "0.59.5", optional = true, default-features = false }
+opendal-service-tikv = { path = "services/tikv", version = "0.59.5", optional = true, default-features = false }
+opendal-service-tos = { path = "services/tos", version = "0.59.5", optional = true, default-features = false }
+opendal-service-upyun = { path = "services/upyun", version = "0.59.5", optional = true, default-features = false }
+opendal-service-vercel-artifacts = { path = "services/vercel-artifacts", version = "0.59.5", optional = true, default-features = false }
+opendal-service-vercel-blob = { path = "services/vercel-blob", version = "0.59.5", optional = true, default-features = false }
+opendal-service-webdav = { path = "services/webdav", version = "0.59.5", optional = true, default-features = false }
+opendal-service-webhdfs = { path = "services/webhdfs", version = "0.59.5", optional = true, default-features = false }
+opendal-service-yandex-disk = { path = "services/yandex-disk", version = "0.59.5", optional = true, default-features = false }
+opendal-testkit = { path = "testkit", version = "0.59.5", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
-opendal-layer-dtrace = { path = "layers/dtrace", version = "0.55.0", optional = true, default-features = false }
+opendal-layer-dtrace = { path = "layers/dtrace", version = "0.59.5", optional = true, default-features = false }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-opendal-service-opfs = { path = "services/opfs", version = "0.55.0", optional = true, default-features = false }
+opendal-service-opfs = { path = "services/opfs", version = "0.59.5", optional = true, default-features = false }
 
 [dev-dependencies]
 anyhow = "1.0"
@@ -311,7 +354,7 @@ libtest-mimic = "0.8"
 log = { workspace = true }
 logforth = { workspace = true }
 rand = { workspace = true }
-reqwest = "0.12.24"
+reqwest = "0.13.2"
 sha2 = { workspace = true }
 size = "0.5"
 tokio = { workspace = true, features = ["fs", "macros", "rt-multi-thread"] }

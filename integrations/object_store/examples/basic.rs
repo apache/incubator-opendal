@@ -15,11 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#[cfg(feature = "services-s3")]
 use bytes::Bytes;
-use object_store::ObjectStore;
+#[cfg(feature = "services-s3")]
+use object_store::ObjectStoreExt;
 #[cfg(feature = "services-s3")]
 use object_store::aws::AmazonS3Builder;
+#[cfg(feature = "services-s3")]
 use object_store::path::Path as ObjectStorePath;
+#[cfg(feature = "services-s3")]
 use object_store_opendal::OpendalStore;
 
 #[cfg(feature = "services-s3")]

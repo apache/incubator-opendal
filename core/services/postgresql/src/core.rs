@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use mea::once::OnceCell;
+use asyncband::once::OnceCell;
 use sqlx::PgPool;
 use sqlx::postgres::PgConnectOptions;
 
@@ -45,10 +45,18 @@ impl PostgresqlCore {
     pub async fn get(&self, path: &str) -> Result<Option<Buffer>> {
         let pool = self.get_client().await?;
 
-        let value: Option<Vec<u8>> = sqlx::query_scalar(&format!(
+        // PostgreSQL uses `"` for identifier quote. A quoted identifier is case-sensitive and
+        // can contain special characters.
+        // Read more https://www.postgresql.org/docs/18/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS
+        //
+        // We use:
+        // - formatted, quoted identifiers for trusted table and field configuration
+        // - bind parameters for values to avoid malformed SQL and SQL injection
+        // to ensure correctness. `AssertSqlSafe` records this audit for sqlx.
+        let value: Option<Vec<u8>> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             r#"SELECT "{}" FROM "{}" WHERE "{}" = $1 LIMIT 1"#,
             self.value_field, self.table, self.key_field
-        ))
+        )))
         .bind(path)
         .fetch_optional(pool)
         .await
@@ -57,18 +65,40 @@ impl PostgresqlCore {
         Ok(value.map(Buffer::from))
     }
 
+    pub async fn get_length(&self, path: &str) -> Result<Option<usize>> {
+        let pool = self.get_client().await?;
+
+        let value: Option<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            r#"SELECT OCTET_LENGTH("{}")::BIGINT FROM "{}" WHERE "{}" = $1 LIMIT 1"#,
+            self.value_field, self.table, self.key_field
+        )))
+        .bind(path)
+        .fetch_optional(pool)
+        .await
+        .map_err(parse_postgres_error)?;
+
+        value
+            .map(|v| {
+                v.try_into().map_err(|err| {
+                    Error::new(ErrorKind::Unexpected, "postgresql value length is invalid")
+                        .set_source(err)
+                })
+            })
+            .transpose()
+    }
+
     pub async fn set(&self, path: &str, value: Buffer) -> Result<()> {
         let pool = self.get_client().await?;
 
         let table = &self.table;
         let key_field = &self.key_field;
         let value_field = &self.value_field;
-        sqlx::query(&format!(
+        sqlx::query(sqlx::AssertSqlSafe(format!(
             r#"INSERT INTO "{table}" ("{key_field}", "{value_field}")
                 VALUES ($1, $2)
                 ON CONFLICT ("{key_field}")
                     DO UPDATE SET "{value_field}" = EXCLUDED."{value_field}""#,
-        ))
+        )))
         .bind(path)
         .bind(value.to_vec())
         .execute(pool)
@@ -81,10 +111,10 @@ impl PostgresqlCore {
     pub async fn delete(&self, path: &str) -> Result<()> {
         let pool = self.get_client().await?;
 
-        sqlx::query(&format!(
-            "DELETE FROM {} WHERE {} = $1",
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            r#"DELETE FROM "{}" WHERE "{}" = $1"#,
             self.table, self.key_field
-        ))
+        )))
         .bind(path)
         .execute(pool)
         .await

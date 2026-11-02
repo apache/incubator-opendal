@@ -1,6 +1,6 @@
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [ ] create_dir
 - [x] stat
@@ -12,18 +12,14 @@ This service can be used to:
 - [ ] rename
 - [x] presign
 
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
+
 ## Configuration
 
-- `root`: Set the work directory for backend
-- `bucket`: Set the container name for backend
-- `endpoint`: Customizable endpoint setting
-- `credential`: Service Account or External Account JSON, in base64
-- `credential_path`: local path to Service Account or External Account JSON file
-- `service_account`: name of Service Account
-- `predefined_acl`: Predefined ACL for GCS
-- `default_storage_class`: Default storage class for GCS
-
-Refer to public API docs for more information. For authentication related options, read on.
+Use [`crate::GcsConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
 ## Options to authenticate to GCS
 
@@ -36,7 +32,7 @@ OpenDAL supports the following authentication options:
 4. Fetch access token from [VM metadata](https://cloud.google.com/docs/authentication/rest#metadata-server)
    - Only works when running inside Google Cloud.
    - If a non-default Service Account name is required, set with `service_account`. Otherwise, nothing need to be set.
-5. A custom `TokenLoader` via `GcsBuilder.customized_token_loader()`
+5. A custom credential provider chain via `GcsBuilder.credential_provider_chain()`
 
 Notes:
 
@@ -69,7 +65,7 @@ async fn main() -> Result<()> {
        // set the default storage class for GCS
        .default_storage_class("STANDARD");
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
     Ok(())
 }
 ```

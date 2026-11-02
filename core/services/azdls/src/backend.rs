@@ -18,30 +18,39 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use http::Response;
 use http::StatusCode;
 use log::debug;
-use reqsign::AzureStorageConfig;
-use reqsign::AzureStorageLoader;
-use reqsign::AzureStorageSigner;
+use reqsign_azure_storage::ClientSecretCredentialProvider;
+use reqsign_azure_storage::Credential;
+use reqsign_azure_storage::DefaultCredentialProvider;
+use reqsign_azure_storage::RequestSigner;
+use reqsign_azure_storage::StaticCredentialProvider;
+use reqsign_core::Context;
+use reqsign_core::OsEnv;
+use reqsign_core::ProvideCredentialChain;
+use reqsign_core::Signer;
+use reqsign_file_read_tokio::TokioFileRead;
 
 use super::AZDLS_SCHEME;
 use super::config::AzdlsConfig;
-use super::core::AzdlsCore;
 use super::core::DIRECTORY;
+use super::core::parse_error;
+use super::core::{AzdlsCore, ErrorContext};
 use super::deleter::AzdlsDeleter;
-use super::error::parse_error;
 use super::lister::AzdlsLister;
+use super::reader::*;
+use super::writer::AzdlsLazyPositionWriter;
 use super::writer::AzdlsWriter;
 use super::writer::AzdlsWriters;
 use opendal_core::raw::*;
 use opendal_core::*;
 use opendal_service_azure_common::{
-    AzureStorageService, azure_account_name_from_endpoint, azure_config_from_connection_string,
+    AzureStorageConfig as AzureConnectionConfig, AzureStorageService,
+    azure_account_name_from_endpoint, azure_config_from_connection_string,
 };
 
-impl From<AzureStorageConfig> for AzdlsConfig {
-    fn from(config: AzureStorageConfig) -> Self {
+impl From<AzureConnectionConfig> for AzdlsConfig {
+    fn from(config: AzureConnectionConfig) -> Self {
         AzdlsConfig {
             endpoint: config.endpoint,
             account_name: config.account_name,
@@ -61,6 +70,7 @@ impl From<AzureStorageConfig> for AzdlsConfig {
 #[derive(Default)]
 pub struct AzdlsBuilder {
     pub(super) config: AzdlsConfig,
+    pub(super) credential_providers: Option<ProvideCredentialChain<Credential>>,
 }
 
 impl Debug for AzdlsBuilder {
@@ -179,6 +189,16 @@ impl AzdlsBuilder {
         self
     }
 
+    /// Replace the credential providers with a custom chain.
+    ///
+    /// Build the chain from [`opendal_core::reqsign_core`] and
+    /// [`crate::reqsign_azure_storage`] so that its types match the ones this
+    /// service is built with.
+    pub fn credential_provider_chain(mut self, chain: ProvideCredentialChain<Credential>) -> Self {
+        self.credential_providers = Some(chain);
+        self
+    }
+
     /// Set authority_host of this backend.
     ///
     /// - If authority_host is set, we will take user's input first.
@@ -229,8 +249,8 @@ impl AzdlsBuilder {
 impl Builder for AzdlsBuilder {
     type Config = AzdlsConfig;
 
-    fn build(self) -> Result<impl Access> {
-        debug!("backend build started: {:?}", &self);
+    fn build(self) -> Result<impl Service> {
+        debug!("backend build started: {:?}", self);
 
         let root = normalize_root(&self.config.root.unwrap_or_default());
         debug!("backend use root {root}");
@@ -242,7 +262,7 @@ impl Builder for AzdlsBuilder {
                 .with_operation("Builder::build")
                 .with_context("service", AZDLS_SCHEME)),
         }?;
-        debug!("backend use filesystem {}", &filesystem);
+        debug!("backend use filesystem {}", filesystem);
 
         let endpoint = match &self.config.endpoint {
             Some(endpoint) => Ok(endpoint.clone().trim_end_matches('/').to_string()),
@@ -250,65 +270,101 @@ impl Builder for AzdlsBuilder {
                 .with_operation("Builder::build")
                 .with_context("service", AZDLS_SCHEME)),
         }?;
-        debug!("backend use endpoint {}", &endpoint);
+        debug!("backend use endpoint {}", endpoint);
 
-        let config_loader = AzureStorageConfig {
-            account_name: self
-                .config
-                .account_name
-                .clone()
-                .or_else(|| azure_account_name_from_endpoint(endpoint.as_str())),
-            account_key: self.config.account_key.clone(),
-            sas_token: self.config.sas_token,
-            client_id: self.config.client_id.clone(),
-            client_secret: self.config.client_secret.clone(),
-            tenant_id: self.config.tenant_id.clone(),
-            authority_host: self.config.authority_host.clone(),
+        let account_name = self
+            .config
+            .account_name
+            .clone()
+            .or_else(|| azure_account_name_from_endpoint(endpoint.as_str()));
+
+        let ctx = Context::new().with_file_read(TokioFileRead).with_env(OsEnv);
+
+        let mut client_secret = ClientSecretCredentialProvider::new();
+        if let Some(v) = &self.config.tenant_id {
+            client_secret = client_secret.with_tenant_id(v);
+        }
+        if let Some(v) = &self.config.client_id {
+            client_secret = client_secret.with_client_id(v);
+        }
+        if let Some(v) = &self.config.client_secret {
+            client_secret = client_secret.with_client_secret(v);
+        }
+        if let Some(v) = &self.config.authority_host {
+            client_secret = client_secret.with_authority_host(v);
+        }
+
+        let mut credential_providers = ProvideCredentialChain::new().push(
+            DefaultCredentialProvider::builder()
+                .client_secret(client_secret)
+                .build(),
+        );
+
+        if let (Some(account_name), Some(account_key)) =
+            (account_name.as_deref(), self.config.account_key.as_deref())
+        {
+            credential_providers = credential_providers.push_front(
+                StaticCredentialProvider::new_shared_key(account_name, account_key),
+            );
+        }
+        if let Some(sas_token) = self.config.sas_token.as_deref() {
+            credential_providers =
+                credential_providers.push_front(StaticCredentialProvider::new_sas_token(sas_token));
+        }
+
+        if let Some(customized_credential_chain) = self.credential_providers {
+            credential_providers = customized_credential_chain;
+        }
+
+        let sign_ctx = ctx;
+        let signer = Signer::new(sign_ctx.clone(), credential_providers, RequestSigner::new());
+
+        let info = ServiceInfo::new(AZDLS_SCHEME, &root, filesystem);
+        let capability = Capability {
+            stat: true,
+            stat_with_if_match: true,
+            stat_with_if_none_match: true,
+            stat_with_if_modified_since: true,
+            stat_with_if_unmodified_since: true,
+
+            read: true,
+            read_with_if_match: true,
+            read_with_if_none_match: true,
+            read_with_if_modified_since: true,
+            read_with_if_unmodified_since: true,
+
+            write: true,
+            write_can_append: true,
+            write_can_multi: true,
+            write_with_if_none_match: true,
+            write_with_if_not_exists: true,
+            write_with_user_metadata: true,
+
+            create_dir: true,
+
+            delete: true,
+            delete_with_if_match: true,
+            delete_with_recursive: true,
+
+            rename: true,
+
+            list: true,
+
+            shared: true,
+
             ..Default::default()
         };
 
-        let cred_loader = AzureStorageLoader::new(config_loader);
-        let signer = AzureStorageSigner::new();
         Ok(AzdlsBackend {
             core: Arc::new(AzdlsCore {
-                info: {
-                    let am = AccessorInfo::default();
-                    am.set_scheme(AZDLS_SCHEME)
-                        .set_root(&root)
-                        .set_name(filesystem)
-                        .set_native_capability(Capability {
-                            stat: true,
-
-                            read: true,
-
-                            write: true,
-                            write_can_append: true,
-                            write_can_multi: true,
-                            write_with_if_none_match: true,
-                            write_with_if_not_exists: true,
-
-                            create_dir: true,
-
-                            delete: true,
-                            delete_with_recursive: true,
-
-                            rename: true,
-
-                            list: true,
-
-                            shared: true,
-
-                            ..Default::default()
-                        });
-
-                    am.into()
-                },
+                info,
+                capability,
                 filesystem: self.config.filesystem.clone(),
                 root,
                 endpoint,
                 enable_hns: self.config.enable_hns,
-                loader: cred_loader,
                 signer,
+                sign_ctx,
             }),
         })
     }
@@ -317,100 +373,179 @@ impl Builder for AzdlsBuilder {
 /// Backend for azblob services.
 #[derive(Debug, Clone)]
 pub struct AzdlsBackend {
-    core: Arc<AzdlsCore>,
+    pub(crate) core: Arc<AzdlsCore>,
 }
 
-impl Access for AzdlsBackend {
-    type Reader = HttpBody;
+impl Service for AzdlsBackend {
+    type Reader = oio::StreamReader<AzdlsReader>;
     type Writer = AzdlsWriters;
     type Lister = oio::PageLister<AzdlsLister>;
     type Deleter = oio::OneShotDeleter<AzdlsDeleter>;
+    type Copier = ();
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
+    fn info(&self) -> ServiceInfo {
         self.core.info.clone()
     }
 
-    async fn create_dir(&self, path: &str, _: OpCreateDir) -> Result<RpCreateDir> {
+    fn capability(&self) -> Capability {
+        self.core.capability
+    }
+
+    async fn create_dir(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        _: OpCreateDir,
+    ) -> Result<RpCreateDir> {
         let resp = self
             .core
-            .azdls_create(path, DIRECTORY, &OpWrite::default())
+            .azdls_create(ctx, path, DIRECTORY, &OpWrite::default())
             .await?;
 
         let status = resp.status();
         match status {
             StatusCode::CREATED | StatusCode::OK => Ok(RpCreateDir::default()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("CreateDirectory")),
+                resp,
+            )),
         }
     }
 
-    async fn stat(&self, path: &str, _: OpStat) -> Result<RpStat> {
+    async fn stat(&self, ctx: &OperationContext, path: &str, args: OpStat) -> Result<RpStat> {
         // Stat root always returns a DIR.
         // TODO: include metadata for the root (#4746)
         if path == "/" {
-            return Ok(RpStat::new(Metadata::new(EntryMode::DIR)));
+            return Ok(RpStat::new(MetadataBuilder::dir().build()));
         }
 
-        let metadata = self.core.azdls_stat_metadata(path).await?;
+        let metadata = self.core.azdls_stat_metadata(ctx, path, &args).await?;
         Ok(RpStat::new(metadata))
     }
+    fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
+        let output: oio::StreamReader<AzdlsReader> = {
+            Ok(oio::StreamReader::new(AzdlsReader::new(
+                self.clone(),
+                ctx.clone(),
+                path,
+                args,
+            )))
+        }?;
 
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let resp = self.core.azdls_read(path, args.range()).await?;
+        Ok(output)
+    }
 
-        let status = resp.status();
-        match status {
-            StatusCode::OK | StatusCode::PARTIAL_CONTENT => Ok((RpRead::new(), resp.into_body())),
-            _ => {
-                let (part, mut body) = resp.into_parts();
-                let buf = body.to_buffer().await?;
-                Err(parse_error(Response::from_parts(part, buf)))
+    fn write(&self, ctx: &OperationContext, path: &str, args: OpWrite) -> Result<Self::Writer> {
+        let output: AzdlsWriters = {
+            if args.append() {
+                let w = AzdlsWriter::new(
+                    self.core.clone(),
+                    ctx.clone(),
+                    args.clone(),
+                    path.to_string(),
+                );
+                Ok(AzdlsWriters::Two(oio::AppendWriter::new(w)))
+            } else {
+                let w = AzdlsWriter::new(
+                    self.core.clone(),
+                    ctx.clone(),
+                    args.clone(),
+                    path.to_string(),
+                );
+                let w = oio::PositionWriter::new(
+                    ctx.executor().clone(),
+                    AzdlsLazyPositionWriter::new(w),
+                    args.concurrent(),
+                );
+                Ok(AzdlsWriters::One(w))
             }
-        }
+        }?;
+
+        Ok(output)
     }
 
-    async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        if args.append() {
-            let w = AzdlsWriter::new(self.core.clone(), args.clone(), path.to_string());
-            return Ok((
-                RpWrite::default(),
-                AzdlsWriters::Two(oio::AppendWriter::new(w)),
-            ));
-        }
+    fn delete(&self, ctx: &OperationContext) -> Result<Self::Deleter> {
+        let output: oio::OneShotDeleter<AzdlsDeleter> = {
+            Ok(oio::OneShotDeleter::new(AzdlsDeleter::new(
+                self.core.clone(),
+                ctx.clone(),
+            )))
+        }?;
 
-        let w = AzdlsWriter::create(self.core.clone(), args.clone(), path.to_string()).await?;
-        let w = oio::PositionWriter::new(self.info().clone(), w, args.concurrent());
-        Ok((RpWrite::default(), AzdlsWriters::One(w)))
+        Ok(output)
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        Ok((
-            RpDelete::default(),
-            oio::OneShotDeleter::new(AzdlsDeleter::new(self.core.clone())),
+    fn list(&self, ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
+        let output: oio::PageLister<AzdlsLister> = {
+            let l = AzdlsLister::new(
+                self.core.clone(),
+                ctx.clone(),
+                path.to_string(),
+                args.limit(),
+            );
+
+            Ok(oio::PageLister::new(l))
+        }?;
+
+        Ok(output)
+    }
+
+    fn copy(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpCopy,
+    ) -> Result<Self::Copier> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
         ))
     }
 
-    async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
-        let l = AzdlsLister::new(self.core.clone(), path.to_string(), args.limit());
-
-        Ok((RpList::default(), oio::PageLister::new(l)))
-    }
-
-    async fn rename(&self, from: &str, to: &str, _args: OpRename) -> Result<RpRename> {
-        if let Some(resp) = self.core.azdls_ensure_parent_path(to).await? {
+    async fn rename(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        _args: OpRename,
+    ) -> Result<RpRename> {
+        if let Some(resp) = self.core.azdls_ensure_parent_path(ctx, to).await? {
             let status = resp.status();
             match status {
                 StatusCode::CREATED | StatusCode::CONFLICT => {}
-                _ => return Err(parse_error(resp)),
+                _ => {
+                    return Err(parse_error(
+                        ErrorContext::new(ServiceOperation("CreateDirectory")),
+                        resp,
+                    ));
+                }
             }
         }
 
-        let resp = self.core.azdls_rename(from, to).await?;
+        let resp = self.core.azdls_rename(ctx, from, to).await?;
 
         let status = resp.status();
 
         match status {
             StatusCode::CREATED => Ok(RpRename::default()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("RenamePath")),
+                resp,
+            )),
         }
+    }
+
+    async fn presign(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpPresign,
+    ) -> Result<RpPresign> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
     }
 }

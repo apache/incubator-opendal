@@ -19,16 +19,16 @@ use std::fmt::Debug;
 use std::str::FromStr;
 use std::sync::Arc;
 
-use http::Response;
 use http::StatusCode;
 use log::debug;
 
 use super::WEBDAV_SCHEME;
 use super::config::WebdavConfig;
+use super::core::parse_error;
 use super::core::*;
 use super::deleter::WebdavDeleter;
-use super::error::parse_error;
 use super::lister::WebdavLister;
+use super::reader::*;
 use super::writer::WebdavWriter;
 use opendal_core::raw::oio;
 use opendal_core::raw::*;
@@ -104,15 +104,27 @@ impl WebdavBuilder {
         self
     }
 
-    /// Enable user metadata support via WebDAV PROPPATCH.
+    /// Disable automatic parent directory creation before write operations.
     ///
-    /// This feature requires the WebDAV server to support RFC4918 PROPPATCH method.
-    /// Not all WebDAV servers support this (e.g., nginx's basic WebDAV module doesn't).
-    /// Only enable this if your server supports PROPPATCH (e.g., Apache mod_dav, Nextcloud).
+    /// By default, OpenDAL creates parent directories using MKCOL before writing files.
+    /// This requires PROPFIND support to check directory existence.
+    ///
+    /// Some WebDAV-compatible servers (e.g., bazel-remote) don't support PROPFIND
+    /// or don't require explicit directory creation. Enable this option to skip
+    /// the MKCOL calls and write files directly.
     ///
     /// Default: false
-    pub fn enable_user_metadata(mut self, enable: bool) -> Self {
-        self.config.enable_user_metadata = enable;
+    pub fn disable_create_dir(mut self, disable: bool) -> Self {
+        self.config.disable_create_dir = disable;
+        self
+    }
+
+    /// Deprecated: WebDAV user metadata capability is enabled by default.
+    #[deprecated(
+        since = "0.57.0",
+        note = "WebDAV user metadata capability is enabled by default. Use CapabilityOverrideLayer to override write_with_user_metadata for endpoints without PROPPATCH support."
+    )]
+    pub fn enable_user_metadata(self, _enable: bool) -> Self {
         self
     }
 
@@ -141,13 +153,22 @@ impl WebdavBuilder {
         }
         self
     }
+
+    /// Deprecated: WebDAV conditional read capabilities are enabled by default.
+    #[deprecated(
+        since = "0.60.0",
+        note = "WebDAV conditional read capabilities are enabled by default. Use CapabilityOverrideLayer to override read_with_if_match, read_with_if_none_match, read_with_if_modified_since and read_with_if_unmodified_since for endpoints without ETag support."
+    )]
+    pub fn enable_conditional_read(self, _enable: bool) -> Self {
+        self
+    }
 }
 
 impl Builder for WebdavBuilder {
     type Config = WebdavConfig;
 
-    fn build(self) -> Result<impl Access> {
-        debug!("backend build started: {:?}", &self);
+    fn build(self) -> Result<impl Service> {
+        debug!("backend build started: {:?}", self);
 
         let endpoint = match &self.config.endpoint {
             Some(v) => v,
@@ -182,36 +203,36 @@ impl Builder for WebdavBuilder {
         }
 
         let core = Arc::new(WebdavCore {
-            info: {
-                let am = AccessorInfo::default();
-                am.set_scheme(WEBDAV_SCHEME)
-                    .set_root(&root)
-                    .set_native_capability(Capability {
-                        stat: true,
+            info: ServiceInfo::new(WEBDAV_SCHEME, &root, ""),
+            capability: Capability {
+                stat: true,
 
-                        read: true,
+                read: true,
+                read_with_suffix: true,
+                read_with_if_match: true,
+                read_with_if_none_match: true,
+                read_with_if_modified_since: true,
+                read_with_if_unmodified_since: true,
 
-                        write: true,
-                        write_can_empty: true,
-                        write_with_user_metadata: self.config.enable_user_metadata,
+                write: true,
+                write_can_empty: true,
+                write_with_user_metadata: true,
 
-                        create_dir: true,
-                        delete: true,
+                create_dir: true,
+                delete: true,
 
-                        copy: !self.config.disable_copy,
+                copy: true,
 
-                        rename: true,
+                rename: true,
+                rename_with_if_not_exists: true,
 
-                        list: true,
+                list: true,
 
-                        // We already support recursive list but some details still need to polish.
-                        // list_with_recursive: true,
-                        shared: true,
+                // We already support recursive list but some details still need to polish.
+                // list_with_recursive: true,
+                shared: true,
 
-                        ..Default::default()
-                    });
-
-                am.into()
+                ..Default::default()
             },
             endpoint: endpoint.to_string(),
             server_path,
@@ -225,98 +246,177 @@ impl Builder for WebdavBuilder {
                 .config
                 .user_metadata_uri
                 .unwrap_or_else(|| DEFAULT_USER_METADATA_URI.to_string()),
+            disable_create_dir: self.config.disable_create_dir,
         });
         Ok(WebdavBackend { core })
     }
 }
 
-/// Backend is used to serve `Accessor` support for http.
 #[derive(Clone, Debug)]
 pub struct WebdavBackend {
-    core: Arc<WebdavCore>,
+    pub(crate) core: Arc<WebdavCore>,
 }
 
-impl Access for WebdavBackend {
-    type Reader = HttpBody;
+impl Service for WebdavBackend {
+    type Reader = oio::StreamReader<WebdavReader>;
     type Writer = oio::OneShotWriter<WebdavWriter>;
     type Lister = oio::PageLister<WebdavLister>;
     type Deleter = oio::OneShotDeleter<WebdavDeleter>;
+    type Copier = oio::OneShotCopier;
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
+    fn info(&self) -> ServiceInfo {
         self.core.info.clone()
     }
 
-    async fn create_dir(&self, path: &str, _: OpCreateDir) -> Result<RpCreateDir> {
-        self.core.webdav_mkcol(path).await?;
+    fn capability(&self) -> Capability {
+        self.core.capability
+    }
+
+    async fn create_dir(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        _: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        self.core.webdav_mkcol(ctx, path).await?;
         Ok(RpCreateDir::default())
     }
 
-    async fn stat(&self, path: &str, _: OpStat) -> Result<RpStat> {
-        let metadata = self.core.webdav_stat(path).await?;
+    async fn stat(&self, ctx: &OperationContext, path: &str, _: OpStat) -> Result<RpStat> {
+        let metadata = self.core.webdav_stat(ctx, path).await?;
         Ok(RpStat::new(metadata))
     }
+    fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
+        let output: oio::StreamReader<WebdavReader> = {
+            Ok(oio::StreamReader::new(WebdavReader::new(
+                self.clone(),
+                ctx.clone(),
+                path,
+                args,
+            )))
+        }?;
 
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let resp = self.core.webdav_get(path, args.range(), &args).await?;
+        Ok(output)
+    }
 
-        let status = resp.status();
+    fn write(&self, ctx: &OperationContext, path: &str, args: OpWrite) -> Result<Self::Writer> {
+        let output: oio::OneShotWriter<WebdavWriter> = {
+            Ok(oio::OneShotWriter::new(WebdavWriter::new(
+                self.core.clone(),
+                ctx.clone(),
+                args,
+                path.to_string(),
+            )))
+        }?;
 
-        match status {
-            StatusCode::OK | StatusCode::PARTIAL_CONTENT => {
-                Ok((RpRead::default(), resp.into_body()))
+        Ok(output)
+    }
+
+    fn delete(&self, ctx: &OperationContext) -> Result<Self::Deleter> {
+        let output: oio::OneShotDeleter<WebdavDeleter> = {
+            Ok(oio::OneShotDeleter::new(WebdavDeleter::new(
+                self.core.clone(),
+                ctx.clone(),
+            )))
+        }?;
+
+        Ok(output)
+    }
+
+    fn list(&self, ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
+        let output: oio::PageLister<WebdavLister> = {
+            Ok(oio::PageLister::new(WebdavLister::new(
+                self.core.clone(),
+                ctx.clone(),
+                path,
+                args,
+            )))
+        }?;
+
+        Ok(output)
+    }
+
+    fn copy(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpCopy,
+    ) -> Result<Self::Copier> {
+        let backend = self.clone();
+        let core = self.core.clone();
+        let ctx = ctx.clone();
+        let from = from.to_string();
+        let to = to.to_string();
+        let source_content_length_hint = args.source_content_length_hint();
+
+        Ok(oio::OneShotCopier::new_with(move || {
+            let backend = backend.clone();
+            let core = core.clone();
+            let ctx = ctx.clone();
+            let from = from.clone();
+            let to = to.clone();
+
+            async move {
+                let source_size = match source_content_length_hint {
+                    Some(size) => size,
+                    None => backend
+                        .stat(&ctx, &from, OpStat::default())
+                        .await?
+                        .into_metadata()
+                        .content_length(),
+                };
+
+                let resp = core.webdav_copy(&ctx, &from, &to).await?;
+                let status = resp.status();
+
+                match status {
+                    StatusCode::CREATED | StatusCode::NO_CONTENT => {
+                        Ok(MetadataBuilder::file(source_size).build())
+                    }
+                    _ => Err(parse_error(
+                        ErrorContext::new(ServiceOperation("Copy")),
+                        resp,
+                    )),
+                }
             }
-            _ => {
-                let (part, mut body) = resp.into_parts();
-                let buf = body.to_buffer().await?;
-                Err(parse_error(Response::from_parts(part, buf)))
-            }
-        }
+        }))
     }
 
-    async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        // Ensure parent path exists
-        self.core.webdav_mkcol(get_parent(path)).await?;
-
-        Ok((
-            RpWrite::default(),
-            oio::OneShotWriter::new(WebdavWriter::new(self.core.clone(), args, path.to_string())),
-        ))
-    }
-
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        Ok((
-            RpDelete::default(),
-            oio::OneShotDeleter::new(WebdavDeleter::new(self.core.clone())),
-        ))
-    }
-
-    async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
-        Ok((
-            RpList::default(),
-            oio::PageLister::new(WebdavLister::new(self.core.clone(), path, args)),
-        ))
-    }
-
-    async fn copy(&self, from: &str, to: &str, _args: OpCopy) -> Result<RpCopy> {
-        let resp = self.core.webdav_copy(from, to).await?;
-
-        let status = resp.status();
-
-        match status {
-            StatusCode::CREATED | StatusCode::NO_CONTENT => Ok(RpCopy::default()),
-            _ => Err(parse_error(resp)),
-        }
-    }
-
-    async fn rename(&self, from: &str, to: &str, _args: OpRename) -> Result<RpRename> {
-        let resp = self.core.webdav_move(from, to).await?;
+    async fn rename(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpRename,
+    ) -> Result<RpRename> {
+        let resp = self
+            .core
+            .webdav_move(ctx, from, to, args.if_not_exists())
+            .await?;
 
         let status = resp.status();
         match status {
             StatusCode::CREATED | StatusCode::NO_CONTENT | StatusCode::OK => {
                 Ok(RpRename::default())
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Move")),
+                resp,
+            )),
         }
+    }
+
+    async fn presign(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpPresign,
+    ) -> Result<RpPresign> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
     }
 }

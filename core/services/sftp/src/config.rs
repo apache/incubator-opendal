@@ -37,7 +37,11 @@ pub struct SftpConfig {
     pub key: Option<String>,
     /// known_hosts_strategy of this backend
     pub known_hosts_strategy: Option<String>,
-    /// enable_copy of this backend
+    /// Deprecated: SFTP copy capability is enabled by default.
+    #[deprecated(
+        since = "0.57.0",
+        note = "SFTP copy capability is enabled by default and this option is no longer needed."
+    )]
     pub enable_copy: bool,
 }
 

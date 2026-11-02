@@ -15,37 +15,35 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! MIME guess layer implementation for Apache OpenDAL.
-
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
+use std::sync::Arc;
 
 use opendal_core::raw::*;
 use opendal_core::*;
 
-/// A layer that can automatically set `Content-Type` based on the file extension in the path.
+/// `MimeGuessLayer` sets `Content-Type` from a path's file extension.
 ///
 /// # MimeGuess
 ///
 /// This layer uses [mime_guess](https://crates.io/crates/mime_guess) to automatically
 /// set `Content-Type` based on the file extension in the operation path.
 ///
-/// However, please note that this layer will not overwrite the `content_type` you manually set,
-/// nor will it overwrite the `content_type` provided by backend services.
+/// The layer preserves any `content_type` that callers or services set.
 ///
-/// A simple example is that for object storage backends, when you call `stat`, the backend will
-/// provide `content_type` information, and `mime_guess` will not be called, but will use
-/// the `content_type` provided by the backend.
+/// For example, object storage services often return `content_type` from `stat`.
+/// In that case, the layer keeps the service's value and skips MIME guessing.
 ///
-/// But if you use the [Fs](https://docs.rs/opendal/latest/opendal/services/struct.Fs.html) backend to call `stat`, the backend will
-/// not provide `content_type` information, and our `mime_guess` will be called to provide you with
-/// appropriate `content_type` information.
+/// The [Fs](https://docs.rs/opendal/latest/opendal/services/struct.Fs.html)
+/// service might omit `content_type` from `stat`, so the layer derives a value
+/// from the path's extension.
 ///
-/// Another thing to note is that using this layer does not necessarily mean that the result will 100%
-/// contain `content_type` information. If the extension of your path is custom or an uncommon type,
-/// the returned result will still not contain `content_type` information (the specific condition here is
-/// when [mime_guess::from_path::first_raw](https://docs.rs/mime_guess/latest/mime_guess/struct.MimeGuess.html#method.first_raw)
-/// returns `None`).
+/// The layer cannot infer every custom or uncommon extension. It leaves
+/// `content_type` empty when
+/// [mime_guess::from_path::first_raw](https://docs.rs/mime_guess/latest/mime_guess/struct.MimeGuess.html#method.first_raw)
+/// returns `None`.
 ///
 /// # Examples
 ///
@@ -57,12 +55,11 @@ use opendal_core::*;
 /// #
 /// # fn main() -> Result<()> {
 /// let _ = Operator::new(services::Memory::default())?
-///     .layer(MimeGuessLayer::new())
-///     .finish();
+///     .layer(MimeGuessLayer::new());
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 #[non_exhaustive]
 pub struct MimeGuessLayer {}
 
@@ -73,17 +70,21 @@ impl MimeGuessLayer {
     }
 }
 
-impl<A: Access> Layer<A> for MimeGuessLayer {
-    type LayeredAccess = MimeGuessAccessor<A>;
+impl Layer for MimeGuessLayer {
+    fn apply_service(&self, inner: Servicer) -> Servicer {
+        Arc::new(self.layer(inner))
+    }
+}
 
-    fn layer(&self, inner: A) -> Self::LayeredAccess {
+impl MimeGuessLayer {
+    fn layer(&self, inner: Servicer) -> MimeGuessAccessor {
         MimeGuessAccessor(inner)
     }
 }
 
 #[doc(hidden)]
 #[derive(Debug)]
-pub struct MimeGuessAccessor<A: Access>(A);
+pub struct MimeGuessAccessor(Servicer);
 
 fn mime_from_path(path: &str) -> Option<&str> {
     mime_guess::from_path(path).first_raw()
@@ -95,7 +96,19 @@ fn opwrite_with_mime(path: &str, op: OpWrite) -> OpWrite {
     }
 
     if let Some(mime) = mime_from_path(path) {
-        return op.with_content_type(mime);
+        return op.into_content_type(mime);
+    }
+
+    op
+}
+
+fn opcompose_with_mime(path: &str, op: OpCompose) -> OpCompose {
+    if op.content_type().is_some() {
+        return op;
+    }
+
+    if let Some(mime) = mime_from_path(path) {
+        return op.into_content_type(mime);
     }
 
     op
@@ -108,47 +121,103 @@ fn rpstat_with_mime(path: &str, rp: RpStat) -> RpStat {
         }
 
         if let Some(mime) = mime_from_path(path) {
-            return metadata.with_content_type(mime.into());
+            let mut metadata = metadata.into_builder();
+            metadata.content_type(mime);
+            return metadata.build();
         }
 
         metadata
     })
 }
 
-impl<A: Access> LayeredAccess for MimeGuessAccessor<A> {
-    type Inner = A;
-    type Reader = A::Reader;
-    type Writer = A::Writer;
-    type Lister = A::Lister;
-    type Deleter = A::Deleter;
+impl Service for MimeGuessAccessor {
+    type Reader = oio::Reader;
+    type Writer = oio::Writer;
+    type Lister = oio::Lister;
+    type Deleter = oio::Deleter;
+    type Copier = oio::Copier;
+    type Composer = oio::Composer;
 
-    fn inner(&self) -> &Self::Inner {
-        &self.0
+    fn info(&self) -> ServiceInfo {
+        self.0.info()
     }
 
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        self.inner().read(path, args).await
+    fn capability(&self) -> Capability {
+        self.0.capability()
     }
 
-    async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        self.inner()
-            .write(path, opwrite_with_mime(path, args))
-            .await
+    async fn create_dir(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        self.0.create_dir(ctx, path, args).await
     }
 
-    async fn stat(&self, path: &str, args: OpStat) -> Result<RpStat> {
-        self.inner()
-            .stat(path, args)
+    fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
+        self.0.read(ctx, path, args)
+    }
+
+    fn write(&self, ctx: &OperationContext, path: &str, args: OpWrite) -> Result<Self::Writer> {
+        self.0.write(ctx, path, opwrite_with_mime(path, args))
+    }
+
+    fn copy(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpCopy,
+    ) -> Result<Self::Copier> {
+        self.0.copy(ctx, from, to, args)
+    }
+
+    fn compose(&self, ctx: &OperationContext, to: &str, args: OpCompose) -> Result<Self::Composer> {
+        self.0.compose(ctx, to, opcompose_with_mime(to, args))
+    }
+
+    async fn stat(&self, ctx: &OperationContext, path: &str, args: OpStat) -> Result<RpStat> {
+        self.0
+            .stat(ctx, path, args)
             .await
             .map(|rp| rpstat_with_mime(path, rp))
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        self.inner().delete().await
+    async fn rename(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpRename,
+    ) -> Result<RpRename> {
+        self.0.rename(ctx, from, to, args).await
     }
 
-    async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
-        self.inner().list(path, args).await
+    async fn restore(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpRestore,
+    ) -> Result<RpRestore> {
+        self.0.restore(ctx, path, args).await
+    }
+
+    fn delete(&self, ctx: &OperationContext) -> Result<Self::Deleter> {
+        self.0.delete(ctx)
+    }
+
+    fn list(&self, ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
+        self.0.list(ctx, path, args)
+    }
+
+    async fn presign(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpPresign,
+    ) -> Result<RpPresign> {
+        self.0.presign(ctx, path, args).await
     }
 }
 
@@ -164,9 +233,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_async() -> Result<()> {
-        let op = Operator::new(services::Memory::default())?
-            .layer(MimeGuessLayer::new())
-            .finish();
+        let op = Operator::new(services::Memory::default())?.layer(MimeGuessLayer::new());
 
         op.write("test0.html", DATA).await?;
         assert_eq!(op.stat("test0.html").await?.content_type(), Some(HTML));

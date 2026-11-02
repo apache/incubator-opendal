@@ -15,20 +15,42 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
-//! Azure Storage helpers.
-//!
-//! This module provides utilities and shared abstractions for services built
-//! on Azure Storage, such as Azure Blob Storage (`services-azblob`) or
-//! Azure Data Lake Storage (`services-azdls`).
 
 use std::collections::HashMap;
 
 use http::Uri;
 use http::response::Parts;
 use opendal_core::{Error, ErrorKind, Result};
-use reqsign::{AzureStorageConfig, AzureStorageCredential};
+
+/// Configuration parsed from Azure storage connection string.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct AzureStorageConfig {
+    /// Storage account name.
+    pub account_name: Option<String>,
+    /// Storage account shared key.
+    pub account_key: Option<String>,
+    /// Shared access signature token.
+    pub sas_token: Option<String>,
+    /// Service endpoint.
+    pub endpoint: Option<String>,
+    /// OAuth client id.
+    pub client_id: Option<String>,
+    /// OAuth client secret.
+    pub client_secret: Option<String>,
+    /// OAuth tenant id.
+    pub tenant_id: Option<String>,
+    /// OAuth authority host.
+    pub authority_host: Option<String>,
+}
+
+enum AzureStorageCredential {
+    SharedAccessSignature(String),
+    SharedKey(String, String),
+}
 
 /// Parses an [Azure connection string][1] into a configuration object.
 ///
@@ -229,9 +251,6 @@ fn set_credentials(config: &mut AzureStorageConfig, creds: AzureStorageCredentia
             config.account_name = Some(account_name);
             config.account_key = Some(account_key);
         }
-        AzureStorageCredential::BearerToken(_, _) => {
-            // Bearer tokens shouldn't be passed via connection strings.
-        }
     }
 }
 
@@ -327,12 +346,12 @@ fn censor_sas_uri(uri: &Uri) -> String {
 #[cfg(test)]
 mod tests {
     use http::Uri;
-    use reqsign::AzureStorageConfig;
 
     use super::censor_sas_uri;
 
     use super::{
-        AzureStorageService, azure_account_name_from_endpoint, azure_config_from_connection_string,
+        AzureStorageConfig, AzureStorageService, azure_account_name_from_endpoint,
+        azure_config_from_connection_string,
     };
 
     #[test]

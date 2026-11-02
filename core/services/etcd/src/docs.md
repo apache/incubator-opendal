@@ -1,6 +1,6 @@
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [x] create_dir
 - [x] stat
@@ -12,17 +12,16 @@ This service can be used to:
 - [ ] rename
 - [ ] ~~presign~~
 
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
+
 ## Configuration
 
-- `root`: Set the working directory of `OpenDAL`
-- `endpoints`: Set the network address of etcd servers
-- `username`: Set the username of Etcd
-- `password`: Set the password for authentication
-- `ca_path`: Set the ca path to the etcd connection
-- `cert_path`: Set the cert path to the etcd connection
-- `key_path`: Set the key path to the etcd connection
+Use [`crate::EtcdConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
-You can refer to [`EtcdBuilder`]'s docs for more information
+For server-authenticated TLS, configure an HTTPS endpoint and `ca_path`. The server certificate must be trusted by the supplied CA. For mutual TLS, also configure `cert_path` and `key_path`; these two paths must always be supplied together.
 
 ## Example
 
@@ -38,7 +37,7 @@ async fn main() -> Result<()> {
     let mut builder = Etcd::default();
 
     // this will build a Operator accessing etcd which runs on http://127.0.0.1:2379
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
     Ok(())
 }
 ```

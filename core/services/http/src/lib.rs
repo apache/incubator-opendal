@@ -15,22 +15,32 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-//! HTTP service implementation for Apache OpenDAL.
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
 
 mod backend;
 mod config;
 mod core;
-mod error;
 
+mod reader;
 pub use backend::HttpBuilder as Http;
 pub use config::HttpConfig;
 
-/// Default scheme for http service.
+/// URI scheme used for service registration and scheme-driven construction.
 pub const HTTP_SCHEME: &str = "http";
 
-/// Register this service into the given registry.
+/// Alias URI scheme used for HTTPS connections.
+pub const HTTPS_SCHEME: &str = "https";
+
+/// Register this service's URI scheme or schemes with an operator registry.
+///
+/// Registration enables scheme-driven construction through
+/// [`opendal_core::Operator::from_uri`] and
+/// [`opendal_core::Operator::via_iter`]. Direct construction through
+/// [`opendal_core::Operator::new`] does not require registration.
 pub fn register_http_service(registry: &opendal_core::OperatorRegistry) {
     registry.register::<Http>(HTTP_SCHEME);
+    registry.register::<Http>(HTTPS_SCHEME);
 }

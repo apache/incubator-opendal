@@ -1,6 +1,6 @@
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [x] create_dir
 - [x] stat
@@ -11,6 +11,9 @@ This service can be used to:
 - [x] copy
 - [x] rename
 - [ ] presign
+
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
 
 ## Notes
 
@@ -38,16 +41,15 @@ This inconsistency can cause subsequent operations to fail, returning errors lik
 - 404 Not Found: OneDrive doesn't recognize the created folder
 - 409 Conflict: OneDrive can't replace an existing folder
 
-You should consider [`RetryLayer`] and monitor your operations carefully.
+Consider using
+[`RetryLayer`](https://docs.rs/opendal-layer-retry/latest/opendal_layer_retry/struct.RetryLayer.html)
+and monitor operations carefully.
 
 ## Configuration
 
-- `access_token`: Set a short-live access token for Microsoft Graph API (also, OneDrive API)
-- `refresh_token`: Set a long term access token for Microsoft Graph API
-- `client_id`: Set the client ID for a Microsoft Graph API application (available though Azure's registration portal)
-- `client_secret`: Set the client secret for a Microsoft Graph API application
-- `root`: Set the work directory for OneDrive backend
-- `enable_versioning`: Enable versioning support for OneDrive items
+Use [`crate::OnedriveConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
 The configuration for tokens is one of the following:
 
@@ -64,8 +66,6 @@ The configuration for tokens is one of the following:
    2. If you choose "Web" (Confidential Client), create a secret in "Certificates & secrets -> Client secrets -> New client secret", and provide it as `client_secret`.
 5. Follow the [code grant flow](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow) or other flows to get the access_token. The minimum scope is `Files.ReadWrite`. And make sure the access token represents a user, because it's accessing the user's onedrive by `/me/drive`. So "client credentials flow" won't work.
 6. If you need `refresh_token` for long-lived access, add an additional `offline_access` scope.
-
-Read more at [`OnedriveBuilder`].
 
 ## Example
 
@@ -85,7 +85,7 @@ async fn main() -> Result<()> {
         .access_token("my_access_token")
         .root("/root/folder/for/operator");
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
     Ok(())
 }
 ```
@@ -105,7 +105,7 @@ async fn main() -> Result<()> {
         .client_id("my_client_id")
         .root("/root/folder/for/operator");
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
     Ok(())
 }
 ```

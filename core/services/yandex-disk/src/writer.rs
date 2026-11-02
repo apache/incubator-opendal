@@ -19,8 +19,8 @@ use std::sync::Arc;
 
 use http::StatusCode;
 
-use super::core::YandexDiskCore;
-use super::error::parse_error;
+use super::core::parse_error;
+use super::core::{ErrorContext, YandexDiskCore};
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -28,25 +28,29 @@ pub type YandexDiskWriters = oio::OneShotWriter<YandexDiskWriter>;
 
 pub struct YandexDiskWriter {
     core: Arc<YandexDiskCore>,
+    ctx: OperationContext,
     path: String,
 }
 
 impl YandexDiskWriter {
-    pub fn new(core: Arc<YandexDiskCore>, path: String) -> Self {
-        YandexDiskWriter { core, path }
+    pub fn new(core: Arc<YandexDiskCore>, ctx: OperationContext, path: String) -> Self {
+        YandexDiskWriter { core, ctx, path }
     }
 }
 
 impl oio::OneShotWrite for YandexDiskWriter {
     async fn write_once(&self, bs: Buffer) -> Result<Metadata> {
-        self.core.ensure_dir_exists(&self.path).await?;
+        self.core.ensure_dir_exists(&self.ctx, &self.path).await?;
 
-        let resp = self.core.upload(&self.path, bs).await?;
+        let resp = self.core.upload(&self.ctx, &self.path, bs).await?;
 
         let status = resp.status();
         match status {
-            StatusCode::CREATED => Ok(Metadata::default()),
-            _ => Err(parse_error(resp)),
+            StatusCode::CREATED => Ok(MetadataBuilder::unknown().build()),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Upload")),
+                resp,
+            )),
         }
     }
 }

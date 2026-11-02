@@ -21,8 +21,8 @@ use bytes::Buf;
 use http::StatusCode;
 use uuid::Uuid;
 
-use super::core::WebhdfsCore;
-use super::error::parse_error;
+use super::core::parse_error;
+use super::core::{ErrorContext, WebhdfsCore};
 use crate::message::FileStatusWrapper;
 use opendal_core::raw::oio;
 use opendal_core::raw::*;
@@ -33,14 +33,20 @@ pub type WebhdfsWriters =
 
 pub struct WebhdfsWriter {
     core: Arc<WebhdfsCore>,
+    ctx: OperationContext,
 
     op: OpWrite,
     path: String,
 }
 
 impl WebhdfsWriter {
-    pub fn new(core: Arc<WebhdfsCore>, op: OpWrite, path: String) -> Self {
-        WebhdfsWriter { core, op, path }
+    pub fn new(core: Arc<WebhdfsCore>, ctx: OperationContext, op: OpWrite, path: String) -> Self {
+        WebhdfsWriter {
+            core,
+            ctx,
+            op,
+            path,
+        }
     }
 }
 
@@ -48,13 +54,16 @@ impl oio::BlockWrite for WebhdfsWriter {
     async fn write_once(&self, size: u64, body: Buffer) -> Result<Metadata> {
         let resp = self
             .core
-            .webhdfs_create_object(&self.path, Some(size), &self.op, body)
+            .webhdfs_create_object(&self.ctx, &self.path, Some(size), &self.op, body)
             .await?;
 
         let status = resp.status();
         match status {
-            StatusCode::CREATED | StatusCode::OK => Ok(Metadata::default()),
-            _ => Err(parse_error(resp)),
+            StatusCode::CREATED | StatusCode::OK => Ok(MetadataBuilder::unknown().build()),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Create")),
+                resp,
+            )),
         }
     }
 
@@ -68,6 +77,7 @@ impl oio::BlockWrite for WebhdfsWriter {
         let resp = self
             .core
             .webhdfs_create_object(
+                &self.ctx,
                 &format!("{atomic_write_dir}{block_id}"),
                 Some(size),
                 &self.op,
@@ -78,7 +88,10 @@ impl oio::BlockWrite for WebhdfsWriter {
         let status = resp.status();
         match status {
             StatusCode::CREATED | StatusCode::OK => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Create")),
+                resp,
+            )),
         }
     }
 
@@ -96,40 +109,66 @@ impl oio::BlockWrite for WebhdfsWriter {
                 .map(|s| format!("{atomic_write_dir}{s}"))
                 .collect();
             // concat blocks
-            let resp = self.core.webhdfs_concat(&first_block_id, sources).await?;
+            let resp = self
+                .core
+                .webhdfs_concat(&self.ctx, &first_block_id, sources)
+                .await?;
 
             let status = resp.status();
             if status != StatusCode::OK {
-                return Err(parse_error(resp));
+                return Err(parse_error(
+                    ErrorContext::new(ServiceOperation("Concat")),
+                    resp,
+                ));
             }
         }
         // delete the path file
-        let resp = self.core.webhdfs_delete(&self.path).await?;
+        let resp = self.core.webhdfs_delete(&self.ctx, &self.path).await?;
 
         let status = resp.status();
         if status != StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("Delete")),
+                resp,
+            ));
         }
 
         // rename concat file to path
         let resp = self
             .core
-            .webhdfs_rename_object(&first_block_id, &self.path)
+            .webhdfs_rename_object(&self.ctx, &first_block_id, &self.path)
             .await?;
 
         let status = resp.status();
         match status {
-            StatusCode::OK => Ok(Metadata::default()),
-            _ => Err(parse_error(resp)),
+            StatusCode::OK => Ok(MetadataBuilder::unknown().build()),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Rename")),
+                resp,
+            )),
         }
     }
 
     async fn abort_block(&self, block_ids: Vec<Uuid>) -> Result<()> {
+        let Some(ref atomic_write_dir) = self.core.atomic_write_dir else {
+            return Err(Error::new(
+                ErrorKind::Unsupported,
+                "write multi is not supported when atomic is not set",
+            ));
+        };
         for block_id in block_ids {
-            let resp = self.core.webhdfs_delete(&block_id.to_string()).await?;
+            let resp = self
+                .core
+                .webhdfs_delete(&self.ctx, &format!("{atomic_write_dir}{block_id}"))
+                .await?;
             match resp.status() {
                 StatusCode::OK => {}
-                _ => return Err(parse_error(resp)),
+                _ => {
+                    return Err(parse_error(
+                        ErrorContext::new(ServiceOperation("Delete")),
+                        resp,
+                    ));
+                }
             }
         }
         Ok(())
@@ -138,7 +177,10 @@ impl oio::BlockWrite for WebhdfsWriter {
 
 impl oio::AppendWrite for WebhdfsWriter {
     async fn offset(&self) -> Result<u64> {
-        let resp = self.core.webhdfs_get_file_status(&self.path).await?;
+        let resp = self
+            .core
+            .webhdfs_get_file_status(&self.ctx, &self.path)
+            .await?;
 
         let status = resp.status();
         match status {
@@ -153,26 +195,38 @@ impl oio::AppendWrite for WebhdfsWriter {
             StatusCode::NOT_FOUND => {
                 let resp = self
                     .core
-                    .webhdfs_create_object(&self.path, None, &self.op, Buffer::new())
+                    .webhdfs_create_object(&self.ctx, &self.path, None, &self.op, Buffer::new())
                     .await?;
 
                 let status = resp.status();
                 match status {
                     StatusCode::CREATED | StatusCode::OK => Ok(0),
-                    _ => Err(parse_error(resp)),
+                    _ => Err(parse_error(
+                        ErrorContext::new(ServiceOperation("Create")),
+                        resp,
+                    )),
                 }
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetFileStatus")),
+                resp,
+            )),
         }
     }
 
     async fn append(&self, _offset: u64, size: u64, body: Buffer) -> Result<Metadata> {
-        let resp = self.core.webhdfs_append(&self.path, size, body).await?;
+        let resp = self
+            .core
+            .webhdfs_append(&self.ctx, &self.path, size, body)
+            .await?;
 
         let status = resp.status();
         match status {
-            StatusCode::OK => Ok(Metadata::default()),
-            _ => Err(parse_error(resp)),
+            StatusCode::OK => Ok(MetadataBuilder::unknown().build()),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Append")),
+                resp,
+            )),
         }
     }
 }

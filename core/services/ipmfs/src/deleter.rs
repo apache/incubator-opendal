@@ -19,30 +19,34 @@ use std::sync::Arc;
 
 use http::StatusCode;
 
-use super::core::IpmfsCore;
-use super::error::parse_error;
+use super::core::parse_error;
+use super::core::{ErrorContext, IpmfsCore};
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct IpmfsDeleter {
     core: Arc<IpmfsCore>,
+    ctx: OperationContext,
 }
 
 impl IpmfsDeleter {
-    pub fn new(core: Arc<IpmfsCore>) -> Self {
-        Self { core }
+    pub fn new(core: Arc<IpmfsCore>, ctx: OperationContext) -> Self {
+        Self { core, ctx }
     }
 }
 
 impl oio::OneShotDelete for IpmfsDeleter {
     async fn delete_once(&self, path: String, _: OpDelete) -> Result<()> {
-        let resp = self.core.ipmfs_rm(&path).await?;
+        let resp = self.core.ipmfs_rm(&self.ctx, &path).await?;
 
         let status = resp.status();
 
         match status {
             StatusCode::OK => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("FilesRm")),
+                resp,
+            )),
         }
     }
 }

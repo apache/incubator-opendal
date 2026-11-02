@@ -15,7 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-/// Default scheme for memory service.
+/// URI scheme used for memory service registration and URI construction.
 pub const MEMORY_SCHEME: &str = "memory";
 
 mod backend;
@@ -28,7 +28,11 @@ mod writer;
 pub use backend::MemoryBuilder as Memory;
 pub use config::MemoryConfig;
 
-/// Register this service into the given registry.
+/// Register the memory URI scheme with an operator registry.
+///
+/// Registration enables scheme-driven construction through
+/// [`crate::Operator::from_uri`] and [`crate::Operator::via_iter`]. Direct
+/// construction through [`crate::Operator::new`] does not require registration.
 pub fn register_memory_service(registry: &crate::OperatorRegistry) {
     registry.register::<Memory>(MEMORY_SCHEME);
 }

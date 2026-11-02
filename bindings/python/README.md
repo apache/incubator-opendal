@@ -2,130 +2,77 @@
 
 [![Status](https://img.shields.io/badge/status-released-blue)](https://pypi.org/project/opendal/)
 [![PyPI](https://img.shields.io/pypi/v/opendal.svg?logo=PyPI)](https://pypi.org/project/opendal/)
-[![Website](https://img.shields.io/badge/opendal-OpenDAL_Website-red?logo=Apache&logoColor=red)](https://opendal.apache.org/docs/python/)
+[![Website](https://img.shields.io/badge/opendal-OpenDAL_Website-red?logo=Apache&logoColor=red)](https://opendal.apache.org/docs/bindings/python)
 
 This package provides a native Python binding for **Apache OpenDAL™**, a data access
 layer that allows you to access various storage services in a unified way.
 
-![OpenDAL Python Usage Demo](https://github.com/apache/opendal/assets/5351546/87bbf6e5-f19e-449a-b368-3e283016c887)
+![OpenDAL Architecture](https://opendal.apache.org/img/architectural.png)
 
-> **Note**: This binding has its own independent version number, which may differ from the Rust core version. When checking for updates or compatibility, always refer to this binding's version rather than the core version.
+We release the OpenDAL Python binding independently of the
+[`opendal` crate](https://crates.io/crates/opendal) (Rust core). For updates
+and compatibility, use the Python binding version instead of the `opendal` crate
+version.
 
 ## Useful Links
 
-- [Documentation](https://opendal.apache.org/docs/python/)
-- [Examples](./docs/examples)
-- [Upgrade Guide](./upgrade.md)
-
----
-
-## Features
-
-- **Unified API**: Access S3, GCS, Azure Blob, HDFS, FTP, and more with the same set of
-  commands.
-- **Native Performance**: Built in Rust for high performance and safety.
-- **Async Support**: First-class `async` API for modern Python applications.
-- **Easy to Use**: Simple and intuitive API design.
-
----
+- **User guide**: [opendal.apache.org/docs/bindings/python](https://opendal.apache.org/docs/bindings/python) — install, connect, common tasks, and going to production.
+- **API reference**: [opendal.apache.org/docs/python](https://opendal.apache.org/docs/python/)
+- **Services & configuration**: [opendal.apache.org/services](https://opendal.apache.org/services)
+- **Upgrade guide**: [`upgrade.md`](./upgrade.md)
+- **Examples**: [`docs/examples`](./docs/examples)
 
 ## Installation
 
-Install the package directly from PyPI:
+Install from PyPI:
 
 ```bash
 pip install opendal
 ```
 
----
+Or install from [Anaconda main](https://anaconda.org/main/opendal):
 
-## Usage
-
-Here are a few examples of how to use OpenDAL with different storage backends.
-
-### Local Filesystem (`fs`)
-
-```python
-import opendal
-
-# Initialize the operator for the local filesystem
-op = opendal.Operator("fs", root="/tmp")
-
-# Write data to a file
-op.write("test.txt", b"Hello World")
-
-# Read data from the file
-content = op.read("test.txt")
-print(op.read("test.txt"))
-
-# Get metadata
-metadata = op.stat("test.txt")
-print(f"Content length: {metadata.content_length}") # Output: 11
+```bash
+conda install opendal
 ```
 
-### Amazon S3
+Or install from [conda-forge](https://anaconda.org/conda-forge/opendal):
 
-The API remains the same—just change the scheme and credentials.
+```bash
+conda install conda-forge::opendal
+```
+
+## Quickstart
 
 ```python
 import opendal
 
-# Initialize the operator for S3
-op = opendal.Operator(
-    "s3",
-    bucket="your_bucket_name",
-    region="your_region",
-    root="/path/to/root"
-)
+# Configure a service, then build an operator from it.
+op = opendal.Operator("fs", root="/tmp")
 
+# The same verbs work on every service.
 op.write("test.txt", b"Hello World")
 print(op.read("test.txt"))
 print(op.stat("test.txt").content_length)
 ```
 
-### Async Usage (`s3`)
-
-OpenDAL also provides a fully asynchronous API.
+To use a real backend, change the scheme and pass its configuration — the
+operations stay identical:
 
 ```python
-import asyncio
-import opendal
-
-async def main():
-    # Use AsyncOperator for async operations
-    op = opendal.AsyncOperator("s3", root="/tmp", bucket="your_bucket_name", region="your_region")
-
-    await op.write("test.txt", b"Hello World")
-    print(await op.read("test.txt"))
-
-asyncio.run(main())
+op = opendal.Operator("s3", bucket="your_bucket", region="your_region")
 ```
 
----
+OpenDAL also has a first-class async API via `opendal.AsyncOperator`. See
+[Getting started](https://opendal.apache.org/docs/bindings/python/getting-started)
+and [Connecting to your storage](https://opendal.apache.org/docs/bindings/python/connecting)
+for the full guide.
 
-## Development
+## Contributing
 
-This project uses [`just`](https://github.com/casey/just) as a command runner to
-simplify the development workflow.
-
-1. **Clone the repository and set up the environment:**
-
-   ```shell
-   # This will create a virtual environment and install all dependencies
-   just setup
-   ```
-
-2. **Run tests:**
-
-   ```shell
-   # Example: Run tests for the 'fs' operator
-   OPENDAL_TEST=fs OPENDAL_FS_ROOT=/tmp just test
-   ```
-
-For a complete guide on building, testing, and contributing, please see our
-**[CONTRIBUTING.md](./CONTRIBUTING.md)** file.
-
----
+This project uses [`just`](https://github.com/casey/just) as a command runner.
+For a complete guide on building, testing, and contributing, see
+**[CONTRIBUTING.md](./CONTRIBUTING.md)**.
 
 ## Used By
 
@@ -138,3 +85,18 @@ http://www.apache.org/licenses/LICENSE-2.0
 
 Apache OpenDAL, OpenDAL, and Apache are either registered trademarks or trademarks of
 the Apache Software Foundation.
+
+### Third-party software
+
+Compiled distributions include the following Mozilla Public License 2.0
+components. Their source code is available from the linked project pages:
+
+- `colored` 3.1.1 ([source](https://crates.io/crates/colored/3.1.1), [homepage](https://github.com/mackwic/colored)), licensed under MPL-2.0.
+- `option-ext` 0.2.0 ([source](https://crates.io/crates/option-ext/0.2.0), [homepage](https://github.com/soc/option-ext)), licensed under MPL-2.0.
+- `persy` 1.8.1 ([source](https://crates.io/crates/persy/1.8.1), [homepage](https://persy.rs)), licensed under MPL-2.0.
+
+The distribution includes the MPL-2.0 text in `LICENSE-MPL-2.0.txt`.
+
+Musllinux wheels also bundle `libgcc_s`, the [GCC runtime library](https://gcc.gnu.org/),
+licensed under `GPL-3.0-or-later WITH GCC-exception-3.1`. The complete license and
+exception texts are included in `LICENSE-libgcc.txt`.

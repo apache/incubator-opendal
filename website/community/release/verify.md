@@ -3,49 +3,54 @@ title: Verify a release candidate
 sidebar_position: 4
 ---
 
-To verify a release candidate, the following checklist could be used:
+Use the following checklist to verify a release candidate:
 
-- [ ] Download links are valid.
-- [ ] Checksums and signatures.
-- [ ] LICENSE/NOTICE files exist.
-- [ ] No unexpected binary files.
-- [ ] All source files have ASF headers.
-- [ ] Can compile from source.
+- [ ] Download links work.
+- [ ] Checksums and signatures are valid.
+- [ ] LICENSE and NOTICE files are present.
+- [ ] Source packages contain no unexpected binary files.
+- [ ] Source files include ASF license headers.
+- [ ] Source builds successfully.
 
 :::note
 
-It is NOT necessary to run all checks to cast a vote for a release candidate.
+You do not need to complete every check before casting a vote for a release candidate.
 
-However, you should clearly state which checks you did. The release manager needs to ensure that each check was done.
+Clearly state which checks you performed. The release manager uses this information to ensure that the verification covers every check.
 
 :::
 
-## Download links are valid
+## Download links work
 
-To verify the release candidate, you need to download the release candidate from the [dist](https://dist.apache.org/repos/dist/dev/opendal/) directory.
+Download the release candidate source packages from the [dist](https://dist.apache.org/repos/dist/dev/opendal/) directory.
 
-Our current distribution contains many files, which we recommend downloading using svn.
+OpenDAL distributes each release candidate as a directory of split source packages. Download the entire release candidate (RC) directory with SVN.
 
-Use the following command to download all artifacts, replace "${release_version}-${rc_version}" with the version ID of the version to be released:
+Replace `${release_version}` with the RC version, such as `0.55.0-rc.1`:
 
 ```shell
-svn co https://dist.apache.org/repos/dist/dev/opendal/${release_version}-${rc_version}/
+svn checkout https://dist.apache.org/repos/dist/dev/opendal/${release_version}/ opendal-dist-${release_version}
 ```
 
-## Checksums and signatures
+## Checksums and signatures are valid
 
-Every file in a release candidate should have a checksum and signature file.
+Every source archive in a release candidate has a corresponding checksum and signature file.
 
-For example, if the release candidate is `0.46.0-rc1`, the checksum and signature file should be like:
+For example, the `0.55.0-rc.1` directory contains files with names such as:
 
 ```
-https://dist.apache.org/repos/dist/dev/opendal/0.46.0-rc1/apache-opendal-core-0.46.0-rc1-src.tar.gz.sha512
-https://dist.apache.org/repos/dist/dev/opendal/0.46.0-rc1/apache-opendal-core-0.46.0-rc1-src.tar.gz.asc
+https://dist.apache.org/repos/dist/dev/opendal/0.55.0-rc.1/apache-opendal-core-0.55.0-src.tar.gz.sha512
+https://dist.apache.org/repos/dist/dev/opendal/0.55.0-rc.1/apache-opendal-core-0.55.0-src.tar.gz.asc
+https://dist.apache.org/repos/dist/dev/opendal/0.55.0-rc.1/apache-opendal-bindings-java-0.48.2-src.tar.gz.sha512
+https://dist.apache.org/repos/dist/dev/opendal/0.55.0-rc.1/apache-opendal-bindings-java-0.48.2-src.tar.gz.asc
 ```
+
+The RC directory uses the release candidate version, while each source archive uses its package-specific version.
+Do not expect a single `apache-opendal-${opendal_version}-src.tar.gz` source archive or any `apache-opendal-bin-*` artifacts in this repository.
 
 ### Verify checksums and signatures
 
-GnuPG is recommended here. It can be installed with the following command:
+Use GnuPG to verify signatures. Install it with one of the following commands:
 
 ```shell
 apt-get install gnupg
@@ -55,26 +60,26 @@ yum install gnupg
 brew install gnupg
 ```
 
-Firstly, import the OpenDAL release manager's public key:
+First, import the OpenDAL release manager's public key:
 
 ```shell
 curl https://downloads.apache.org/opendal/KEYS > KEYS # Download KEYS
 gpg --import KEYS # Import KEYS to local
 ```
 
-Then, trust the public key:
+Next, trust the public key:
 
 ```shell
 gpg --edit-key <KEY-used-in-this-version> # Edit the key
 ```
 
-It will enter the interactive mode, use the following command to trust the key:
+GnuPG opens an interactive session. Enter the following command to trust the key:
 
 ```shell
 gpg> trust
 ```
 
-And then, select the level of trust, for example:
+Then select a trust level. For example:
 
 ```
 Please decide how far you trust this user to correctly verify other users' keys
@@ -90,39 +95,49 @@ Please decide how far you trust this user to correctly verify other users' keys
 
 Select `5` to trust the key ultimately.
 
-Now, we could start the verification.
+You can now verify the release candidate.
 
-We've provided a script to verify the checksum and signature of the release candidate.
+OpenDAL provides a script that verifies the checksums and signatures of the release candidate source packages.
 
-The script is in the `scripts` directory of our repository.
-You can download it directly from [here](https://raw.githubusercontent.com/apache/opendal/main/scripts/verify.py).
-Please put it in the same directory as the release candidate.
+Download the script from the RC tag into the release candidate directory:
 
-Run the script in a specific release candidate's folder:
+```shell
+cd opendal-dist-${release_version}
+curl --silent --show-error --location https://github.com/apache/opendal/raw/v${release_version}/scripts/verify.py --output verify.py
+```
+
+The script checks every `*.tar.gz` in the RC directory that has matching `.asc` and `.sha512` files, extracts each `apache-opendal-*-src` tree, verifies `LICENSE` and `NOTICE`, builds `core`, and builds `bindings/java` when that package is present.
+
+The script streams Cargo and Maven output to the terminal so you can follow build progress and inspect errors.
+
+Run the script:
 
 ```shell
 python ./verify.py
 ```
 
-You will see the following output if the verification is successful:
+You will see output similar to the following if the verification is successful (build logs omitted):
 
 ```shell
 $ python ./verify.py
-> Checking apache-opendal-bin-oli-0.41.3-src.tar.gz
-gpg: Signature made 五  6/ 7 20:57:06 2024 CST
+> Checking apache-opendal-core-0.55.0-src.tar.gz
+gpg: Signature made Fri Jun  7 20:57:06 2024 CST
 gpg:                using RSA key 8B374472FAD328E17F479863B379691FC6E298DD
 gpg: Good signature from "Zili Chen (CODE SIGNING KEY) <tison@apache.org>" [unknown]
 gpg: WARNING: This key is not certified with a trusted signature!
 gpg:          There is no indication that the signature belongs to the owner.
 Primary key fingerprint: 8B37 4472 FAD3 28E1 7F47  9863 B379 691F C6E2 98DD
-> Success to verify the gpg sign for apache-opendal-bin-oli-0.41.3-src.tar.gz
-apache-opendal-bin-oli-0.41.3-src.tar.gz: OK
-> Success to verify the checksum for apache-opendal-bin-oli-0.41.3-src.tar.gz
+> Success to verify the gpg sign for apache-opendal-core-0.55.0-src.tar.gz
+apache-opendal-core-0.55.0-src.tar.gz: OK
+> Success to verify the checksum for apache-opendal-core-0.55.0-src.tar.gz
+> Checking apache-opendal-bindings-java-0.48.2-src.tar.gz
+apache-opendal-bindings-java-0.48.2-src.tar.gz: OK
+> Success to verify the checksum for apache-opendal-bindings-java-0.48.2-src.tar.gz
 .......
-> Start checking LICENSE file in /Users/yan/Downloads/opendal-dev/apache-opendal-0.47.0-src
-> LICENSE file exists in /Users/yan/Downloads/opendal-dev/apache-opendal-0.47.0-src
-> Start checking NOTICE file in /Users/yan/Downloads/opendal-dev/apache-opendal-0.47.0-src
-> NOTICE file exists in /Users/yan/Downloads/opendal-dev/apache-opendal-0.47.0-src
+> Start checking LICENSE file in /Users/yan/Downloads/opendal-dev/apache-opendal-core-0.55.0-src
+> LICENSE file exists in /Users/yan/Downloads/opendal-dev/apache-opendal-core-0.55.0-src
+> Start checking NOTICE file in /Users/yan/Downloads/opendal-dev/apache-opendal-core-0.55.0-src
+> NOTICE file exists in /Users/yan/Downloads/opendal-dev/apache-opendal-core-0.55.0-src
 cargo 1.78.0 (54d8815d0 2024-03-26)
 Start building opendal core
 Success to build opendal core
@@ -133,22 +148,25 @@ Start building opendal java binding
 > Success to build opendal java binding
 ```
 
-## Check the file content of the source package
+## Verify source package contents
 
-Unzip `apache-opendal-${release_version}-${rc_version}-src.tar.gz` and check the follows:
+Unpack each release candidate source package, such as `apache-opendal-core-0.55.0-src.tar.gz` or `apache-opendal-bindings-java-0.48.2-src.tar.gz`, and verify the following:
 
-- LICENSE and NOTICE files are correct for the repository.
-- All files have ASF license headers if necessary.
-- Building is OK.
+- Package layout matches the package being released.
+- Required repository-local dependencies are included. For example, binding and integration packages include `core`.
+- LICENSE and NOTICE files are present and correct.
+- Source packages contain no unexpected binary files.
+- Source files include ASF license headers where required.
+- Source builds successfully.
 
-## Check the Maven artifacts of opendal-java
+## Verify OpenDAL Java Maven artifacts
 
 Download the artifacts from `https://repository.apache.org/content/repositories/orgapacheopendal-${maven_artifact_number}/`.
 
-You can check the follows:
+Verify the following:
 
-- Checksum of JARs matches the bundled checksum file.
-- Signature of JARs matches the bundled signature file.
-- JARs are reproducible locally. This means you can build the JARs on your machine and verify the checksum is the same with the bundled one.
+- JAR checksums match the bundled checksum files.
+- JAR signatures match the bundled signature files.
+- JARs are reproducible locally. Build the JARs on your machine and verify that their checksums match the bundled checksums.
 
-The reproducibility requires the same JDK distribution and the same Maven distribution. You should use [Eclipse Temurin JDK 8](https://adoptium.net/temurin/releases/?version=8) and the bundled Maven Wrapper to make the same artifacts.
+Reproducing the artifacts requires the same JDK and Maven distributions. Use [Eclipse Temurin JDK 8](https://adoptium.net/temurin/releases/?version=8) and the bundled Maven Wrapper to reproduce the artifacts.

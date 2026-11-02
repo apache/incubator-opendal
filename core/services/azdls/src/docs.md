@@ -8,7 +8,7 @@ This service will visit the [ABFS](https://learn.microsoft.com/en-us/azure/stora
 
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [x] create_dir
 - [x] stat
@@ -20,15 +20,14 @@ This service can be used to:
 - [x] rename
 - [ ] presign
 
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
+
 ## Configuration
 
-- `root`: Set the work dir for backend.
-- `filesystem`: Set the filesystem name for backend.
-- `endpoint`: Set the endpoint for backend.
-- `account_name`: Set the account_name for backend.
-- `account_key`: Set the account_key for backend.
-
-Refer to public API docs for more information.
+Use [`crate::AzdlsConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
 ## Example
 
@@ -62,8 +61,8 @@ async fn main() -> Result<()> {
         .account_name("account_name")
         .account_key("account_key");
 
-    // `Accessor` provides the low level APIs, we will use `Operator` normally.
-    let op: Operator = Operator::new(builder)?.finish();
+    // `Service` provides the low level APIs, we will use `Operator` normally.
+    let op: Operator = Operator::new(builder)?;
 
     Ok(())
 }

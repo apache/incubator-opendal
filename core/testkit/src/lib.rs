@@ -15,8 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Test harness and utilities for Apache OpenDAL.
-
+#![doc = include_str!("../README.md")]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg))]
+#![deny(missing_docs)]
 mod read;
 pub use read::ReadAction;
 pub use read::ReadChecker;

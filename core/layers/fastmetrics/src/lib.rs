@@ -15,16 +15,14 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Metrics layer (using the [fastmetrics](https://docs.rs/fastmetrics/) crate) implementation for Apache OpenDAL.
-
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
-
 use fastmetrics::encoder::EncodeLabelSet;
 use fastmetrics::encoder::LabelSetEncoder;
 use fastmetrics::metrics::counter::Counter;
 use fastmetrics::metrics::family::Family;
-use fastmetrics::metrics::family::MetricFactory;
 use fastmetrics::metrics::gauge::Gauge;
 use fastmetrics::metrics::histogram::Histogram;
 use fastmetrics::raw::LabelSetSchema;
@@ -35,14 +33,21 @@ use opendal_core::raw::*;
 use opendal_core::*;
 use opendal_layer_observe_metrics_common as observe;
 
-/// Add [fastmetrics](https://docs.rs/fastmetrics/) for every operation.
+/// `FastmetricsLayer` records OpenDAL operation and HTTP fetch metrics with
+/// [fastmetrics](https://docs.rs/fastmetrics/).
+///
+/// # Fastmetrics Metrics
+///
+/// This layer registers operation metrics and HTTP fetch metrics. Please see the documentation of
+/// the [`observe`] module for metric details.
 ///
 /// # Examples
 ///
 /// ## Basic Usage
 ///
 /// ```no_run
-/// # use fastmetrics::format::text;
+/// # use fastmetrics::format::text::encode;
+/// # use fastmetrics::format::text::TextProfile;
 /// # use log::info;
 /// # use opendal_core::services;
 /// # use opendal_core::Operator;
@@ -53,8 +58,7 @@ use opendal_layer_observe_metrics_common as observe;
 /// # async fn main() -> Result<()> {
 /// let mut registry = fastmetrics::registry::Registry::default();
 /// let op = Operator::new(services::Memory::default())?
-///     .layer(FastmetricsLayer::builder().register(&mut registry)?)
-///     .finish();
+///     .layer(FastmetricsLayer::builder().register(&mut registry)?);
 ///
 /// // Write data into object test.
 /// op.write("test", "Hello, World!").await?;
@@ -69,7 +73,7 @@ use opendal_layer_observe_metrics_common as observe;
 ///
 /// // Export prometheus metrics.
 /// let mut output = String::new();
-/// text::encode(&mut output, &registry).unwrap();
+/// encode(&mut output, &registry, TextProfile::PrometheusV0_0_4).unwrap();
 /// println!("{}", output);
 /// # Ok(())
 /// # }
@@ -87,7 +91,8 @@ use opendal_layer_observe_metrics_common as observe;
 /// ```no_run
 /// # use std::sync::OnceLock;
 /// #
-/// # use fastmetrics::format::text;
+/// # use fastmetrics::format::text::encode;
+/// # use fastmetrics::format::text::TextProfile;
 /// # use fastmetrics::registry::with_global_registry;
 /// # use log::info;
 /// # use opendal_core::services;
@@ -107,8 +112,7 @@ use opendal_layer_observe_metrics_common as observe;
 /// # #[tokio::main]
 /// # async fn main() -> Result<()> {
 /// let op = Operator::new(services::Memory::default())?
-///     .layer(global_fastmetrics_layer().clone())
-///     .finish();
+///     .layer(global_fastmetrics_layer().clone());
 ///
 /// // Write data into object test.
 /// op.write("test", "Hello, World!").await?;
@@ -123,11 +127,12 @@ use opendal_layer_observe_metrics_common as observe;
 ///
 /// // Export prometheus metrics.
 /// let mut output = String::new();
-/// with_global_registry(|registry| text::encode(&mut output, &registry).unwrap());
+/// with_global_registry(|reg| encode(&mut output, &reg, TextProfile::PrometheusV0_0_4).unwrap());
 /// println!("{}", output);
 /// # Ok(())
 /// # }
-#[derive(Clone)]
+/// ```
+#[derive(Clone, Debug)]
 pub struct FastmetricsLayer {
     interceptor: FastmetricsInterceptor,
 }
@@ -139,11 +144,14 @@ impl FastmetricsLayer {
     }
 }
 
-impl<A: Access> Layer<A> for FastmetricsLayer {
-    type LayeredAccess = observe::MetricsAccessor<A, FastmetricsInterceptor>;
+impl Layer for FastmetricsLayer {
+    fn apply_service(&self, inner: Servicer) -> Servicer {
+        observe::MetricsLayer::new(self.interceptor.clone()).apply_service(inner)
+    }
 
-    fn layer(&self, inner: A) -> Self::LayeredAccess {
-        observe::MetricsLayer::new(self.interceptor.clone()).layer(inner)
+    // Reuse the same interceptor because this layer registers both operation and HTTP metrics.
+    fn apply_context(&self, srv: Servicer, inner: OperationContext) -> OperationContext {
+        observe::MetricsLayer::new(self.interceptor.clone()).apply_context(srv, inner)
     }
 }
 
@@ -244,52 +252,41 @@ impl FastmetricsLayerBuilder {
     /// // Pick a builder and configure it.
     /// let builder = services::Memory::default();
     /// let _ = Operator::new(builder)?
-    ///     .layer(FastmetricsLayer::builder().register(&mut registry)?)
-    ///     .finish();
+    ///     .layer(FastmetricsLayer::builder().register(&mut registry)?);
     /// # Ok(())
     /// # }
     /// ```
     pub fn register(self, registry: &mut Registry) -> Result<FastmetricsLayer> {
-        let operation_bytes = Family::new(HistogramFactory {
-            buckets: self.bytes_buckets.clone(),
-        });
-        let operation_bytes_rate = Family::new(HistogramFactory {
-            buckets: self.bytes_rate_buckets.clone(),
-        });
-        let operation_entries = Family::new(HistogramFactory {
-            buckets: self.entries_buckets.clone(),
-        });
-        let operation_entries_rate = Family::new(HistogramFactory {
-            buckets: self.entries_rate_buckets.clone(),
-        });
-        let operation_duration_seconds = Family::new(HistogramFactory {
-            buckets: self.duration_seconds_buckets.clone(),
-        });
+        let Self {
+            bytes_buckets,
+            bytes_rate_buckets,
+            entries_buckets,
+            entries_rate_buckets,
+            duration_seconds_buckets,
+            ttfb_buckets,
+            disable_label_root,
+        } = self;
+
+        let new_hist_family = |buckets: Vec<f64>| -> Family<OperationLabels, Histogram> {
+            Family::new(move || Histogram::new(buckets.iter().copied()))
+        };
+
+        let operation_bytes = new_hist_family(bytes_buckets.clone());
+        let operation_bytes_rate = new_hist_family(bytes_rate_buckets.clone());
+        let operation_entries = new_hist_family(entries_buckets);
+        let operation_entries_rate = new_hist_family(entries_rate_buckets);
+        let operation_duration_seconds = new_hist_family(duration_seconds_buckets.clone());
         let operation_errors_total = Family::default();
         let operation_executing = Family::default();
-        let operation_ttfb_seconds = Family::new(HistogramFactory {
-            buckets: self.ttfb_buckets.clone(),
-        });
+        let operation_ttfb_seconds = new_hist_family(ttfb_buckets);
 
         let http_executing = Family::default();
-        let http_request_bytes = Family::new(HistogramFactory {
-            buckets: self.bytes_buckets.clone(),
-        });
-        let http_request_bytes_rate = Family::new(HistogramFactory {
-            buckets: self.bytes_rate_buckets.clone(),
-        });
-        let http_request_duration_seconds = Family::new(HistogramFactory {
-            buckets: self.duration_seconds_buckets.clone(),
-        });
-        let http_response_bytes = Family::new(HistogramFactory {
-            buckets: self.bytes_buckets.clone(),
-        });
-        let http_response_bytes_rate = Family::new(HistogramFactory {
-            buckets: self.bytes_rate_buckets.clone(),
-        });
-        let http_response_duration_seconds = Family::new(HistogramFactory {
-            buckets: self.duration_seconds_buckets.clone(),
-        });
+        let http_request_bytes = new_hist_family(bytes_buckets.clone());
+        let http_request_bytes_rate = new_hist_family(bytes_rate_buckets.clone());
+        let http_request_duration_seconds = new_hist_family(duration_seconds_buckets.clone());
+        let http_response_bytes = new_hist_family(bytes_buckets);
+        let http_response_bytes_rate = new_hist_family(bytes_rate_buckets);
+        let http_response_duration_seconds = new_hist_family(duration_seconds_buckets);
         let http_connection_errors_total = Family::default();
         let http_status_errors_total = Family::default();
 
@@ -313,7 +310,7 @@ impl FastmetricsLayerBuilder {
             http_connection_errors_total,
             http_status_errors_total,
 
-            disable_label_root: self.disable_label_root,
+            disable_label_root,
         };
         interceptor
             .register(registry)
@@ -336,8 +333,7 @@ impl FastmetricsLayerBuilder {
     /// // Pick a builder and configure it.
     /// let builder = services::Memory::default();
     /// let _ = Operator::new(builder)?
-    ///     .layer(FastmetricsLayer::builder().register_global()?)
-    ///     .finish();
+    ///     .layer(FastmetricsLayer::builder().register_global()?);
     /// # Ok(())
     /// # }
     /// ```
@@ -346,36 +342,25 @@ impl FastmetricsLayerBuilder {
     }
 }
 
-#[derive(Clone)]
-struct HistogramFactory {
-    buckets: Vec<f64>,
-}
-
-impl MetricFactory<Histogram> for HistogramFactory {
-    fn new_metric(&self) -> Histogram {
-        Histogram::new(self.buckets.iter().cloned())
-    }
-}
-
 #[doc(hidden)]
 #[derive(Clone, Debug)]
 pub struct FastmetricsInterceptor {
-    operation_bytes: Family<OperationLabels, Histogram, HistogramFactory>,
-    operation_bytes_rate: Family<OperationLabels, Histogram, HistogramFactory>,
-    operation_entries: Family<OperationLabels, Histogram, HistogramFactory>,
-    operation_entries_rate: Family<OperationLabels, Histogram, HistogramFactory>,
-    operation_duration_seconds: Family<OperationLabels, Histogram, HistogramFactory>,
+    operation_bytes: Family<OperationLabels, Histogram>,
+    operation_bytes_rate: Family<OperationLabels, Histogram>,
+    operation_entries: Family<OperationLabels, Histogram>,
+    operation_entries_rate: Family<OperationLabels, Histogram>,
+    operation_duration_seconds: Family<OperationLabels, Histogram>,
     operation_errors_total: Family<OperationLabels, Counter>,
     operation_executing: Family<OperationLabels, Gauge>,
-    operation_ttfb_seconds: Family<OperationLabels, Histogram, HistogramFactory>,
+    operation_ttfb_seconds: Family<OperationLabels, Histogram>,
 
     http_executing: Family<OperationLabels, Gauge>,
-    http_request_bytes: Family<OperationLabels, Histogram, HistogramFactory>,
-    http_request_bytes_rate: Family<OperationLabels, Histogram, HistogramFactory>,
-    http_request_duration_seconds: Family<OperationLabels, Histogram, HistogramFactory>,
-    http_response_bytes: Family<OperationLabels, Histogram, HistogramFactory>,
-    http_response_bytes_rate: Family<OperationLabels, Histogram, HistogramFactory>,
-    http_response_duration_seconds: Family<OperationLabels, Histogram, HistogramFactory>,
+    http_request_bytes: Family<OperationLabels, Histogram>,
+    http_request_bytes_rate: Family<OperationLabels, Histogram>,
+    http_request_duration_seconds: Family<OperationLabels, Histogram>,
+    http_response_bytes: Family<OperationLabels, Histogram>,
+    http_response_bytes_rate: Family<OperationLabels, Histogram>,
+    http_response_duration_seconds: Family<OperationLabels, Histogram>,
     http_connection_errors_total: Family<OperationLabels, Counter>,
     http_status_errors_total: Family<OperationLabels, Counter>,
 
@@ -518,6 +503,7 @@ impl LabelSetSchema for OperationLabels {
             observe::LABEL_OPERATION,
             observe::LABEL_ERROR,
             observe::LABEL_STATUS_CODE,
+            observe::LABEL_SERVICE_OPERATION,
         ];
         Some(NAMES)
     }
@@ -536,6 +522,9 @@ impl EncodeLabelSet for OperationLabels {
         }
         if let Some(code) = &self.labels.status_code {
             encoder.encode(&(observe::LABEL_STATUS_CODE, code.as_str()))?;
+        }
+        if let Some(service_operation) = self.labels.service_operation {
+            encoder.encode(&(observe::LABEL_SERVICE_OPERATION, service_operation))?;
         }
         Ok(())
     }

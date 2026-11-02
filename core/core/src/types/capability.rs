@@ -17,6 +17,9 @@
 
 use std::fmt::Debug;
 
+use serde::Deserialize;
+use serde::Serialize;
+
 /// Capability defines the supported operations and their constraints for a storage Operator.
 ///
 /// # Overview
@@ -28,16 +31,11 @@ use std::fmt::Debug;
 /// - Advanced operation variants (conditional operations, metadata handling)
 /// - Operational constraints (size limits, batch limitations)
 ///
-/// # Capability Types
+/// # Capability Type
 ///
-/// Every operator maintains two capability sets:
-///
-/// 1. [`OperatorInfo::native_capability`][crate::OperatorInfo::native_capability]:
-///    Represents operations natively supported by the storage backend.
-///
-/// 2. [`OperatorInfo::full_capability`][crate::OperatorInfo::full_capability]:
-///    Represents all available operations, including those implemented through
-///    alternative mechanisms.
+/// [`OperatorInfo::capability`][crate::OperatorInfo::capability] represents all
+/// operations available on the current operator, including those implemented
+/// through layers.
 ///
 /// # Implementation Details
 ///
@@ -46,9 +44,9 @@ use std::fmt::Debug;
 ///
 /// - Blocking operations are provided through the BlockingLayer
 ///
-/// Developers should:
-/// - Use `full_capability` to determine available operations
-/// - Use `native_capability` to identify optimized operations
+/// Developers should use `capability` to determine available operations.
+/// Conditional capability fields follow the
+/// [conditional operation specification][crate::docs::specs::conditional_operations].
 ///
 /// # Field Naming Conventions
 ///
@@ -62,7 +60,8 @@ use std::fmt::Debug;
 /// - Metadata Results: Returning metadata capabilities (e.g., `stat_has_content_length`)
 ///
 /// All capability fields are public and can be accessed directly.
-#[derive(Copy, Clone, Default)]
+#[derive(Copy, Clone, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Capability {
     /// Indicates if the operator supports metadata retrieval operations.
     pub stat: bool,
@@ -70,6 +69,10 @@ pub struct Capability {
     pub stat_with_if_match: bool,
     /// Indicates if conditional stat operations using If-None-Match are supported.
     pub stat_with_if_none_match: bool,
+    /// Indicates if conditional stat operations using version match are supported.
+    pub stat_with_if_version_match: bool,
+    /// Indicates if conditional stat operations using version non-match are supported.
+    pub stat_with_if_version_not_match: bool,
     /// Indicates if conditional stat operations using If-Modified-Since are supported.
     pub stat_with_if_modified_since: bool,
     /// Indicates if conditional stat operations using If-Unmodified-Since are supported.
@@ -89,6 +92,10 @@ pub struct Capability {
     pub read_with_if_match: bool,
     /// Indicates if conditional read operations using If-None-Match are supported.
     pub read_with_if_none_match: bool,
+    /// Indicates if conditional read operations using version match are supported.
+    pub read_with_if_version_match: bool,
+    /// Indicates if conditional read operations using version non-match are supported.
+    pub read_with_if_version_not_match: bool,
     /// Indicates if conditional read operations using If-Modified-Since are supported.
     pub read_with_if_modified_since: bool,
     /// Indicates if conditional read operations using If-Unmodified-Since are supported.
@@ -101,6 +108,8 @@ pub struct Capability {
     pub read_with_override_content_type: bool,
     /// Indicates if versions read operations are supported.
     pub read_with_version: bool,
+    /// Indicates if suffix read operations are supported.
+    pub read_with_suffix: bool,
 
     /// Indicates if the operator supports write operations.
     pub write: bool,
@@ -110,6 +119,9 @@ pub struct Capability {
     pub write_can_empty: bool,
     /// Indicates if append operations are supported.
     pub write_can_append: bool,
+    /// Indicates if a non-append writer can natively copy source ranges into an in-progress write.
+    /// `Writer::copy_from` remains available through streaming fallback when false or when appending.
+    pub write_can_copy_from: bool,
     /// Indicates if Content-Type can be specified during write operations.
     pub write_with_content_type: bool,
     /// Indicates if Content-Disposition can be specified during write operations.
@@ -122,6 +134,10 @@ pub struct Capability {
     pub write_with_if_match: bool,
     /// Indicates if conditional write operations using If-None-Match are supported.
     pub write_with_if_none_match: bool,
+    /// Indicates if conditional write operations using version match are supported.
+    pub write_with_if_version_match: bool,
+    /// Indicates if conditional write operations using version non-match are supported.
+    pub write_with_if_version_not_match: bool,
     /// Indicates if write operations can be conditional on object non-existence.
     pub write_with_if_not_exists: bool,
     /// Indicates if custom user metadata can be attached during write operations.
@@ -145,6 +161,14 @@ pub struct Capability {
     pub delete_with_version: bool,
     /// Indicates if recursive delete operations are supported.
     pub delete_with_recursive: bool,
+    /// Indicates if conditional delete operations using If-Match are supported.
+    pub delete_with_if_match: bool,
+    /// Indicates if conditional delete operations using If-None-Match are supported.
+    pub delete_with_if_none_match: bool,
+    /// Indicates if conditional delete operations using version match are supported.
+    pub delete_with_if_version_match: bool,
+    /// Indicates if conditional delete operations using version non-match are supported.
+    pub delete_with_if_version_not_match: bool,
     /// Maximum size supported for single delete operations.
     pub delete_max_size: Option<usize>,
 
@@ -152,9 +176,61 @@ pub struct Capability {
     pub copy: bool,
     /// Indicates if conditional copy operations with if-not-exists are supported.
     pub copy_with_if_not_exists: bool,
+    /// Indicates if conditional copy operations with if-match are supported.
+    pub copy_with_if_match: bool,
+    /// Indicates if conditional copy operations with if-none-match are supported.
+    pub copy_with_if_none_match: bool,
+    /// Indicates if conditional copy operations using version match are supported.
+    pub copy_with_if_version_match: bool,
+    /// Indicates if conditional copy operations using version non-match are supported.
+    pub copy_with_if_version_not_match: bool,
+    /// Indicates if copy operations from a specific source version are supported.
+    pub copy_with_source_version: bool,
+    /// Indicates if copy operations can be split into multiple server-side tasks.
+    pub copy_can_multi: bool,
+    /// Maximum size supported for segmented copy tasks.
+    pub copy_multi_max_size: Option<usize>,
+    /// Minimum size required for segmented copy tasks.
+    pub copy_multi_min_size: Option<usize>,
+
+    /// Indicates if the operator supports composing complete source objects.
+    pub compose: bool,
+    /// Indicates if Content-Type can be specified during composition.
+    pub compose_with_content_type: bool,
+    /// Indicates if Content-Disposition can be specified during composition.
+    pub compose_with_content_disposition: bool,
+    /// Indicates if Content-Encoding can be specified during composition.
+    pub compose_with_content_encoding: bool,
+    /// Indicates if Cache-Control can be specified during composition.
+    pub compose_with_cache_control: bool,
+    /// Indicates if custom user metadata can be attached during composition.
+    pub compose_with_user_metadata: bool,
+    /// Indicates if composition supports a destination ETag match condition.
+    pub compose_with_if_match: bool,
+    /// Indicates if composition supports a destination ETag non-match condition.
+    pub compose_with_if_none_match: bool,
+    /// Indicates if composition supports a destination version match condition.
+    pub compose_with_if_version_match: bool,
+    /// Indicates if composition supports a destination version non-match condition.
+    pub compose_with_if_version_not_match: bool,
+    /// Indicates if composition can require a missing destination.
+    pub compose_with_if_not_exists: bool,
+    /// Indicates if composition can select a specific source version.
+    pub compose_with_source_version: bool,
+    /// Indicates if composition supports a source ETag match condition.
+    pub compose_with_source_if_match: bool,
+
+    /// Indicates if restore operations are supported.
+    pub restore: bool,
+    /// Indicates if restoring a specific version is supported.
+    pub restore_with_version: bool,
+    /// Indicates if conditional restore operations using if-not-exists are supported.
+    pub restore_with_if_not_exists: bool,
 
     /// Indicates if rename operations are supported.
     pub rename: bool,
+    /// Indicates if conditional rename operations with if-not-exists are supported.
+    pub rename_with_if_not_exists: bool,
 
     /// Indicates if list operations are supported.
     pub list: bool,

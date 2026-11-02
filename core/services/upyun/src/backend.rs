@@ -18,7 +18,6 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use http::Response;
 use http::StatusCode;
 use log::debug;
 use opendal_core::raw::*;
@@ -26,10 +25,11 @@ use opendal_core::*;
 
 use super::UPYUN_SCHEME;
 use super::config::UpyunConfig;
+use super::core::parse_error;
 use super::core::*;
 use super::deleter::UpyunDeleter;
-use super::error::parse_error;
 use super::lister::UpyunLister;
+use super::reader::*;
 use super::writer::UpyunWriter;
 use super::writer::UpyunWriters;
 
@@ -102,11 +102,11 @@ impl Builder for UpyunBuilder {
     type Config = UpyunConfig;
 
     /// Builds the backend and returns the result of UpyunBackend.
-    fn build(self) -> Result<impl Access> {
-        debug!("backend build started: {:?}", &self);
+    fn build(self) -> Result<impl Service> {
+        debug!("backend build started: {:?}", self);
 
         let root = normalize_root(&self.config.root.clone().unwrap_or_default());
-        debug!("backend use root {}", &root);
+        debug!("backend use root {}", root);
 
         // Handle bucket.
         if self.config.bucket.is_empty() {
@@ -115,7 +115,7 @@ impl Builder for UpyunBuilder {
                 .with_context("service", UPYUN_SCHEME));
         }
 
-        debug!("backend use bucket {}", &self.config.bucket);
+        debug!("backend use bucket {}", self.config.bucket);
 
         let operator = match &self.config.operator {
             Some(operator) => Ok(operator.clone()),
@@ -138,40 +138,35 @@ impl Builder for UpyunBuilder {
 
         Ok(UpyunBackend {
             core: Arc::new(UpyunCore {
-                info: {
-                    let am = AccessorInfo::default();
-                    am.set_scheme(UPYUN_SCHEME)
-                        .set_root(&root)
-                        .set_native_capability(Capability {
-                            stat: true,
+                info: ServiceInfo::new(UPYUN_SCHEME, &root, ""),
+                capability: Capability {
+                    stat: true,
 
-                            create_dir: true,
+                    create_dir: true,
 
-                            read: true,
+                    read: true,
+                    read_with_suffix: true,
 
-                            write: true,
-                            write_can_empty: true,
-                            write_can_multi: true,
-                            write_with_cache_control: true,
-                            write_with_content_type: true,
+                    write: true,
+                    write_can_empty: true,
+                    write_can_multi: true,
+                    write_with_cache_control: true,
+                    write_with_content_type: true,
 
-                            // https://help.upyun.com/knowledge-base/rest_api/#e5b9b6e8a18ce5bc8fe696ade782b9e7bbade4bca0
-                            write_multi_min_size: Some(1024 * 1024),
-                            write_multi_max_size: Some(50 * 1024 * 1024),
+                    // https://help.upyun.com/knowledge-base/rest_api/#e5b9b6e8a18ce5bc8fe696ade782b9e7bbade4bca0
+                    write_multi_min_size: Some(1024 * 1024),
+                    write_multi_max_size: Some(50 * 1024 * 1024),
 
-                            delete: true,
-                            rename: true,
-                            copy: true,
+                    delete: true,
+                    rename: true,
+                    copy: true,
 
-                            list: true,
-                            list_with_limit: true,
+                    list: true,
+                    list_with_limit: true,
 
-                            shared: true,
+                    shared: true,
 
-                            ..Default::default()
-                        });
-
-                    am.into()
+                    ..Default::default()
                 },
                 root,
                 operator,
@@ -185,98 +180,169 @@ impl Builder for UpyunBuilder {
 /// Backend for upyun services.
 #[derive(Debug, Clone)]
 pub struct UpyunBackend {
-    core: Arc<UpyunCore>,
+    pub(crate) core: Arc<UpyunCore>,
 }
 
-impl Access for UpyunBackend {
-    type Reader = HttpBody;
+impl Service for UpyunBackend {
+    type Reader = oio::StreamReader<UpyunReader>;
     type Writer = UpyunWriters;
     type Lister = oio::PageLister<UpyunLister>;
     type Deleter = oio::OneShotDeleter<UpyunDeleter>;
+    type Copier = oio::OneShotCopier;
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
+    fn info(&self) -> ServiceInfo {
         self.core.info.clone()
     }
 
-    async fn create_dir(&self, path: &str, _: OpCreateDir) -> Result<RpCreateDir> {
-        let resp = self.core.create_dir(path).await?;
+    fn capability(&self) -> Capability {
+        self.core.capability
+    }
+
+    async fn create_dir(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        _: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        let resp = self.core.create_dir(ctx, path).await?;
 
         let status = resp.status();
 
         match status {
             StatusCode::OK => Ok(RpCreateDir::default()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("CreateFolder")),
+                resp,
+            )),
         }
     }
 
-    async fn stat(&self, path: &str, _args: OpStat) -> Result<RpStat> {
-        let resp = self.core.info(path).await?;
+    async fn stat(&self, ctx: &OperationContext, path: &str, _args: OpStat) -> Result<RpStat> {
+        let resp = self.core.info(ctx, path).await?;
 
         let status = resp.status();
 
         match status {
             StatusCode::OK => parse_info(resp.headers()).map(RpStat::new),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetFileInfo")),
+                resp,
+            )),
         }
     }
+    fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
+        let output: oio::StreamReader<UpyunReader> = {
+            Ok(oio::StreamReader::new(UpyunReader::new(
+                self.clone(),
+                ctx.clone(),
+                path,
+                args,
+            )))
+        }?;
 
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let resp = self.core.download_file(path, args.range()).await?;
+        Ok(output)
+    }
 
-        let status = resp.status();
+    fn write(&self, ctx: &OperationContext, path: &str, args: OpWrite) -> Result<Self::Writer> {
+        let output: UpyunWriters = {
+            let concurrent = args.concurrent();
+            let writer = UpyunWriter::new(self.core.clone(), ctx.clone(), args, path.to_string());
 
-        match status {
-            StatusCode::OK | StatusCode::PARTIAL_CONTENT => {
-                Ok((RpRead::default(), resp.into_body()))
+            let w = oio::MultipartWriter::new(ctx.executor().clone(), writer, concurrent);
+
+            Ok(w)
+        }?;
+
+        Ok(output)
+    }
+
+    fn delete(&self, ctx: &OperationContext) -> Result<Self::Deleter> {
+        let output: oio::OneShotDeleter<UpyunDeleter> = {
+            Ok(oio::OneShotDeleter::new(UpyunDeleter::new(
+                self.core.clone(),
+                ctx.clone(),
+            )))
+        }?;
+
+        Ok(output)
+    }
+
+    fn list(&self, ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
+        let output: oio::PageLister<UpyunLister> = {
+            let l = UpyunLister::new(self.core.clone(), ctx.clone(), path, args.limit());
+            Ok(oio::PageLister::new(l))
+        }?;
+
+        Ok(output)
+    }
+
+    fn copy(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpCopy,
+    ) -> Result<Self::Copier> {
+        let backend = self.clone();
+        let core = self.core.clone();
+        let ctx = ctx.clone();
+        let from = from.to_string();
+        let to = to.to_string();
+        let source_content_length_hint = args.source_content_length_hint();
+
+        Ok(oio::OneShotCopier::new(async move {
+            let source_size = match source_content_length_hint {
+                Some(size) => size,
+                None => backend
+                    .stat(&ctx, &from, OpStat::default())
+                    .await?
+                    .into_metadata()
+                    .content_length(),
+            };
+
+            let resp = core.copy(&ctx, &from, &to).await?;
+            let status = resp.status();
+
+            match status {
+                StatusCode::OK => Ok(MetadataBuilder::file(source_size).build()),
+                _ => Err(parse_error(
+                    ErrorContext::new(ServiceOperation("CopyFile")),
+                    resp,
+                )),
             }
-            _ => {
-                let (part, mut body) = resp.into_parts();
-                let buf = body.to_buffer().await?;
-                Err(parse_error(Response::from_parts(part, buf)))
-            }
-        }
+        }))
     }
 
-    async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        let concurrent = args.concurrent();
-        let writer = UpyunWriter::new(self.core.clone(), args, path.to_string());
-
-        let w = oio::MultipartWriter::new(self.core.info.clone(), writer, concurrent);
-
-        Ok((RpWrite::default(), w))
-    }
-
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        Ok((
-            RpDelete::default(),
-            oio::OneShotDeleter::new(UpyunDeleter::new(self.core.clone())),
-        ))
-    }
-
-    async fn list(&self, path: &str, args: OpList) -> Result<(RpList, Self::Lister)> {
-        let l = UpyunLister::new(self.core.clone(), path, args.limit());
-        Ok((RpList::default(), oio::PageLister::new(l)))
-    }
-
-    async fn copy(&self, from: &str, to: &str, _args: OpCopy) -> Result<RpCopy> {
-        let resp = self.core.copy(from, to).await?;
-
-        let status = resp.status();
-
-        match status {
-            StatusCode::OK => Ok(RpCopy::default()),
-            _ => Err(parse_error(resp)),
-        }
-    }
-
-    async fn rename(&self, from: &str, to: &str, _args: OpRename) -> Result<RpRename> {
-        let resp = self.core.move_object(from, to).await?;
+    async fn rename(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        _args: OpRename,
+    ) -> Result<RpRename> {
+        let resp = self.core.move_object(ctx, from, to).await?;
 
         let status = resp.status();
 
         match status {
             StatusCode::OK => Ok(RpRename::default()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("MoveFile")),
+                resp,
+            )),
         }
+    }
+
+    async fn presign(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpPresign,
+    ) -> Result<RpPresign> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
     }
 }

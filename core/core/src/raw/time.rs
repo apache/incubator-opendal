@@ -18,15 +18,16 @@
 //! Time related utils.
 
 use crate::*;
-use jiff::SignedDuration;
+
 use std::fmt;
 use std::ops::{Add, AddAssign, Sub, SubAssign};
 use std::str::FromStr;
 
+pub use jiff::SignedDuration;
 pub use std::time::{Duration, UNIX_EPOCH};
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
 pub use std::time::{Instant, SystemTime};
-#[cfg(target_arch = "wasm32")]
+#[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 pub use web_time::{Instant, SystemTime};
 
 /// An instant in time represented as the number of nanoseconds since the Unix epoch.
@@ -179,12 +180,12 @@ impl From<jiff::Timestamp> for Timestamp {
 
 impl From<Timestamp> for SystemTime {
     fn from(ts: Timestamp) -> Self {
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
         {
             SystemTime::from(ts.0)
         }
 
-        #[cfg(target_arch = "wasm32")]
+        #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
         {
             use std::time::SystemTime as StdSystemTime;
 
@@ -199,12 +200,12 @@ impl TryFrom<SystemTime> for Timestamp {
 
     fn try_from(t: SystemTime) -> Result<Self> {
         let t = {
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
             {
                 t
             }
 
-            #[cfg(target_arch = "wasm32")]
+            #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
             {
                 <web_time::SystemTime as web_time::web::SystemTimeExt>::to_std(t)
             }
@@ -254,7 +255,6 @@ impl SubAssign<Duration> for Timestamp {
     }
 }
 
-/// Convert an unsigned [`Duration`] into a jiff [`SignedDuration`].
 /// Parse a duration encoded either as ISO-8601 (e.g. `PT5M`) or friendly (e.g. `5m`).
 #[inline]
 pub fn signed_to_duration(value: &str) -> Result<Duration> {
@@ -262,7 +262,13 @@ pub fn signed_to_duration(value: &str) -> Result<Duration> {
         Error::new(ErrorKind::ConfigInvalid, "failed to parse duration").set_source(err)
     })?;
 
-    Duration::try_from(signed).map_err(|err| {
+    signed_duration_to_duration(signed)
+}
+
+/// Convert a jiff [`SignedDuration`] into an unsigned [`Duration`].
+#[inline]
+pub fn signed_duration_to_duration(value: SignedDuration) -> Result<Duration> {
+    Duration::try_from(value).map_err(|err| {
         Error::new(
             ErrorKind::ConfigInvalid,
             "duration must not be negative or overflow",
@@ -303,5 +309,10 @@ mod tests {
         let s = "Sat, 29 Oct 1994 19:43:31 +0000";
         let v = Timestamp::parse_rfc2822(s).unwrap();
         assert_eq!("Sat, 29 Oct 1994 19:43:31 GMT", v.format_http_date());
+    }
+
+    #[test]
+    fn test_signed_duration_to_duration_rejects_negative_values() {
+        assert!(signed_duration_to_duration(SignedDuration::from_secs(-1)).is_err());
     }
 }

@@ -19,30 +19,34 @@ use std::sync::Arc;
 
 use http::StatusCode;
 
+use super::core::parse_error;
 use super::core::*;
-use super::error::parse_error;
 use opendal_core::raw::oio;
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct WebdavDeleter {
     core: Arc<WebdavCore>,
+    ctx: OperationContext,
 }
 
 impl WebdavDeleter {
-    pub fn new(core: Arc<WebdavCore>) -> Self {
-        Self { core }
+    pub fn new(core: Arc<WebdavCore>, ctx: OperationContext) -> Self {
+        Self { core, ctx }
     }
 }
 
 impl oio::OneShotDelete for WebdavDeleter {
     async fn delete_once(&self, path: String, _: OpDelete) -> Result<()> {
-        let resp = self.core.webdav_delete(&path).await?;
+        let resp = self.core.webdav_delete(&self.ctx, &path).await?;
 
         let status = resp.status();
         match status {
             StatusCode::NO_CONTENT | StatusCode::NOT_FOUND => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Delete")),
+                resp,
+            )),
         }
     }
 }

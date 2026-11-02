@@ -21,7 +21,7 @@ use futures::AsyncWriteExt;
 
 use crate::*;
 
-/// StdWriter is the adapter of [`std::io::Write`] for [`BlockingWriter`].
+/// `StdWriter` adapts a [`crate::blocking::Writer`] to [`std::io::Write`].
 ///
 /// Users can use this adapter in cases where they need to use [`std::io::Write`] related trait.
 ///

@@ -50,11 +50,11 @@ impl opendal_core::Configurator for SledConfig {
     fn from_uri(uri: &opendal_core::OperatorUri) -> opendal_core::Result<Self> {
         let mut map = uri.options().clone();
 
-        if let Some(path) = uri.root() {
-            if !path.is_empty() {
-                map.entry("datadir".to_string())
-                    .or_insert_with(|| format!("/{path}"));
-            }
+        if let Some(path) = uri.root()
+            && !path.is_empty()
+        {
+            map.entry("datadir".to_string())
+                .or_insert_with(|| format!("/{path}"));
         }
 
         Self::from_iter(map)

@@ -25,6 +25,7 @@ pub type AlluxioWriters = AlluxioWriter;
 
 pub struct AlluxioWriter {
     core: Arc<AlluxioCore>,
+    ctx: OperationContext,
 
     _op: OpWrite,
     path: String,
@@ -32,9 +33,10 @@ pub struct AlluxioWriter {
 }
 
 impl AlluxioWriter {
-    pub fn new(core: Arc<AlluxioCore>, _op: OpWrite, path: String) -> Self {
+    pub fn new(core: Arc<AlluxioCore>, ctx: OperationContext, _op: OpWrite, path: String) -> Self {
         AlluxioWriter {
             core,
+            ctx,
             _op,
             path,
             stream_id: None,
@@ -47,22 +49,22 @@ impl oio::Write for AlluxioWriter {
         let stream_id = match self.stream_id {
             Some(stream_id) => stream_id,
             None => {
-                let stream_id = self.core.create_file(&self.path).await?;
+                let stream_id = self.core.create_file(&self.ctx, &self.path).await?;
                 self.stream_id = Some(stream_id);
                 stream_id
             }
         };
-        self.core.write(stream_id, bs).await?;
+        self.core.write(&self.ctx, stream_id, bs).await?;
         Ok(())
     }
 
     async fn close(&mut self) -> Result<Metadata> {
         let Some(stream_id) = self.stream_id else {
-            return Ok(Metadata::default());
+            return Ok(MetadataBuilder::unknown().build());
         };
-        self.core.close(stream_id).await?;
+        self.core.close(&self.ctx, stream_id).await?;
 
-        Ok(Metadata::default())
+        Ok(MetadataBuilder::unknown().build())
     }
 
     async fn abort(&mut self) -> Result<()> {

@@ -85,7 +85,7 @@ public class OperatorOutputStream extends OutputStream {
 
     private static native long constructWriter(long op, String path, WriteOptions options);
 
-    private static native long disposeWriter(long writer);
+    private static native void disposeWriter(long writer);
 
-    private static native byte[] writeBytes(long writer, byte[] bytes);
+    private static native void writeBytes(long writer, byte[] bytes);
 }

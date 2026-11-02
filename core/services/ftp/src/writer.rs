@@ -15,13 +15,13 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use asyncband::pool::bounded;
 use bytes::Buf;
-use fastpool::bounded;
-use futures::AsyncWrite;
-use futures::AsyncWriteExt;
+use tokio::io::AsyncWrite;
+use tokio::io::AsyncWriteExt;
 
 use super::core::Manager;
-use super::err::format_ftp_error;
+use super::core::format_ftp_error;
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -110,7 +110,7 @@ impl oio::Write for FtpWriter {
             }
         }
 
-        Ok(Metadata::default())
+        Ok(MetadataBuilder::unknown().build())
     }
 
     async fn abort(&mut self) -> Result<()> {

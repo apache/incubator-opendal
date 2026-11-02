@@ -21,31 +21,35 @@ use std::sync::Arc;
 use bytes::Buf;
 use http::StatusCode;
 
+use super::core::parse_error;
 use super::core::*;
-use super::error::parse_error;
 use opendal_core::raw::oio::BatchDeleteResult;
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct OssDeleter {
     core: Arc<OssCore>,
+    ctx: OperationContext,
 }
 
 impl OssDeleter {
-    pub fn new(core: Arc<OssCore>) -> Self {
-        Self { core }
+    pub fn new(core: Arc<OssCore>, ctx: OperationContext) -> Self {
+        Self { core, ctx }
     }
 }
 
 impl oio::BatchDelete for OssDeleter {
     async fn delete_once(&self, path: String, args: OpDelete) -> Result<()> {
-        let resp = self.core.oss_delete_object(&path, &args).await?;
+        let resp = self.core.oss_delete_object(&self.ctx, &path, &args).await?;
 
         let status = resp.status();
 
         match status {
             StatusCode::NO_CONTENT | StatusCode::NOT_FOUND => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("DeleteObject")),
+                resp,
+            )),
         }
     }
 
@@ -57,12 +61,15 @@ impl oio::BatchDelete for OssDeleter {
             .map(|path| (path.0.to_owned(), path.1.clone()))
             .collect();
 
-        let resp = self.core.oss_delete_objects(batch).await?;
+        let resp = self.core.oss_delete_objects(&self.ctx, batch).await?;
 
         let status = resp.status();
 
         if status != StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("DeleteMultipleObjects")),
+                resp,
+            ));
         }
 
         let bs = resp.into_body();
@@ -79,15 +86,22 @@ impl oio::BatchDelete for OssDeleter {
 
         let mut batched_result = BatchDeleteResult {
             succeeded: Vec::with_capacity(result.deleted.len()),
-            failed: Vec::with_capacity(keys.len() - result.deleted.len()),
+            // `result.deleted.len()` is server-controlled and may exceed `keys.len()`; use
+            // `saturating_sub` (mirroring services/tos) to avoid an unsigned underflow that
+            // wraps to a huge `with_capacity` (release: abort).
+            failed: Vec::with_capacity(keys.len().saturating_sub(result.deleted.len())),
         };
 
         for i in result.deleted {
             let path = build_rel_path(&self.core.root, &i.key);
-            let mut op = OpDelete::default();
-            if let Some(version) = &i.version_id {
-                op = op.with_version(version);
-            }
+            let op = OpDelete::from_options(
+                &Capability::default(),
+                options::DeleteOptions {
+                    version: i.version_id,
+                    ..Default::default()
+                },
+            )
+            .expect("delete result does not contain a logical condition");
             let object = (path, op);
             keys.remove(&object);
             batched_result.succeeded.push(object);

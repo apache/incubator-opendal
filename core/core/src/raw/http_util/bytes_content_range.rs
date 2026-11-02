@@ -75,7 +75,11 @@ impl BytesContentRange {
     /// Get the length that specified by this BytesContentRange, return `None` if range is not known.
     pub fn len(&self) -> Option<u64> {
         if let (Some(start), Some(end)) = (self.0, self.1) {
-            Some(end - start + 1)
+            if end < start {
+                Some(0)
+            } else {
+                Some(end - start + 1)
+            }
         } else {
             None
         }
@@ -163,6 +167,14 @@ impl FromStr for BytesContentRange {
         }
         let start: u64 = v[0].parse().map_err(parse_int_error)?;
         let end: u64 = v[1].parse().map_err(parse_int_error)?;
+        if end < start {
+            return Err(Error::new(
+                ErrorKind::Unexpected,
+                "header content range is invalid: end is less than start",
+            )
+            .with_operation("BytesContentRange::from_str")
+            .with_context("value", value));
+        }
         let mut bcr = BytesContentRange::default().with_range(start, end);
 
         // Handle size part first.
@@ -235,5 +247,25 @@ mod tests {
             .with_range(0, 1023)
             .with_size(1024);
         assert_eq!(h.to_header(), "bytes 0-1023/1024");
+    }
+
+    #[test]
+    fn test_bytes_content_range_from_str_invalid_end_less_than_start() {
+        let cases = vec!["bytes 100-50/*", "bytes 10-9/100", "bytes 1-0/100"];
+
+        for input in cases {
+            let result: Result<BytesContentRange> = input.parse();
+            assert!(
+                result.is_err(),
+                "expected error for invalid content range {input}, got {result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_bytes_content_range_len_no_underflow() {
+        // len() should not underflow when end < start.
+        let bcr = BytesContentRange::default().with_range(100, 50);
+        assert_eq!(bcr.len(), Some(0));
     }
 }

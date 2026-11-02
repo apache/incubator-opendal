@@ -34,12 +34,12 @@ impl CompfsDeleter {
 impl oio::OneShotDelete for CompfsDeleter {
     async fn delete_once(&self, path: String, _: OpDelete) -> Result<()> {
         let res = if path.ends_with('/') {
-            let path = self.core.prepare_path(&path);
+            let path = self.core.prepare_path(&path)?;
             self.core
                 .exec(move || async move { compio::fs::remove_dir(path).await })
                 .await
         } else {
-            let path = self.core.prepare_path(&path);
+            let path = self.core.prepare_path(&path)?;
             self.core
                 .exec(move || async move { compio::fs::remove_file(path).await })
                 .await

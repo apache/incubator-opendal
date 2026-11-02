@@ -18,20 +18,17 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use http::Response;
-use http::StatusCode;
+use asyncband::once::OnceCell;
 use log::debug;
-use mea::rwlock::RwLock;
 
 use super::SEAFILE_SCHEME;
 use super::config::SeafileConfig;
 use super::core::SeafileCore;
-use super::core::SeafileSigner;
 use super::core::parse_dir_detail;
 use super::core::parse_file_detail;
 use super::deleter::SeafileDeleter;
-use super::error::parse_error;
 use super::lister::SeafileLister;
+use super::reader::*;
 use super::writer::SeafileWriter;
 use super::writer::SeafileWriters;
 use opendal_core::raw::*;
@@ -119,11 +116,11 @@ impl Builder for SeafileBuilder {
     type Config = SeafileConfig;
 
     /// Builds the backend and returns the result of SeafileBackend.
-    fn build(self) -> Result<impl Access> {
-        debug!("backend build started: {:?}", &self);
+    fn build(self) -> Result<impl Service> {
+        debug!("backend build started: {:?}", self);
 
         let root = normalize_root(&self.config.root.clone().unwrap_or_default());
-        debug!("backend use root {}", &root);
+        debug!("backend use root {}", root);
 
         // Handle bucket.
         if self.config.repo_name.is_empty() {
@@ -132,7 +129,7 @@ impl Builder for SeafileBuilder {
                 .with_context("service", SEAFILE_SCHEME));
         }
 
-        debug!("backend use repo_name {}", &self.config.repo_name);
+        debug!("backend use repo_name {}", self.config.repo_name);
 
         let endpoint = match &self.config.endpoint {
             Some(endpoint) => Ok(endpoint.clone()),
@@ -157,35 +154,30 @@ impl Builder for SeafileBuilder {
 
         Ok(SeafileBackend {
             core: Arc::new(SeafileCore {
-                info: {
-                    let am = AccessorInfo::default();
-                    am.set_scheme(SEAFILE_SCHEME)
-                        .set_root(&root)
-                        .set_native_capability(Capability {
-                            stat: true,
+                info: ServiceInfo::new(SEAFILE_SCHEME, &root, ""),
+                capability: Capability {
+                    create_dir: true,
+                    stat: true,
 
-                            read: true,
+                    read: true,
 
-                            write: true,
-                            write_can_empty: true,
+                    write: true,
+                    write_can_empty: true,
 
-                            delete: true,
+                    delete: true,
 
-                            list: true,
+                    list: true,
 
-                            shared: true,
+                    shared: true,
 
-                            ..Default::default()
-                        });
-
-                    am.into()
+                    ..Default::default()
                 },
                 root,
                 endpoint,
                 username,
                 password,
                 repo_name: self.config.repo_name.clone(),
-                signer: Arc::new(RwLock::new(SeafileSigner::default())),
+                auth_info: Arc::new(OnceCell::new()),
             }),
         })
     }
@@ -194,69 +186,130 @@ impl Builder for SeafileBuilder {
 /// Backend for seafile services.
 #[derive(Debug, Clone)]
 pub struct SeafileBackend {
-    core: Arc<SeafileCore>,
+    pub(crate) core: Arc<SeafileCore>,
 }
 
-impl Access for SeafileBackend {
-    type Reader = HttpBody;
+impl Service for SeafileBackend {
+    type Reader = oio::StreamReader<SeafileReader>;
     type Writer = SeafileWriters;
     type Lister = oio::PageLister<SeafileLister>;
     type Deleter = oio::OneShotDeleter<SeafileDeleter>;
+    type Copier = ();
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
+    fn info(&self) -> ServiceInfo {
         self.core.info.clone()
     }
 
-    async fn stat(&self, path: &str, _args: OpStat) -> Result<RpStat> {
+    fn capability(&self) -> Capability {
+        self.core.capability
+    }
+
+    async fn create_dir(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        _args: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        self.core.create_dir(ctx, path).await?;
+        Ok(RpCreateDir::default())
+    }
+
+    async fn stat(&self, ctx: &OperationContext, path: &str, _args: OpStat) -> Result<RpStat> {
         if path == "/" {
-            return Ok(RpStat::new(Metadata::new(EntryMode::DIR)));
+            return Ok(RpStat::new(MetadataBuilder::dir().build()));
         }
 
         let metadata = if path.ends_with('/') {
-            let dir_detail = self.core.dir_detail(path).await?;
+            let dir_detail = self.core.dir_detail(ctx, path).await?;
             parse_dir_detail(dir_detail)
         } else {
-            let file_detail = self.core.file_detail(path).await?;
+            let file_detail = self.core.file_detail(ctx, path).await?;
 
             parse_file_detail(file_detail)
         };
 
         metadata.map(RpStat::new)
     }
+    fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
+        let output: oio::StreamReader<SeafileReader> = {
+            Ok(oio::StreamReader::new(SeafileReader::new(
+                self.clone(),
+                ctx.clone(),
+                path,
+                args,
+            )))
+        }?;
 
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let resp = self.core.download_file(path, args.range()).await?;
-
-        let status = resp.status();
-
-        match status {
-            StatusCode::OK | StatusCode::PARTIAL_CONTENT => {
-                Ok((RpRead::default(), resp.into_body()))
-            }
-            _ => {
-                let (part, mut body) = resp.into_parts();
-                let buf = body.to_buffer().await?;
-                Err(parse_error(Response::from_parts(part, buf)))
-            }
-        }
+        Ok(output)
     }
 
-    async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        let w = SeafileWriter::new(self.core.clone(), args, path.to_string());
-        let w = oio::OneShotWriter::new(w);
+    fn write(&self, ctx: &OperationContext, path: &str, args: OpWrite) -> Result<Self::Writer> {
+        let output: SeafileWriters = {
+            let w = SeafileWriter::new(self.core.clone(), ctx.clone(), args, path.to_string());
+            let w = oio::OneShotWriter::new(w);
 
-        Ok((RpWrite::default(), w))
+            Ok(w)
+        }?;
+
+        Ok(output)
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        Ok((
-            RpDelete::default(),
-            oio::OneShotDeleter::new(SeafileDeleter::new(self.core.clone())),
+    fn delete(&self, ctx: &OperationContext) -> Result<Self::Deleter> {
+        let output: oio::OneShotDeleter<SeafileDeleter> = {
+            Ok(oio::OneShotDeleter::new(SeafileDeleter::new(
+                self.core.clone(),
+                ctx.clone(),
+            )))
+        }?;
+
+        Ok(output)
+    }
+
+    fn list(&self, ctx: &OperationContext, path: &str, _args: OpList) -> Result<Self::Lister> {
+        let output: oio::PageLister<SeafileLister> = {
+            let l = SeafileLister::new(self.core.clone(), ctx.clone(), path);
+            Ok(oio::PageLister::new(l))
+        }?;
+
+        Ok(output)
+    }
+
+    fn copy(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpCopy,
+    ) -> Result<Self::Copier> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
         ))
     }
 
-    async fn list(&self, path: &str, _args: OpList) -> Result<(RpList, Self::Lister)> {
-        let l = SeafileLister::new(self.core.clone(), path);
-        Ok((RpList::default(), oio::PageLister::new(l)))
+    async fn rename(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpRename,
+    ) -> Result<RpRename> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn presign(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpPresign,
+    ) -> Result<RpPresign> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
     }
 }

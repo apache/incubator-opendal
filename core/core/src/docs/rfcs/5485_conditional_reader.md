@@ -72,6 +72,10 @@ let reader = op.reader_with("path/to/file")
     .await?;
 ```
 
+All conditional reads resolve the current live target before evaluating the
+condition. If no live target exists, the operation returns
+`ErrorKind::NotFound`.
+
 
 # Reference-level explanation
 

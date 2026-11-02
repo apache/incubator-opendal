@@ -15,65 +15,110 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use bytes::BytesMut;
-use futures::AsyncReadExt;
-use hdrs::AsyncFile;
-use tokio::io::ReadBuf;
-
+use super::core::HdfsCore;
+use super::writer::HdfsWriter;
 use opendal_core::raw::*;
 use opendal_core::*;
+use std::sync::Arc;
 
-pub struct HdfsReader<F> {
-    f: F,
-    read: usize,
-    size: usize,
-    buf_size: usize,
-    buf: BytesMut,
+/// Reader returned by this backend.
+pub struct HdfsReader {
+    core: Arc<HdfsCore>,
+    path: String,
 }
 
-impl<F> HdfsReader<F> {
-    pub fn new(f: F, size: usize) -> Self {
+impl HdfsReader {
+    pub(super) fn new(core: Arc<HdfsCore>, path: &str) -> Self {
         Self {
-            f,
-            read: 0,
-            size,
-            // Use 2 MiB as default value.
-            buf_size: 2 * 1024 * 1024,
-            buf: BytesMut::new(),
+            core,
+            path: path.to_string(),
         }
     }
 }
 
-impl oio::Read for HdfsReader<AsyncFile> {
-    async fn read(&mut self) -> Result<Buffer> {
-        if self.read >= self.size {
+pub struct HdfsReaderHandle {
+    file: Arc<hdrs::File>,
+}
+
+impl HdfsReaderHandle {
+    pub(super) fn new(file: hdrs::File) -> Self {
+        Self { file: file.into() }
+    }
+}
+
+impl oio::PositionRead for HdfsReader {
+    type Handle = HdfsReaderHandle;
+
+    async fn open(&self) -> Result<Self::Handle> {
+        let file = self.core.hdfs_open(&self.path).await?;
+        Ok(HdfsReaderHandle::new(file))
+    }
+
+    async fn read_at(handle: &Self::Handle, offset: u64, size: usize) -> Result<Buffer> {
+        if size == 0 {
             return Ok(Buffer::new());
         }
 
-        let size = (self.size - self.read).min(self.buf_size);
-        self.buf.reserve(size);
+        let file = handle.file.clone();
+        let buf = tokio::task::spawn_blocking(move || {
+            let mut buf = vec![0; size];
+            let n = file.read_at(&mut buf, offset).map_err(new_std_io_error)?;
+            buf.truncate(n);
+            Ok::<_, Error>(Buffer::from(buf))
+        })
+        .await
+        .map_err(|e| Error::new(ErrorKind::Unexpected, "tokio task join failed").set_source(e))??;
 
-        let buf = &mut self.buf.spare_capacity_mut()[..size];
-        let mut read_buf: ReadBuf = ReadBuf::uninit(buf);
+        Ok(buf)
+    }
+}
 
-        // SAFETY: Read at most `limit` bytes into `read_buf`.
-        unsafe {
-            read_buf.assume_init(size);
+pub struct HdfsLazyWriter {
+    core: Arc<HdfsCore>,
+    path: String,
+    op: OpWrite,
+    inner: Option<HdfsWriter<hdrs::AsyncFile>>,
+}
+
+impl HdfsLazyWriter {
+    pub(super) fn new(core: Arc<HdfsCore>, path: &str, op: OpWrite) -> Self {
+        Self {
+            core,
+            path: path.to_string(),
+            op,
+            inner: None,
+        }
+    }
+
+    async fn inner(&mut self) -> Result<&mut HdfsWriter<hdrs::AsyncFile>> {
+        if self.inner.is_none() {
+            let (target_path, tmp_path, f, target_exists, initial_size) =
+                self.core.hdfs_write(&self.path, &self.op).await?;
+
+            self.inner = Some(HdfsWriter::new(
+                target_path,
+                tmp_path,
+                f,
+                Arc::clone(&self.core.client),
+                target_exists,
+                initial_size,
+            ));
         }
 
-        let n = self
-            .f
-            .read(read_buf.initialize_unfilled())
-            .await
-            .map_err(new_std_io_error)?;
-        read_buf.advance(n);
-        self.read += n;
+        Ok(self.inner.as_mut().expect("writer must be initialized"))
+    }
+}
 
-        // Safety: We make sure that bs contains `n` more bytes.
-        let filled = read_buf.filled().len();
-        unsafe { self.buf.set_len(filled) }
+impl oio::Write for HdfsLazyWriter {
+    async fn write(&mut self, bs: Buffer) -> Result<()> {
+        self.inner().await?.write(bs).await
+    }
 
-        let frozen = self.buf.split().freeze();
-        Ok(Buffer::from(frozen))
+    async fn close(&mut self) -> Result<Metadata> {
+        self.inner().await?.close().await
+    }
+
+    async fn abort(&mut self) -> Result<()> {
+        self.inner().await?.abort().await
     }
 }

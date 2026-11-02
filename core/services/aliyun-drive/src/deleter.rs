@@ -26,17 +26,18 @@ use opendal_core::*;
 
 pub struct AliyunDriveDeleter {
     core: Arc<AliyunDriveCore>,
+    ctx: OperationContext,
 }
 
 impl AliyunDriveDeleter {
-    pub fn new(core: Arc<AliyunDriveCore>) -> Self {
-        AliyunDriveDeleter { core }
+    pub fn new(core: Arc<AliyunDriveCore>, ctx: OperationContext) -> Self {
+        AliyunDriveDeleter { core, ctx }
     }
 }
 
 impl oio::OneShotDelete for AliyunDriveDeleter {
     async fn delete_once(&self, path: String, _: OpDelete) -> Result<()> {
-        let res = match self.core.get_by_path(&path).await {
+        let res = match self.core.get_by_path(&self.ctx, &path).await {
             Ok(output) => Some(output),
             Err(err) if err.kind() == ErrorKind::NotFound => None,
             Err(err) => return Err(err),
@@ -44,7 +45,7 @@ impl oio::OneShotDelete for AliyunDriveDeleter {
         if let Some(res) = res {
             let file: AliyunDriveFile =
                 serde_json::from_reader(res.reader()).map_err(new_json_serialize_error)?;
-            self.core.delete_path(&file.file_id).await?;
+            self.core.delete_path(&self.ctx, &file.file_id).await?;
         }
         Ok(())
     }

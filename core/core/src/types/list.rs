@@ -25,11 +25,10 @@ use futures::Stream;
 use crate::raw::*;
 use crate::*;
 
-/// Lister is designed to list entries at given path in an asynchronous
-/// manner.
+/// `Lister` lists entries at a given path asynchronously.
 ///
-/// - Lister implements `Stream<Item = Result<Entry>>`.
-/// - Lister will return `None` if there is no more entries or error has been returned.
+/// - `Lister` implements `Stream<Item = Result<Entry>>`.
+/// - `Lister` returns `None` after it yields all entries or encounters an error.
 pub struct Lister {
     lister: Option<oio::Lister>,
 
@@ -39,13 +38,18 @@ pub struct Lister {
 
 /// # Safety
 ///
-/// Lister will only be accessed by `&mut Self`
+/// All access to `Lister`'s internal state requires `&mut self`.
 unsafe impl Sync for Lister {}
 
 impl Lister {
     /// Create a new lister.
-    pub(crate) async fn create(acc: Accessor, path: &str, args: OpList) -> Result<Self> {
-        let (_, lister) = acc.list(path, args).await?;
+    pub(crate) fn create(
+        ctx: OperationContext,
+        srv: Servicer,
+        path: &str,
+        args: OpList,
+    ) -> Result<Self> {
+        let lister = srv.list(&ctx, path, args)?;
 
         Ok(Self {
             lister: Some(lister),
@@ -60,7 +64,7 @@ impl Stream for Lister {
     type Item = Result<Entry>;
 
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        // Returns `None` if we have errored.
+        // Returns `None` if we encountered an error.
         if self.errored {
             return Poll::Ready(None);
         }

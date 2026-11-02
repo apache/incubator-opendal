@@ -21,6 +21,7 @@ description = "Apache OpenDAL™: One Layer, All Storage."
 exclude = ["/tests/"]
 keywords = ["storage", "fs", "s3", "azblob", "gcs"]
 name = "opendal-core"
+readme = "README.md"
 
 authors = { workspace = true }
 edition = { workspace = true }
@@ -37,60 +38,57 @@ unused_async = "warn"
 all-features = true
 
 [features]
-default = ["reqwest-rustls-tls", "executors-tokio"]
-
-# Enable reqwest rustls tls support.
-reqwest-rustls-tls = ["reqwest/rustls-tls"]
+default = ["executors-tokio"]
 
 # Enable opendal's blocking support.
 blocking = ["internal-tokio-rt"]
 
-# Enable path cache.
-# This is an internal feature, and should not be used by users.
-internal-path-cache = ["dep:moka"]
 # Enable tokio runtime.
 internal-tokio-rt = ["tokio/rt-multi-thread"]
 
 # Enable tokio executors support.
 executors-tokio = ["tokio/rt"]
 
+# Enable reqsign integration.
+#
+# This wires OpenDAL's `HttpTransporter` into reqsign as an `HttpSend` backend,
+# so signing services (s3, gcs, azblob, ...) can load credentials over HTTP.
+# Services that need request signing enable it automatically; it is off by
+# default so local-only services (memory, fs, ...) don't pull in reqsign-core.
+reqsign = ["dep:reqsign-core"]
+
 # Deprecated: memory service is always enabled.
 services-memory = []
 
 [lib]
 bench = false
-doctest = false
 
 [dependencies]
 # Required dependencies
 anyhow = { version = "1.0.100", features = ["std"] }
+asyncband = { workspace = true, features = ["mutex", "once-cell"] }
 base64 = { workspace = true }
 bytes = { workspace = true }
 futures = { workspace = true, features = ["std", "async-await"] }
 http = { workspace = true }
-http-body = "1"
-jiff = { version = "0.2.17", features = ["serde"] }
+jiff = { version = "0.2.28", features = ["serde"] }
 log = { workspace = true }
-md-5 = "0.10"
-mea = { workspace = true }
+md-5 = "0.11.0"
 percent-encoding = "2"
 quick-xml = { workspace = true, features = ["serialize", "overlapped-lists"] }
-reqwest = { version = "0.12.24", features = [
-  "stream",
-], default-features = false }
+reqsign-core = { version = "3.2.0", default-features = false, optional = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["macros", "io-util"] }
-url = "2.5"
+url = { workspace = true }
 uuid = { workspace = true, features = ["serde", "v4"] }
 
-# Optional dependencies
-moka = { version = "0.12", optional = true, features = ["sync"] }
-
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-jiff = { version = "0.2.15", features = ["serde", "js"] }
+jiff = { version = "0.2.28", features = ["serde", "js"] }
 tokio = { workspace = true, features = ["time"] }
 uuid = { workspace = true, features = ["serde", "v4", "js"] }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
 web-time = { version = "1.1.0" }
 
 [dev-dependencies]
@@ -98,4 +96,9 @@ logforth = { workspace = true }
 pretty_assertions = "1"
 rand = { workspace = true }
 sha2 = { workspace = true }
-tokio = { workspace = true, features = ["fs", "macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = [
+  "fs",
+  "macros",
+  "rt-multi-thread",
+  "time",
+] }

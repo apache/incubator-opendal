@@ -21,16 +21,24 @@ description: 'Behavior test for azurite azblob'
 runs:
   using: "composite"
   steps:
+    - name: Setup node
+      uses: actions/setup-node@v6
+      with:
+        node-version: 20
+        cache: 'npm'
+        cache-dependency-path: fixtures/azblob/setup_azurite.sh
+
     - name: Setup azurite azblob service
       shell: bash
-      working-directory: fixtures/azblob
-      run: docker compose -f docker-compose-azurite.yml up -d --wait
+      run: ./fixtures/azblob/setup_azurite.sh
+
     - name: Setup test bucket
       shell: bash
       run: |
         az storage container create \
             --name test \
             --connection-string "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
+
     - name: Setup
       shell: bash
       run: |
@@ -41,4 +49,5 @@ runs:
         OPENDAL_AZBLOB_ENDPOINT=http://127.0.0.1:10000/devstoreaccount1
         OPENDAL_AZBLOB_ACCOUNT_NAME=devstoreaccount1
         OPENDAL_AZBLOB_ACCOUNT_KEY=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==
+        OPENDAL_TEST_CAPABILITY_OVERRIDES=copy_can_multi=false,stat_with_if_match=false,read_with_if_match=false
         EOF

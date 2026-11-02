@@ -5,7 +5,7 @@ There two implementations of WebHDFS REST API:
 
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [x] create_dir
 - [x] stat
@@ -17,9 +17,14 @@ This service can be used to:
 - [ ] rename
 - [ ] ~~presign~~
 
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
+
 ## Differences with HDFS
 
-[Hdfs][crate::services::Hdfs] is powered by HDFS's native java client. Users need to set up the HDFS services correctly. But webhdfs can access from HTTP API and no extra setup needed.
+The [HDFS service](https://docs.rs/opendal-service-hdfs) uses HDFS's native
+Java client and requires a working Java and Hadoop environment. WebHDFS uses
+the HTTP API instead.
 
 ## WebHDFS Compatibility Guidelines
 
@@ -41,14 +46,11 @@ This issue, identified as [HDFS-6641](https://issues.apache.org/jira/browse/HDFS
 
 In summary, OpenDAL WebHDFS is designed for optimal compatibility with HDFS, specifically versions 2.9 and later.
 
-## Configurations
+## Configuration
 
-- `root`: The root path of the WebHDFS service.
-- `endpoint`: The endpoint of the WebHDFS service.
-- `delegation`: The delegation token for WebHDFS.
-- `atomic_write_dir`: The tmp write dir of multi write for WebHDFS.Needs to be configured for multi write support.
-
-Refer to [`Builder`]'s public API docs for more information.
+Use [`crate::WebhdfsConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
 ## Examples
 
@@ -80,7 +82,7 @@ async fn main() -> Result<()> {
         // set atomic_write_dir for builder
         .atomic_write_dir(".opendal_tmp/");
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
 
     Ok(())
 }

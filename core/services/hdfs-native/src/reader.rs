@@ -15,48 +15,146 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use bytes::Bytes;
-use futures::StreamExt;
-use hdfs_native::HdfsError;
-use hdfs_native::file::FileReader;
-
-use crate::error::parse_hdfs_error;
+use super::core::HdfsNativeCore;
+use super::core::parse_hdfs_error;
+use super::lister::HdfsNativeLister;
+use super::writer::HdfsNativeWriter;
 use opendal_core::raw::*;
 use opendal_core::*;
+use std::sync::Arc;
 
+/// Reader returned by this backend.
 pub struct HdfsNativeReader {
-    read: usize,
-    size: usize,
-    stream: futures::stream::BoxStream<'static, Result<Bytes, HdfsError>>,
+    core: Arc<HdfsNativeCore>,
+    path: String,
 }
 
-unsafe impl Sync for HdfsNativeReader {}
-
 impl HdfsNativeReader {
-    pub fn new(f: FileReader, offset: usize, size: usize) -> Self {
-        let size = size.min(f.file_length() - offset);
-        HdfsNativeReader {
-            read: 0,
-            size,
-            stream: Box::pin(f.read_range_stream(offset, size)),
+    pub(super) fn new(core: Arc<HdfsNativeCore>, path: &str) -> Self {
+        Self {
+            core,
+            path: path.to_string(),
         }
     }
 }
 
-impl oio::Read for HdfsNativeReader {
-    async fn read(&mut self) -> Result<Buffer> {
-        if self.read >= self.size {
+pub struct HdfsNativeReaderHandle {
+    file: hdfs_native::file::FileReader,
+}
+
+impl HdfsNativeReaderHandle {
+    pub(super) fn new(file: hdfs_native::file::FileReader) -> Self {
+        Self { file }
+    }
+}
+
+impl oio::PositionRead for HdfsNativeReader {
+    type Handle = HdfsNativeReaderHandle;
+
+    async fn open(&self) -> Result<Self::Handle> {
+        let file = self.core.hdfs_open(&self.path).await?;
+        Ok(HdfsNativeReaderHandle::new(file))
+    }
+
+    async fn read_at(handle: &Self::Handle, offset: u64, size: usize) -> Result<Buffer> {
+        if size == 0 {
             return Ok(Buffer::new());
         }
 
-        if let Some(bytes) = self.stream.as_mut().next().await {
-            let bytes = bytes.map_err(parse_hdfs_error)?;
-            let buf = Buffer::from(bytes);
-            self.read += buf.len();
+        let Ok(offset) = usize::try_from(offset) else {
+            return Ok(Buffer::new());
+        };
 
-            Ok(buf)
-        } else {
-            Ok(Buffer::new())
+        let file_length = handle.file.file_length();
+        if offset >= file_length {
+            return Ok(Buffer::new());
+        }
+
+        let size = size.min(file_length - offset);
+        let bytes = handle
+            .file
+            .read_range(offset, size)
+            .await
+            .map_err(parse_hdfs_error)?;
+
+        Ok(Buffer::from(bytes))
+    }
+}
+
+pub struct HdfsNativeLazyWriter {
+    core: Arc<HdfsNativeCore>,
+    path: String,
+    args: OpWrite,
+    inner: Option<HdfsNativeWriter>,
+}
+
+impl HdfsNativeLazyWriter {
+    pub(super) fn new(core: Arc<HdfsNativeCore>, path: &str, args: OpWrite) -> Self {
+        Self {
+            core,
+            path: path.to_string(),
+            args,
+            inner: None,
+        }
+    }
+
+    async fn inner(&mut self) -> Result<&mut HdfsNativeWriter> {
+        if self.inner.is_none() {
+            let (f, initial_size) = self.core.hdfs_write(&self.path, &self.args).await?;
+            self.inner = Some(HdfsNativeWriter::new(f, initial_size));
+        }
+
+        Ok(self.inner.as_mut().expect("writer must be initialized"))
+    }
+}
+
+impl oio::Write for HdfsNativeLazyWriter {
+    async fn write(&mut self, bs: Buffer) -> Result<()> {
+        self.inner().await?.write(bs).await
+    }
+
+    async fn close(&mut self) -> Result<Metadata> {
+        self.inner().await?.close().await
+    }
+
+    async fn abort(&mut self) -> Result<()> {
+        self.inner().await?.abort().await
+    }
+}
+
+pub struct HdfsNativeLazyLister {
+    core: Arc<HdfsNativeCore>,
+    path: String,
+    inner: Option<Option<HdfsNativeLister>>,
+}
+
+impl HdfsNativeLazyLister {
+    pub(super) fn new(core: Arc<HdfsNativeCore>, path: &str) -> Self {
+        Self {
+            core,
+            path: path.to_string(),
+            inner: None,
+        }
+    }
+}
+
+impl oio::List for HdfsNativeLazyLister {
+    async fn next(&mut self) -> Result<Option<oio::Entry>> {
+        if self.inner.is_none() {
+            self.inner = Some(match self.core.hdfs_list(&self.path).await? {
+                Some((p, current_path)) => Some(HdfsNativeLister::new(
+                    &self.core.root,
+                    &self.core.client,
+                    &p,
+                    current_path,
+                )),
+                None => None,
+            });
+        }
+
+        match self.inner.as_mut().expect("lister must be initialized") {
+            Some(lister) => lister.next().await,
+            None => Ok(None),
         }
     }
 }

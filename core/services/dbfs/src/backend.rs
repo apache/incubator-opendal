@@ -24,9 +24,9 @@ use serde::Deserialize;
 
 use super::DBFS_SCHEME;
 use super::config::DbfsConfig;
-use super::core::DbfsCore;
+use super::core::parse_error;
+use super::core::{DbfsCore, ErrorContext};
 use super::deleter::DbfsDeleter;
-use super::error::parse_error;
 use super::lister::DbfsLister;
 use super::writer::DbfsWriter;
 use opendal_core::raw::*;
@@ -81,8 +81,8 @@ impl Builder for DbfsBuilder {
     type Config = DbfsConfig;
 
     /// Build a DbfsBackend.
-    fn build(self) -> Result<impl Access> {
-        debug!("backend build started: {:?}", &self);
+    fn build(self) -> Result<impl Service> {
+        debug!("backend build started: {:?}", self);
 
         let root = normalize_root(&self.config.root.unwrap_or_default());
         debug!("backend use root {root}");
@@ -93,7 +93,7 @@ impl Builder for DbfsBuilder {
                 .with_operation("Builder::build")
                 .with_context("service", DBFS_SCHEME)),
         }?;
-        debug!("backend use endpoint: {}", &endpoint);
+        debug!("backend use endpoint: {}", endpoint);
 
         let token = match self.config.token {
             Some(token) => token,
@@ -105,14 +105,28 @@ impl Builder for DbfsBuilder {
             }
         };
 
-        let client = HttpClient::new()?;
+        let capability = Capability {
+            stat: true,
+
+            write: true,
+            create_dir: true,
+            delete: true,
+            rename: true,
+
+            list: true,
+
+            shared: true,
+
+            ..Default::default()
+        };
+
         Ok(DbfsBackend {
             core: Arc::new(DbfsCore {
                 root,
                 endpoint: endpoint.to_string(),
                 token,
-                client,
             }),
+            capability,
         })
     }
 }
@@ -121,112 +135,165 @@ impl Builder for DbfsBuilder {
 #[derive(Debug, Clone)]
 pub struct DbfsBackend {
     core: Arc<DbfsCore>,
+    capability: Capability,
 }
 
-impl Access for DbfsBackend {
+impl Service for DbfsBackend {
     type Reader = ();
     type Writer = oio::OneShotWriter<DbfsWriter>;
     type Lister = oio::PageLister<DbfsLister>;
     type Deleter = oio::OneShotDeleter<DbfsDeleter>;
+    type Copier = ();
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
-        let am = AccessorInfo::default();
-        am.set_scheme(DBFS_SCHEME)
-            .set_root(&self.core.root)
-            .set_native_capability(Capability {
-                stat: true,
-
-                write: true,
-                create_dir: true,
-                delete: true,
-                rename: true,
-
-                list: true,
-
-                shared: true,
-
-                ..Default::default()
-            });
-        am.into()
+    fn info(&self) -> ServiceInfo {
+        ServiceInfo::new(DBFS_SCHEME, &self.core.root, "")
     }
 
-    async fn create_dir(&self, path: &str, _: OpCreateDir) -> Result<RpCreateDir> {
-        let resp = self.core.dbfs_create_dir(path).await?;
+    fn capability(&self) -> Capability {
+        self.capability
+    }
+
+    async fn create_dir(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        _: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        let resp = self.core.dbfs_create_dir(ctx, path).await?;
 
         let status = resp.status();
 
         match status {
             StatusCode::CREATED | StatusCode::OK => Ok(RpCreateDir::default()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Mkdirs")),
+                resp,
+            )),
         }
     }
 
-    async fn stat(&self, path: &str, _: OpStat) -> Result<RpStat> {
+    async fn stat(&self, ctx: &OperationContext, path: &str, _: OpStat) -> Result<RpStat> {
         // Stat root always returns a DIR.
         if path == "/" {
-            return Ok(RpStat::new(Metadata::new(EntryMode::DIR)));
+            return Ok(RpStat::new(MetadataBuilder::dir().build()));
         }
 
-        let resp = self.core.dbfs_get_status(path).await?;
+        let resp = self.core.dbfs_get_status(ctx, path).await?;
 
         let status = resp.status();
 
         match status {
             StatusCode::OK => {
-                let mut meta = parse_into_metadata(path, resp.headers())?;
+                let mut meta = MetadataBuilder::unknown();
                 let bs = resp.into_body();
                 let decoded_response: DbfsStatus =
                     serde_json::from_reader(bs.reader()).map_err(new_json_deserialize_error)?;
-                meta.set_last_modified(Timestamp::from_millisecond(
+                meta.last_modified(Timestamp::from_millisecond(
                     decoded_response.modification_time,
                 )?);
                 match decoded_response.is_dir {
-                    true => meta.set_mode(EntryMode::DIR),
-                    false => {
-                        meta.set_mode(EntryMode::FILE);
-                        meta.set_content_length(decoded_response.file_size as u64)
-                    }
+                    true => meta.set_dir(),
+                    false => meta.set_file(decoded_response.file_size as u64),
                 };
-                Ok(RpStat::new(meta))
+                Ok(RpStat::new(meta.build()))
             }
             StatusCode::NOT_FOUND if path.ends_with('/') => {
-                Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+                Ok(RpStat::new(MetadataBuilder::dir().build()))
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetStatus")),
+                resp,
+            )),
         }
     }
 
-    async fn write(&self, path: &str, args: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        Ok((
-            RpWrite::default(),
-            oio::OneShotWriter::new(DbfsWriter::new(self.core.clone(), args, path.to_string())),
+    fn read(&self, _ctx: &OperationContext, _path: &str, _args: OpRead) -> Result<Self::Reader> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
         ))
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        Ok((
-            RpDelete::default(),
-            oio::OneShotDeleter::new(DbfsDeleter::new(self.core.clone())),
-        ))
+    fn write(&self, ctx: &OperationContext, path: &str, args: OpWrite) -> Result<Self::Writer> {
+        let output: oio::OneShotWriter<DbfsWriter> = {
+            Ok(oio::OneShotWriter::new(DbfsWriter::new(
+                self.core.clone(),
+                ctx.clone(),
+                args,
+                path.to_string(),
+            )))
+        }?;
+
+        Ok(output)
     }
 
-    async fn list(&self, path: &str, _args: OpList) -> Result<(RpList, Self::Lister)> {
-        let l = DbfsLister::new(self.core.clone(), path.to_string());
+    fn delete(&self, ctx: &OperationContext) -> Result<Self::Deleter> {
+        let output: oio::OneShotDeleter<DbfsDeleter> = {
+            Ok(oio::OneShotDeleter::new(DbfsDeleter::new(
+                self.core.clone(),
+                ctx.clone(),
+            )))
+        }?;
 
-        Ok((RpList::default(), oio::PageLister::new(l)))
+        Ok(output)
     }
 
-    async fn rename(&self, from: &str, to: &str, _args: OpRename) -> Result<RpRename> {
-        self.core.dbfs_ensure_parent_path(to).await?;
+    fn list(&self, ctx: &OperationContext, path: &str, _args: OpList) -> Result<Self::Lister> {
+        let output: oio::PageLister<DbfsLister> = {
+            let l = DbfsLister::new(self.core.clone(), ctx.clone(), path.to_string());
 
-        let resp = self.core.dbfs_rename(from, to).await?;
+            Ok(oio::PageLister::new(l))
+        }?;
+
+        Ok(output)
+    }
+
+    async fn rename(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        _args: OpRename,
+    ) -> Result<RpRename> {
+        self.core.dbfs_ensure_parent_path(ctx, to).await?;
+
+        let resp = self.core.dbfs_rename(ctx, from, to).await?;
 
         let status = resp.status();
 
         match status {
             StatusCode::OK => Ok(RpRename::default()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Move")),
+                resp,
+            )),
         }
+    }
+
+    fn copy(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpCopy,
+    ) -> Result<Self::Copier> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn presign(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpPresign,
+    ) -> Result<RpPresign> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
     }
 }
 

@@ -25,7 +25,7 @@ use opendal_core::*;
 
 pub struct SledLister {
     root: String,
-    iter: IntoIter<String>,
+    iter: IntoIter<(String, u64)>,
 }
 
 impl SledLister {
@@ -41,7 +41,7 @@ impl SledLister {
 
 impl oio::List for SledLister {
     async fn next(&mut self) -> Result<Option<oio::Entry>> {
-        if let Some(key) = self.iter.next() {
+        if let Some((key, value_len)) = self.iter.next() {
             let path = build_rel_path(&self.root, &key);
 
             // Determine if it's a file or directory based on trailing slash
@@ -50,7 +50,12 @@ impl oio::List for SledLister {
             } else {
                 EntryMode::FILE
             };
-            let entry = oio::Entry::new(&path, Metadata::new(mode));
+            let metadata = if mode.is_file() {
+                MetadataBuilder::file(value_len)
+            } else {
+                MetadataBuilder::dir()
+            };
+            let entry = oio::Entry::new(&path, metadata.build());
             return Ok(Some(entry));
         }
 

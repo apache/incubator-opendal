@@ -21,6 +21,8 @@ use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen]
 pub async fn hello_world() -> String {
+    opendal::install_default();
+
     let cfg = S3::default()
         .endpoint("http://127.0.0.1:9000")
         .access_key_id("minioadmin")
@@ -28,7 +30,7 @@ pub async fn hello_world() -> String {
         .bucket("test")
         .region("us-east-1");
 
-    let op = Operator::new(cfg).unwrap().finish();
+    let op = Operator::new(cfg).unwrap();
     op.write(
         "test",
         "Hello, WASM! We are from OpenDAL at rust side!"

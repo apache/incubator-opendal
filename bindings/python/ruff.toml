@@ -15,7 +15,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-exclude = ["__base.pyi"] # Skip generated code
 line-length = 88
 show-fixes = true
 
@@ -29,6 +28,9 @@ skip-magic-trailing-comma = false
 
 [lint]
 extend-select = ["D400"]
+ignore = [
+  "W505", # generate code contains long line
+]
 select = [
   "ANN",    # flake8-annotations
   "B",      # flake8-bugbear
@@ -73,6 +75,14 @@ strict = true
 known-first-party = ["opendal"]
 
 [lint.per-file-ignores]
-"*.pyi" = ["PYI021", "ANN401", "D418"]
+"*.pyi" = [
+  "PYI021", # keep docstrings in generated stubs
+  "ANN401", # Any in signatures
+  "ANN003", # **kwargs untyped
+  "TID252", # injected relative sibling imports from generated stubs
+]
 "benchmark/*" = ["D100", "D101", "D103", "ANN201"]
+"examples/*" = ["D100", "D101", "D103", "ANN201"]
+# Generated file; docstrings are copied verbatim from Rust and can be long.
+"python/opendal/config.py" = ["E501"]
 "tests/*" = ["D101", "D100", "D103", "ANN201", "ANN001"]

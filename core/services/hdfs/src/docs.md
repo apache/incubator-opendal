@@ -2,7 +2,7 @@ A distributed file system that provides high-throughput access to application da
 
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [x] create_dir
 - [x] stat
@@ -10,13 +10,25 @@ This service can be used to:
 - [x] write
 - [x] delete
 - [x] list
-- [ ] copy
+- [x] copy
 - [x] rename
 - [ ] ~~presign~~
 
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
+
+## Copy behavior
+
+The HDFS service copies files to exact destination file paths and rejects
+directory sources and destinations. Copy overwrites an existing destination by
+removing it before copying the source. This replacement is not atomic: if the
+copy fails after removing the destination, the destination can be missing or
+incomplete.
+
 ## Differences with webhdfs
 
-[Webhdfs][crate::services::Webhdfs] is powered by hdfs's RESTful HTTP API.
+The [WebHDFS service](https://docs.rs/opendal-service-webhdfs) uses HDFS's
+RESTful HTTP API.
 
 ## Features
 
@@ -24,13 +36,9 @@ HDFS support needs to enable feature `services-hdfs`.
 
 ## Configuration
 
-- `root`: Set the work dir for backend.
-- `name_node`: Set the name node for backend.
-- `kerberos_ticket_cache_path`: Set the kerberos ticket cache path for backend, this should be gotten by `klist` after `kinit`
-- `user`: Set the user for backend
-- `enable_append`: enable the append capacity. Default is false. 
-
-Refer to [`HdfsBuilder`]'s public API docs for more information.
+Use [`crate::HdfsConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
 ## Environment
 
@@ -113,22 +121,16 @@ use opendal_service_hdfs::Hdfs;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create fs backend builder.
-    let mut builder = Hdfs::default()
+    let builder = Hdfs::default()
         // Set the name node for hdfs.
         // If the string starts with a protocol type such as file://, hdfs://, or gs://, this protocol type will be used.
         .name_node("hdfs://127.0.0.1:9000")
         // Set the root for hdfs, all operations will happen under this root.
         //
         // NOTE: the root must be absolute path.
-        .root("/tmp")
-        
-        // Enable the append capacity for hdfs. 
-        // 
-        // Note: HDFS run in non-distributed mode doesn't support append.
-        .enable_append(true);
+        .root("/tmp");
 
-    // `Accessor` provides the low level APIs, we will use `Operator` normally.
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
 
     Ok(())
 }

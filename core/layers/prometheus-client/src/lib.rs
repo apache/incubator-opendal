@@ -15,11 +15,11 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Metrics layer (using the [prometheus-client](https://docs.rs/prometheus-client) crate) implementation for Apache OpenDAL.
-
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
-
+use opendal_core::OperationContext;
 use opendal_core::raw::*;
 use opendal_layer_observe_metrics_common as observe;
 use prometheus_client::encoding::EncodeLabel;
@@ -34,11 +34,12 @@ use prometheus_client::registry::Metric;
 use prometheus_client::registry::Registry;
 use prometheus_client::registry::Unit;
 
-/// Add [prometheus-client](https://docs.rs/prometheus-client) for every operation.
+/// `PrometheusClientLayer` records OpenDAL operation and HTTP fetch metrics with
+/// [prometheus-client](https://docs.rs/prometheus-client).
 ///
 /// # Prometheus Metrics
 ///
-/// We provide several metrics, please see the documentation of [`observe`] module.
+/// This layer registers operation metrics and HTTP fetch metrics. Please see the documentation of [`observe`] module for metric details.
 /// For a more detailed explanation of these metrics and how they are used, please refer to the [Prometheus documentation](https://prometheus.io/docs/introduction/overview/).
 ///
 /// # Examples
@@ -55,8 +56,7 @@ use prometheus_client::registry::Unit;
 /// let mut registry = prometheus_client::registry::Registry::default();
 ///
 /// let op = Operator::new(services::Memory::default())?
-///     .layer(PrometheusClientLayer::builder().register(&mut registry))
-///     .finish();
+///     .layer(PrometheusClientLayer::builder().register(&mut registry));
 ///
 /// // Write data into object test.
 /// op.write("test", "Hello, World!").await?;
@@ -76,7 +76,7 @@ use prometheus_client::registry::Unit;
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PrometheusClientLayer {
     interceptor: PrometheusClientInterceptor,
 }
@@ -88,11 +88,14 @@ impl PrometheusClientLayer {
     }
 }
 
-impl<A: Access> Layer<A> for PrometheusClientLayer {
-    type LayeredAccess = observe::MetricsAccessor<A, PrometheusClientInterceptor>;
+impl Layer for PrometheusClientLayer {
+    fn apply_service(&self, inner: Servicer) -> Servicer {
+        observe::MetricsLayer::new(self.interceptor.clone()).apply_service(inner)
+    }
 
-    fn layer(&self, inner: A) -> Self::LayeredAccess {
-        observe::MetricsLayer::new(self.interceptor.clone()).layer(inner)
+    // Reuse the same interceptor because this layer registers both operation and HTTP metrics.
+    fn apply_context(&self, srv: Servicer, inner: OperationContext) -> OperationContext {
+        observe::MetricsLayer::new(self.interceptor.clone()).apply_context(srv, inner)
     }
 }
 
@@ -194,8 +197,7 @@ impl PrometheusClientLayerBuilder {
     /// let mut registry = prometheus_client::registry::Registry::default();
     ///
     /// let _ = Operator::new(builder)?
-    ///     .layer(PrometheusClientLayer::builder().register(&mut registry))
-    ///     .finish();
+    ///     .layer(PrometheusClientLayer::builder().register(&mut registry));
     /// # Ok(())
     /// # }
     /// ```
@@ -505,6 +507,9 @@ impl EncodeLabelSet for OperationLabels {
         }
         if let Some(code) = &self.labels.status_code {
             (observe::LABEL_STATUS_CODE, code.as_str()).encode(encoder.encode_label())?;
+        }
+        if let Some(service_operation) = self.labels.service_operation {
+            (observe::LABEL_SERVICE_OPERATION, service_operation).encode(encoder.encode_label())?;
         }
         Ok(())
     }

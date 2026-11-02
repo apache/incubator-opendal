@@ -23,7 +23,8 @@ use crate::*;
 /// BlockingLister is designed to list entries at given path in a blocking
 /// manner.
 ///
-/// Users can construct Lister by [`blocking::Operator::lister`] or [`blocking::Operator::lister_with`].
+/// Users can construct a lister through [`Operator::lister`][crate::blocking::Operator::lister]
+/// or [`Operator::lister_options`][crate::blocking::Operator::lister_options].
 ///
 /// - Lister implements `Iterator<Item = Result<Entry>>`.
 /// - Lister will return `None` if there is no more entries or error has been returned.

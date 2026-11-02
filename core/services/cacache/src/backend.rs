@@ -21,6 +21,7 @@ use super::CACACHE_SCHEME;
 use super::config::CacacheConfig;
 use super::core::CacacheCore;
 use super::deleter::CacacheDeleter;
+use super::reader::*;
 use super::writer::CacacheWriter;
 use opendal_core::raw::*;
 use opendal_core::*;
@@ -43,7 +44,7 @@ impl CacacheBuilder {
 impl Builder for CacacheBuilder {
     type Config = CacacheConfig;
 
-    fn build(self) -> Result<impl Access> {
+    fn build(self) -> Result<impl Service> {
         let datadir_path = self.config.datadir.ok_or_else(|| {
             Error::new(ErrorKind::ConfigInvalid, "datadir is required but not set")
                 .with_context("service", CACACHE_SCHEME)
@@ -53,24 +54,21 @@ impl Builder for CacacheBuilder {
             path: datadir_path.clone(),
         };
 
-        let info = AccessorInfo::default();
-        info.set_scheme(CACACHE_SCHEME);
-        info.set_name(&datadir_path);
-        info.set_root("/");
-        info.set_native_capability(Capability {
+        let info = ServiceInfo::new(CACACHE_SCHEME, "/", &datadir_path);
+        let capability = Capability {
             read: true,
             write: true,
             delete: true,
             stat: true,
             rename: false,
             list: false,
-            shared: false,
             ..Default::default()
-        });
+        };
 
         Ok(CacacheBackend {
             core: Arc::new(core),
-            info: Arc::new(info),
+            info,
+            capability,
         })
     }
 }
@@ -78,71 +76,126 @@ impl Builder for CacacheBuilder {
 /// Backend for cacache services.
 #[derive(Debug, Clone)]
 pub struct CacacheBackend {
-    core: Arc<CacacheCore>,
-    info: Arc<AccessorInfo>,
+    pub(crate) core: Arc<CacacheCore>,
+    pub(crate) info: ServiceInfo,
+    pub(crate) capability: Capability,
 }
 
-impl Access for CacacheBackend {
-    type Reader = Buffer;
+impl Service for CacacheBackend {
+    type Reader = oio::StreamReader<CacacheReader>;
     type Writer = CacacheWriter;
     type Lister = ();
     type Deleter = oio::OneShotDeleter<CacacheDeleter>;
+    type Copier = ();
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
+    fn info(&self) -> ServiceInfo {
         self.info.clone()
     }
 
-    async fn stat(&self, path: &str, _: OpStat) -> Result<RpStat> {
+    fn capability(&self) -> Capability {
+        self.capability
+    }
+
+    async fn create_dir(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn stat(&self, _ctx: &OperationContext, path: &str, _: OpStat) -> Result<RpStat> {
         let metadata = self.core.metadata(path).await?;
 
         match metadata {
             Some(meta) => {
-                let mut md = Metadata::new(EntryMode::FILE);
-                md.set_content_length(meta.size as u64);
+                let mut md = MetadataBuilder::file(meta.size as u64);
                 // Convert u128 milliseconds to Timestamp
                 let millis = meta.time as i64;
                 if let Ok(dt) = Timestamp::from_millisecond(millis) {
-                    md.set_last_modified(dt);
+                    md.last_modified(dt);
                 }
-                Ok(RpStat::new(md))
+                Ok(RpStat::new(md.build()))
             }
             None => Err(Error::new(ErrorKind::NotFound, "entry not found")),
         }
     }
+    fn read(&self, _ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
+        let output: oio::StreamReader<CacacheReader> = {
+            Ok(oio::StreamReader::new(CacacheReader::new(
+                self.clone(),
+                path,
+                args,
+            )))
+        }?;
 
-    async fn read(&self, path: &str, args: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let data = self.core.get(path).await?;
-
-        match data {
-            Some(bytes) => {
-                let range = args.range();
-                let buffer = if range.is_full() {
-                    Buffer::from(bytes)
-                } else {
-                    let start = range.offset() as usize;
-                    let end = match range.size() {
-                        Some(size) => (range.offset() + size) as usize,
-                        None => bytes.len(),
-                    };
-                    Buffer::from(bytes.slice(start..end.min(bytes.len())))
-                };
-                Ok((RpRead::new(), buffer))
-            }
-            None => Err(Error::new(ErrorKind::NotFound, "entry not found")),
-        }
+        Ok(output)
     }
 
-    async fn write(&self, path: &str, _: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        Ok((
-            RpWrite::new(),
-            CacacheWriter::new(self.core.clone(), path.to_string()),
+    fn write(&self, _ctx: &OperationContext, path: &str, _: OpWrite) -> Result<Self::Writer> {
+        let output: CacacheWriter =
+            { Ok(CacacheWriter::new(self.core.clone(), path.to_string())) }?;
+
+        Ok(output)
+    }
+
+    fn delete(&self, _ctx: &OperationContext) -> Result<Self::Deleter> {
+        let output: oio::OneShotDeleter<CacacheDeleter> = {
+            Ok(oio::OneShotDeleter::new(CacacheDeleter::new(
+                self.core.clone(),
+            )))
+        }?;
+
+        Ok(output)
+    }
+
+    fn list(&self, _ctx: &OperationContext, _path: &str, _args: OpList) -> Result<Self::Lister> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
         ))
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        Ok((
-            RpDelete::default(),
-            oio::OneShotDeleter::new(CacacheDeleter::new(self.core.clone())),
+    fn copy(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpCopy,
+    ) -> Result<Self::Copier> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn rename(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpRename,
+    ) -> Result<RpRename> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn presign(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpPresign,
+    ) -> Result<RpPresign> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
         ))
     }
 }

@@ -31,13 +31,15 @@ on:
       - main
     tags:
       - "*"
+    paths: &paths
+      - "bindings/nodejs/**"
+      - "core/**"
+      - ".github/actions/setup/**"
+      - ".github/workflows/ci_bindings_nodejs.yml"
   pull_request:
     branches:
       - main
-    paths:
-      - "bindings/nodejs/**"
-      - "core/**"
-      - ".github/workflows/ci_bindings_nodejs.yml"
+    paths: *paths
   workflow_dispatch:
 
 concurrency:
@@ -54,11 +56,11 @@ jobs:
         working-directory: "bindings/nodejs"
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
 
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
         with:
           version: 8
           run_install: false
@@ -76,11 +78,18 @@ jobs:
       - name: Check format
         run: pnpm exec prettier --check .
 
+      # Useful for debugging
+      - name: Print Clippy version
+        run: cargo clippy --version
+
       - name: Check Clippy
         run: cargo clippy -- -D warnings
 
       - name: Build
         run: pnpm build
+
+      - name: Run getting-started example
+        run: node examples/getting-started.mjs
 
       - name: Check diff
         run: git diff --exit-code

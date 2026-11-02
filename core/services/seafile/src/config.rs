@@ -69,10 +69,10 @@ impl opendal_core::Configurator for SeafileConfig {
                 map.insert("repo_name".to_string(), repo_name.to_string());
             }
 
-            if let Some(rest) = segments.next() {
-                if !rest.is_empty() {
-                    map.insert("root".to_string(), rest.to_string());
-                }
+            if let Some(rest) = segments.next()
+                && !rest.is_empty()
+            {
+                map.insert("root".to_string(), rest.to_string());
             }
         }
 

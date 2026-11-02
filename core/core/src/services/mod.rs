@@ -15,9 +15,15 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Services will provide builders to build underlying backends.
+//! Built-in service support.
 //!
-//! More ongoing services support is tracked at [opendal#5](https://github.com/apache/opendal/issues/5). Please feel free to submit issues if there are services not covered.
+//! [`Memory`] is the only storage service implemented by `opendal-core`
+//! directly. Other services live in `opendal-service-*` crates and are
+//! re-exported by the `opendal` facade behind `services-*` Cargo features.
+//!
+//! Pass a builder directly to [`crate::Operator::new`]. Service registration is
+//! only required for scheme-driven construction through
+//! [`crate::Operator::from_uri`] or [`crate::Operator::via_iter`].
 
 mod memory;
 pub use self::memory::*;

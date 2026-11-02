@@ -21,36 +21,35 @@ description: 'Behavior test for hdfs default over azurite azblob'
 runs:
   using: "composite"
   steps:
-    - name: Setup java env
-      uses: actions/setup-java@v4
+    - name: Setup hadoop
+      uses: ./.github/actions/setup-hadoop
       with:
-        distribution: temurin
-        java-version: "11"
+        connector-azurite: true
+
+    - name: Setup node
+      uses: actions/setup-node@v6
+      with:
+        node-version: 20
+        cache: 'npm'
+        cache-dependency-path: fixtures/azblob/setup_azurite.sh
+
     - name: Setup azurite azblob service
       shell: bash
-      working-directory: fixtures/azblob
-      run: docker compose -f docker-compose-azurite.yml up -d --wait
+      run: ./fixtures/azblob/setup_azurite.sh
+
     - name: Setup test bucket
       shell: bash
       run: |
         az storage container create \
             --name test \
             --connection-string "DefaultEndpointsProtocol=http;AccountName=devstoreaccount1;AccountKey=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==;BlobEndpoint=http://127.0.0.1:10000/devstoreaccount1;"
-    - name: Setup
+
+    - name: Setup HDFS azurite env
       shell: bash
       run: |
         OPENDAL_AZBLOB_CONTAINER=test
         OPENDAL_AZBLOB_ACCOUNT_NAME=devstoreaccount1
         OPENDAL_AZBLOB_ACCOUNT_KEY=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==
-
-        curl -LsSf https://dlcdn.apache.org/hadoop/common/hadoop-3.3.5/hadoop-3.3.5.tar.gz | tar zxf - -C /home/runner
-
-        export HADOOP_HOME="/home/runner/hadoop-3.3.5"
-
-        curl -LsSf -o ${HADOOP_HOME}/share/hadoop/common/lib/hadoop-azure-3.3.5.jar https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-azure/3.3.5/hadoop-azure-3.3.5.jar
-        curl -LsSf -o ${HADOOP_HOME}/share/hadoop/common/lib/azure-storage-7.0.1.jar https://repo1.maven.org/maven2/com/microsoft/azure/azure-storage/7.0.1/azure-storage-7.0.1.jar
-
-        export CLASSPATH=$(${HADOOP_HOME}/bin/hadoop classpath --glob)
 
         mkdir -p /tmp/hdfs
 
@@ -58,14 +57,10 @@ runs:
         ./bin/hadoop credential create fs.azure.account.key.${OPENDAL_AZBLOB_ACCOUNT_NAME}.blob.core.windows.net -value ${OPENDAL_AZBLOB_ACCOUNT_KEY} -provider localjceks://file/tmp/hdfs/azurite-wasb.jceks
         popd
 
-        cp ./fixtures/hdfs/hdfs-site.xml ${HADOOP_HOME}/etc/hadoop/hdfs-site.xml
-        cp ./fixtures/hdfs/azurite-azblob-core-site.xml ${HADOOP_HOME}/etc/hadoop/core-site.xml
+        cp ${{ github.workspace }}/fixtures/hdfs/azurite-azblob-core-site.xml ${HADOOP_HOME}/etc/hadoop/core-site.xml
 
         cat << EOF >> $GITHUB_ENV
-        HADOOP_HOME=${HADOOP_HOME}
-        CLASSPATH=${CLASSPATH}
-        LD_LIBRARY_PATH=${JAVA_HOME}/lib/server:${HADOOP_HOME}/lib/native
         OPENDAL_HDFS_ROOT=${OPENDAL_AZBLOB_ROOT}
         OPENDAL_HDFS_NAME_NODE=wasb://${OPENDAL_AZBLOB_CONTAINER}@${OPENDAL_AZBLOB_ACCOUNT_NAME}.blob.core.windows.net
-        OPENDAL_HDFS_ENABLE_APPEND=false
+        OPENDAL_TEST_CAPABILITY_OVERRIDES=write_can_append=false
         EOF

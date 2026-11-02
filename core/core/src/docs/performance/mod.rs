@@ -17,13 +17,15 @@
 
 //! OpenDAL Performance Guide
 //!
-//! OpenDAL is designed in a zero-cost abstraction way, which means that
-//! users won't pay for the abstraction cost if they don't use it. But this
-//! can also means that users can't maximize the performance of OpenDAL
-//! if they don't know how to use it.
+//! OpenDAL keeps the storage abstraction lightweight, but applications still
+//! need to configure buffering, concurrency, and HTTP transport for their
+//! workload. This guide gives concrete Rust configuration examples and explains
+//! the trade-offs behind them.
 //!
-//! This document will introduce some tips to improve the performance of
-//! OpenDAL.
+//! - [Concurrent writes][concurrent_write] explains how OpenDAL schedules write
+//!   parts and how to tune `concurrent` and `chunk`.
+//! - [HTTP optimization][http_optimization] explains when to try HTTP/1.1 and
+//!   how to configure DNS, timeouts, and connection pools.
 
 #[doc = include_str!("concurrent_write.md")]
 pub mod concurrent_write {}

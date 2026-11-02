@@ -24,14 +24,16 @@ use opendal_core::*;
 
 pub struct SeafileLister {
     core: Arc<SeafileCore>,
+    ctx: OperationContext,
 
     path: String,
 }
 
 impl SeafileLister {
-    pub(super) fn new(core: Arc<SeafileCore>, path: &str) -> Self {
+    pub(super) fn new(core: Arc<SeafileCore>, ctx: OperationContext, path: &str) -> Self {
         SeafileLister {
             core,
+            ctx,
             path: path.to_string(),
         }
     }
@@ -39,13 +41,13 @@ impl SeafileLister {
 
 impl oio::PageList for SeafileLister {
     async fn next_page(&self, ctx: &mut oio::PageContext) -> Result<()> {
-        let list_response = self.core.list(&self.path).await?;
+        let list_response = self.core.list(&self.ctx, &self.path).await?;
         match list_response.infos {
             Some(infos) => {
                 // add path itself
                 ctx.entries.push_back(Entry::new(
                     self.path.as_str(),
-                    Metadata::new(EntryMode::DIR),
+                    MetadataBuilder::dir().build(),
                 ));
 
                 for info in infos {
@@ -56,13 +58,18 @@ impl oio::PageList for SeafileLister {
                         );
 
                         let entry = if info.type_field == "file" {
-                            let meta = Metadata::new(EntryMode::FILE)
-                                .with_last_modified(Timestamp::from_second(info.mtime)?)
-                                .with_content_length(info.size.unwrap_or(0));
-                            Entry::new(&rel_path, meta)
+                            let size = info.size.ok_or_else(|| {
+                                Error::new(
+                                    ErrorKind::Unexpected,
+                                    "seafile list response does not contain file size",
+                                )
+                            })?;
+                            let mut meta = MetadataBuilder::file(size);
+                            meta.last_modified(Timestamp::from_second(info.mtime)?);
+                            Entry::new(&rel_path, meta.build())
                         } else {
                             let path = format!("{rel_path}/");
-                            Entry::new(&path, Metadata::new(EntryMode::DIR))
+                            Entry::new(&path, MetadataBuilder::dir().build())
                         };
 
                         ctx.entries.push_back(entry);

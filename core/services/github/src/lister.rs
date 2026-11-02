@@ -24,15 +24,17 @@ use opendal_core::*;
 
 pub struct GithubLister {
     core: Arc<GithubCore>,
+    ctx: OperationContext,
 
     path: String,
     recursive: bool,
 }
 
 impl GithubLister {
-    pub fn new(core: Arc<GithubCore>, path: &str, recursive: bool) -> Self {
+    pub fn new(core: Arc<GithubCore>, ctx: OperationContext, path: &str, recursive: bool) -> Self {
         Self {
             core,
+            ctx,
 
             path: path.to_string(),
             recursive,
@@ -42,7 +44,7 @@ impl GithubLister {
 
 impl oio::PageList for GithubLister {
     async fn next_page(&self, ctx: &mut oio::PageContext) -> Result<()> {
-        let resp = self.core.list(&self.path).await?;
+        let resp = self.core.list(&self.ctx, &self.path).await?;
 
         // Record whether there is a dir in the list so that we need recursive later.
         let has_dir = resp.entries.iter().any(|e| e.type_field == "dir");
@@ -54,22 +56,21 @@ impl oio::PageList for GithubLister {
                 let path = build_rel_path(&self.core.root, &entry.path);
                 let entry = if entry.type_field == "dir" {
                     let path = format!("{path}/");
-                    Entry::new(&path, Metadata::new(EntryMode::DIR))
+                    Entry::new(&path, MetadataBuilder::dir().build())
                 } else {
                     if path.ends_with(".gitkeep") {
                         continue;
                     }
-                    let m = Metadata::new(EntryMode::FILE)
-                        .with_content_length(entry.size)
-                        .with_etag(entry.sha);
-                    Entry::new(&path, m)
+                    let mut m = MetadataBuilder::file(entry.size);
+                    m.etag(entry.sha);
+                    Entry::new(&path, m.build())
                 };
                 ctx.entries.push_back(entry);
             }
             if !self.path.ends_with('/') {
                 ctx.entries.push_back(Entry::new(
                     &format!("{}/", self.path),
-                    Metadata::new(EntryMode::DIR),
+                    MetadataBuilder::dir().build(),
                 ));
             }
             return Ok(());
@@ -77,33 +78,39 @@ impl oio::PageList for GithubLister {
 
         // if recursive is true and there is a dir in the list, we need to list it recursively.
 
-        let tree = self.core.list_with_recursive(&resp.git_url).await?;
+        let tree = self
+            .core
+            .list_with_recursive(&self.ctx, &resp.git_url)
+            .await?;
         for t in tree {
             let path = if self.path == "/" {
                 t.path
             } else {
-                format!("{}/{}", self.path, t.path)
+                format!("{}/{}", self.path.trim_end_matches('/'), t.path)
             };
             let entry = if t.type_field == "tree" {
                 let path = format!("{path}/");
-                Entry::new(&path, Metadata::new(EntryMode::DIR))
+                Entry::new(&path, MetadataBuilder::dir().build())
             } else {
                 if path.ends_with(".gitkeep") {
                     continue;
                 }
-                let mut m = Metadata::new(EntryMode::FILE).with_etag(t.sha);
-
-                if let Some(size) = t.size {
-                    m = m.with_content_length(size);
-                }
-                Entry::new(&path, m)
+                let size = t.size.ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::Unexpected,
+                        "github tree response does not contain blob size",
+                    )
+                })?;
+                let mut m = MetadataBuilder::file(size);
+                m.etag(t.sha);
+                Entry::new(&path, m.build())
             };
             ctx.entries.push_back(entry);
         }
         if !self.path.ends_with('/') {
             ctx.entries.push_back(Entry::new(
                 &format!("{}/", self.path),
-                Metadata::new(EntryMode::DIR),
+                MetadataBuilder::dir().build(),
             ));
         }
 

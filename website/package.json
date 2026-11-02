@@ -3,6 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
+    "test": "node --test plugins/local-images.test.js",
     "docusaurus": "docusaurus",
     "start": "docusaurus start",
     "build": "docusaurus build",
@@ -15,22 +16,29 @@
     "write-heading-ids": "docusaurus write-heading-ids"
   },
   "dependencies": {
-    "@docusaurus/core": "^3.9.1",
-    "@docusaurus/plugin-client-redirects": "^3.9.1",
-    "@docusaurus/preset-classic": "^3.9.1",
+    "@docusaurus/core": "^3.10.1",
+    "@docusaurus/faster": "^3.10.1",
+    "@docusaurus/plugin-client-redirects": "^3.10.1",
+    "@docusaurus/preset-classic": "^3.10.1",
+    "@docusaurus/theme-common": "^3.10.1",
     "@mdx-js/react": "^3.1.1",
+    "badge-maker": "6.0.0",
+    "cheerio": "1.2.0",
     "docusaurus-lunr-search": "^3.6.0",
     "docusaurus-plugin-image-zoom": "^3.0.1",
     "lunr": "^2.3.9",
     "prism-react-renderer": "^2.4.1",
-    "react": "^19.2.0",
-    "react-dom": "^19.2.0",
-    "semver": "^7.7.3"
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "semver": "^7.8.5",
+    "smol-toml": "^1.9.0",
+    "unified": "^11.0.5"
   },
   "devDependencies": {
-    "@docusaurus/module-type-aliases": "^3.9.1",
-    "@docusaurus/types": "^3.9.1",
-    "crates-llms-txt": "^0.1.1",
+    "@docusaurus/module-type-aliases": "^3.10.1",
+    "@docusaurus/types": "^3.10.1",
     "docusaurus-plugin-llms-builder": "^0.1.13"
   },
   "browserslist": {
@@ -46,7 +54,7 @@
     ]
   },
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=24.17.0"
   },
-  "packageManager": "pnpm@8.11.0"
+  "packageManager": "pnpm@11.8.0"
 }

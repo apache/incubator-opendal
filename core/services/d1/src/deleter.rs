@@ -24,19 +24,20 @@ use opendal_core::*;
 
 pub struct D1Deleter {
     core: Arc<D1Core>,
+    ctx: OperationContext,
     root: String,
 }
 
 impl D1Deleter {
-    pub fn new(core: Arc<D1Core>, root: String) -> Self {
-        Self { core, root }
+    pub fn new(core: Arc<D1Core>, ctx: OperationContext, root: String) -> Self {
+        Self { core, ctx, root }
     }
 }
 
 impl oio::OneShotDelete for D1Deleter {
     async fn delete_once(&self, path: String, _: OpDelete) -> Result<()> {
         let p = build_abs_path(&self.root, &path);
-        self.core.delete(&p).await?;
+        self.core.delete(&self.ctx, &p).await?;
         Ok(())
     }
 }

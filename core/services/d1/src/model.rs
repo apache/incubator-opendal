@@ -71,6 +71,38 @@ impl D1Response {
             _ => None,
         }
     }
+
+    pub fn get_usize_result(&self, key: &str) -> Result<Option<usize>, Error> {
+        if self.result.is_empty() || self.result[0].results.is_empty() {
+            return Ok(None);
+        }
+        let result = &self.result[0].results[0];
+        let Some(value) = result.get(key) else {
+            return Ok(None);
+        };
+
+        match value {
+            Value::Number(n) => {
+                let value = n.as_u64().ok_or_else(|| {
+                    Error::new(
+                        opendal_core::ErrorKind::Unexpected,
+                        "d1 value length is invalid",
+                    )
+                })?;
+                value.try_into().map(Some).map_err(|err| {
+                    Error::new(
+                        opendal_core::ErrorKind::Unexpected,
+                        "d1 value length is invalid",
+                    )
+                    .set_source(err)
+                })
+            }
+            _ => Err(Error::new(
+                opendal_core::ErrorKind::Unexpected,
+                "d1 value length is invalid",
+            )),
+        }
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -120,5 +152,33 @@ mod test {
         }"#;
         let response: D1Response = serde_json::from_str(data).unwrap();
         println!("{:?}", response.result[0].results[0]);
+    }
+
+    #[test]
+    fn test_get_usize_result() {
+        let data = r#"
+        {
+            "result": [
+                {
+                    "results": [
+                        {
+                            "content_length": 6
+                        }
+                    ],
+                    "success": true,
+                    "meta": {}
+                }
+            ],
+            "success": true,
+            "errors": [],
+            "messages": []
+        }"#;
+
+        let response: D1Response = serde_json::from_str(data).unwrap();
+        assert_eq!(
+            response.get_usize_result("content_length").unwrap(),
+            Some(6)
+        );
+        assert_eq!(response.get_usize_result("missing").unwrap(), None);
     }
 }

@@ -17,7 +17,7 @@
 
 use hdfs_native::file::FileWriter;
 
-use crate::error::parse_hdfs_error;
+use crate::core::parse_hdfs_error;
 use opendal_core::raw::*;
 use opendal_core::*;
 pub struct HdfsNativeWriter {
@@ -39,7 +39,7 @@ impl oio::Write for HdfsNativeWriter {
         let len = buf.len() as u64;
 
         for bs in buf.by_ref() {
-            self.f.write(bs).await.map_err(parse_hdfs_error)?;
+            self.f.write_bytes(bs).await.map_err(parse_hdfs_error)?;
         }
 
         self.size += len;
@@ -49,7 +49,11 @@ impl oio::Write for HdfsNativeWriter {
     async fn close(&mut self) -> Result<Metadata> {
         self.f.close().await.map_err(parse_hdfs_error)?;
 
-        Ok(Metadata::default().with_content_length(self.size))
+        Ok({
+            let mut metadata = MetadataBuilder::unknown();
+            metadata.set_file(self.size);
+            metadata.build()
+        })
     }
 
     async fn abort(&mut self) -> Result<()> {

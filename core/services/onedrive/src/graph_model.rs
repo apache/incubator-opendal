@@ -19,6 +19,16 @@ use serde::Deserialize;
 use serde::Serialize;
 
 #[derive(Debug, Deserialize)]
+pub struct GraphErrorResponse {
+    pub error: GraphError,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct GraphError {
+    pub code: String,
+}
+
+#[derive(Debug, Deserialize)]
 pub struct GraphOAuthRefreshTokenResponseBody {
     pub access_token: String,
     pub refresh_token: String,
@@ -56,7 +66,6 @@ pub struct OneDriveItem {
     pub parent_reference: ParentReference,
     #[serde(flatten)]
     pub item_type: ItemType,
-    pub versions: Option<Vec<OneDriveItemVersion>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -327,61 +336,11 @@ mod tests {
         assert_eq!(item.e_tag, "\"{3B131E1C-7D81-20AF-80D0-720000000000},2\"");
         assert_eq!(item.size, 3);
         assert_eq!(item.parent_reference.id, "A0AA0A000A000A0A!113");
-        assert!(item.versions.is_none());
         if let ItemType::File { file, .. } = &item.item_type {
             assert_eq!(file.mime_type, "text/plain");
         } else {
             panic!("item_type is not a file");
         }
-    }
-
-    #[test]
-    fn test_parse_one_drive_file_with_version_json() {
-        let data = r#"{
-            "@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('opendal%40outlook.com')/drive/root(id,name,lastModifiedDateTime,eTag,size,parentReference,folder,file)/$entity",
-            "@odata.etag": "\"{3B131E1C-7D81-20AF-80D0-720000000000},2\"",
-            "eTag": "\"{3B131E1C-7D81-20AF-80D0-720000000000},2\"",
-            "id": "A0AA0A000A000A0A!114",
-            "lastModifiedDateTime": "2025-02-16T19:49:05Z",
-            "name": "filename.txt",
-            "size": 3,
-            "parentReference": {
-                "driveType": "personal",
-                "driveId": "A0AA0A000A000A0A",
-                "id": "A0AA0A000A000A0A!113",
-                "name": "folder_a",
-                "path": "/drive/root:/folder_a",
-                "siteId": "5f1f11f3-a6b4-4414-aee0-215c774f80db"
-            },
-            "file": {
-                "mimeType": "text/plain",
-                "hashes": {
-                    "quickXorHash": "79jFLwAAAAAAAAAAAwAAAAAAAAA=",
-                    "sha1Hash": "57218C316B6921E2CD61027A2387EDC31A2D9471",
-                    "sha256Hash": "F1945CD6C19E56B3C1C78943EF5EC18116907A4CA1EFC40A57D48AB1DB7ADFC5"
-                }
-            },
-            "versions@odata.context": "https://graph.microsoft.com/v1.0/$metadata#users('opendal%40outlook.com')/drive/root/versions",
-            "versions": [
-                {
-                    "@microsoft.graph.downloadUrl": "https://my.microsoftpersonalcontent.com/personal/A0AA0A000A000A0A/_layouts/15/download.aspx?UniqueId=3b131e1c-7d81-20af-80d0-720000000000&Translate=false&tempauth=v1e.a&ApiVersion=2.0",
-                    "id": "1.0",
-                    "lastModifiedDateTime": "2025-02-16T19:49:05Z",
-                    "size": 3,
-                    "lastModifiedBy": {
-                        "user": {
-                            "email": "erickgdev@outlook.com",
-                            "displayName": "erickgdev@outlook.com"
-                        }
-                    }
-                }
-            ]
-        }"#;
-
-        let item: OneDriveItem = serde_json::from_str(data).unwrap();
-        let versions = item.versions.expect("Versions present");
-        assert_eq!("1.0", versions[0].id);
-        assert_eq!("2025-02-16T19:49:05Z", versions[0].last_modified_date_time);
     }
 
     #[test]

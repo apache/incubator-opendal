@@ -19,13 +19,14 @@ use std::sync::Arc;
 
 use bytes::Buf;
 
+use super::core::parse_error;
 use super::core::*;
-use super::error::parse_error;
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct DropboxLister {
     core: Arc<DropboxCore>,
+    ctx: OperationContext,
     path: String,
     recursive: bool,
     limit: Option<usize>,
@@ -34,12 +35,14 @@ pub struct DropboxLister {
 impl DropboxLister {
     pub fn new(
         core: Arc<DropboxCore>,
+        ctx: OperationContext,
         path: String,
         recursive: bool,
         limit: Option<usize>,
     ) -> Self {
         Self {
             core,
+            ctx,
             path,
             recursive,
             limit,
@@ -53,17 +56,26 @@ impl oio::PageList for DropboxLister {
         // When the token exists, we should retrieve more entries using the Dropbox continue API.
         // Refer: https://www.dropbox.com/developers/documentation/http/documentation#files-list_folder-continue
         let response = if !ctx.token.is_empty() {
-            self.core.dropbox_list_continue(&ctx.token).await?
+            self.core
+                .dropbox_list_continue(&self.ctx, &ctx.token)
+                .await?
         } else {
             self.core
-                .dropbox_list(&self.path, self.recursive, self.limit)
+                .dropbox_list(&self.ctx, &self.path, self.recursive, self.limit)
                 .await?
         };
 
         let status_code = response.status();
 
         if !status_code.is_success() {
-            let error = parse_error(response);
+            let error = parse_error(
+                ErrorContext::new(if ctx.token.is_empty() {
+                    ServiceOperation("ListFolder")
+                } else {
+                    ServiceOperation("ListFolderContinue")
+                }),
+                response,
+            );
 
             let result = match error.kind() {
                 ErrorKind::NotFound => Ok(()),
@@ -86,7 +98,13 @@ impl oio::PageList for DropboxLister {
             };
 
             let mut name = entry.name;
-            let mut meta = Metadata::new(entry_mode);
+            let mut meta = match entry_mode {
+                EntryMode::FILE => entry
+                    .size
+                    .map_or_else(MetadataBuilder::unknown, MetadataBuilder::file),
+                EntryMode::DIR => MetadataBuilder::dir(),
+                EntryMode::Unknown => MetadataBuilder::unknown(),
+            };
 
             // Dropbox will return folder names that do not end with '/'.
             if entry_mode == EntryMode::DIR && !name.ends_with('/') {
@@ -96,14 +114,10 @@ impl oio::PageList for DropboxLister {
             // The behavior here aligns with Dropbox's stat function.
             if entry_mode == EntryMode::FILE {
                 let date_utc_last_modified = entry.client_modified.parse::<Timestamp>()?;
-                meta.set_last_modified(date_utc_last_modified);
-
-                if let Some(size) = entry.size {
-                    meta.set_content_length(size);
-                }
+                meta.last_modified(date_utc_last_modified);
             }
 
-            ctx.entries.push_back(oio::Entry::with(name, meta));
+            ctx.entries.push_back(oio::Entry::with(name, meta.build()));
         }
 
         if decoded_response.has_more {

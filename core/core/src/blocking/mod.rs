@@ -17,6 +17,9 @@
 
 //! blocking module provides blocking APIs for OpenDAL.
 
+mod copy;
+pub use copy::*;
+
 mod delete;
 pub use delete::*;
 

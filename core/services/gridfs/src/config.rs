@@ -62,26 +62,26 @@ impl Configurator for GridfsConfig {
                 .or_insert_with(|| format!("mongodb://{authority}"));
         }
 
-        if let Some(path) = uri.root() {
-            if !path.is_empty() {
-                let mut segments = path.splitn(3, '/');
-                if let Some(database) = segments.next() {
-                    if !database.is_empty() {
-                        map.entry("database".to_string())
-                            .or_insert_with(|| database.to_string());
-                    }
-                }
-                if let Some(bucket) = segments.next() {
-                    if !bucket.is_empty() {
-                        map.entry("bucket".to_string())
-                            .or_insert_with(|| bucket.to_string());
-                    }
-                }
-                if let Some(rest) = segments.next() {
-                    if !rest.is_empty() {
-                        map.insert("root".to_string(), rest.to_string());
-                    }
-                }
+        if let Some(path) = uri.root()
+            && !path.is_empty()
+        {
+            let mut segments = path.splitn(3, '/');
+            if let Some(database) = segments.next()
+                && !database.is_empty()
+            {
+                map.entry("database".to_string())
+                    .or_insert_with(|| database.to_string());
+            }
+            if let Some(bucket) = segments.next()
+                && !bucket.is_empty()
+            {
+                map.entry("bucket".to_string())
+                    .or_insert_with(|| bucket.to_string());
+            }
+            if let Some(rest) = segments.next()
+                && !rest.is_empty()
+            {
+                map.insert("root".to_string(), rest.to_string());
             }
         }
 

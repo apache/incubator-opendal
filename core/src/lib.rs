@@ -15,11 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![doc(
-    html_logo_url = "https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg"
-)]
+#![doc(html_logo_url = "https://opendal.apache.org/img/logo.svg")]
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-//! Facade crate that re-exports all public APIs from `opendal-core` and optional services/layers.
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
 
 pub use opendal_core::*;
@@ -27,9 +26,36 @@ pub use opendal_core::*;
 #[cfg(feature = "tests")]
 pub extern crate opendal_testkit as tests;
 
-static DEFAULT_REGISTRY_INIT: std::sync::Once = std::sync::Once::new();
+/// Install the global defaults provided by the facade crate.
+///
+/// This function is safe to call multiple times. It registers enabled services
+/// and installs the default HTTP transport when the corresponding feature is
+/// enabled.
+///
+/// # Process-wide HTTP transport
+///
+/// When `auto-register-services` is enabled, a process constructor calls this
+/// function before `main`. If a default HTTP transport feature is also enabled,
+/// that transport occupies the process-wide default because
+/// [`HttpTransporter::install_default`] uses first-installed-wins semantics.
+///
+/// Applications that need to install their own process-wide transport should
+/// disable `auto-register-services`, call [`init_default_registry`] explicitly
+/// when URI-based construction is needed, and install the transport themselves.
+/// Per-operator transports can be configured regardless of this setting.
+pub fn install_default() {
+    init_default_registry();
 
-/// Initialize [`DEFAULT_OPERATOR_REGISTRY`] with enabled services.
+    #[cfg(any(
+        feature = "http-transport-reqwest",
+        feature = "http-transport-reqwest-native-tls",
+        feature = "http-transport-reqwest-rustls",
+        feature = "http-transport-reqwest-rustls-no-provider"
+    ))]
+    opendal_http_transport_reqwest::install_default();
+}
+
+/// Initialize the global [`OperatorRegistry`] with enabled services.
 ///
 /// This function is safe to call multiple times and will only perform
 /// initialization once.
@@ -41,13 +67,11 @@ static DEFAULT_REGISTRY_INIT: std::sync::Once = std::sync::Once::new();
 /// should call this function explicitly before using `Operator::from_uri` or
 /// `Operator::via_iter`.
 pub fn init_default_registry() {
-    DEFAULT_REGISTRY_INIT.call_once(|| {
-        let registry = &opendal_core::DEFAULT_OPERATOR_REGISTRY;
-        init_default_registry_inner(registry);
-    });
+    static DEFAULT_REGISTRY_INIT: std::sync::Once = std::sync::Once::new();
+    DEFAULT_REGISTRY_INIT.call_once(|| init_default_registry_inner(OperatorRegistry::get()));
 }
 
-fn init_default_registry_inner(registry: &opendal_core::OperatorRegistry) {
+fn init_default_registry_inner(registry: &OperatorRegistry) {
     opendal_core::services::register_memory_service(registry);
 
     #[cfg(feature = "services-aliyun-drive")]
@@ -98,6 +122,9 @@ fn init_default_registry_inner(registry: &opendal_core::OperatorRegistry) {
     #[cfg(feature = "services-foundationdb")]
     opendal_service_foundationdb::register_foundationdb_service(registry);
 
+    #[cfg(feature = "services-foyer")]
+    opendal_service_foyer::register_foyer_service(registry);
+
     #[cfg(feature = "services-fs")]
     opendal_service_fs::register_fs_service(registry);
 
@@ -107,8 +134,8 @@ fn init_default_registry_inner(registry: &opendal_core::OperatorRegistry) {
     #[cfg(feature = "services-gcs")]
     opendal_service_gcs::register_gcs_service(registry);
 
-    #[cfg(feature = "services-git")]
-    opendal_service_git::register_git_service(registry);
+    #[cfg(feature = "services-gcs-grpc")]
+    opendal_service_gcs_grpc::register_gcs_grpc_service(registry);
 
     #[cfg(feature = "services-gdrive")]
     opendal_service_gdrive::register_gdrive_service(registry);
@@ -118,6 +145,9 @@ fn init_default_registry_inner(registry: &opendal_core::OperatorRegistry) {
 
     #[cfg(feature = "services-github")]
     opendal_service_github::register_github_service(registry);
+
+    #[cfg(feature = "services-goosefs")]
+    opendal_service_goosefs::register_goosefs_service(registry);
 
     #[cfg(feature = "services-gridfs")]
     opendal_service_gridfs::register_gridfs_service(registry);
@@ -131,8 +161,8 @@ fn init_default_registry_inner(registry: &opendal_core::OperatorRegistry) {
     #[cfg(feature = "services-http")]
     opendal_service_http::register_http_service(registry);
 
-    #[cfg(feature = "services-huggingface")]
-    opendal_service_huggingface::register_huggingface_service(registry);
+    #[cfg(feature = "services-hf")]
+    opendal_service_hf::register_hf_service(registry);
 
     #[cfg(feature = "services-ipfs")]
     opendal_service_ipfs::register_ipfs_service(registry);
@@ -212,6 +242,9 @@ fn init_default_registry_inner(registry: &opendal_core::OperatorRegistry) {
     #[cfg(feature = "services-tikv")]
     opendal_service_tikv::register_tikv_service(registry);
 
+    #[cfg(feature = "services-tos")]
+    opendal_service_tos::register_tos_service(registry);
+
     #[cfg(feature = "services-upyun")]
     opendal_service_upyun::register_upyun_service(registry);
 
@@ -237,12 +270,21 @@ fn init_default_registry_inner(registry: &opendal_core::OperatorRegistry) {
     opendal_service_redis::register_redis_service(registry);
 }
 
-#[ctor::ctor]
+#[cfg(feature = "auto-register-services")]
+#[ctor::ctor(unsafe)]
 fn register_default_operator_registry() {
-    init_default_registry();
+    install_default();
 }
 
-/// Re-export of service implementations.
+/// Service builders enabled through `services-*` Cargo features.
+///
+/// [`Memory`](services::Memory) is always available. Other builders are
+/// re-exported when their matching facade feature is enabled; for example,
+/// `services-s3` enables [`S3`](services::S3).
+///
+/// Pass a configured builder to [`Operator::new`]. The facade automatically
+/// registers enabled services for [`Operator::from_uri`] and
+/// [`Operator::via_iter`] when the `auto-register-services` feature is enabled.
 pub mod services {
     pub use opendal_core::services::*;
     #[cfg(feature = "services-aliyun-drive")]
@@ -277,30 +319,34 @@ pub mod services {
     pub use opendal_service_etcd::*;
     #[cfg(feature = "services-foundationdb")]
     pub use opendal_service_foundationdb::*;
+    #[cfg(feature = "services-foyer")]
+    pub use opendal_service_foyer::*;
     #[cfg(feature = "services-fs")]
     pub use opendal_service_fs::*;
     #[cfg(feature = "services-ftp")]
     pub use opendal_service_ftp::*;
     #[cfg(feature = "services-gcs")]
     pub use opendal_service_gcs::*;
-    #[cfg(feature = "services-git")]
-    pub use opendal_service_git::*;
+    #[cfg(feature = "services-gcs-grpc")]
+    pub use opendal_service_gcs_grpc::*;
     #[cfg(feature = "services-gdrive")]
     pub use opendal_service_gdrive::*;
     #[cfg(feature = "services-ghac")]
     pub use opendal_service_ghac::*;
     #[cfg(feature = "services-github")]
     pub use opendal_service_github::*;
+    #[cfg(feature = "services-goosefs")]
+    pub use opendal_service_goosefs::*;
     #[cfg(feature = "services-gridfs")]
     pub use opendal_service_gridfs::*;
     #[cfg(feature = "services-hdfs")]
     pub use opendal_service_hdfs::*;
     #[cfg(feature = "services-hdfs-native")]
     pub use opendal_service_hdfs_native::*;
+    #[cfg(feature = "services-hf")]
+    pub use opendal_service_hf::*;
     #[cfg(feature = "services-http")]
     pub use opendal_service_http::*;
-    #[cfg(feature = "services-huggingface")]
-    pub use opendal_service_huggingface::*;
     #[cfg(feature = "services-ipfs")]
     pub use opendal_service_ipfs::*;
     #[cfg(feature = "services-ipmfs")]
@@ -357,6 +403,8 @@ pub mod services {
     pub use opendal_service_swift::*;
     #[cfg(feature = "services-tikv")]
     pub use opendal_service_tikv::*;
+    #[cfg(feature = "services-tos")]
+    pub use opendal_service_tos::*;
     #[cfg(feature = "services-upyun")]
     pub use opendal_service_upyun::*;
     #[cfg(feature = "services-vercel-artifacts")]
@@ -371,7 +419,12 @@ pub mod services {
     pub use opendal_service_yandex_disk::*;
 }
 
-/// Re-export of layers.
+/// Layers enabled through `layers-*` Cargo features.
+///
+/// A layer adds cross-service behavior to an [`Operator`]. Enable the matching
+/// facade feature, construct the layer, and pass it to [`Operator::layer`].
+/// Layer order is observable, so review each layer's composition notes when
+/// combining retries, timeouts, caching, or observability.
 pub mod layers {
     pub use opendal_core::layers::*;
     #[cfg(feature = "layers-async-backtrace")]

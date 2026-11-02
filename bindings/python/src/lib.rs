@@ -39,67 +39,110 @@ pub use errors::*;
 mod options;
 pub use options::*;
 mod services;
-use pyo3_stub_gen::{define_stub_info_gatherer, derive::*};
 pub use services::*;
 
+// The `opendal` Python package is a mixed Python/native layout: the public
+// package is the hand-written `python/opendal/` (with its own `__init__.py`),
+// and this native module is built as the private submodule `opendal._opendal`
+// (`module-name` in pyproject.toml). The `#[pymodule] mod` name must therefore
+// be `_opendal` to match the compiled `opendal/_opendal.*.so` (its `PyInit`
+// symbol); `__init__.py` imports and re-exports from it as the public API.
 #[pymodule(gil_used = false)]
-fn _opendal(py: Python, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    // Add version
-    m.add("__version__", env!("CARGO_PKG_VERSION"))?;
+mod _opendal {
+    use pyo3::prelude::*;
 
-    // Operator module
-    add_pymodule!(py, m, "operator", [Operator, AsyncOperator])?;
+    #[pymodule]
+    mod operator {
+        #[pymodule_export]
+        use crate::{AsyncOperator, Operator};
+    }
 
-    // File module
-    add_pymodule!(py, m, "file", [File, AsyncFile])?;
+    // Pickle reconstructors for operators built via `from_uri`. They must live
+    // on the top-level `_opendal` module so `__reduce__` can reference them by
+    // their qualified name during unpickling.
+    #[pymodule_export]
+    use crate::{_reconstruct_async_operator, _reconstruct_operator};
 
-    // Capability module
-    add_pymodule!(py, m, "capability", [Capability])?;
+    #[pymodule]
+    mod file {
+        #[pymodule_export]
+        use crate::{AsyncFile, File};
+    }
 
-    // Services module
-    add_pymodule!(py, m, "services", [PyScheme])?;
+    #[pymodule]
+    mod capability {
+        #[pymodule_export]
+        use crate::Capability;
+    }
 
-    // Layers module
-    add_pymodule!(
-        py,
-        m,
-        "layers",
-        [Layer, RetryLayer, ConcurrentLimitLayer, MimeGuessLayer]
-    )?;
+    #[pymodule]
+    mod services {
+        #[pymodule_export]
+        use crate::Scheme;
+    }
 
-    // Types module
-    add_pymodule!(
-        py,
-        m,
-        "types",
-        [Entry, EntryMode, Metadata, PresignedRequest]
-    )?;
+    #[pymodule]
+    mod layers {
+        #[pymodule_export]
+        use crate::{
+            CapabilityOverrideLayer, ConcurrentLimitLayer, Layer, MimeGuessLayer, RetryLayer,
+            TimeoutLayer,
+        };
+    }
 
-    m.add_class::<WriteOptions>()?;
-    m.add_class::<ReadOptions>()?;
-    m.add_class::<ListOptions>()?;
-    m.add_class::<StatOptions>()?;
+    #[pymodule]
+    mod types {
+        #[pymodule_export]
+        use crate::{Entry, EntryMode, Metadata, PresignedRequest};
+    }
 
-    // Exceptions module
-    add_pyexceptions!(
-        py,
-        m,
-        "exceptions",
-        [
-            Error,
-            Unexpected,
-            Unsupported,
-            ConfigInvalid,
-            NotFound,
-            PermissionDenied,
-            IsADirectory,
-            NotADirectory,
-            AlreadyExists,
-            IsSameFile,
-            ConditionNotMatch
-        ]
-    )?;
-    Ok(())
+    // Exceptions are `PyErr` subtypes, not `#[pyclass]`es, so they are added
+    // procedurally rather than via `#[pymodule_export]`.
+    #[pymodule]
+    mod exceptions {
+        #[pymodule_init]
+        fn init(m: &pyo3::Bound<'_, pyo3::types::PyModule>) -> pyo3::PyResult<()> {
+            use pyo3::prelude::*;
+
+            use crate::{
+                AlreadyExists, ConditionNotMatch, ConfigInvalid, Conflict, Error, IsADirectory,
+                IsSameFile, NotADirectory, NotFound, PermissionDenied, RangeNotSatisfied,
+                RateLimited, Unexpected, Unsupported, add_exceptions,
+            };
+
+            add_exceptions!(
+                m,
+                [
+                    Error,
+                    Unexpected,
+                    Unsupported,
+                    ConfigInvalid,
+                    NotFound,
+                    PermissionDenied,
+                    IsADirectory,
+                    NotADirectory,
+                    AlreadyExists,
+                    IsSameFile,
+                    ConditionNotMatch,
+                    RateLimited,
+                    RangeNotSatisfied,
+                    Conflict,
+                ]
+            )
+        }
+    }
+
+    // Option types live directly on the top-level `opendal` module.
+    #[pymodule_export]
+    use crate::{DeleteOptions, ListOptions, ReadOptions, StatOptions, WriteOptions};
+
+    #[pymodule_export]
+    #[allow(non_upper_case_globals)]
+    pub const __version__: &str = env!("CARGO_PKG_VERSION");
+
+    // Make the submodules importable as `opendal.<name>`.
+    #[pymodule_init]
+    fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
+        crate::register_submodules(m, "opendal")
+    }
 }
-
-define_stub_info_gatherer!(stub_info);

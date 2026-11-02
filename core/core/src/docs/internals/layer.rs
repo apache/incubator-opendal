@@ -15,28 +15,64 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! The internal implementation details of [`Layer`].
+//! Implementing a layer.
 //!
-//! [`Layer`] itself is quite simple:
+//! A [`Layer`] intercepts an operator's composed service, operation context,
+//! or both. Use a layer for behavior that applies across services, such as
+//! retry, timeout, tracing, metrics, or runtime resource replacement.
 //!
-//! ```ignore
-//! pub trait Layer<A: Access> {
-//!     type LayeredAccess: Access;
+//! # Two composition hooks
 //!
-//!     fn layer(&self, inner: A) -> Self::LayeredAccess;
-//! }
+//! [`Layer`] exposes two hooks:
+//!
+//! ```text
+//! fn apply_service(&self, service: Servicer) -> Servicer;
+//! fn apply_context(
+//!     &self,
+//!     service: Servicer,
+//!     context: OperationContext,
+//! ) -> OperationContext;
 //! ```
 //!
-//! `XxxLayer` will wrap input [`Access`] as inner and return a new [`Access`]. So normally the implementation of [`Layer`] will be split into two parts:
+//! `apply_service` wraps storage operations. `apply_context` wraps or replaces
+//! runtime resources such as the HTTP transport and executor. Each hook
+//! returns its input unchanged by default, so a layer implements only the
+//! plane it owns.
 //!
-//! - `XxxLayer` will implement [`Layer`] and return `XxxAccessor` as `Self::LayeredAccess`.
-//! - `XxxAccess` will implement [`Access`] and be built by `XxxLayer`.
+//! The operator first applies every service hook in insertion order. It then
+//! applies every context hook in the same order, passing the final service
+//! stack to each context hook. Adding a layer or replacing the base context
+//! replays the complete layer list, producing a service stack and context from
+//! the same ordering.
 //!
-//! Most layer only implements part of [`Access`], so we provide
-//! [`LayeredAccess`] which will forward all unimplemented methods to
-//! `inner`. It's highly recommend to implement [`LayeredAccess`] trait
-//! instead.
+//! # Operation layers
+//!
+//! An operation layer normally contains:
+//!
+//! - An `XxxLayer` that implements [`Layer::apply_service`].
+//! - An `XxxService` that stores the inner [`Servicer`] and implements
+//!   [`Service`].
+//!
+//! The wrapper overrides only the operations it owns and forwards the rest to
+//! the inner service. It must also return capabilities that describe the
+//! behavior of the wrapped stack. The wrapper keeps its own operation body
+//! types concrete until OpenDAL erases it back into a [`Servicer`].
+//!
+//! # Resource layers
+//!
+//! A resource-only layer implements [`Layer::apply_context`]. It should
+//! preserve the previous resource when lower layers must remain effective. A
+//! layer that wraps an HTTP transport or executor must decide explicitly
+//! whether requests continue through the previous value or replace it
+//! entirely.
+//!
+//! Layers that coordinate policy across operation and I/O phases can implement
+//! both hooks. Shared mutable state requires interior mutability and must
+//! remain `Send` and `Sync`, because cloned operators can run operations
+//! concurrently.
 //!
 //! [`Layer`]: crate::raw::Layer
-//! [`Access`]: crate::raw::Access
-//! [`LayeredAccess`]: crate::raw::LayeredAccess
+//! [`Layer::apply_service`]: crate::raw::Layer::apply_service
+//! [`Layer::apply_context`]: crate::raw::Layer::apply_context
+//! [`Service`]: crate::raw::Service
+//! [`Servicer`]: crate::raw::Servicer

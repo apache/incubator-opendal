@@ -27,9 +27,13 @@ This folder contains the bindings for OpenDAL. Currently, we support the followi
 
 ## Versioning
 
-**Important**: Each binding has its own independent version number, which may differ from the Rust core version. This allows bindings to be released and versioned independently based on their own release cycles and compatibility requirements.
+We release each binding independently of the
+[`opendal` crate](https://crates.io/crates/opendal) (Rust core). This allows
+bindings to follow their own release cycles and compatibility requirements.
 
-For example, while the Rust core might be at version `0.55.0`, a binding might be at version `0.47.0` or `0.49.2`. When checking for updates or compatibility, always refer to the specific binding's version rather than the core version.
+For example, while the `opendal` crate might be at version `0.55.0`, a binding
+might be at version `0.47.0` or `0.49.2`. For updates and compatibility, use
+the specific binding version instead of the `opendal` crate version.
 
 ## Getting Started
 

@@ -20,6 +20,34 @@ from uuid import uuid4
 
 import pytest
 
+import opendal
+
+
+@pytest.mark.asyncio
+async def test_async_list_batching_preserves_order():
+    op = opendal.AsyncOperator("memory")
+    expected = [f"items/{idx:03d}" for idx in range(130)]
+    await asyncio.gather(*(op.write(path, b"test") for path in expected))
+
+    actual = [entry.path async for entry in await op.list("items/", recursive=True)]
+    assert actual == expected
+
+
+@pytest.mark.asyncio
+async def test_async_list_cancelled_next_preserves_entry():
+    op = opendal.AsyncOperator("memory")
+    expected = [f"items/{idx:03d}" for idx in range(3)]
+    await asyncio.gather(*(op.write(path, b"test") for path in expected))
+
+    lister = await op.list("items/", recursive=True)
+    pending = anext(lister)
+    pending.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await pending
+
+    actual = [entry.path async for entry in lister]
+    assert actual == expected
+
 
 @pytest.mark.asyncio
 @pytest.mark.need_capability("read", "write", "copy", "list", "list_with_start_after")

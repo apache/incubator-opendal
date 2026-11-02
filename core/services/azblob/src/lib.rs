@@ -15,21 +15,44 @@
 // specific language governing permissions and limitations
 // under the License.
 
-/// Default scheme for azblob service.
+#![doc = include_str!("../README.md")]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg))]
+#![deny(missing_docs)]
+
+/// URI scheme used for service registration and scheme-driven construction.
 pub const AZBLOB_SCHEME: &str = "azblob";
 
-/// Register this service into the given registry.
+/// Register this service's URI scheme or schemes with an operator registry.
+///
+/// Registration enables scheme-driven construction through
+/// [`opendal_core::Operator::from_uri`] and
+/// [`opendal_core::Operator::via_iter`]. Direct construction through
+/// [`opendal_core::Operator::new`] does not require registration.
 pub fn register_azblob_service(registry: &opendal_core::OperatorRegistry) {
     registry.register::<Azblob>(AZBLOB_SCHEME);
 }
 
 mod backend;
 mod config;
+mod copier;
+#[doc(hidden)]
 pub mod core;
 mod deleter;
-mod error;
 mod lister;
+mod reader;
+#[doc(hidden)]
 pub mod writer;
 
 pub use backend::AzblobBuilder as Azblob;
 pub use config::AzblobConfig;
+
+/// Re-export of the [`reqsign_azure_storage`] crate that this service signs
+/// requests with.
+///
+/// [`Azblob::credential_provider_chain`] takes a chain of providers for
+/// [`reqsign_azure_storage::Credential`]. Implement providers against this
+/// re-export and [`opendal_core::reqsign_core`] rather than depending on the
+/// `reqsign` crates directly, so that the types always match the ones this
+/// service is built with.
+pub use reqsign_azure_storage;

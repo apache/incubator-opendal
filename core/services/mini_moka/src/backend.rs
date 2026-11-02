@@ -26,6 +26,7 @@ use super::config::MiniMokaConfig;
 use super::core::*;
 use super::deleter::MiniMokaDeleter;
 use super::lister::MiniMokaLister;
+use super::reader::*;
 use super::writer::MiniMokaWriter;
 
 /// [mini-moka](https://github.com/moka-rs/mini-moka) backend support.
@@ -86,8 +87,8 @@ impl MiniMokaBuilder {
 impl Builder for MiniMokaBuilder {
     type Config = MiniMokaConfig;
 
-    fn build(self) -> Result<impl Access> {
-        debug!("backend build started: {:?}", &self);
+    fn build(self) -> Result<impl Service> {
+        debug!("backend build started: {:?}", self);
 
         let mut builder: mini_moka::sync::CacheBuilder<String, MiniMokaValue, _> =
             mini_moka::sync::Cache::builder();
@@ -118,55 +119,75 @@ impl Builder for MiniMokaBuilder {
     }
 }
 
-#[derive(Debug)]
-struct MiniMokaBackend {
-    core: Arc<MiniMokaCore>,
-    root: String,
+#[derive(Debug, Clone)]
+pub(crate) struct MiniMokaBackend {
+    pub(crate) core: Arc<MiniMokaCore>,
+    pub(crate) root: String,
+    capability: Capability,
 }
 
 impl MiniMokaBackend {
     fn new(core: Arc<MiniMokaCore>, root: String) -> Self {
-        Self { core, root }
+        let capability = Capability {
+            stat: true,
+            read: true,
+            write: true,
+            write_can_empty: true,
+            delete: true,
+            list: true,
+
+            ..Default::default()
+        };
+
+        Self {
+            core,
+            root,
+            capability,
+        }
     }
 }
 
-impl Access for MiniMokaBackend {
-    type Reader = Buffer;
+impl Service for MiniMokaBackend {
+    type Reader = oio::StreamReader<MiniMokaReader>;
     type Writer = MiniMokaWriter;
     type Lister = oio::HierarchyLister<MiniMokaLister>;
     type Deleter = oio::OneShotDeleter<MiniMokaDeleter>;
+    type Copier = ();
+    type Composer = ();
 
-    fn info(&self) -> Arc<AccessorInfo> {
-        let info = AccessorInfo::default();
-        info.set_scheme(MINI_MOKA_SCHEME)
-            .set_root(&self.root)
-            .set_native_capability(Capability {
-                stat: true,
-                read: true,
-                write: true,
-                write_can_empty: true,
-                delete: true,
-                list: true,
-
-                ..Default::default()
-            });
-
-        Arc::new(info)
+    fn info(&self) -> ServiceInfo {
+        ServiceInfo::new(MINI_MOKA_SCHEME, &self.root, "")
     }
 
-    async fn stat(&self, path: &str, _: OpStat) -> Result<RpStat> {
+    fn capability(&self) -> Capability {
+        self.capability
+    }
+
+    async fn create_dir(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpCreateDir,
+    ) -> Result<RpCreateDir> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn stat(&self, _ctx: &OperationContext, path: &str, _: OpStat) -> Result<RpStat> {
         let p = build_abs_path(&self.root, path);
 
         // Check if path exists directly in cache
         match self.core.get(&p) {
             Some(value) => {
-                let mut metadata = value.metadata.clone();
+                let mut metadata = value.metadata.clone().into_builder();
                 if p.ends_with('/') {
-                    metadata.set_mode(EntryMode::DIR);
+                    metadata.set_dir();
                 } else {
-                    metadata.set_mode(EntryMode::FILE);
+                    metadata.set_file(value.metadata.content_length());
                 }
-                Ok(RpStat::new(metadata))
+                Ok(RpStat::new(metadata.build()))
             }
             None => {
                 if p.ends_with('/') {
@@ -177,9 +198,9 @@ impl Access for MiniMokaBackend {
                         .any(|entry| entry.key().starts_with(&p) && entry.key() != &p);
 
                     if is_prefix {
-                        let mut metadata = Metadata::default();
-                        metadata.set_mode(EntryMode::DIR);
-                        return Ok(RpStat::new(metadata));
+                        let mut metadata = MetadataBuilder::unknown();
+                        metadata.set_dir();
+                        return Ok(RpStat::new(metadata.build()));
                     }
                 }
 
@@ -187,57 +208,88 @@ impl Access for MiniMokaBackend {
             }
         }
     }
+    fn read(&self, _ctx: &OperationContext, path: &str, op: OpRead) -> Result<Self::Reader> {
+        let output: oio::StreamReader<MiniMokaReader> = {
+            Ok(oio::StreamReader::new(MiniMokaReader::new(
+                self.clone(),
+                path,
+                op,
+            )))
+        }?;
 
-    async fn read(&self, path: &str, op: OpRead) -> Result<(RpRead, Self::Reader)> {
-        let p = build_abs_path(&self.root, path);
-
-        match self.core.get(&p) {
-            Some(value) => {
-                let range = op.range();
-
-                // If range is full, return the content buffer directly
-                if range.is_full() {
-                    return Ok((RpRead::new(), value.content));
-                }
-
-                let offset = range.offset() as usize;
-                if offset >= value.content.len() {
-                    return Err(Error::new(
-                        ErrorKind::RangeNotSatisfied,
-                        "range start offset exceeds content length",
-                    ));
-                }
-
-                let size = range.size().map(|s| s as usize);
-                let end = size.map_or(value.content.len(), |s| {
-                    (offset + s).min(value.content.len())
-                });
-                let sliced_content = value.content.slice(offset..end);
-
-                Ok((RpRead::new(), sliced_content))
-            }
-            None => Err(Error::new(ErrorKind::NotFound, "path not found")),
-        }
+        Ok(output)
     }
 
-    async fn write(&self, path: &str, op: OpWrite) -> Result<(RpWrite, Self::Writer)> {
-        let p = build_abs_path(&self.root, path);
-        let writer = MiniMokaWriter::new(self.core.clone(), p, op);
-        Ok((RpWrite::new(), writer))
+    fn write(&self, _ctx: &OperationContext, path: &str, op: OpWrite) -> Result<Self::Writer> {
+        let output: MiniMokaWriter = {
+            let p = build_abs_path(&self.root, path);
+            let writer = MiniMokaWriter::new(self.core.clone(), p, op);
+            Ok(writer)
+        }?;
+
+        Ok(output)
     }
 
-    async fn delete(&self) -> Result<(RpDelete, Self::Deleter)> {
-        let deleter =
-            oio::OneShotDeleter::new(MiniMokaDeleter::new(self.core.clone(), self.root.clone()));
-        Ok((RpDelete::default(), deleter))
+    fn delete(&self, _ctx: &OperationContext) -> Result<Self::Deleter> {
+        let output: oio::OneShotDeleter<MiniMokaDeleter> = {
+            let deleter = oio::OneShotDeleter::new(MiniMokaDeleter::new(
+                self.core.clone(),
+                self.root.clone(),
+            ));
+            Ok(deleter)
+        }?;
+
+        Ok(output)
     }
 
-    async fn list(&self, path: &str, op: OpList) -> Result<(RpList, Self::Lister)> {
-        let p = build_abs_path(&self.root, path);
+    fn list(&self, _ctx: &OperationContext, path: &str, op: OpList) -> Result<Self::Lister> {
+        let output: oio::HierarchyLister<MiniMokaLister> = {
+            let p = build_abs_path(&self.root, path);
 
-        let mini_moka_lister = MiniMokaLister::new(self.core.clone(), self.root.clone(), p);
-        let lister = oio::HierarchyLister::new(mini_moka_lister, path, op.recursive());
+            let mini_moka_lister = MiniMokaLister::new(self.core.clone(), self.root.clone(), p);
+            let lister = oio::HierarchyLister::new(mini_moka_lister, path, op.recursive());
 
-        Ok((RpList::default(), lister))
+            Ok(lister)
+        }?;
+
+        Ok(output)
+    }
+
+    fn copy(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpCopy,
+    ) -> Result<Self::Copier> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn rename(
+        &self,
+        _ctx: &OperationContext,
+        _from: &str,
+        _to: &str,
+        _args: OpRename,
+    ) -> Result<RpRename> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
+    }
+
+    async fn presign(
+        &self,
+        _ctx: &OperationContext,
+        _path: &str,
+        _args: OpPresign,
+    ) -> Result<RpPresign> {
+        Err(Error::new(
+            ErrorKind::Unsupported,
+            "operation is not supported",
+        ))
     }
 }

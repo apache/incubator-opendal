@@ -19,7 +19,7 @@ use divan::Bencher;
 use divan::counter::BytesCount;
 use opendal::tests::TEST_RUNTIME;
 use opendal::tests::init_test_service;
-use rand::prelude::*;
+use rand::rng;
 use size::Size;
 
 use super::utils::*;
@@ -40,7 +40,7 @@ fn whole(b: Bencher, size: Size) {
 
     b.counter(BytesCount::from(size.bytes() as u64))
         .with_inputs(|| {
-            let mut rng = thread_rng();
+            let mut rng = rng();
             gen_bytes(&mut rng, size.bytes() as usize)
         })
         .bench_values(|content| {
@@ -65,7 +65,7 @@ mod concurrent {
         let op = init_test_service().unwrap().unwrap();
         let path = uuid::Uuid::new_v4().to_string();
         let _temp_data = TempData::existing(op.clone(), &path);
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let content = gen_bytes(&mut rng, SIZE);
 
         b.counter(BytesCount::from(SIZE)).bench(|| {
@@ -86,7 +86,7 @@ mod concurrent {
         let op = init_test_service().unwrap().unwrap();
         let path = uuid::Uuid::new_v4().to_string();
         let _temp_data = TempData::existing(op.clone(), &path);
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let content = gen_bytes(&mut rng, SIZE);
 
         b.counter(BytesCount::from(SIZE)).bench(|| {

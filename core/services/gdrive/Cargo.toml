@@ -18,6 +18,7 @@
 [package]
 description = "Apache OpenDAL gdrive service implementation"
 name = "opendal-service-gdrive"
+readme = "README.md"
 
 authors = { workspace = true }
 edition = { workspace = true }
@@ -31,16 +32,15 @@ version = { workspace = true }
 all-features = true
 
 [dependencies]
-opendal-core = { path = "../../core", version = "0.55.0", default-features = false, features = [
-  "internal-path-cache",
-] }
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false }
 
+asyncband = { workspace = true, features = ["mutex", "singleflight"] }
 bytes = { workspace = true }
 http = { workspace = true }
 log = { workspace = true }
-mea = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 
 [dev-dependencies]
+asyncband = { workspace = true, features = ["semaphore"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

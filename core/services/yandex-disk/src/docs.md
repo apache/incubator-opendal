@@ -1,6 +1,6 @@
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [x] create_dir
 - [x] stat
@@ -12,12 +12,14 @@ This service can be used to:
 - [x] rename
 - [ ] presign
 
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
+
 ## Configuration
 
-- `root`: Set the work directory for backend
-- `access_token` YandexDisk oauth access_token
-
-You can refer to [`YandexDiskBuilder`]'s docs for more information
+Use [`crate::YandexDiskConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
 ## Example
 
@@ -37,7 +39,7 @@ async fn main() -> Result<()> {
         // set the access_token for OpenDAL
         .access_token("test");
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
 
     Ok(())
 }

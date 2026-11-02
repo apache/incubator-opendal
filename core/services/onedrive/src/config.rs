@@ -21,7 +21,7 @@ use opendal_core::{Configurator, OperatorUri, Result};
 use serde::Deserialize;
 use serde::Serialize;
 
-use super::builder::OnedriveBuilder;
+use super::backend::OnedriveBuilder;
 
 /// Config for [OneDrive](https://onedrive.com) backend support.
 #[derive(Default, Serialize, Deserialize, Clone, PartialEq, Eq)]
@@ -38,7 +38,11 @@ pub struct OnedriveConfig {
     pub client_id: Option<String>,
     /// Microsoft Graph API Application client secret that is in the Azure's app registration portal
     pub client_secret: Option<String>,
-    /// Enabling version support
+    /// Deprecated: OneDrive supports version listing without this option.
+    #[deprecated(
+        since = "0.57.0",
+        note = "OneDrive supports version listing without this option."
+    )]
     pub enable_versioning: bool,
 }
 
@@ -46,7 +50,6 @@ impl Debug for OnedriveConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OnedriveConfig")
             .field("root", &self.root)
-            .field("enable_versioning", &self.enable_versioning)
             .finish_non_exhaustive()
     }
 }
@@ -57,15 +60,15 @@ impl Configurator for OnedriveConfig {
     fn from_uri(uri: &OperatorUri) -> Result<Self> {
         let mut map = uri.options().clone();
 
-        if let Some(root) = uri.root() {
-            if !root.is_empty() {
-                let normalized = match root.split_once('/') {
-                    Some((_, rest)) if !rest.is_empty() => rest.to_string(),
-                    _ => root.to_string(),
-                };
-                if !normalized.is_empty() {
-                    map.insert("root".to_string(), normalized);
-                }
+        if let Some(root) = uri.root()
+            && !root.is_empty()
+        {
+            let normalized = match root.split_once('/') {
+                Some((_, rest)) if !rest.is_empty() => rest.to_string(),
+                _ => root.to_string(),
+            };
+            if !normalized.is_empty() {
+                map.insert("root".to_string(), normalized);
             }
         }
 

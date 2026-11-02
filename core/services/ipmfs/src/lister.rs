@@ -21,24 +21,27 @@ use bytes::Buf;
 use http::StatusCode;
 use serde::Deserialize;
 
-use super::core::IpmfsCore;
-use super::error::parse_error;
+use super::core::parse_error;
+use super::core::{ErrorContext, IpmfsCore};
 use opendal_core::EntryMode;
 use opendal_core::ErrorKind;
-use opendal_core::Metadata;
+use opendal_core::MetadataBuilder;
+use opendal_core::OperationContext;
 use opendal_core::Result;
 use opendal_core::raw::*;
 
 pub struct IpmfsLister {
     core: Arc<IpmfsCore>,
+    ctx: OperationContext,
     root: String,
     path: String,
 }
 
 impl IpmfsLister {
-    pub fn new(core: Arc<IpmfsCore>, root: &str, path: &str) -> Self {
+    pub fn new(core: Arc<IpmfsCore>, ctx: OperationContext, root: &str, path: &str) -> Self {
         Self {
             core,
+            ctx,
             root: root.to_string(),
             path: path.to_string(),
         }
@@ -47,10 +50,10 @@ impl IpmfsLister {
 
 impl oio::PageList for IpmfsLister {
     async fn next_page(&self, ctx: &mut oio::PageContext) -> Result<()> {
-        let resp = self.core.ipmfs_ls(&self.path).await?;
+        let resp = self.core.ipmfs_ls(&self.ctx, &self.path).await?;
 
         if resp.status() != StatusCode::OK {
-            let err = parse_error(resp);
+            let err = parse_error(ErrorContext::new(ServiceOperation("FilesLs")), resp);
             if matches!(err.kind(), ErrorKind::NotFound) {
                 // treat as empty listing
                 ctx.done = true;
@@ -65,7 +68,7 @@ impl oio::PageList for IpmfsLister {
             let path = build_rel_path(&self.root, &path);
 
             ctx.entries
-                .push_back(oio::Entry::new(&path, Metadata::new(EntryMode::DIR)));
+                .push_back(oio::Entry::new(&path, MetadataBuilder::dir().build()));
         }
 
         let bs = resp.into_body();
@@ -76,18 +79,21 @@ impl oio::PageList for IpmfsLister {
         ctx.done = true;
 
         for object in entries_body.entries.unwrap_or_default() {
+            let prefix = if self.path == "/" {
+                ""
+            } else {
+                self.path.as_str()
+            };
             let path = match object.mode() {
-                EntryMode::FILE => format!("{}{}", &self.path, object.name),
-                EntryMode::DIR => format!("{}{}/", &self.path, object.name),
+                EntryMode::FILE => format!("{prefix}{}", object.name),
+                EntryMode::DIR => format!("{prefix}{}/", object.name),
                 EntryMode::Unknown => unreachable!(),
             };
 
-            let path = build_rel_path(&self.root, &path);
-
-            ctx.entries.push_back(oio::Entry::new(
-                &path,
-                Metadata::new(object.mode()).with_content_length(object.size),
-            ));
+            ctx.entries.push_back(oio::Entry::new(&path, {
+                let metadata = MetadataBuilder::file(object.size);
+                metadata.build()
+            }));
         }
 
         Ok(())

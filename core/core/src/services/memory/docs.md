@@ -28,7 +28,7 @@ use opendal_core::Operator;
 async fn main() -> Result<()> {
     let mut builder = Memory::default().root("/tmp");
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
 
     Ok(())
 }

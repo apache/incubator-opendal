@@ -20,24 +20,32 @@ use std::sync::Arc;
 use bytes::Buf;
 
 use super::core::MetainformationResponse;
-use super::core::YandexDiskCore;
+use super::core::parse_error;
 use super::core::parse_info;
-use super::error::parse_error;
+use super::core::{ErrorContext, YandexDiskCore};
+use opendal_core::OperationContext;
 use opendal_core::Result;
 use opendal_core::raw::oio::Entry;
 use opendal_core::raw::*;
 
 pub struct YandexDiskLister {
     core: Arc<YandexDiskCore>,
+    ctx: OperationContext,
 
     path: String,
     limit: Option<usize>,
 }
 
 impl YandexDiskLister {
-    pub(super) fn new(core: Arc<YandexDiskCore>, path: &str, limit: Option<usize>) -> Self {
+    pub(super) fn new(
+        core: Arc<YandexDiskCore>,
+        ctx: OperationContext,
+        path: &str,
+        limit: Option<usize>,
+    ) -> Self {
         YandexDiskLister {
             core,
+            ctx,
             path: path.to_string(),
             limit,
         }
@@ -54,7 +62,7 @@ impl oio::PageList for YandexDiskLister {
 
         let resp = self
             .core
-            .metainformation(&self.path, self.limit, offset)
+            .metainformation(&self.ctx, &self.path, self.limit, offset)
             .await?;
 
         if resp.status() == http::StatusCode::NOT_FOUND {
@@ -66,10 +74,10 @@ impl oio::PageList for YandexDiskLister {
             http::StatusCode::OK => {
                 let body = resp.into_body();
 
-                let resp: MetainformationResponse =
+                let mut resp: MetainformationResponse =
                     serde_json::from_reader(body.reader()).map_err(new_json_deserialize_error)?;
 
-                if let Some(embedded) = resp.embedded {
+                if let Some(embedded) = resp.embedded.take() {
                     let n = embedded.items.len();
 
                     for mf in embedded.items {
@@ -98,16 +106,32 @@ impl oio::PageList for YandexDiskLister {
 
                     return Ok(());
                 }
+
+                let rel = resp
+                    .path
+                    .strip_prefix("disk:")
+                    .map(|p| build_rel_path(&self.core.root, p));
+                if let Some(rel) = rel {
+                    let md = parse_info(resp)?;
+                    let path = if md.mode().is_dir() {
+                        format!("{rel}/")
+                    } else {
+                        rel
+                    };
+                    ctx.entries.push_back(Entry::new(&path, md));
+                }
+                ctx.done = true;
+
+                Ok(())
             }
             http::StatusCode::NOT_FOUND => {
                 ctx.done = true;
-                return Ok(());
+                Ok(())
             }
-            _ => {
-                return Err(parse_error(resp));
-            }
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetMetainformation")),
+                resp,
+            )),
         }
-
-        Ok(())
     }
 }

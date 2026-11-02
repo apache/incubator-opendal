@@ -25,6 +25,7 @@ use opendal::Operator;
 use opendal::services;
 use opendal::tests::TEST_RUNTIME;
 use rand::prelude::*;
+use rand::rng;
 use tokio::io::AsyncReadExt;
 
 fn main() {
@@ -44,7 +45,7 @@ fn main() {
         .secret_access_key(&secret_key)
         .bucket(&bucket)
         .region(&region);
-    let op = Operator::new(cfg).unwrap().finish();
+    let op = Operator::new(cfg).unwrap();
 
     // Init AWS S3 SDK.
     let mut config_loader = aws_config::defaults(BehaviorVersion::latest());
@@ -115,7 +116,7 @@ fn bench_read(c: &mut Criterion, op: Operator, s3_client: aws_sdk_s3::Client, bu
 }
 
 async fn prepare(op: &Operator) {
-    let mut rng = thread_rng();
+    let mut rng = rng();
     let mut content = vec![0; 16 * 1024 * 1024];
     rng.fill_bytes(&mut content);
 

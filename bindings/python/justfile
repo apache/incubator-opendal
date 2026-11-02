@@ -22,7 +22,7 @@ default: help
 # Configuration & Variables
 # ==============================================================================
 
-set ignore-comments := true
+set ignore-comments
 
 # ==============================================================================
 # Setup & Maintenance
@@ -55,23 +55,24 @@ clean:
 stub-gen: setup
     @echo "{{ BOLD }}--- Generating Python type stubs ---{{ NORMAL }}"
     @cargo run --quiet --manifest-path=../../dev/Cargo.toml -- generate -l python
-    @cargo run --quiet --bin stub_gen
-    @echo "{{ BOLD }}--- Formatting and fixing generated stubs ---{{ NORMAL }}"
-    -@bash -c 'shopt -s globstar; uv run ruff check **/*.pyi --fix --unsafe-fixes --silent || true'
+    @uv run maturin develop --generate-stubs
+    ## This is temporary till the functionalities land in pyo3-introspection. ref: https://github.com/PyO3/pyo3/issues/5137
+    @echo "{{ BOLD }}--- Post processing generated stubs ---{{ NORMAL }}"
+    @uv run python scripts/postprocess_stubs.py
     @just fmt
 
 # Compile and produce a release wheel with optimizations
 [group('release')]
 build-release *args: stub-gen
     @echo "{{ BOLD }}--- Building release wheel ---{{ NORMAL }}"
-    @uv run maturin build -m ./Cargo.toml --profile release --strip --release --out dist {{ args }}
-    @uv run mkdocs build
+    @uv run maturin build --manifest-path ./Cargo.toml --profile release --strip --release --out dist {{ args }}
+    @just docs-build
 
 # Build and install the release wheel in the current venv
 [group('release')]
 install-release *args: stub-gen
     @echo "{{ BOLD }}--- Installing release wheel ---{{ NORMAL }}"
-    @uv run maturin develop -m ./Cargo.toml --profile release --strip --release {{ args }}
+    @uv run maturin develop --manifest-path ./Cargo.toml --profile release --strip --release {{ args }}
 
 # Build and install the release wheel in the current venv
 [group('release')]
@@ -79,32 +80,54 @@ install-release *args: stub-gen
 bench: install-release
     @echo "{{ BOLD }}--- Bench release ---{{ NORMAL }}"
     @uv run async_opendal_benchmark.py
-    @uv run async_origin_s3_benchmark_with_gevent.py
+    @uv run async_origin_s3_benchmark_with_threads.py
 
 # Build only a source distribution (sdist) without compiling
 [group('release')]
 sdist *args: stub-gen
     @echo "{{ BOLD }}--- Building source distribution without compiling ---{{ NORMAL }}"
-    @uv run maturin sdist -m ./Cargo.toml --out dist {{ args }}
+    @uv run maturin sdist --manifest-path ./Cargo.toml --out dist {{ args }}
 
 # Compile and produce a development wheel
 [group('dev')]
 build-dev *args: stub-gen
     @echo "{{ BOLD }}--- Building development wheel ---{{ NORMAL }}"
-    @uv run maturin build -m ./Cargo.toml --out dist {{ args }}
-    @uv run mkdocs build
+    @uv run maturin build --manifest-path ./Cargo.toml --out dist {{ args }}
+    @just docs-build
 
 # Build and install the development wheel in the current venv
 [group('dev')]
 install-dev *args: stub-gen
     @echo "{{ BOLD }}--- Installing development wheel ---{{ NORMAL }}"
-    @uv run maturin develop -m ./Cargo.toml {{ args }}
+    @uv run maturin develop --manifest-path ./Cargo.toml {{ args }}
 
 # Run tests
 [group('dev')]
 test *args: install-dev
     @echo "{{ BOLD }}--- Running tests ---{{ NORMAL }}"
     @uv run pytest -v {{ args }}
+
+# ==============================================================================
+# Documentation
+# ==============================================================================
+
+# Convert the example notebooks to Markdown so Zensical can render them
+[group('docs')]
+docs-notebooks: setup
+    @echo "{{ BOLD }}--- Converting example notebooks to Markdown ---{{ NORMAL }}"
+    @uv run jupyter nbconvert --to markdown docs/examples/*.ipynb
+
+# Build the documentation site into site/
+[group('docs')]
+docs-build *args: docs-notebooks
+    @echo "{{ BOLD }}--- Building docs ---{{ NORMAL }}"
+    @uv run zensical build {{ args }}
+
+# Serve the documentation site locally with live reload
+[group('docs')]
+docs-serve *args: docs-notebooks
+    @echo "{{ BOLD }}--- Serving docs ---{{ NORMAL }}"
+    @uv run zensical serve {{ args }}
 
 # ==============================================================================
 # Code Quality & Formatting
@@ -118,6 +141,8 @@ lint: setup
     @cargo clippy -- -D warnings -D clippy::dbg_macro -A clippy::incompatible_msrv
     @echo "{{ BOLD }}--- Running Python linter (Ruff) ---{{ NORMAL }}"
     @uv run ruff check
+    @echo "{{ BOLD }}--- Running Python type checker (ty) ---{{ NORMAL }}"
+    @uv run ty check
 
 # Format all code (Rust, Python, etc.)
 [group('lint')]
@@ -126,8 +151,10 @@ fmt: setup
     @cargo fmt --all
     @echo "{{ BOLD }}--- Formatting Python ---{{ NORMAL }}"
     @uv run ruff format --quiet
+    ## Fixes generated stubs
+    @uv run ruff check --unsafe-fixes --fix --silent
     @echo "{{ BOLD }}--- Checking license headers (Hawkeye) ---{{ NORMAL }}"
-    @hawkeye format --config ../../licenserc.toml --fail-if-updated false
+    @hawkeye format --config ../../licenserc.toml .
     @echo "{{ BOLD }}--- Formatting Misc ---{{ NORMAL }}"
     @taplo fmt --config ../../.taplo.toml
     @just --fmt --unstable
@@ -136,7 +163,7 @@ fmt: setup
 [group('lint')]
 pre-commit: fmt lint
     @echo "{{ BOLD }}--- Checking license headers (Hawkeye) ---{{ NORMAL }}"
-    @hawkeye check --config ../../licenserc.toml
+    @hawkeye check --config ../../licenserc.toml .
     @echo "{{ BOLD }}--- Running Misc checks ---{{ NORMAL }}"
     @taplo lint --config ../../.taplo.toml
     @just --fmt --unstable --check

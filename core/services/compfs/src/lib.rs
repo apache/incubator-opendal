@@ -15,8 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-//! Compfs service implementation for Apache OpenDAL.
+#![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
 
 mod backend;
@@ -30,10 +31,15 @@ mod writer;
 pub use backend::CompfsBuilder as Compfs;
 pub use config::CompfsConfig;
 
-/// Default scheme for compfs service.
+/// URI scheme used for service registration and scheme-driven construction.
 pub const COMPFS_SCHEME: &str = "compfs";
 
-/// Register this service into the given registry.
+/// Register this service's URI scheme or schemes with an operator registry.
+///
+/// Registration enables scheme-driven construction through
+/// [`opendal_core::Operator::from_uri`] and
+/// [`opendal_core::Operator::via_iter`]. Direct construction through
+/// [`opendal_core::Operator::new`] does not require registration.
 pub fn register_compfs_service(registry: &opendal_core::OperatorRegistry) {
     registry.register::<Compfs>(COMPFS_SCHEME);
 }

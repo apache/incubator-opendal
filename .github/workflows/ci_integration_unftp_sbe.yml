@@ -37,7 +37,7 @@ jobs:
   check_clippy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
@@ -45,6 +45,11 @@ jobs:
           need-rocksdb: true
           need-protoc: true
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Useful for debugging
+      - name: Print Clippy version
+        working-directory: integrations/unftp-sbe
+        run: cargo clippy --version
 
       - name: Cargo clippy
         working-directory: integrations/unftp-sbe

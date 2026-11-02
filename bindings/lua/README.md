@@ -1,79 +1,78 @@
 # Apache OpenDAL™ Lua Binding (WIP)
 
-[![](https://img.shields.io/badge/status-unreleased-red)](https://opendal.apache.org/bindings/lua/)
+[![status: unreleased](https://img.shields.io/badge/status-unreleased-red)](https://opendal.apache.org/docs/bindings/lua)
 
-![](https://github.com/apache/opendal/assets/5351546/87bbf6e5-f19e-449a-b368-3e283016c887)
+A Lua binding for [Apache OpenDAL](https://opendal.apache.org/): access the
+local filesystem, in-memory storage, S3, and 50+ services through one API.
 
-> **Note**: This binding has its own independent version number, which may differ from the Rust core version. When checking for updates or compatibility, always refer to this binding's version rather than the core version.
+We release the OpenDAL Lua binding independently of the
+[`opendal` crate](https://crates.io/crates/opendal) (Rust core). For updates
+and compatibility, use the Lua binding version instead of the `opendal` crate
+version.
 
-## Example
+## Useful Links
+
+- **User guide**: https://opendal.apache.org/docs/bindings/lua
+- **Services & configuration**: https://opendal.apache.org/docs/category/services/
+- **Source**: https://github.com/apache/opendal/tree/main/bindings/lua
+
+## Build and install
+
+### Build from source
+
+```bash
+# Currently only Lua 5.2 is supported (the lua52 Cargo feature).
+cd bindings/lua
+cargo build --package opendal-lua --release
+
+# Copy the native library to your Lua shared-library directory.
+cp ../../target/release/libopendal_lua.so /usr/lib/lua/5.2/opendal.so
+```
+
+### Install with LuaRocks
+
+```bash
+cd bindings/lua
+luarocks make
+```
+
+## Quickstart
 
 ```lua
 local opendal = require("opendal")
 
-local op, err = opendal.operator.new("fs",{root="/tmp"})
-if err ~= nil then
-    print(err)
+-- Errors are raised as Lua errors; use pcall to catch them.
+local ok, op = pcall(opendal.operator.new, "fs", { root = "/tmp" })
+if not ok then
+    print(op)
     return
 end
-op:write("test.txt","hello world")
-print("read: ", op:read("test.txt"))
+
+op:write("test.txt", "hello world")
+print("read:", op:read("test.txt"))   -- "hello world"
 ```
 
-## Lua version
-
-You have to enable one of the features: lua54, lua53, lua52, lua51, luajit(52) or luau in `Cargo.toml`, according to the chosen Lua version. Default Lua version is 5.2.
-
-## Build from source
-
-1. Build OpenDAL Lua Interface
+Run the bundled example:
 
 ```bash
-$ cd bindings/lua
-$ cargo build --package opendal-lua --release
+lua5.2 example/fs.lua
 ```
 
-2. Install opendal Lua library
+For more examples and full API documentation, see the
+[User guide](https://opendal.apache.org/docs/bindings/lua).
+
+## Contributing
+
+Contributions are welcome. Run tests with
+[busted](https://lunarmodules.github.io/busted/):
 
 ```bash
-# copy to lua share library directory
-# default lua5.2 share library directory is /usr/lib/lua/5.2
-$ cp ../../target/release/libopendal_lua.so /usr/lib/lua/5.2/opendal.so
-```
-
-## Install from LuaRocks
-
-```bash
-$ luarocks make
-```
-
-## Usage
-
-```bash
-$ lua5.2 example/fs.lua
-read:   hello world
-```
-
-## Test
-
-```bash
-$ busted -o gtest test/opendal_test.lua
-[==========] Running tests from scanned files.
-[----------] Global test environment setup.
-[----------] Running tests from test/opendal_test.lua
-[ RUN      ] test/opendal_test.lua @ 24: opendal unit test opendal fs schema operator function in fs schema
-[       OK ] test/opendal_test.lua @ 24: opendal unit test opendal fs schema operator function in fs schema (1.52 ms)
-[ RUN      ] test/opendal_test.lua @ 36: opendal unit test opendal fs schema meta function in fs schema
-[       OK ] test/opendal_test.lua @ 36: opendal unit test opendal fs schema meta function in fs schema (0.24 ms)
-[----------] 2 tests from test/opendal_test.lua (3.47 ms total)
-
-[----------] Global test environment teardown.
-[==========] 2 tests from 1 test file ran. (3.54 ms total)
-[  PASSED  ] 2 tests.
+busted -o gtest test/opendal_test.lua
 ```
 
 ## License and Trademarks
 
 Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 
-Apache OpenDAL, OpenDAL, and Apache are either registered trademarks or trademarks of the Apache Software Foundation.
+Apache OpenDAL, OpenDAL, and Apache are either registered trademarks or
+trademarks of the Apache Software Foundation.

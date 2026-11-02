@@ -24,8 +24,8 @@ edition = "2024"
 homepage = "https://opendal.apache.org/"
 license = "Apache-2.0"
 repository = "https://github.com/apache/opendal"
-rust-version = "1.85"
-version = "0.1.6-rc.2"                                # updates this version to bump Rubygem version during release process
+rust-version = "1.91"
+version = "0.1.16"
 
 [lib]
 crate-type = ["cdylib"]
@@ -65,4 +65,4 @@ bytes = "1.6"
 tokio = { version = "1", features = ["full"] }
 
 [build-dependencies]
-rb-sys-env = "0.1.2"
+rb-sys-env = "0.2.3"

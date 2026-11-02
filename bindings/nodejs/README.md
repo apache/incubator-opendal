@@ -4,13 +4,20 @@
 [![npm](https://img.shields.io/npm/v/opendal.svg?logo=npm)](https://www.npmjs.com/package/opendal)
 [![Website](https://img.shields.io/badge/opendal-OpenDAL_Website-red?logo=Apache&logoColor=red)](https://opendal.apache.org/docs/nodejs/)
 
-![](https://github.com/apache/opendal/assets/5351546/87bbf6e5-f19e-449a-b368-3e283016c887)
+![OpenDAL Architecture](https://opendal.apache.org/img/architectural.png)
 
-> **Note**: This binding has its own independent version number, which may differ from the Rust core version. When checking for updates or compatibility, always refer to this binding's version rather than the core version.
+A native Node.js binding for Apache OpenDAL: access S3, GCS, Azure Blob, HDFS, the local filesystem, and 50+ more services through one API.
+
+We release the OpenDAL Node.js binding independently of the
+[`opendal` crate](https://crates.io/crates/opendal) (Rust core). For updates
+and compatibility, use the Node.js binding version instead of the `opendal`
+crate version.
 
 ## Useful Links
 
-- [Documentation](https://opendal.apache.org/docs/nodejs/)
+- [User guide](https://opendal.apache.org/docs/bindings/nodejs)
+- [API documentation](https://opendal.apache.org/docs/nodejs/)
+- [Services & configuration](https://opendal.apache.org/services)
 - [Upgrade Guide](./upgrade.md)
 
 ## Installation
@@ -19,38 +26,7 @@
 npm install opendal
 ```
 
-## Docs
-
-To build the docs locally, please run the following commands:
-
-```shell
-# Only need to run once unless you want to update the docs theme
-pnpm run build:theme
-
-# Build the docs
-pnpm run docs
-```
-
-## Tests
-
-Services behavior tests read necessary configs from env vars or the `.env` file.
-
-You can copy [.env.example](/.env.example) to `$(pwd)/.env` and change the values on need, or directly set env vars with `export KEY=VALUE`.
-
-Take `fs` for example, we need to enable bench on `fs` on `/tmp`:
-
-```properties
-OPENDAL_TEST=fs
-OPENDAL_FS_ROOT=/tmp
-```
-
-You can run service behavior tests of enabled with the following command:
-
-```shell
-pnpm build && pnpm test
-```
-
-## Usage
+## Quickstart
 
 ```javascript
 import { Operator } from "opendal";
@@ -67,183 +43,32 @@ async function main() {
 main();
 ```
 
-## Layers
-
-OpenDAL provides layers to add additional functionality to operators. You can chain multiple layers together to build powerful data access pipelines.
-
-### Available Layers
-
-- **RetryLayer** - Retry failed operations automatically
-- **ConcurrentLimitLayer** - Limit concurrent requests
-- **TimeoutLayer** - Add timeout for operations
-- **LoggingLayer** - Log all operations
-- **ThrottleLayer** - Limit bandwidth usage
-
-### TimeoutLayer
-
-Prevents operations from hanging indefinitely:
-
-```javascript
-import { Operator, TimeoutLayer } from "opendal";
-
-const op = new Operator("fs", { root: "/tmp" });
-
-const timeout = new TimeoutLayer();
-timeout.timeout = 10000; // 10 seconds for non-IO operations (ms)
-timeout.ioTimeout = 3000; // 3 seconds for IO operations (ms)
-op.layer(timeout.build());
-```
-
-**Default values:** timeout: 60s, ioTimeout: 10s
-
-### LoggingLayer
-
-Add structured logging for debugging and monitoring:
-
-```javascript
-import { Operator, LoggingLayer } from "opendal";
-
-const op = new Operator("fs", { root: "/tmp" });
-
-const logging = new LoggingLayer();
-op.layer(logging.build());
-
-// All operations will be logged
-await op.write("test.txt", "Hello World");
-```
-
-Enable logging output:
-
-```bash
-# Show debug logs
-RUST_LOG=debug node app.js
-
-# Show only OpenDAL logs
-RUST_LOG=opendal::services=debug node app.js
-```
-
-### ThrottleLayer
-
-Control bandwidth usage with rate limiting:
-
-```javascript
-import { Operator, ThrottleLayer } from "opendal";
-
-const op = new Operator("s3", {
-  bucket: "my-bucket",
-  region: "us-east-1",
-});
-
-// Limit to 10 KiB/s with 10 MiB burst
-const throttle = new ThrottleLayer(10 * 1024, 10 * 1024 * 1024);
-op.layer(throttle.build());
-```
-
-**Parameters:**
-
-- `bandwidth`: Maximum bytes per second
-- `burst`: Maximum burst size (must be larger than any operation size)
-
-### RetryLayer
-
-Automatically retry temporary failed operations:
-
-```javascript
-import { Operator, RetryLayer } from "opendal";
-
-const op = new Operator("s3", {
-  bucket: "my-bucket",
-  region: "us-east-1",
-});
-
-const retry = new RetryLayer();
-retry.maxTimes = 3;
-retry.jitter = true;
-op.layer(retry.build());
-```
-
-### ConcurrentLimitLayer
-
-Limit concurrent requests to storage services:
-
-```javascript
-import { Operator, ConcurrentLimitLayer } from "opendal";
-
-const op = new Operator("s3", {
-  bucket: "my-bucket",
-  region: "us-east-1",
-});
-
-// Allow max 1024 concurrent operations
-const limit = new ConcurrentLimitLayer(1024);
-limit.httpPermits = 512; // Limit HTTP requests separately
-op.layer(limit.build());
-```
-
-### Combining Multiple Layers
-
-Stack multiple layers for comprehensive control:
-
-```javascript
-import {
-  Operator,
-  LoggingLayer,
-  TimeoutLayer,
-  RetryLayer,
-  ThrottleLayer,
-} from "opendal";
-
-const op = new Operator("s3", {
-  bucket: "my-bucket",
-  region: "us-east-1",
-});
-
-// Layer 1: Logging for observability
-const logging = new LoggingLayer();
-op.layer(logging.build());
-
-// Layer 2: Timeout protection
-const timeout = new TimeoutLayer();
-timeout.timeout = 30000;
-timeout.ioTimeout = 10000;
-op.layer(timeout.build());
-
-// Layer 3: Retry on failures
-const retry = new RetryLayer();
-retry.maxTimes = 3;
-retry.jitter = true;
-op.layer(retry.build());
-
-// Layer 4: Bandwidth throttling
-const throttle = new ThrottleLayer(100 * 1024, 10 * 1024 * 1024);
-op.layer(throttle.build());
-
-// Now the operator has full production-ready protection
-await op.write("data.json", JSON.stringify(data));
-```
-
-## Usage with Next.js
-
-Config automatically be bundled by [Next.js](https://nextjs.org/docs/app/api-reference/config/next-config-js/serverExternalPackages).
-
-```javascript
-/** @type {import('next').NextConfig} */
-const nextConfig = {
-  serverExternalPackages: ["opendal"],
-};
-
-module.exports = nextConfig;
-```
+The API is promise-based; every operation has a synchronous `*Sync` variant too.
+For configuring backends, streaming, layers (retry, timeout, logging, throttle,
+concurrency limits), presigned URLs, and Next.js usage, see the full
+[user guide](https://opendal.apache.org/docs/bindings/nodejs).
 
 ## Contributing
 
-- Start with [Contributing Guide](CONTRIBUTING.md).
-- Submit [Issues](https://github.com/apache/opendal/issues/new) for bug report or feature requests.
-- Asking questions in the [Discussions](https://github.com/apache/opendal/discussions/new?category=q-a).
-  - Talk to community at [Discord](https://opendal.apache.org/discord).
+- Start with the [Contributing Guide](CONTRIBUTING.md).
+- Submit [Issues](https://github.com/apache/opendal/issues/new) for bug reports or feature requests.
+- Ask questions in the [Discussions](https://github.com/apache/opendal/discussions/new?category=q-a).
+- Talk to the community on [Discord](https://opendal.apache.org/discord).
 
 ## License and Trademarks
 
 Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 
 Apache OpenDAL, OpenDAL, and Apache are either registered trademarks or trademarks of the Apache Software Foundation.
+
+### Third-party software
+
+Compiled distributions include the following Mozilla Public License 2.0
+components. Their source code is available from the linked project pages:
+
+- `colored` 3.1.1 ([source](https://crates.io/crates/colored/3.1.1), [homepage](https://github.com/mackwic/colored)), licensed under MPL-2.0.
+- `option-ext` 0.2.0 ([source](https://crates.io/crates/option-ext/0.2.0), [homepage](https://github.com/soc/option-ext)), licensed under MPL-2.0.
+- `persy` 1.8.1 ([source](https://crates.io/crates/persy/1.8.1), [homepage](https://persy.rs)), licensed under MPL-2.0.
+
+The distribution includes the MPL-2.0 text in `LICENSE-MPL-2.0.txt`.
+</content>

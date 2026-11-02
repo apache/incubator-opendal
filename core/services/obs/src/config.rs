@@ -37,7 +37,11 @@ pub struct ObsConfig {
     pub secret_access_key: Option<String>,
     /// Bucket for obs.
     pub bucket: Option<String>,
-    /// Is bucket versioning enabled for this bucket
+    /// Deprecated: OBS versioning capability is not controlled by service config.
+    #[deprecated(
+        since = "0.57.0",
+        note = "OBS versioning capability is not controlled by this option and this option is no longer needed."
+    )]
     pub enable_versioning: bool,
 }
 
@@ -47,7 +51,6 @@ impl Debug for ObsConfig {
             .field("root", &self.root)
             .field("endpoint", &self.endpoint)
             .field("bucket", &self.bucket)
-            .field("enable_versioning", &self.enable_versioning)
             .finish_non_exhaustive()
     }
 }

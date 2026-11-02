@@ -18,6 +18,7 @@
 [package]
 description = "Apache OpenDAL Memcached service implementation"
 name = "opendal-service-memcached"
+readme = "README.md"
 
 authors = { workspace = true }
 edition = { workspace = true }
@@ -31,11 +32,11 @@ version = { workspace = true }
 all-features = true
 
 [dependencies]
-fastpool = "1.0.2"
-opendal-core = { path = "../../core", version = "0.55.0", default-features = false }
+asyncband = { workspace = true, features = ["pool"] }
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false }
 serde = { workspace = true, features = ["derive"] }
-tokio = { workspace = true, features = ["net", "io-util"] }
-url = "2.5.7"
+tokio = { workspace = true, features = ["io-util", "macros", "net", "time"] }
+url = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

@@ -16,18 +16,17 @@
 // under the License.
 
 use std::fmt::Debug;
-use std::sync::Arc;
 
 use http::Request;
 use http::Response;
 use http::StatusCode;
 
-use crate::error::parse_error;
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct IpfsCore {
-    pub info: Arc<AccessorInfo>,
+    pub info: ServiceInfo,
+    pub capability: Capability,
     pub endpoint: String,
     pub root: String,
 }
@@ -42,7 +41,12 @@ impl Debug for IpfsCore {
 }
 
 impl IpfsCore {
-    pub async fn ipfs_get(&self, path: &str, range: BytesRange) -> Result<Response<HttpBody>> {
+    pub async fn ipfs_get(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        range: BytesRange,
+    ) -> Result<Response<HttpBody>> {
         let p = build_rooted_abs_path(&self.root, path);
 
         let url = format!("{}{}", self.endpoint, percent_encode_path(&p));
@@ -53,24 +57,30 @@ impl IpfsCore {
             req = req.header(http::header::RANGE, range.to_header());
         }
 
-        let req = req.body(Buffer::new()).map_err(new_request_build_error)?;
+        let req = req
+            .extension(Operation::Read)
+            .extension(ServiceOperation("Get"))
+            .body(Buffer::new())
+            .map_err(new_request_build_error)?;
 
-        self.info.http_client().fetch(req).await
+        ctx.http_transport().fetch(req).await
     }
 
-    pub async fn ipfs_head(&self, path: &str) -> Result<Response<Buffer>> {
+    pub async fn ipfs_head(&self, ctx: &OperationContext, path: &str) -> Result<Response<Buffer>> {
         let p = build_rooted_abs_path(&self.root, path);
 
         let url = format!("{}{}", self.endpoint, percent_encode_path(&p));
 
-        let req = Request::head(&url);
+        let req = Request::head(&url)
+            .extension(Operation::Stat)
+            .extension(ServiceOperation("Head"));
 
         let req = req.body(Buffer::new()).map_err(new_request_build_error)?;
 
-        self.info.http_client().send(req).await
+        ctx.http_transport().send(req).await
     }
 
-    pub async fn ipfs_list(&self, path: &str) -> Result<Response<Buffer>> {
+    pub async fn ipfs_list(&self, ctx: &OperationContext, path: &str) -> Result<Response<Buffer>> {
         let p = build_rooted_abs_path(&self.root, path);
 
         let url = format!("{}{}", self.endpoint, percent_encode_path(&p));
@@ -83,9 +93,13 @@ impl IpfsCore {
         // ref: https://github.com/ipfs/specs/blob/main/http-gateways/PATH_GATEWAY.md
         req = req.header(http::header::ACCEPT, "application/vnd.ipld.raw");
 
-        let req = req.body(Buffer::new()).map_err(new_request_build_error)?;
+        let req = req
+            .extension(Operation::List)
+            .extension(ServiceOperation("List"))
+            .body(Buffer::new())
+            .map_err(new_request_build_error)?;
 
-        self.info.http_client().send(req).await
+        ctx.http_transport().send(req).await
     }
 
     /// IPFS's stat behavior highly depends on its implementation.
@@ -190,49 +204,98 @@ impl IpfsCore {
     /// - HTTP Status Code == 302 => directory
     /// - HTTP Status Code == 200 && ETag starts with `"DirIndex` => directory
     /// - HTTP Status Code == 200 && ETag not starts with `"DirIndex` => file
-    pub async fn ipfs_stat(&self, path: &str) -> Result<Metadata> {
+    pub async fn ipfs_stat(&self, ctx: &OperationContext, path: &str) -> Result<Metadata> {
         // Stat root always returns a DIR.
         if path == "/" {
-            return Ok(Metadata::new(EntryMode::DIR));
+            return Ok(MetadataBuilder::dir().build());
         }
 
-        let resp = self.ipfs_head(path).await?;
+        let resp = self.ipfs_head(ctx, path).await?;
         let status = resp.status();
 
         match status {
             StatusCode::OK => {
-                let mut m = Metadata::new(EntryMode::Unknown);
+                let mut m = MetadataBuilder::unknown();
 
-                if let Some(v) = parse_content_length(resp.headers())? {
-                    m.set_content_length(v);
-                }
+                let content_length = parse_content_length(resp.headers())?;
 
                 if let Some(v) = parse_content_type(resp.headers())? {
-                    m.set_content_type(v);
+                    m.content_type(v);
                 }
 
                 if let Some(v) = parse_etag(resp.headers())? {
-                    m.set_etag(v);
+                    m.etag(v);
 
                     if v.starts_with("\"DirIndex") {
-                        m.set_mode(EntryMode::DIR);
+                        m.set_dir();
                     } else {
-                        m.set_mode(EntryMode::FILE);
+                        m.set_file(content_length.ok_or_else(|| {
+                            Error::new(
+                                ErrorKind::Unexpected,
+                                "IPFS response does not contain file content length",
+                            )
+                        })?);
                     }
                 } else {
                     // Some service will stream the output of DirIndex.
                     // If we don't have an etag, it's highly to be a dir.
-                    m.set_mode(EntryMode::DIR);
+                    m.set_dir();
                 }
 
                 if let Some(v) = parse_content_disposition(resp.headers())? {
-                    m.set_content_disposition(v);
+                    m.content_disposition(v);
                 }
 
-                Ok(m)
+                Ok(m.build())
             }
-            StatusCode::FOUND | StatusCode::MOVED_PERMANENTLY => Ok(Metadata::new(EntryMode::DIR)),
-            _ => Err(parse_error(resp)),
+            StatusCode::FOUND | StatusCode::MOVED_PERMANENTLY => Ok(MetadataBuilder::dir().build()),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Resolve")),
+                resp,
+            )),
         }
     }
+}
+
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+}
+
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self { service_operation }
+    }
+}
+
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
+    let (parts, body) = resp.into_parts();
+    let bs = body.to_bytes();
+
+    let (kind, retryable) = match parts.status {
+        StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
+        StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, false),
+        StatusCode::INTERNAL_SERVER_ERROR
+        | StatusCode::BAD_GATEWAY
+        | StatusCode::SERVICE_UNAVAILABLE
+        | StatusCode::GATEWAY_TIMEOUT
+        // IPFS Gateway will return `408 REQUEST_TIMEOUT` while `ipfs resolve -r` failed.
+        | StatusCode::REQUEST_TIMEOUT => (ErrorKind::Unexpected, true),
+        _ => (ErrorKind::Unexpected, false),
+    };
+
+    let message = String::from_utf8_lossy(&bs);
+
+    let mut err = Error::new(kind, message);
+
+    err = err.with_context("service_operation", ctx.service_operation.0);
+    err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
+
+    err
 }

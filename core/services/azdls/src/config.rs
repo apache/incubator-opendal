@@ -124,7 +124,10 @@ impl opendal_core::Configurator for AzdlsConfig {
 
     #[allow(deprecated)]
     fn into_builder(self) -> Self::Builder {
-        AzdlsBuilder { config: self }
+        AzdlsBuilder {
+            config: self,
+            credential_providers: None,
+        }
     }
 }
 

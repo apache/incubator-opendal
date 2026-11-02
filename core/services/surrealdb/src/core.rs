@@ -18,7 +18,7 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use mea::once::OnceCell;
+use asyncband::once::OnceCell;
 use surrealdb::Surreal;
 use surrealdb::engine::any::Any;
 use surrealdb::opt::auth::Database;
@@ -68,10 +68,10 @@ impl SurrealdbCore {
 
                 if !self.username.is_empty() && !self.password.is_empty() {
                     db.signin(Database {
-                        namespace,
-                        database,
-                        username: self.username.as_str(),
-                        password: self.password.as_str(),
+                        namespace: namespace.to_string(),
+                        database: database.to_string(),
+                        username: self.username.clone(),
+                        password: self.password.clone(),
                     })
                     .await
                     .map_err(parse_surrealdb_error)?;
@@ -113,6 +113,42 @@ impl SurrealdbCore {
             .map_err(parse_surrealdb_error)?;
 
         Ok(value.map(Buffer::from))
+    }
+
+    pub async fn get_length(&self, path: &str) -> Result<Option<usize>> {
+        let query: String = if self.key_field == "id" {
+            "SELECT bytes::len(type::field($value_field)) AS content_length FROM type::thing($table, $path)"
+                .to_string()
+        } else {
+            format!(
+                "SELECT bytes::len(type::field($value_field)) AS content_length FROM type::table($table) WHERE {} = $path LIMIT 1",
+                self.key_field
+            )
+        };
+
+        let mut result = self
+            .get_connection()
+            .await?
+            .query(query)
+            .bind(("namespace", "opendal"))
+            .bind(("path", path.to_string()))
+            .bind(("table", self.table.to_string()))
+            .bind(("value_field", self.value_field.to_string()))
+            .await
+            .map_err(parse_surrealdb_error)?;
+
+        let value: Option<i64> = result
+            .take((0, "content_length"))
+            .map_err(parse_surrealdb_error)?;
+
+        value
+            .map(|v| {
+                v.try_into().map_err(|err| {
+                    Error::new(ErrorKind::Unexpected, "surrealdb value length is invalid")
+                        .set_source(err)
+                })
+            })
+            .transpose()
     }
 
     pub async fn set(&self, path: &str, value: Buffer) -> Result<()> {

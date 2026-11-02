@@ -23,17 +23,18 @@ use opendal_core::*;
 
 pub struct GithubDeleter {
     core: Arc<GithubCore>,
+    ctx: OperationContext,
 }
 
 impl GithubDeleter {
-    pub fn new(core: Arc<GithubCore>) -> Self {
-        Self { core }
+    pub fn new(core: Arc<GithubCore>, ctx: OperationContext) -> Self {
+        Self { core, ctx }
     }
 }
 
 impl oio::OneShotDelete for GithubDeleter {
     async fn delete_once(&self, path: String, _: OpDelete) -> Result<()> {
-        match self.core.delete(&path).await {
+        match self.core.delete(&self.ctx, &path).await {
             Ok(_) => Ok(()),
             Err(err) => Err(err),
         }

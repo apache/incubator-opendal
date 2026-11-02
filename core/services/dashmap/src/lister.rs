@@ -26,12 +26,16 @@ use super::core::DashmapCore;
 pub struct DashmapLister {
     root: String,
     path: String,
-    iter: IntoIter<String>,
+    iter: IntoIter<(String, Metadata)>,
 }
 
 impl DashmapLister {
     pub fn new(core: Arc<DashmapCore>, root: String, path: String) -> Self {
-        let entries: Vec<_> = core.cache.iter().map(|item| item.key().clone()).collect();
+        let entries: Vec<_> = core
+            .cache
+            .iter()
+            .map(|item| (item.key().clone(), item.value().metadata.clone()))
+            .collect();
         let path = build_abs_path(&root, &path);
 
         Self {
@@ -44,17 +48,10 @@ impl DashmapLister {
 
 impl oio::List for DashmapLister {
     async fn next(&mut self) -> Result<Option<oio::Entry>> {
-        for key in self.iter.by_ref() {
+        for (key, metadata) in self.iter.by_ref() {
             if key.starts_with(&self.path) {
                 let path = build_rel_path(&self.root, &key);
-
-                // Determine if it's a file or directory based on trailing slash
-                let mode = if key.ends_with('/') {
-                    EntryMode::DIR
-                } else {
-                    EntryMode::FILE
-                };
-                let entry = oio::Entry::new(&path, Metadata::new(mode));
+                let entry = oio::Entry::new(&path, metadata);
                 return Ok(Some(entry));
             }
         }

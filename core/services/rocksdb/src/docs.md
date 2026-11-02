@@ -1,6 +1,6 @@
 ## Capabilities
 
-This service can be used to:
+Depending on its configuration and the backing system, this service can expose:
 
 - [ ] create_dir
 - [x] stat
@@ -11,6 +11,9 @@ This service can be used to:
 - [ ] copy
 - [ ] rename
 - [ ] ~~presign~~
+
+Inspect the effective capability set with [`opendal_core::Operator::info`] and
+[`opendal_core::OperatorInfo::capability`] after building an operator.
 
 ## Note
 
@@ -28,10 +31,9 @@ may be outdated and incompatible.
 
 ## Configuration
 
-- `root`: Set the working directory of `OpenDAL`
-- `datadir`: Set the path to the rocksdb data directory
-
-You can refer to [`RocksdbBuilder`]'s docs for more information.
+Use [`crate::RocksdbConfig`] for serializable configuration and this builder's
+methods for direct construction. The field and method documentation defines
+accepted values, defaults, and environment interaction.
 
 ## Example
 
@@ -47,7 +49,7 @@ async fn main() -> Result<()> {
     let mut builder = Rocksdb::default()
         .datadir("/tmp/opendal/rocksdb");
 
-    let op: Operator = Operator::new(builder)?.finish();
+    let op: Operator = Operator::new(builder)?;
     Ok(())
 }
 ```

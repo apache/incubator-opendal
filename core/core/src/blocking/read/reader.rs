@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::ops::RangeBounds;
-
 use bytes::BufMut;
 
 use super::BufferIterator;
@@ -53,7 +51,7 @@ impl Reader {
     /// # Notes
     ///
     /// - Buffer length smaller than range means we have reached the end of file.
-    pub fn read(&self, range: impl RangeBounds<u64>) -> Result<Buffer> {
+    pub fn read(&self, range: impl Into<BytesRange>) -> Result<Buffer> {
         let inner = self
             .inner
             .as_ref()
@@ -68,7 +66,7 @@ impl Reader {
     /// # Notes
     ///
     /// - Returning length smaller than range means we have reached the end of file.
-    pub fn read_into(&self, buf: &mut impl BufMut, range: impl RangeBounds<u64>) -> Result<usize> {
+    pub fn read_into(&self, buf: &mut impl BufMut, range: impl Into<BytesRange>) -> Result<usize> {
         let inner = self
             .inner
             .as_ref()
@@ -77,7 +75,7 @@ impl Reader {
     }
 
     /// Create a buffer iterator to read specific range from given reader.
-    pub fn into_iterator(mut self, range: impl RangeBounds<u64>) -> Result<BufferIterator> {
+    pub fn into_iterator(mut self, range: impl Into<BytesRange>) -> Result<BufferIterator> {
         let inner = self
             .inner
             .take()
@@ -90,7 +88,7 @@ impl Reader {
     /// Convert reader into [`StdReader`] which implements [`futures::AsyncRead`],
     /// [`futures::AsyncSeek`] and [`futures::AsyncBufRead`].
     #[inline]
-    pub fn into_std_read(mut self, range: impl RangeBounds<u64>) -> Result<StdReader> {
+    pub fn into_std_read(mut self, range: impl Into<BytesRange>) -> Result<StdReader> {
         let inner = self
             .inner
             .take()
@@ -103,7 +101,7 @@ impl Reader {
 
     /// Convert reader into [`StdBytesIterator`] which implements [`Iterator`].
     #[inline]
-    pub fn into_bytes_iterator(mut self, range: impl RangeBounds<u64>) -> Result<StdBytesIterator> {
+    pub fn into_bytes_iterator(mut self, range: impl Into<BytesRange>) -> Result<StdBytesIterator> {
         let inner = self
             .inner
             .take()

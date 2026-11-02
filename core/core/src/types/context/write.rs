@@ -17,14 +17,19 @@
 
 use std::sync::Arc;
 
+use bytes::Buf;
+use futures::TryStreamExt;
+
 use crate::raw::oio::Write;
 use crate::raw::*;
 use crate::*;
 
 /// WriteContext holds the immutable context for give write operation.
 pub struct WriteContext {
-    /// The accessor to the storage services.
-    acc: Accessor,
+    /// The composed context used to execute operations.
+    ctx: OperationContext,
+    /// The composed service to the underlying object storage.
+    srv: Servicer,
     /// Path to the file.
     path: String,
     /// Arguments for the write operation.
@@ -36,25 +41,38 @@ pub struct WriteContext {
 impl WriteContext {
     /// Create a new WriteContext.
     #[inline]
-    pub fn new(acc: Accessor, path: String, args: OpWrite, options: OpWriter) -> Self {
+    pub fn new(
+        ctx: OperationContext,
+        srv: Servicer,
+        path: String,
+        args: OpWrite,
+        options: OpWriter,
+    ) -> Self {
         Self {
-            acc,
+            ctx,
+            srv,
             path,
             args,
             options,
         }
     }
 
-    /// Get the accessor.
-    #[inline]
-    pub fn accessor(&self) -> &Accessor {
-        &self.acc
-    }
-
     /// Get the path.
     #[inline]
     pub fn path(&self) -> &str {
         &self.path
+    }
+
+    /// Get the composed operation context.
+    #[inline]
+    pub(crate) fn context(&self) -> &OperationContext {
+        &self.ctx
+    }
+
+    /// Get the composed service.
+    #[inline]
+    pub(crate) fn service(&self) -> &Servicer {
+        &self.srv
     }
 
     /// Get the arguments.
@@ -73,7 +91,7 @@ impl WriteContext {
     ///
     /// Returns the chunk size and if the chunk size is exact.
     fn calculate_chunk_size(&self) -> (Option<usize>, bool) {
-        let cap = self.accessor().info().full_capability();
+        let cap = self.srv.capability();
 
         let exact = self.options().chunk().is_some();
         let chunk_size = self
@@ -98,24 +116,31 @@ impl WriteContext {
 pub struct WriteGenerator<W> {
     w: W,
 
+    ctx: Option<Arc<WriteContext>>,
+
     /// The size for buffer, we will flush the underlying storage at the size of this buffer.
     chunk_size: Option<usize>,
     /// If `exact` is true, the size of the data written to the underlying storage is
     /// exactly `chunk_size` bytes.
     exact: bool,
+    /// Whether the composed writer can copy source ranges directly.
+    can_copy_from: bool,
     buffer: oio::QueueBuf,
 }
 
 impl WriteGenerator<oio::Writer> {
     /// Create a new exact buf writer.
-    pub async fn create(ctx: Arc<WriteContext>) -> Result<Self> {
+    pub fn create(ctx: Arc<WriteContext>) -> Result<Self> {
         let (chunk_size, exact) = ctx.calculate_chunk_size();
-        let (_, w) = ctx.acc.write(ctx.path(), ctx.args().clone()).await?;
+        let can_copy_from = ctx.service().capability().write_can_copy_from && !ctx.args().append();
+        let w = ctx.srv.write(&ctx.ctx, ctx.path(), ctx.args().clone())?;
 
         Ok(Self {
             w,
+            ctx: Some(ctx),
             chunk_size,
             exact,
+            can_copy_from,
             buffer: oio::QueueBuf::new(),
         })
     }
@@ -125,8 +150,10 @@ impl WriteGenerator<oio::Writer> {
     fn new(w: oio::Writer, chunk_size: Option<usize>, exact: bool) -> Self {
         Self {
             w,
+            ctx: None,
             chunk_size,
             exact,
+            can_copy_from: false,
             buffer: oio::QueueBuf::new(),
         }
     }
@@ -137,7 +164,7 @@ impl WriteGenerator<oio::Writer> {
     pub async fn write(&mut self, mut bs: Buffer) -> Result<usize> {
         let Some(chunk_size) = self.chunk_size else {
             let size = bs.len();
-            self.w.write_dyn(bs).await?;
+            self.w.write(bs).await?;
             return Ok(size);
         };
 
@@ -156,7 +183,7 @@ impl WriteGenerator<oio::Writer> {
             let fill_size = bs.len();
             self.buffer.push(bs);
             let buf = self.buffer.take().collect();
-            self.w.write_dyn(buf).await?;
+            self.w.write(buf).await?;
             return Ok(fill_size);
         }
 
@@ -168,7 +195,7 @@ impl WriteGenerator<oio::Writer> {
         // - write existing buffer in chunk_size to make more rooms for writing data.
         if self.buffer.len() >= chunk_size {
             let buf = self.buffer.take().collect();
-            self.w.write_dyn(buf).await?;
+            self.w.write(buf).await?;
         }
 
         // Condition
@@ -183,6 +210,130 @@ impl WriteGenerator<oio::Writer> {
         Ok(n)
     }
 
+    fn reader(&self, path: &str, args: OpRead, options: OpReader) -> Result<Reader> {
+        let ctx = self
+            .ctx
+            .as_ref()
+            .expect("write context must exist outside tests");
+        let reader = ctx.service().read(ctx.context(), path, args.clone())?;
+        Ok(Reader::new(ReadContext::new(
+            ctx.context().clone(),
+            ctx.service().clone(),
+            path.to_string(),
+            args,
+            options,
+            reader,
+        )))
+    }
+
+    async fn stream_range(
+        &mut self,
+        path: &str,
+        args: OpRead,
+        options: OpReader,
+        range: BytesRange,
+    ) -> Result<()> {
+        let reader = self.reader(path, args, options)?;
+        let mut stream = reader.into_stream(range).await?;
+        while let Some(mut bs) = stream.try_next().await? {
+            while !bs.is_empty() {
+                let n = self.write(bs.clone()).await?;
+                bs.advance(n);
+            }
+        }
+        Ok(())
+    }
+
+    /// Copy a source range into this writer, using native execution when possible.
+    pub async fn copy_from(
+        &mut self,
+        path: &str,
+        args: OpRead,
+        options: OpReader,
+        range: BytesRange,
+    ) -> Result<()> {
+        const MAX_COPY_FROM_SIZE: u64 = 5 * 1024 * 1024 * 1024;
+
+        if let Some(size) = range.size()
+            && size > MAX_COPY_FROM_SIZE
+        {
+            return Err(Error::new(
+                ErrorKind::RangeNotSatisfied,
+                "copy_from range exceeds the 5 GiB per-call limit",
+            )
+            .with_context("size", size));
+        }
+
+        let reader = self.reader(path, args.clone(), options.clone())?;
+        let absolute = reader.parse_into_range(range).await?;
+        let size = absolute.end - absolute.start;
+        if size > MAX_COPY_FROM_SIZE {
+            return Err(Error::new(
+                ErrorKind::RangeNotSatisfied,
+                "copy_from range exceeds the 5 GiB per-call limit",
+            )
+            .with_context("size", size));
+        }
+        if size == 0 {
+            return Ok(());
+        }
+
+        let Some(chunk_size) = self.chunk_size.filter(|_| self.can_copy_from) else {
+            return self
+                .stream_range(
+                    path,
+                    args,
+                    options,
+                    BytesRange::new(absolute.start, Some(size)),
+                )
+                .await;
+        };
+
+        let mut offset = absolute.start;
+        let mut remaining = size;
+
+        if self.buffer.len() >= chunk_size {
+            let buf = self.buffer.take().collect();
+            self.w.write(buf).await?;
+        }
+
+        if !self.buffer.is_empty() {
+            let boundary_size = (chunk_size as u64 - self.buffer.len() as u64).min(remaining);
+            self.stream_range(
+                path,
+                args.clone(),
+                options.clone(),
+                BytesRange::new(offset, Some(boundary_size)),
+            )
+            .await?;
+            offset += boundary_size;
+            remaining -= boundary_size;
+        }
+
+        while remaining >= chunk_size as u64 {
+            let part_size = if self.exact {
+                chunk_size as u64
+            } else {
+                remaining
+            };
+            let part_range = BytesRange::new(offset, Some(part_size));
+            self.w.copy_from(path, args.clone(), part_range).await?;
+            offset += part_size;
+            remaining -= part_size;
+        }
+
+        if remaining > 0 {
+            self.stream_range(
+                path,
+                args,
+                options,
+                BytesRange::new(offset, Some(remaining)),
+            )
+            .await?;
+        }
+        Ok(())
+    }
+
     /// Finish the write process.
     pub async fn close(&mut self) -> Result<Metadata> {
         loop {
@@ -191,7 +342,7 @@ impl WriteGenerator<oio::Writer> {
             }
 
             let buf = self.buffer.take().collect();
-            self.w.write_dyn(buf).await?;
+            self.w.write(buf).await?;
         }
 
         self.w.close().await
@@ -206,23 +357,32 @@ impl WriteGenerator<oio::Writer> {
 
 #[cfg(test)]
 mod tests {
+    use asyncband::mutex::Mutex;
     use bytes::Buf;
     use bytes::BufMut;
     use bytes::Bytes;
     use log::debug;
     use logforth::append::Testing;
-    use logforth::filter::env_filter::EnvFilterBuilder;
+    use logforth::filter::rustlog::RustLogFilterBuilder;
     use logforth::layout::TextLayout;
-    use mea::mutex::Mutex;
     use pretty_assertions::assert_eq;
-    use rand::Rng;
-    use rand::RngCore;
-    use rand::thread_rng;
+    use rand::{Rng, RngExt, rng};
     use sha2::Digest;
     use sha2::Sha256;
 
     use super::*;
     use crate::raw::oio::Write;
+
+    fn sha256_digest(data: impl AsRef<[u8]>) -> String {
+        use std::fmt::Write;
+
+        let digest = Sha256::digest(data);
+        let mut output = String::with_capacity(digest.len() * 2);
+        for byte in digest {
+            write!(&mut output, "{byte:02x}").expect("writing to String must succeed");
+        }
+        output
+    }
 
     struct MockWriter {
         buf: Arc<Mutex<Vec<u8>>>,
@@ -243,7 +403,7 @@ mod tests {
         }
 
         async fn close(&mut self) -> Result<Metadata> {
-            Ok(Metadata::default())
+            Ok(MetadataBuilder::unknown().build())
         }
 
         async fn abort(&mut self) -> Result<()> {
@@ -254,7 +414,7 @@ mod tests {
     fn setup() {
         let _ = logforth::starter_log::builder()
             .dispatch(|d| {
-                d.filter(EnvFilterBuilder::from_default_env().build())
+                d.filter(RustLogFilterBuilder::from_default_env().build())
                     .append(Testing::default().with_layout(TextLayout::default()))
             })
             .try_apply();
@@ -264,7 +424,7 @@ mod tests {
     async fn test_exact_buf_writer_short_write() -> Result<()> {
         setup();
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut expected = vec![0; 5];
         rng.fill_bytes(&mut expected);
 
@@ -288,10 +448,7 @@ mod tests {
 
         let buf = buf.lock().await;
         assert_eq!(buf.len(), expected.len());
-        assert_eq!(
-            format!("{:x}", Sha256::digest(&*buf)),
-            format!("{:x}", Sha256::digest(&expected))
-        );
+        assert_eq!(sha256_digest(&*buf), sha256_digest(&expected));
         Ok(())
     }
 
@@ -309,7 +466,7 @@ mod tests {
             false,
         );
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut expected = vec![0; 15];
         rng.fill_bytes(&mut expected);
 
@@ -322,10 +479,7 @@ mod tests {
 
         let buf = buf.lock().await;
         assert_eq!(buf.len(), expected.len());
-        assert_eq!(
-            format!("{:x}", Sha256::digest(&*buf)),
-            format!("{:x}", Sha256::digest(&expected))
-        );
+        assert_eq!(sha256_digest(&*buf), sha256_digest(&expected));
         Ok(())
     }
 
@@ -343,7 +497,7 @@ mod tests {
             false,
         );
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut expected = vec![];
 
         let mut new_content = |size| {
@@ -368,10 +522,7 @@ mod tests {
 
         let buf = buf.lock().await;
         assert_eq!(buf.len(), expected.len());
-        assert_eq!(
-            format!("{:x}", Sha256::digest(&*buf)),
-            format!("{:x}", Sha256::digest(&expected))
-        );
+        assert_eq!(sha256_digest(&*buf), sha256_digest(&expected));
         Ok(())
     }
 
@@ -389,7 +540,7 @@ mod tests {
             false,
         );
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut expected = vec![];
 
         let mut new_content = |size| {
@@ -416,10 +567,7 @@ mod tests {
 
         let buf = buf.lock().await;
         assert_eq!(buf.len(), expected.len());
-        assert_eq!(
-            format!("{:x}", Sha256::digest(&*buf)),
-            format!("{:x}", Sha256::digest(&expected))
-        );
+        assert_eq!(sha256_digest(&*buf), sha256_digest(&expected));
         Ok(())
     }
 
@@ -427,11 +575,11 @@ mod tests {
     async fn test_fuzz_exact_buf_writer() -> Result<()> {
         setup();
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut expected = vec![];
 
         let buf = Arc::new(Mutex::new(vec![]));
-        let buffer_size = rng.gen_range(1..10);
+        let buffer_size = rng.random_range(1..10);
         let mut writer = WriteGenerator::new(
             Box::new(MockWriter {
                 buf: buf.clone(),
@@ -443,7 +591,7 @@ mod tests {
         debug!("test_fuzz_exact_buf_writer: buffer size: {buffer_size}");
 
         for _ in 0..1000 {
-            let size = rng.gen_range(1..20);
+            let size = rng.random_range(1..20);
             debug!("test_fuzz_exact_buf_writer: write size: {size}");
             let mut content = vec![0; size];
             rng.fill_bytes(&mut content);
@@ -460,10 +608,7 @@ mod tests {
 
         let buf = buf.lock().await;
         assert_eq!(buf.len(), expected.len());
-        assert_eq!(
-            format!("{:x}", Sha256::digest(&*buf)),
-            format!("{:x}", Sha256::digest(&expected))
-        );
+        assert_eq!(sha256_digest(&*buf), sha256_digest(&expected));
         Ok(())
     }
 
@@ -490,7 +635,7 @@ mod tests {
             true, // exact mode
         );
 
-        let mut rng = thread_rng();
+        let mut rng = rng();
         let mut expected = vec![0; large_buffer_size];
         rng.fill_bytes(&mut expected);
 
@@ -508,10 +653,7 @@ mod tests {
         // Verify all data was written
         let buf = buf.lock().await;
         assert_eq!(buf.len(), expected.len());
-        assert_eq!(
-            format!("{:x}", Sha256::digest(&*buf)),
-            format!("{:x}", Sha256::digest(&expected))
-        );
+        assert_eq!(sha256_digest(&*buf), sha256_digest(&expected));
 
         // Verify that writes were split into chunks (except possibly the last one)
         let write_sizes = write_sizes.lock().await;

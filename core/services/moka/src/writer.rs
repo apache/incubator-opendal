@@ -51,22 +51,26 @@ impl oio::Write for MokaWriter {
         let length = buf.len() as u64;
 
         // Build metadata with write options
-        let mut metadata =
-            Metadata::new(EntryMode::from_path(&self.path)).with_content_length(length);
+        let mut metadata = if self.path.ends_with('/') {
+            MetadataBuilder::dir()
+        } else {
+            MetadataBuilder::file(length)
+        };
 
         if let Some(content_type) = self.op.content_type() {
-            metadata.set_content_type(content_type);
+            metadata.content_type(content_type);
         }
         if let Some(content_disposition) = self.op.content_disposition() {
-            metadata.set_content_disposition(content_disposition);
+            metadata.content_disposition(content_disposition);
         }
         if let Some(cache_control) = self.op.cache_control() {
-            metadata.set_cache_control(cache_control);
+            metadata.cache_control(cache_control);
         }
         if let Some(content_encoding) = self.op.content_encoding() {
-            metadata.set_content_encoding(content_encoding);
+            metadata.content_encoding(content_encoding);
         }
 
+        let metadata = metadata.build();
         let value = MokaValue {
             metadata: metadata.clone(),
             content: buf,

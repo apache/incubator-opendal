@@ -19,22 +19,29 @@ use std::sync::Arc;
 
 use http::StatusCode;
 
-use super::core::VercelArtifactsCore;
-use super::error::parse_error;
+use super::core::parse_error;
+use super::core::{ErrorContext, VercelArtifactsCore};
 use opendal_core::raw::*;
 use opendal_core::*;
 
 pub struct VercelArtifactsWriter {
     core: Arc<VercelArtifactsCore>,
+    ctx: OperationContext,
     _op: OpWrite,
 
     path: String,
 }
 
 impl VercelArtifactsWriter {
-    pub fn new(core: Arc<VercelArtifactsCore>, op: OpWrite, path: String) -> Self {
+    pub fn new(
+        core: Arc<VercelArtifactsCore>,
+        ctx: OperationContext,
+        op: OpWrite,
+        path: String,
+    ) -> Self {
         VercelArtifactsWriter {
             core,
+            ctx,
             _op: op,
             path,
         }
@@ -45,14 +52,17 @@ impl oio::OneShotWrite for VercelArtifactsWriter {
     async fn write_once(&self, bs: Buffer) -> Result<Metadata> {
         let response = self
             .core
-            .vercel_artifacts_put(self.path.as_str(), bs.len() as u64, bs)
+            .vercel_artifacts_put(&self.ctx, self.path.as_str(), bs.len() as u64, bs)
             .await?;
 
         let status = response.status();
 
         match status {
-            StatusCode::OK | StatusCode::ACCEPTED => Ok(Metadata::default()),
-            _ => Err(parse_error(response)),
+            StatusCode::OK | StatusCode::ACCEPTED => Ok(MetadataBuilder::unknown().build()),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("PutArtifact")),
+                response,
+            )),
         }
     }
 }

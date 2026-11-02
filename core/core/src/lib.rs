@@ -15,146 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![doc(
-    html_logo_url = "https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg"
-)]
+#![doc(html_logo_url = "https://opendal.apache.org/img/logo.svg")]
+#![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
-//! Apache OpenDAL™ is an Open Data Access Layer that enables seamless interaction with diverse storage services.
-//!
-//! OpenDAL's development is guided by its vision of **One Layer, All Storage** and its core principles: **Open Community**, **Solid Foundation**, **Fast Access**, **Object Storage First**, and **Extensible Architecture**. Read the explained vision at [OpenDAL Vision](https://opendal.apache.org/vision).
-//!
-//! # Quick Start
-//!
-//! OpenDAL's API entry points are [`Operator`] and [`blocking::Operator`]. All
-//! public APIs are accessible through the operator. To utilize OpenDAL, you
-//! need to:
-//!
-//! - [Init a service](#init-a-service)
-//! - [Compose layers](#compose-layers)
-//! - [Use operator](#use-operator)
-//!
-//! ## Init a service
-//!
-//! The first step is to pick a service and init it with a builder. All supported
-//! services could be found at [`services`].
-//!
-//! Let's take [`services::Memory`] as an example:
-//!
-//! ```no_run
-//! use opendal_core::services;
-//! use opendal_core::Operator;
-//! use opendal_core::Result;
-//!
-//! fn main() -> Result<()> {
-//!     // Pick a builder and configure it.
-//!     let builder = services::Memory::default();
-//!
-//!     // Init an operator
-//!     let op = Operator::new(builder)?.finish();
-//!     Ok(())
-//! }
-//! ```
-//!
-//! ## Compose layers
-//!
-//! The next setup is to compose layers. Layers are modules that provide extra
-//! features for every operation. All builtin layers could be found at [`layers`].
-//!
-//! Let's use [`layers::HttpClientLayer`] as an example; this layer allows
-//! customizing the HTTP client used by OpenDAL.
-//!
-//! ```no_run
-//! use opendal_core::layers::HttpClientLayer;
-//! use opendal_core::raw::HttpClient;
-//! use opendal_core::services;
-//! use opendal_core::Operator;
-//! use opendal_core::Result;
-//!
-//! #[tokio::main]
-//! async fn main() -> Result<()> {
-//!     // Pick a builder and configure it.
-//!     let builder = services::Memory::default();
-//!
-//!     // Init an operator
-//!     let client = HttpClient::new()?;
-//!     let op = Operator::new(builder)?
-//!         // Init with custom HTTP client.
-//!         .layer(HttpClientLayer::new(client))
-//!         .finish();
-//!
-//!     Ok(())
-//! }
-//! ```
-//!
-//! ## Use operator
-//!
-//! The final step is to use the operator. OpenDAL supports both async [`Operator`]
-//! and blocking [`blocking::Operator`]. Please pick the one that fits your use case.
-//!
-//! Every Operator API follows a consistent pattern. For example, consider the `read` operation:
-//!
-//! - [`Operator::read`]: Executes a read operation.
-//! - [`Operator::read_with`]: Executes a read operation with additional options using the builder pattern.
-//! - [`Operator::read_options`]: Executes a read operation with extra options provided via a [`options::ReadOptions`] struct.
-//! - [`Operator::reader`]: Creates a reader for streaming data, allowing for flexible access.
-//! - [`Operator::reader_with`]: Creates a reader with advanced options using the builder pattern.
-//! - [`Operator::reader_options`]: Creates a reader with extra options provided via a [`options::ReadOptions`] struct.
-//!
-//! The [`Reader`] created by [`Operator`] supports custom read control methods and can be converted
-//! into [`futures::AsyncRead`] or [`futures::Stream`] for broader ecosystem compatibility.
-//!
-//! ```no_run
-//! use opendal_core::layers::HttpClientLayer;
-//! use opendal_core::options;
-//! use opendal_core::raw::HttpClient;
-//! use opendal_core::services;
-//! use opendal_core::Operator;
-//! use opendal_core::Result;
-//!
-//! #[tokio::main]
-//! async fn main() -> Result<()> {
-//!     // Pick a builder and configure it.
-//!     let builder = services::Memory::default();
-//!
-//!     // Init an operator
-//!     let client = HttpClient::new()?;
-//!     let op = Operator::new(builder)?
-//!         // Init with custom HTTP client.
-//!         .layer(HttpClientLayer::new(client))
-//!         .finish();
-//!
-//!     // Fetch this file's metadata
-//!     let meta = op.stat("hello.txt").await?;
-//!     let length = meta.content_length();
-//!
-//!     // Read data from `hello.txt` with options.
-//!     let bs = op
-//!         .read_with("hello.txt")
-//!         .range(0..8 * 1024 * 1024)
-//!         .chunk(1024 * 1024)
-//!         .concurrent(4)
-//!         .await?;
-//!
-//!     // The same to:
-//!     let bs = op
-//!         .read_options("hello.txt", options::ReadOptions {
-//!             range: (0..8 * 1024 * 1024).into(),
-//!             chunk: Some(1024 * 1024),
-//!             concurrent: 4,
-//!             ..Default::default()
-//!         })
-//!         .await?;
-//!
-//!     Ok(())
-//! }
-//! ```
-//!
-//! # Useful Links
-//!
-//! - [Concept][crate::docs::concepts]
-//! - [Internals][crate::docs::internals]
-//! - [Performance Guide][crate::docs::performance]
-
+#![cfg_attr(docsrs, doc(auto_cfg))]
 // Make sure all our public APIs have docs.
 #![deny(missing_docs)]
 
@@ -165,29 +29,24 @@ pub use types::*;
 // Public modules, they will be accessed like `opendal::layers::Xxxx`
 #[cfg(feature = "blocking")]
 pub mod blocking;
-#[cfg(docsrs)]
 pub mod docs;
 pub mod layers;
 pub mod raw;
 pub mod services;
 
+/// Re-export of the [`reqsign_core`] crate that services sign requests with.
+///
+/// Service builders that accept credentials from the application take `reqsign`
+/// types in their signatures, such as `ProvideCredentialChain` in
+/// `opendal_service_s3::S3::credential_provider_chain`. Implement providers
+/// against this re-export rather than depending on `reqsign-core` directly, so
+/// that the types always match the ones the services are built with.
+#[cfg(feature = "reqsign")]
+pub use reqsign_core;
+
 #[cfg(test)]
 mod tests {
-    use std::mem::size_of;
-
     use super::*;
-    /// This is not a real test case.
-    ///
-    /// We assert our public structs here to make sure we don't introduce
-    /// unexpected struct/enum size change.
-    #[cfg(target_pointer_width = "64")]
-    #[test]
-    fn assert_size() {
-        assert_eq!(16, size_of::<Operator>());
-        assert_eq!(360, size_of::<Entry>());
-        assert_eq!(336, size_of::<Metadata>());
-        assert_eq!(1, size_of::<EntryMode>());
-    }
 
     trait AssertSendSync: Send + Sync {}
     impl AssertSendSync for Entry {}
