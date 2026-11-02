@@ -5726,6 +5726,7 @@ dependencies = [
  "opendal-service-gcs-grpc",
  "opendal-service-gdrive",
  "opendal-service-ghac",
+ "opendal-service-gist",
  "opendal-service-github",
  "opendal-service-goosefs",
  "opendal-service-gridfs",
@@ -6487,6 +6488,19 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "tokio",
+]
+
+[[package]]
+name = "opendal-service-gist"
+version = "0.59.5"
+dependencies = [
+ "futures",
+ "http 1.4.2",
+ "log",
+ "opendal-core",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 
