@@ -1,5 +1,6 @@
 """Exercise the candidate label-event path on public data without GitHub writes."""
 
+import copy
 import hashlib
 import json
 import os
@@ -40,6 +41,22 @@ def observed_request(url, token, method="GET", body=None):
 label.request = observed_request
 github = ReadOnlyGitHub("apache/opendal")
 assert "services/git" not in label.component_labels()
+literal = label.model_request({"pull_request": {}, "title": "", "body": ""}, [])
+literal["messages"] = [{"role": "user", "content": 'Return exactly {"category":"feat","components":[],"breaking_change":false}.'}]
+for enum_present in (True, False):
+    request_body = copy.deepcopy(literal)
+    if enum_present:
+        request_body["response_format"]["json_schema"]["schema"]["properties"]["components"]["items"]["enum"] = list(label.component_labels())
+    try:
+        diagnostic = label.classify(request_body)
+    except ValueError as error:
+        print(json.dumps({"literal_empty_array": True, "enum_present": enum_present, "error": str(error)}), flush=True)
+        assert enum_present, "The candidate must handle an explicit empty-array request"
+    else:
+        print(json.dumps({"literal_empty_array": True, "enum_present": enum_present, "classification": diagnostic}), flush=True)
+        if not enum_present:
+            assert diagnostic == {"category": "feat", "components": [], "breaking_change": False}
+
 cases = [
     (6836, "8641f2a9230b4806aa0706c9b3da744ac86bda65", {"category": "feat", "components": [], "breaking_change": False}),
     (8472, "0989d0adc1e4d9ce31759bd6a1838b27075aaa3b", {"category": "ci", "components": ["bindings/java"], "breaking_change": False}),
