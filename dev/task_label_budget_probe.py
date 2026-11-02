@@ -61,6 +61,8 @@ def infer(request_body):
 baseline = infer(body)
 if baseline["finish_reason"] != "length":
     raise RuntimeError("Token exhaustion was not reproduced; inspect before changing the budget")
+if not any(count > 1 and token.strip('"') in label.component_labels() for token, count in baseline["quoted_items"]):
+    raise RuntimeError("No repeated component was observed; inspect before changing array uniqueness")
 candidate_body = copy.deepcopy(body)
 candidate_body["response_format"]["json_schema"]["properties"]["components"]["uniqueItems"] = True
 candidate = infer(candidate_body)
