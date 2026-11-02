@@ -36,6 +36,8 @@ This service can be used to:
 - A configured reference is resolved once. Later remote updates are not
   observed by the same operator; construct a new operator to resolve again.
 - `resolve_lfs=false` returns the pointer file itself.
+- LFS resolution requires an HTTPS repository URL without userinfo, a query,
+  or a fragment. Use the username and password options for authentication.
 - LFS payloads are streamed from the composed HTTP transport. The service does
   not buffer a complete LFS object before returning the reader.
 - Repository credentials are sent to the Git remote and to same-origin LFS
