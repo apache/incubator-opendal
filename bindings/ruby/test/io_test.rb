@@ -30,7 +30,7 @@ class IOTest < ActiveSupport::TestCase
         A line after title
       EOF
     )
-    @op = OpenDAL::Operator.new("fs", {"root" => @root})
+    @op = OpenDal::Operator.new("fs", {"root" => @root})
     @io_read = @op.open("sample", "r")
     @io_write = @op.open("sample_write", "w")
   end
@@ -82,10 +82,38 @@ class IOTest < ActiveSupport::TestCase
   end
 
   test "#read reads" do
-    result = @io_read.read(nil)
+    result = @io_read.read
 
     assert_equal "Sample data for testing\nA line after title\n", result
     # should be `assert_equal Encoding::UTF_8, result.encoding`
+  end
+
+  test "#read reads with nil" do
+    result = @io_read.read(nil)
+
+    assert_equal "Sample data for testing\nA line after title\n", result
+  end
+
+  test "#read reads with size" do
+    result = @io_read.read(6)
+
+    assert_equal "Sample", result
+  end
+
+  test "#read raises ArgumentError with -1" do
+    assert_raise(ArgumentError) do |err|
+      @io_read.read(-1)
+
+      assert_equal "negative length -1 given", err.message
+    end
+  end
+
+  test "#read reads to a buffer" do
+    buffer = +"hi " # unfreezes string literal
+    result = @io_read.read(6, buffer)
+
+    assert_equal "Sample", result
+    assert_equal "hi Sample", buffer
   end
 
   test "#write writes" do
@@ -130,7 +158,7 @@ class IOTest < ActiveSupport::TestCase
   end
 
   test "#eof? returns" do
-    @io_read.read(nil)
+    @io_read.read
     assert @io_read.eof?
   end
 

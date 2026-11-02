@@ -17,7 +17,7 @@
 
 # frozen_string_literal: true
 
-module OpenDAL
+module OpenDal
   class Metadata
     FILE = "File"
     DIRECTORY = "Directory"
@@ -36,7 +36,7 @@ module OpenDAL
 
     def inspect
       # Be concise to keep a few attributes
-      "#<#{self.class.name} mode: #{entry_mode}, \
+      "#<#{self.class.name} mode: #{mode}, \
         content_type: #{content_type}, \
         content_length: #{content_length}>"
     end

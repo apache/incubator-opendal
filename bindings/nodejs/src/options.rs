@@ -16,7 +16,8 @@
 // under the License.
 
 use napi::bindgen_prelude::BigInt;
-use opendal::raw::{parse_datetime_from_rfc3339, BytesRange};
+use opendal::BytesRange;
+use opendal::raw::Timestamp;
 use std::collections::HashMap;
 
 #[napi(object)]
@@ -79,10 +80,10 @@ impl From<StatOptions> for opendal::options::StatOptions {
     fn from(value: StatOptions) -> Self {
         let if_modified_since = value
             .if_modified_since
-            .and_then(|v| parse_datetime_from_rfc3339(&v).ok());
+            .and_then(|v| v.parse::<Timestamp>().ok());
         let if_unmodified_since = value
             .if_unmodified_since
-            .and_then(|v| parse_datetime_from_rfc3339(&v).ok());
+            .and_then(|v| v.parse::<Timestamp>().ok());
 
         Self {
             if_modified_since,
@@ -93,6 +94,7 @@ impl From<StatOptions> for opendal::options::StatOptions {
             override_content_type: value.override_content_type,
             override_cache_control: value.override_cache_control,
             override_content_disposition: value.override_content_disposition,
+            ..Default::default()
         }
     }
 }
@@ -215,10 +217,10 @@ impl From<ReadOptions> for opendal::options::ReadOptions {
         let range = value.make_range();
         let if_modified_since = value
             .if_modified_since
-            .and_then(|v| parse_datetime_from_rfc3339(&v).ok());
+            .and_then(|v| v.parse::<Timestamp>().ok());
         let if_unmodified_since = value
             .if_unmodified_since
-            .and_then(|v| parse_datetime_from_rfc3339(&v).ok());
+            .and_then(|v| v.parse::<Timestamp>().ok());
 
         Self {
             version: value.version,
@@ -230,9 +232,11 @@ impl From<ReadOptions> for opendal::options::ReadOptions {
             if_none_match: value.if_none_match,
             if_modified_since,
             if_unmodified_since,
+            content_length_hint: None,
             override_content_type: value.content_type,
             override_cache_control: value.cache_control,
             override_content_disposition: value.content_disposition,
+            ..Default::default()
         }
     }
 }
@@ -329,10 +333,10 @@ impl From<ReaderOptions> for opendal::options::ReaderOptions {
     fn from(value: ReaderOptions) -> Self {
         let if_modified_since = value
             .if_modified_since
-            .and_then(|v| parse_datetime_from_rfc3339(&v).ok());
+            .and_then(|v| v.parse::<Timestamp>().ok());
         let if_unmodified_since = value
             .if_unmodified_since
-            .and_then(|v| parse_datetime_from_rfc3339(&v).ok());
+            .and_then(|v| v.parse::<Timestamp>().ok());
 
         Self {
             version: value.version,
@@ -344,6 +348,8 @@ impl From<ReaderOptions> for opendal::options::ReaderOptions {
             if_none_match: value.if_none_match,
             if_modified_since,
             if_unmodified_since,
+            content_length_hint: None,
+            ..Default::default()
         }
     }
 }
@@ -500,6 +506,7 @@ impl From<WriteOptions> for opendal::options::WriteOptions {
             if_none_match: value.if_none_match,
             if_not_exists: value.if_not_exists.unwrap_or_default(),
             concurrent: value.concurrent.unwrap_or_default() as usize,
+            ..Default::default()
         }
     }
 }
@@ -508,12 +515,23 @@ impl From<WriteOptions> for opendal::options::WriteOptions {
 #[derive(Default)]
 pub struct DeleteOptions {
     pub version: Option<String>,
+    /// Whether to delete recursively.
+    pub recursive: Option<bool>,
+    /**
+     * Sets if-match condition for this operation.
+     * If file exists and its etag does not match, an error of kind
+     * `ConditionNotMatch` will be returned.
+     */
+    pub if_match: Option<String>,
 }
 
 impl From<DeleteOptions> for opendal::options::DeleteOptions {
     fn from(value: DeleteOptions) -> Self {
         Self {
             version: value.version,
+            recursive: value.recursive.unwrap_or_default(),
+            if_match: value.if_match,
+            ..Default::default()
         }
     }
 }

@@ -20,18 +20,17 @@ name = "opendal-hs"
 publish = false
 
 authors = ["Apache OpenDAL <dev@opendal.apache.org>"]
-edition = "2021"
+edition = "2024"
 homepage = "https://opendal.apache.org/"
 license = "Apache-2.0"
 repository = "https://github.com/apache/opendal"
-rust-version = "1.82"
+rust-version = "1.91"
 
 [lib]
 crate-type = ["cdylib"]
 doc = false
 
 [dependencies]
-chrono = "0.4"
 log = { version = "0.4", features = ["std"] }
 # this crate won't be published, we always use the local version
 opendal = { version = ">=0", path = "../../core", features = [

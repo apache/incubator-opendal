@@ -1,0 +1,15 @@
+This distribution includes the following Mozilla Public License 2.0
+components in compiled form:
+
+- colored 3.1.1
+  Source: https://crates.io/crates/colored/3.1.1
+  Homepage: https://github.com/mackwic/colored
+- option-ext 0.2.0
+  Source: https://crates.io/crates/option-ext/0.2.0
+  Homepage: https://github.com/soc/option-ext
+- persy 1.8.1
+  Source: https://crates.io/crates/persy/1.8.1
+  Homepage: https://persy.rs
+
+Their source code is available from the listed project pages. The full
+MPL-2.0 text is in META-INF/LICENSE-MPL-2.0.txt.

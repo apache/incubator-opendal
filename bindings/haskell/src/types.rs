@@ -15,11 +15,10 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::ffi::c_char;
 use std::ffi::CString;
+use std::ffi::c_char;
 
 use ::opendal as od;
-use chrono::SecondsFormat;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -46,10 +45,12 @@ impl ByteSlice {
     /// # Panics
     ///
     /// * If `ptr` is not a valid pointer.
-    #[no_mangle]
+    #[unsafe(no_mangle)]
     pub unsafe extern "C" fn free_byteslice(ptr: *mut c_char, len: usize) {
-        if !ptr.is_null() {
-            drop(Vec::from_raw_parts(ptr, len, len));
+        unsafe {
+            if !ptr.is_null() {
+                drop(Vec::from_raw_parts(ptr, len, len));
+            }
         }
     }
 }
@@ -117,7 +118,7 @@ impl From<od::Metadata> for Metadata {
         };
 
         let last_modified = match val.last_modified() {
-            Some(s) => unsafe { leak_str(s.to_rfc3339_opts(SecondsFormat::Nanos, false).as_str()) },
+            Some(s) => unsafe { leak_str(s.to_string().as_str()) },
             None => std::ptr::null(),
         };
 

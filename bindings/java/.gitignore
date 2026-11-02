@@ -1,4 +1,8 @@
+bin/
 .mvn/wrapper/maven-wrapper.jar
 Cargo.lock
-
+.project
+.factorypath
 *.log
+.settings/
+.classpath

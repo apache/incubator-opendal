@@ -21,14 +21,19 @@ import { randomUUID } from 'node:crypto'
 import { test, describe, expect, assert } from 'vitest'
 import { Writable } from 'node:stream'
 import { finished, pipeline } from 'node:stream/promises'
+import { setTimeout } from 'node:timers/promises'
 
-import { generateBytes, generateFixedBytes, sleep } from '../utils.mjs'
+import { generateBytes, generateFixedBytes } from '../utils.mjs'
 
 /**
  * @param {import("../../index").Operator} op
  */
 export function run(op) {
   const capability = op.capability()
+  const readerWithIfMatch = capability.readWithIfMatch && capability.statWithIfMatch
+  const readerWithIfNoneMatch = capability.readWithIfNoneMatch && capability.statWithIfNoneMatch
+  const readerWithIfModifiedSince = capability.readWithIfModifiedSince && capability.statWithIfModifiedSince
+  const readerWithIfUnmodifiedSince = capability.readWithIfUnmodifiedSince && capability.statWithIfUnmodifiedSince
 
   describe.runIf(capability.read && capability.write)('async read options', () => {
     test('read with range', async () => {
@@ -108,7 +113,7 @@ export function run(op) {
       const bs = await op.read(filename, { ifModifiedSince: sinceMinus.toISOString() })
       assert.equal(Buffer.compare(bs, content), 0)
 
-      await sleep(1000)
+      await setTimeout(1000)
 
       const sinceAdd = new Date(meta.lastModified)
       sinceAdd.setSeconds(sinceAdd.getSeconds() + 1)
@@ -133,7 +138,7 @@ export function run(op) {
         'ConditionNotMatch',
       )
 
-      await sleep(1000)
+      await setTimeout(1000)
 
       const sinceAdd = new Date(meta.lastModified)
       sinceAdd.setSeconds(sinceAdd.getSeconds() + 1)
@@ -180,7 +185,7 @@ export function run(op) {
   })
 
   describe.runIf(capability.read && capability.write)('async reader options', () => {
-    test.runIf(capability.readWithIfMatch)('reader with if match', async () => {
+    test.runIf(readerWithIfMatch)('reader with if match', async () => {
       const size = 3 * 1024 * 1024
       const filename = `random_file_${randomUUID()}`
       const content = generateFixedBytes(size)
@@ -192,9 +197,8 @@ export function run(op) {
         ifMatch: '"invalid_etag"',
       }
 
-      const reader = await op.reader(filename, invalidOptions)
-      const buf = Buffer.alloc(content.length)
-      await expect(reader.read(buf)).rejects.toThrowError('ConditionNotMatch')
+      const invalidReader = await op.reader(filename, invalidOptions)
+      await expect(invalidReader.read(Buffer.alloc(1))).rejects.toThrowError('ConditionNotMatch')
 
       const r = await op.reader(filename, { ifMatch: meta.etag })
       const rs = r.createReadStream()
@@ -216,7 +220,7 @@ export function run(op) {
       await op.delete(filename)
     })
 
-    test.runIf(capability.readWithIfNoneMatch)('reader with if none match', async () => {
+    test.runIf(readerWithIfNoneMatch)('reader with if none match', async () => {
       const size = 3 * 1024 * 1024
       const filename = `random_file_${randomUUID()}`
       const content = generateFixedBytes(size)
@@ -224,9 +228,8 @@ export function run(op) {
       await op.write(filename, content)
       const meta = await op.stat(filename)
 
-      const reader = await op.reader(filename, { ifNoneMatch: meta.etag })
-      const buf = Buffer.alloc(content.length)
-      await expect(reader.read(buf)).rejects.toThrowError('ConditionNotMatch')
+      const invalidReader = await op.reader(filename, { ifNoneMatch: meta.etag })
+      await expect(invalidReader.read(Buffer.alloc(1))).rejects.toThrowError('ConditionNotMatch')
 
       const r = await op.reader(filename, { ifNoneMatch: '"invalid_etag"' })
       const rs = r.createReadStream()
@@ -248,7 +251,7 @@ export function run(op) {
       await op.delete(filename)
     })
 
-    test.runIf(capability.readWithIfModifiedSince)('reader with if modified since', async () => {
+    test.runIf(readerWithIfModifiedSince)('reader with if modified since', async () => {
       const size = 3 * 1024 * 1024
       const filename = `random_file_${randomUUID()}`
       const content = generateFixedBytes(size)
@@ -275,18 +278,17 @@ export function run(op) {
       const buf = Buffer.concat(chunks)
       assert.equal(Buffer.compare(buf, content), 0)
 
-      await sleep(1000)
+      await setTimeout(1000)
 
       const sinceAdd = new Date(meta.lastModified)
       sinceAdd.setSeconds(sinceAdd.getSeconds() + 1)
-      const r = await op.reader(filename, { ifModifiedSince: sinceAdd.toISOString() })
-      const bs2 = Buffer.alloc(content.length)
-      await expect(r.read(bs2)).rejects.toThrowError('ConditionNotMatch')
+      const invalidReader = await op.reader(filename, { ifModifiedSince: sinceAdd.toISOString() })
+      await expect(invalidReader.read(Buffer.alloc(1))).rejects.toThrowError('ConditionNotMatch')
 
       await op.delete(filename)
     })
 
-    test.runIf(capability.readWithIfUnmodifiedSince)('reader with if unmodified since', async () => {
+    test.runIf(readerWithIfUnmodifiedSince)('reader with if unmodified since', async () => {
       const size = 3 * 1024 * 1024
       const filename = `random_file_${randomUUID()}`
       const content = generateFixedBytes(size)
@@ -297,11 +299,10 @@ export function run(op) {
       const sinceMinus = new Date(meta.lastModified)
       sinceMinus.setSeconds(sinceMinus.getSeconds() - 1)
 
-      const r = await op.reader(filename, { ifUnmodifiedSince: sinceMinus.toISOString() })
-      const bs = Buffer.alloc(content.length)
-      await expect(r.read(bs)).rejects.toThrowError('ConditionNotMatch')
+      const invalidReader = await op.reader(filename, { ifUnmodifiedSince: sinceMinus.toISOString() })
+      await expect(invalidReader.read(Buffer.alloc(1))).rejects.toThrowError('ConditionNotMatch')
 
-      await sleep(1000)
+      await setTimeout(1000)
 
       const sinceAdd = new Date(meta.lastModified)
       sinceAdd.setSeconds(sinceAdd.getSeconds() + 1)

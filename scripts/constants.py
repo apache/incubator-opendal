@@ -21,12 +21,16 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent.parent
 
 
-def list_packages():
-    packages = ["core"]
+def list_packages() -> list[Path]:
+    packages = [Path("core")]
 
     for dir in ["integrations", "bin", "bindings"]:
+        base = ROOT_DIR / dir
+        if not base.exists():
+            # Skip directories that do not exist in this workspace
+            continue
         cur = []
-        for path in (ROOT_DIR / dir).iterdir():
+        for path in base.iterdir():
             if path.is_dir():
                 cur.append(path.relative_to(ROOT_DIR))
         cur.sort()
@@ -35,3 +39,8 @@ def list_packages():
 
 
 PACKAGES = list_packages()
+
+PACKAGE_FEATURES: dict[Path, list[str]] = {
+    Path("bindings/nodejs"): ["services-all"],
+    Path("bindings/python"): ["services-all"],
+}

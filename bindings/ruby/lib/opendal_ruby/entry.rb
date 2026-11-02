@@ -17,7 +17,7 @@
 
 # frozen_string_literal: true
 
-module OpenDAL
+module OpenDal
   class Entry
     # Returns the canonical data about an entry
     # @return [Hash]

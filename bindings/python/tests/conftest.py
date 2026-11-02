@@ -25,6 +25,7 @@ import opendal
 
 load_dotenv()
 pytest_plugins = ("pytest_asyncio",)
+CAPABILITY_OVERRIDES_ENV = "OPENDAL_TEST_CAPABILITY_OVERRIDES"
 
 
 def pytest_configure(config):
@@ -48,12 +49,10 @@ def setup_config(service_name):
     # Read arguments from envs.
     prefix = f"opendal_{service_name}_"
     config = {}
-    for key in os.environ.keys():
+    for key in os.environ:
         if key.lower().startswith(prefix):
             config[key[len(prefix) :].lower()] = os.environ.get(key)
-    disable_random_root = (
-        True if os.environ.get("OPENDAL_DISABLE_RANDOM_ROOT") == "true" else False
-    )
+    disable_random_root = os.environ.get("OPENDAL_DISABLE_RANDOM_ROOT") == "true"
     if not disable_random_root:
         config["root"] = f"{config.get('root', '/')}/{str(uuid4())}/"
     return config
@@ -61,12 +60,16 @@ def setup_config(service_name):
 
 @pytest.fixture(scope="session")
 def async_operator(service_name, setup_config):
-    return (
+    operator = (
         opendal.AsyncOperator(service_name, **setup_config)
         .layer(opendal.layers.RetryLayer())
         .layer(opendal.layers.ConcurrentLimitLayer(1024))
         .layer(opendal.layers.MimeGuessLayer())
     )
+    overrides = os.environ.get(CAPABILITY_OVERRIDES_ENV)
+    if overrides:
+        operator = operator.layer(opendal.layers.CapabilityOverrideLayer(overrides))
+    return operator
 
 
 @pytest.fixture(scope="session")
@@ -75,21 +78,14 @@ def operator(async_operator):
 
 
 @pytest.fixture(autouse=True)
-def check_capability(request, operator, async_operator):
-    if request.node.get_closest_marker("need_capability"):
-        if request.node.get_closest_marker("need_capability").args:
-            if not all(
-                [
-                    getattr(operator.capability(), x)
-                    for x in request.node.get_closest_marker("need_capability").args
-                ]
-                + [
-                    getattr(async_operator.capability(), x)
-                    for x in request.node.get_closest_marker("need_capability").args
-                ]
-            ):
-                pytest.skip(
-                    "skip because "
-                    f"{request.node.get_closest_marker('need_capability').args}"
-                    " not supported"
-                )
+def check_capability(request, operator, async_operator) -> None:
+    marker = request.node.get_closest_marker("need_capability")
+    if (
+        marker
+        and marker.args
+        and not all(
+            [getattr(operator.capability(), x) for x in marker.args]
+            + [getattr(async_operator.capability(), x) for x in marker.args]
+        )
+    ):
+        pytest.skip(f"skip because {marker.args} not supported")

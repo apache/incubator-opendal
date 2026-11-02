@@ -23,17 +23,19 @@ on:
       - main
     tags:
       - "*"
+    paths: &paths
+      - "core/**"
+      - "bindings/dart/**"
+      - ".github/actions/setup/**"
+      - ".github/workflows/ci_bindings_dart.yml"
   pull_request:
     branches:
       - main
-    paths:
-      - "core/**"
-      - "bindings/dart/**"
-      - ".github/workflows/ci_bindings_dart.yml"
+    paths: *paths
   workflow_dispatch:
 
 env:
-  FLUTTER_VERSION: "3.27.3"
+  FLUTTER_VERSION: "3.35.7"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -46,12 +48,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/bin/
@@ -77,6 +79,11 @@ jobs:
         working-directory: bindings/dart
         run: flutter pub get
 
+      # Useful for debugging
+      - name: Print Clippy version
+        working-directory: bindings/dart/rust
+        run: cargo clippy --version
+
       - name: Check Clippy
         working-directory: bindings/dart/rust
         run: cargo clippy -- -D warnings
@@ -94,3 +101,4 @@ jobs:
         run: |
           dart run tests/opendal_test.dart
           dart run examples/basic.dart
+          dart run examples/getting_started.dart

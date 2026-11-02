@@ -16,7 +16,6 @@
 # specific language governing permissions and limitations
 # under the License.
 
-
 import subprocess
 import sys
 import os
@@ -88,19 +87,18 @@ def check_java():
 
 
 def build_core(dir):
-    print("Start building opendal core")
+    print("Start building opendal core", flush=True)
 
     subprocess.run(
         ["cargo", "build", "--release"],
         cwd=dir / "core",
         check=True,
-        stderr=subprocess.DEVNULL,
     )
     print(f"{GREEN}Success to build opendal core{ENDCOLOR}")
 
 
 def build_java_binding(dir):
-    print("Start building opendal java binding")
+    print("Start building opendal java binding", flush=True)
 
     subprocess.run(
         [
@@ -112,8 +110,6 @@ def build_java_binding(dir):
         ],
         check=True,
         cwd=dir / "bindings/java",
-        stderr=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL,
     )
     print(f"> {GREEN}Success to build opendal java binding{ENDCOLOR}")
 

@@ -20,14 +20,14 @@ name = "opendal-ocaml"
 publish = false
 
 authors = ["Apache OpenDAL <dev@opendal.apache.org>"]
-edition = "2021"
+edition = "2024"
 homepage = "https://opendal.apache.org/"
 license = "Apache-2.0"
 repository = "https://github.com/apache/opendal"
-rust-version = "1.82"
+rust-version = "1.91"
 
 [lib]
-crate-type = ["staticlib", "cdylib"]
+crate-type = ["cdylib"]
 doc = false
 
 [dependencies]

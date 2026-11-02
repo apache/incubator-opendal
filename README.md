@@ -1,238 +1,217 @@
 # Apache OpenDAL™: *One Layer, All Storage.*
 
-[![](https://img.shields.io/github/discussions/apache/opendal)](https://github.com/apache/opendal/discussions)
-[![](https://img.shields.io/discord/1081052318650339399?logo=discord&label=discord)](https://opendal.apache.org/discord)
-[![](https://deepwiki.com/badge.svg)](https://deepwiki.com/apache/opendal)
+[![GitHub Discussions](https://img.shields.io/github/discussions/apache/opendal)](https://github.com/apache/opendal/discussions)
+[![Discord](https://img.shields.io/discord/1081052318650339399?logo=discord&label=discord)](https://opendal.apache.org/discord)
+[![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/apache/opendal)
 
-OpenDAL (`/ˈoʊ.pən.dæl/`, pronounced "OH-puhn-dal") is an Open Data Access Layer that enables seamless interaction with diverse storage services.
+Apache OpenDAL™ (`/ˈoʊ.pən.dæl/`, pronounced "OH-puhn-dal") is an Open Data Access Layer that gives every language a unified way to access object storage, file storage, cloud SaaS, databases, protocols, and key-value services.
 
-OpenDAL's development is guided by its vision of **One Layer, All Storage** and its core principles: **Open Community**, **Solid Foundation**, **Fast Access**, **Object Storage First**, and **Extensible Architecture**. Read the explained vision at [OpenDAL Vision](https://opendal.apache.org/vision).
+Apache OpenDAL™ is guided by its vision of **One Layer, All Storage** and its core principles: **Open Community**, **Solid Foundation**, **Fast Access**, **Object Storage First**, and **Extensible Architecture**. Read the explained vision at [OpenDAL Vision](https://opendal.apache.org/vision).
 
-<img src="https://opendal.apache.org/img/architectural.png" alt="OpenDAL Architectural" width="61.8%" />
+<img src="./website/static/img/architectural.png" alt="OpenDAL Architecture" width="100%" />
 
-## For *ANY* languages
+## At a Glance
 
-| Name              | Release                                          | Docs                                                                              | Used By |
-| ----------------- | ------------------------------------------------ | --------------------------------------------------------------------------------- | ----------------------------------- |
-| [Rust Core]       | [![Rust Core Image]][Rust Core Link]             | [![Docs Release]][Rust Core Release Docs] [![Docs Dev]][Rust Core Dev Docs]       | [![Rust Core Users Image]][Rust Core Users]            |
-| [C Binding]       | -                                                | [![Docs Dev]][C Binding Dev Docs]                                                 | [![C Binding Users Image]][C Binding Users]            |
-| [Cpp Binding]     | -                                                | [![Docs Dev]][Cpp Binding Dev Docs]                                               | - |
-| [D Binding]       | -                                                | -                                                                                 | - |
-| [Dart Binding]    | -                                                | -                                                                                 | - |
-| [Dotnet Binding]  | -                                                | -                                                                                 | - |
-| [Go Binding]      | [![Go Binding Image]][Go Binding Link]           | [![Docs Release]][Go Release Docs]                                                | - |
-| [Haskell Binding] | -                                                | -                                                                                 | - |
-| [Java Binding]    | [![Java Binding Image]][Java Binding Link]       | [![Docs Release]][Java Binding Release Docs] [![Docs Dev]][Java Binding Dev Docs] | [![Java Binding Users Image]][Java Binding Users]   |
-| [Lua Binding]     | -                                                | -                                                                                 | - |
-| [Node.js Binding] | [![Node.js Binding Image]][Node.js Binding Link] | [![Docs Dev]][Node.js Binding Dev Docs]                                           | - |
-| [OCaml Binding]   | -                                                | -                                                                                 | - |
-| [PHP Binding]     | -                                                | -                                                                                 | - |
-| [Python Binding]  | [![Python Binding Image]][Python Binding Link]   | [![Docs Dev]][Python Binding Dev Docs]                                            | [![Python Binding Users Image]][Python Binding Users] |
-| [Ruby Binding]    | -                                                | -                                                                                 | - |
-| [Swift Binding]   | -                                                | -                                                                                 | - |
-| [Zig Binding]     | -                                                | -                                                                                 | - |
+- Project: Apache OpenDAL™
+- Vision: **One Layer, All Storage**
+- Core package: Rust crate [`opendal`][Rust Core Link]
+- Main abstraction: `Operator`
+- Extension points: language bindings, layers, and services
+- Common layers: retry, timeout, logging, tracing, metrics, throttling, and concurrency control
+- Access targets: object storage, file systems, cloud SaaS, databases, protocols, and key-value services
 
-[Docs Release]: https://img.shields.io/badge/docs-release-blue
-[Docs Dev]: https://img.shields.io/badge/docs-dev-blue
-[Rust Core]: core/README.md
-[Rust Core Image]: https://img.shields.io/crates/v/opendal.svg
-[Rust Core Link]: https://crates.io/crates/opendal
-[Rust Core Release Docs]: https://docs.rs/opendal
-[Rust Core Dev Docs]: https://opendal.apache.org/docs/rust/opendal/
-[Rust Core Users Image]: https://github.com/user-attachments/assets/2726c336-8509-491d-92d8-1be2040d5136
-[Rust Core Users]: core/users.md
+## Why OpenDAL
 
-[C Binding]: bindings/c/README.md
-[C Binding Dev Docs]: https://opendal.apache.org/docs/c/
-[C Binding Users Image]: https://github.com/user-attachments/assets/b1cf4d79-8478-4eac-ae04-0bbe0d6a993d
-[C Binding Users]: bindings/c/users.md
-[Cpp Binding]: bindings/cpp/README.md
-[Cpp Binding Dev Docs]: https://opendal.apache.org/docs/cpp/
-[D Binding]: bindings/d/README.md
-[Dart Binding]: bindings/dart/README.md
-[Dotnet Binding]: bindings/dotnet/README.md
-[Go Binding]: bindings/go/README.md
-[Go Binding Image]: https://badge.fury.io/go/github.com%2Fapache%2Fopendal%2Fbindings%2Fgo.svg
-[Go Binding Link]: https://pkg.go.dev/github.com/apache/opendal/bindings/go
-[Go Release Docs]: https://pkg.go.dev/github.com/apache/opendal/bindings/go
-[Haskell Binding]: bindings/haskell/README.md
-[Java Binding]: bindings/java/README.md
-[Java Binding Image]: https://img.shields.io/maven-central/v/org.apache.opendal/opendal-java
-[Java Binding Link]: https://central.sonatype.com/artifact/org.apache.opendal/opendal-java
-[Java Binding Release Docs]: https://javadoc.io/doc/org.apache.opendal/opendal-java
-[Java Binding Dev Docs]: https://opendal.apache.org/docs/java/
-[Java Binding Users Image]: https://github.com/user-attachments/assets/f20a59a9-8f23-4919-a165-980ed4e6e0d0
-[Java Binding Users]: bindings/java/users.md
-[Lua Binding]: bindings/lua/README.md
-[Node.js Binding]: bindings/nodejs/README.md
-[Node.js Binding Image]: https://img.shields.io/npm/v/opendal
-[Node.js Binding Link]: https://www.npmjs.com/package/opendal
-[Node.js Binding Dev Docs]: https://opendal.apache.org/docs/nodejs/
-[OCaml Binding]: bindings/ocaml/README.md
-[PHP Binding]: bindings/php/README.md
-[Python Binding]: bindings/python/README.md
-[Python Binding Image]: https://img.shields.io/pypi/v/opendal
-[Python Binding Link]: https://pypi.org/project/opendal/
-[Python Binding Dev Docs]: https://opendal.apache.org/docs/python/
-[Python Binding Users Image]: https://github.com/user-attachments/assets/6bba7e5b-cada-4cf2-81e3-09d4e4535dcb 
-[Python Binding Users]: bindings/python/users.md
-[Ruby Binding]: bindings/ruby/README.md
-[Swift Binding]: bindings/swift/README.md
-[Zig Binding]: bindings/zig/README.md
+Apache OpenDAL™ turns the vision of **One Layer, All Storage** into a practical data access layer for applications, libraries, and data systems.
 
-## For *ANY* methods
+- **Zero-cost core**: built in Rust with composable services and layers, so applications only enable the backends and capabilities they use.
+- **Production-ready access**: add retry, timeout, logging, tracing, metrics, throttling, and concurrency limits through reusable layers.
+- **One API, all storage**: access object storage, file systems, cloud SaaS, databases, protocols, and key-value services through the same interface.
+- **Open and extensible**: add new services, layers, and language bindings while keeping the same unified access model.
 
-| Name  | Description                                                        | Release                   |
-| ----- | ------------------------------------------------------------------ | ------------------------- |
-| [oay] | Access data via API Gateway                                        | [![oay image]][oay crate] |
-| [oli] | Access data via Command Line (alternative to s3cmd, s3cli, azcopy) | [![oli image]][oli crate] |
-| [ofs] | Access data via POSIX file system API (alternative to s3fs)        | [![ofs image]][ofs crate] |
+## Choose Your Language
 
-[oay]: bin/oay/README.md
-[oay image]: https://img.shields.io/crates/v/oay.svg
-[oay crate]: https://crates.io/crates/oay
-[oli]: bin/oli/README.md
-[oli image]: https://img.shields.io/crates/v/oli.svg
-[oli crate]: https://crates.io/crates/oli
-[ofs]: bin/ofs/README.md
-[ofs image]: https://img.shields.io/crates/v/ofs.svg
-[ofs crate]: https://crates.io/crates/ofs
+Start with the binding for your application runtime. Each binding provides access to the same OpenDAL service model while following its language ecosystem.
 
-## For *ANY* integrations
+> **Note**: Each binding has its own independent version number, which may differ from the Rust core version. When checking for updates or compatibility, always refer to the specific binding's version rather than the core version.
 
-| Name                   | Description                                                                   | Release                                     | Docs                                                                              |
-| ---------------------- | ----------------------------------------------------------------------------- | ------------------------------------------- | --------------------------------------------------------------------------------- |
-| [dav-server-opendalfs] | a [dav-server-rs] implementation using opendal.                               | [![dav-server image]][dav-server crate]     | [![Docs Release]][dav-server release docs] [![Docs Dev]][dav-server dev docs]     |
-| [object_store_opendal] | an [object_store] implementation using opendal.                               | [![object_store image]][object_store crate] | [![Docs Release]][object_store release docs] [![Docs Dev]][object_store dev docs] |
-| [fuse3_opendal]        | Access data via integrations to [fuse3]                                       | [![fuse3 image]][fuse3 crate]               | [![Docs Release]][fuse3 release docs] [![Docs Dev]][fuse3 dev docs]               |
-| [virtiofs_opendal]     | Access data via integrations to [vhost-user-backend]                          | [![virtiofs image]][virtiofs crate]         | [![Docs Release]][virtiofs release docs] [![Docs Dev]][virtiofs dev docs]         |
-| [unftp-sbe-opendal]    | an [unftp] storage backend implementation using opendal.                      | [![unftp-sbe image]][unftp-sbe crate]       | [![Docs Release]][unftp-sbe release docs] [![Docs Dev]][unftp-sbe dev docs]       |
-| [parquet_opendal]      | Provides [`parquet`](https://crates.io/crates/parquet) efficient IO utilities | [![parquet image]][parquet crate]           | [![Docs Release]][parquet release docs] [![Docs Dev]][parquet dev docs]           |
+| | | | |
+| :---: | :---: | :---: | :---: |
+| <img src="./website/static/img/bindings/rust.svg" width="42" height="42" alt="Rust logo"><br>**[Rust Core]**<br>[Package][Rust Core Link] · [Docs][Rust Core Release Docs] · [Dev Docs][Rust Core Dev Docs] | <img src="./website/static/img/bindings/c.svg" width="42" height="42" alt="C logo"><br>**[C Binding]**<br>[Dev Docs][C Binding Dev Docs] | <img src="./website/static/img/bindings/cpp.svg" width="42" height="42" alt="C++ logo"><br>**[Cpp Binding]**<br>[Dev Docs][Cpp Binding Dev Docs] | <img src="./website/static/img/bindings/d.svg" width="42" height="42" alt="D logo"><br>**[D Binding]** |
+| <img src="./website/static/img/bindings/dart.svg" width="42" height="42" alt="Dart logo"><br>**[Dart Binding]** | <img src="./website/static/img/bindings/dotnet.svg" width="42" height="42" alt=".NET logo"><br>**[Dotnet Binding]** | <img src="./website/static/img/bindings/go.svg" width="42" height="42" alt="Go logo"><br>**[Go Binding]**<br>[Package][Go Binding Link] · [Docs][Go Release Docs] | <img src="./website/static/img/bindings/haskell.svg" width="42" height="42" alt="Haskell logo"><br>**[Haskell Binding]** |
+| <img src="./website/static/img/bindings/java.svg" width="42" height="42" alt="Java logo"><br>**[Java Binding]**<br>[Package][Java Binding Link] · [Docs][Java Binding Release Docs] · [Dev Docs][Java Binding Dev Docs] | <img src="./website/static/img/bindings/lua.svg" width="42" height="42" alt="Lua logo"><br>**[Lua Binding]** | <img src="./website/static/img/bindings/nodejs.svg" width="42" height="42" alt="Node.js logo"><br>**[Node.js Binding]**<br>[Package][Node.js Binding Link] · [Dev Docs][Node.js Binding Dev Docs] | <img src="./website/static/img/bindings/ocaml.svg" width="42" height="42" alt="OCaml logo"><br>**[OCaml Binding]** |
+| <img src="./website/static/img/bindings/php.svg" width="42" height="42" alt="PHP logo"><br>**[PHP Binding]** | <img src="./website/static/img/bindings/python.svg" width="42" height="42" alt="Python logo"><br>**[Python Binding]**<br>[Package][Python Binding Link] · [Dev Docs][Python Binding Dev Docs] | <img src="./website/static/img/bindings/ruby.svg" width="42" height="42" alt="Ruby logo"><br>**[Ruby Binding]**<br>[Package][Ruby Binding Link] · [Docs][Ruby Binding Docs] | <img src="./website/static/img/bindings/swift.svg" width="42" height="42" alt="Swift logo"><br>**[Swift Binding]** |
+| <img src="./website/static/img/bindings/zig.svg" width="42" height="42" alt="Zig logo"><br>**[Zig Binding]** |  |  |  |
 
-[dav-server-opendalfs]: integrations/dav-server/README.md
-[dav-server-rs]: https://github.com/messense/dav-server-rs
-[dav-server image]: https://img.shields.io/crates/v/dav-server-opendalfs.svg
-[dav-server crate]: https://crates.io/crates/dav-server-opendalfs
-[dav-server release docs]: https://docs.rs/dav-server-opendalfs/
-[dav-server dev docs]: https://opendal.apache.org/docs/dav-server-opendalfs/dav_server_opendalfs/
+## Choose Your Layers
 
-[object_store_opendal]: integrations/object_store/README.md
-[object_store]: https://docs.rs/object_store
-[object_store image]: https://img.shields.io/crates/v/object_store_opendal.svg
-[object_store crate]: https://crates.io/crates/object_store_opendal
-[object_store release docs]: https://docs.rs/object_store_opendal/
-[object_store dev docs]: https://opendal.apache.org/docs/object-store-opendal/object_store_opendal/
+Add layers when your application needs cross-service behavior such as retries, timeouts, observability, or traffic control.
 
-[fuse3_opendal]: integrations/fuse3/README.md
-[fuse3]: https://docs.rs/fuse3
-[fuse3 image]: https://img.shields.io/crates/v/fuse3_opendal.svg
-[fuse3 crate]: https://crates.io/crates/fuse3_opendal
-[fuse3 release docs]: https://docs.rs/fuse3_opendal/
-[fuse3 dev docs]: https://opendal.apache.org/docs/fuse3-opendal/fuse3_opendal/
+| | | | |
+| :---: | :---: | :---: | :---: |
+| <img src="./website/static/img/layers/retry.svg" width="42" height="42" alt="Retry icon"><br>**[RetryLayer]**<br>Retry temporary failures. | <img src="./website/static/img/layers/timeout.svg" width="42" height="42" alt="Timeout icon"><br>**[TimeoutLayer]**<br>Bound slow or hanging operations. | <img src="./website/static/img/layers/logging.svg" width="42" height="42" alt="Logging icon"><br>**[LoggingLayer]**<br>Emit structured operation logs. | <img src="./website/static/img/layers/tracing.svg" width="42" height="42" alt="Tracing icon"><br>**[TracingLayer]**<br>Trace requests across systems. |
+| <img src="./website/static/img/layers/metrics.svg" width="42" height="42" alt="Metrics icon"><br>**[MetricsLayer]**<br>Export operation metrics. | <img src="./website/static/img/layers/prometheus.svg" width="42" height="42" alt="Prometheus icon"><br>**[PrometheusLayer]**<br>Expose Prometheus metrics. | <img src="./website/static/img/layers/otel.svg" width="42" height="42" alt="OpenTelemetry icon"><br>**[OtelMetricsLayer]**<br>Export OpenTelemetry metrics. | <img src="./website/static/img/layers/traffic-control.svg" width="42" height="42" alt="Traffic control icon"><br>**Traffic Control**<br>[ThrottleLayer] · [ConcurrentLimitLayer] |
+| <img src="./website/static/img/layers/content-type.svg" width="42" height="42" alt="Content type icon"><br>**[MimeGuessLayer]**<br>Infer `Content-Type` from paths. | <img src="./website/static/img/layers/route.svg" width="42" height="42" alt="Route icon"><br>**[RouteLayer]**<br>Route operations by path. | <img src="./website/static/img/layers/cache.svg" width="42" height="42" alt="Cache icon"><br>**[FoyerLayer]**<br>Add hybrid cache behavior. | <img src="./website/static/img/layers/layers.svg" width="42" height="42" alt="Layers icon"><br>**[All Layers][Layers Docs]**<br>Explore the full layer list. |
 
-[virtiofs_opendal]: integrations/virtiofs/README.md
-[vhost-user-backend]: https://docs.rs/vhost-user-backend
-[virtiofs image]: https://img.shields.io/crates/v/virtiofs_opendal.svg
-[virtiofs crate]: https://crates.io/crates/virtiofs_opendal
-[virtiofs release docs]: https://docs.rs/virtiofs_opendal/
-[virtiofs dev docs]: https://opendal.apache.org/docs/virtiofs-opendal/virtiofs_opendal/
+Explore all available layers in the [layers documentation][Layers Docs].
 
-[unftp-sbe-opendal]: integrations/unftp-sbe/README.md
-[unftp]: https://crates.io/crates/unftp
-[unftp-sbe image]: https://img.shields.io/crates/v/unftp-sbe-opendal.svg
-[unftp-sbe crate]: https://crates.io/crates/unftp-sbe-opendal
-[unftp-sbe release docs]: https://docs.rs/unftp-sbe-opendal/
-[unftp-sbe dev docs]: https://opendal.apache.org/docs/unftp-sbe-opendal/unftp_sbe_opendal/
+## Choose Your Services
 
-[parquet_opendal]: integrations/parquet/README.md
-[parquet image]: https://img.shields.io/crates/v/parquet-opendal.svg
-[parquet crate]: https://crates.io/crates/parquet-opendal
-[parquet release docs]: https://docs.rs/parquet-opendal/
-[parquet dev docs]: https://opendal.apache.org/docs/parquet-opendal/parquet_opendal/
+Pick the storage services that your application needs. See the full OpenDAL service configuration docs in the [services documentation][Services Docs].
 
-## For *ANY* services
-
-| Type                           | Services                                                                                                                                 |
-| ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Standard Storage Protocols     | ftp http [sftp] [webdav]                                                                                                                 |
-| Object Storage Services        | [azblob] [cos] [gcs] [obs] [oss] [s3] <br> [b2] [openstack_swift] [upyun] [vercel_blob]                                                  |
-| File Storage Services          | fs [alluxio] [azdls] [azfile] [compfs] <br> [dbfs] [gridfs] [hdfs] [hdfs_native] [ipfs] [webhdfs]                                        |
-| Consumer Cloud Storage Service | [aliyun_drive] [gdrive] [onedrive] [dropbox] [icloud] [koofr] <br> [pcloud] [seafile] [yandex_disk]                                      |
-| Key-Value Storage Services     | [cacache] [cloudflare_kv] [dashmap] memory [etcd] <br> [foundationdb] [persy] [redis] [rocksdb] [sled] <br> [redb] [tikv] [atomicserver] |
-| Database Storage Services      | [d1] [mongodb] [mysql] [postgresql] [sqlite] [surrealdb]                                                                                 |
-| Cache Storage Services         | [ghac] [memcached] [mini_moka] [moka] [vercel_artifacts]                                                                                 |
-| Git Based Storage Services     | [huggingface]                                                                                                                            |
-
-[sftp]: https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02
-[webdav]: https://datatracker.ietf.org/doc/html/rfc4918
-
-[azblob]: https://azure.microsoft.com/en-us/services/storage/blobs/
-[cos]: https://www.tencentcloud.com/products/cos
-[gcs]: https://cloud.google.com/storage
-[obs]: https://www.huaweicloud.com/intl/en-us/product/obs.html
-[oss]: https://www.aliyun.com/product/oss
-[s3]: https://aws.amazon.com/s3/
-[b2]: https://www.backblaze.com/
-[openstack_swift]: https://docs.openstack.org/swift/latest/
-[upyun]: https://www.upyun.com/
-[vercel_blob]: https://vercel.com/docs/storage/vercel-blob
-
-[alluxio]: https://docs.alluxio.io/os/user/stable/en/api/REST-API.html
-[azdls]: https://azure.microsoft.com/en-us/products/storage/data-lake-storage/
-[azfile]: https://learn.microsoft.com/en-us/rest/api/storageservices/file-service-rest-api
-[compfs]: https://github.com/compio-rs/compio/
-[dbfs]: https://docs.databricks.com/en/dbfs/index.html
-[gridfs]: https://www.mongodb.com/docs/manual/core/gridfs/
-[hdfs]: https://hadoop.apache.org/docs/r3.3.4/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html
-[hdfs_native]: https://github.com/Kimahriman/hdfs-native
-[ipfs]: https://ipfs.tech/
-[webhdfs]: https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-hdfs/WebHDFS.html
-
-[aliyun_drive]: https://www.aliyundrive.com/
-[gdrive]: https://www.google.com/drive/
-[onedrive]: https://www.microsoft.com/en-us/microsoft-365/onedrive/online-cloud-storage
-[dropbox]: https://www.dropbox.com/
-[icloud]: https://www.icloud.com/iclouddrive
-[koofr]: https://koofr.eu/
-[pcloud]: https://www.pcloud.com/
-[seafile]: https://www.seafile.com/
-[yandex_disk]: https://360.yandex.com/disk/
-
-[cacache]: https://crates.io/crates/cacache
-[cloudflare_kv]: https://developers.cloudflare.com/kv/
-[dashmap]: https://github.com/xacrimon/dashmap
-[etcd]: https://etcd.io/
-[foundationdb]: https://www.foundationdb.org/
-[persy]: https://crates.io/crates/persy
-[redis]: https://redis.io/
-[rocksdb]: http://rocksdb.org/
-[sled]: https://crates.io/crates/sled
-[redb]: https://crates.io/crates/redb
-[tikv]: https://tikv.org/
-[atomicserver]: https://github.com/atomicdata-dev/atomic-server
-
-[d1]: https://developers.cloudflare.com/d1/
-[mongodb]: https://www.mongodb.com/
-[mysql]: https://www.mysql.com/
-[postgresql]: https://www.postgresql.org/
-[sqlite]: https://www.sqlite.org/
-[surrealdb]: https://surrealdb.com/
-
-[ghac]: https://docs.github.com/en/actions/using-workflows/caching-dependencies-to-speed-up-workflows
-[memcached]: https://memcached.org/
-[mini_moka]: https://github.com/moka-rs/mini-moka
-[moka]: https://github.com/moka-rs/moka
-[vercel_artifacts]: https://vercel.com/docs/concepts/monorepos/remote-caching
-
-[huggingface]: https://huggingface.co/
+<table width="100%">
+  <tr>
+    <th colspan="3" align="left">Object Storage</th>
+    <th colspan="3" align="left">File Storage</th>
+  </tr>
+  <tr>
+    <td width="16.66%"><a href="https://aws.amazon.com/s3/"><img src="./website/static/img/services/s3.svg" width="18" height="18" alt="AWS logo"> s3</a></td>
+    <td width="16.66%"><a href="https://cloud.google.com/storage"><img src="./website/static/img/services/gcs.png" width="18" height="18" alt="Google Cloud logo"> gcs</a></td>
+    <td width="16.66%"><a href="https://azure.microsoft.com/en-us/services/storage/blobs/"><img src="./website/static/img/services/azure.svg" width="18" height="18" alt="Azure logo"> azblob</a></td>
+    <td width="16.66%"><a href="https://opendal.apache.org/docs/rust/opendal/services/struct.Fs.html"><img src="./website/static/img/services/opendal.svg" width="18" height="18" alt="OpenDAL logo"> fs</a></td>
+    <td width="16.66%"><a href="https://hadoop.apache.org/docs/r3.3.4/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html"><img src="./website/static/img/services/hadoop.ico" width="18" height="18" alt="Apache Hadoop logo"> hdfs</a></td>
+    <td width="16.66%"><a href="https://github.com/Kimahriman/hdfs-native"><img src="./website/static/img/services/hadoop.ico" width="18" height="18" alt="Apache Hadoop logo"> hdfs-native</a></td>
+  </tr>
+  <tr>
+    <td><a href="https://www.aliyun.com/product/oss"><img src="./website/static/img/services/oss.svg" width="26" height="16" alt="Alibaba Cloud logo"> oss</a></td>
+    <td><a href="https://www.huaweicloud.com/intl/en-us/product/obs.html"><img src="./website/static/img/services/obs.png" width="40" height="16" alt="Huawei Cloud logo"> obs</a></td>
+    <td><a href="https://www.tencentcloud.com/products/cos"><img src="./website/static/img/services/cos.svg" width="26" height="18" alt="Tencent Cloud logo"> cos</a></td>
+    <td><a href="https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-hdfs/WebHDFS.html"><img src="./website/static/img/services/hadoop.ico" width="18" height="18" alt="Apache Hadoop logo"> webhdfs</a></td>
+    <td><a href="https://lakefs.io/"><img src="./website/static/img/services/lakefs.ico" width="18" height="18" alt="lakeFS logo"> lakefs</a></td>
+    <td><a href="https://ipfs.tech/"><img src="./website/static/img/services/ipfs.ico" width="18" height="18" alt="IPFS logo"> ipfs</a></td>
+  </tr>
+  <tr>
+    <td><a href="https://www.volcengine.com/product/tos"><img src="./website/static/img/services/volcengine.png" width="18" height="18" alt="Volcengine logo"> tos</a></td>
+    <td><a href="https://www.backblaze.com/"><img src="./website/static/img/services/backblaze.png" width="18" height="18" alt="Backblaze logo"> b2</a></td>
+    <td><a href="https://docs.openstack.org/swift/latest/"><img src="./website/static/img/services/openstack.png" width="18" height="18" alt="OpenStack logo"> swift</a></td>
+    <td><a href="https://docs.ipfs.tech/concepts/file-systems/"><img src="./website/static/img/services/ipfs.ico" width="18" height="18" alt="IPFS logo"> ipmfs</a></td>
+    <td><a href="https://learn.microsoft.com/en-us/rest/api/storageservices/file-service-rest-api"><img src="./website/static/img/services/azure.svg" width="18" height="18" alt="Azure logo"> azfile</a></td>
+    <td><a href="https://azure.microsoft.com/en-us/products/storage/data-lake-storage/"><img src="./website/static/img/services/azure.svg" width="18" height="18" alt="Azure logo"> azdls</a></td>
+  </tr>
+  <tr>
+    <td><a href="https://www.upyun.com/"><img src="./website/static/img/services/upyun.png" width="18" height="18" alt="Upyun logo"> upyun</a></td>
+    <td><a href="https://vercel.com/docs/storage/vercel-blob"><img src="./website/static/img/services/vercel.png" width="18" height="18" alt="Vercel logo"> vercel-blob</a></td>
+    <td></td>
+    <td><a href="https://docs.alluxio.io/os/user/stable/en/api/REST-API.html"><img src="./website/static/img/services/alluxio.svg" width="18" height="18" alt="Alluxio logo"> alluxio</a></td>
+    <td><a href="https://github.com/Tencent/tencent-goosefs-rust-sdk"><img src="./website/static/img/services/cos.svg" width="26" height="18" alt="Tencent Cloud logo"> goosefs</a></td>
+    <td><a href="https://docs.databricks.com/en/dbfs/index.html"><img src="./website/static/img/services/databricks.png" width="18" height="18" alt="Databricks logo"> dbfs</a></td>
+  </tr>
+  <tr>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td><a href="https://www.mongodb.com/docs/manual/core/gridfs/"><img src="./website/static/img/services/mongodb.ico" width="18" height="18" alt="MongoDB logo"> gridfs</a></td>
+    <td><a href="https://developer.mozilla.org/en-US/docs/Web/API/File_System_API/Origin_private_file_system"><img src="./website/static/img/services/mdn.svg" width="18" height="18" alt="MDN Web Docs logo"> opfs</a></td>
+    <td><a href="https://github.com/bytedance/monoio"><img src="./website/static/img/services/github.svg" width="18" height="18" alt="GitHub logo"> monoiofs</a></td>
+  </tr>
+  <tr>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td><a href="https://github.com/compio-rs/compio/"><img src="./website/static/img/services/github.svg" width="18" height="18" alt="GitHub logo"> compfs</a></td>
+    <td></td>
+    <td></td>
+  </tr>
+  <tr>
+    <th colspan="3" align="left">Cloud SaaS</th>
+    <th colspan="3" align="left">Standard Protocols</th>
+  </tr>
+  <tr>
+    <td><a href="https://www.google.com/drive/"><img src="./website/static/img/services/gdrive.png" width="18" height="18" alt="Google Drive logo"> gdrive</a></td>
+    <td><a href="https://www.dropbox.com/"><img src="./website/static/img/services/dropbox.ico" width="18" height="18" alt="Dropbox logo"> dropbox</a></td>
+    <td><a href="https://www.microsoft.com/en-us/microsoft-365/onedrive/online-cloud-storage"><img src="./website/static/img/services/onedrive.svg" width="18" height="18" alt="OneDrive logo"> onedrive</a></td>
+    <td><a href="https://developer.mozilla.org/en-US/docs/Web/HTTP"><img src="./website/static/img/services/http.png" width="18" height="18" alt="HTTP icon"> http</a></td>
+    <td><a href="https://datatracker.ietf.org/doc/html/rfc959"><img src="./website/static/img/services/ftp.png" width="18" height="18" alt="FTP icon"> ftp</a></td>
+    <td><a href="https://datatracker.ietf.org/doc/html/rfc4918"><img src="./website/static/img/services/webdav.png" width="18" height="18" alt="WebDAV icon"> webdav</a></td>
+  </tr>
+  <tr>
+    <td><a href="https://www.aliyundrive.com/"><img src="./website/static/img/services/aliyundrive.png" width="18" height="18" alt="Aliyun Drive logo"> aliyun-drive</a></td>
+    <td><a href="https://huggingface.co/"><img src="./website/static/img/services/huggingface.ico" width="18" height="18" alt="Hugging Face logo"> hf</a></td>
+    <td><a href="https://github.com/"><img src="./website/static/img/services/github.svg" width="18" height="18" alt="GitHub logo"> github</a></td>
+    <td><a href="https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02"><img src="./website/static/img/services/sftp.png" width="18" height="18" alt="SFTP icon"> sftp</a></td>
+    <td></td>
+    <td></td>
+  </tr>
+  <tr>
+    <td><a href="https://www.pcloud.com/"><img src="./website/static/img/services/pcloud.png" width="18" height="18" alt="pCloud logo"> pcloud</a></td>
+    <td><a href="https://koofr.eu/"><img src="./website/static/img/services/koofr.ico" width="18" height="18" alt="Koofr logo"> koofr</a></td>
+    <td><a href="https://www.seafile.com/"><img src="./website/static/img/services/seafile.png" width="18" height="18" alt="Seafile logo"> seafile</a></td>
+    <td></td>
+    <td></td>
+    <td></td>
+  </tr>
+  <tr>
+    <td><a href="https://360.yandex.com/disk/"><img src="./website/static/img/services/yandex.png" width="18" height="18" alt="Yandex Disk logo"> yandex-disk</a></td>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td></td>
+  </tr>
+  <tr>
+    <th colspan="3" align="left">Databases</th>
+    <th colspan="3" align="left">Key-Value &amp; Embedded</th>
+  </tr>
+  <tr>
+    <td><a href="https://www.sqlite.org/"><img src="./website/static/img/services/sqlite.ico" width="18" height="18" alt="SQLite logo"> sqlite</a></td>
+    <td><a href="https://www.mysql.com/"><img src="./website/static/img/services/mysql.ico" width="18" height="18" alt="MySQL logo"> mysql</a></td>
+    <td><a href="https://www.postgresql.org/"><img src="./website/static/img/services/postgresql.ico" width="18" height="18" alt="PostgreSQL logo"> postgresql</a></td>
+    <td><img src="./website/static/img/services/opendal.svg" width="18" height="18" alt="OpenDAL logo"> memory</td>
+    <td><a href="https://redis.io/"><img src="./website/static/img/services/redis.png" width="18" height="18" alt="Redis logo"> redis</a></td>
+    <td><a href="https://etcd.io/"><img src="./website/static/img/services/etcd.png" width="18" height="18" alt="etcd logo"> etcd</a></td>
+  </tr>
+  <tr>
+    <td><a href="https://www.mongodb.com/"><img src="./website/static/img/services/mongodb.ico" width="18" height="18" alt="MongoDB logo"> mongodb</a></td>
+    <td><a href="https://surrealdb.com/"><img src="./website/static/img/services/surrealdb.svg" width="18" height="18" alt="SurrealDB logo"> surrealdb</a></td>
+    <td><a href="https://developers.cloudflare.com/d1/"><img src="./website/static/img/services/cloudflare.ico" width="18" height="18" alt="Cloudflare logo"> d1</a></td>
+    <td><a href="http://rocksdb.org/"><img src="./website/static/img/services/rocksdb.png" width="18" height="18" alt="RocksDB logo"> rocksdb</a></td>
+    <td><a href="https://memcached.org/"><img src="./website/static/img/services/memcached.png" width="18" height="18" alt="Memcached logo"> memcached</a></td>
+    <td><a href="https://developers.cloudflare.com/kv/">cloudflare-kv</a></td>
+  </tr>
+  <tr>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td><a href="https://tikv.org/"><img src="./website/static/img/services/tikv.png" width="42" height="16" alt="TiKV logo"> tikv</a></td>
+    <td><a href="https://www.foundationdb.org/"><img src="./website/static/img/services/foundationdb.png" width="22" height="12" alt="FoundationDB logo"> foundationdb</a></td>
+    <td><a href="https://crates.io/crates/sled"><img src="./website/static/img/services/crates.ico" width="18" height="18" alt="crates.io logo"> sled</a></td>
+  </tr>
+  <tr>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td><a href="https://crates.io/crates/redb"><img src="./website/static/img/services/crates.ico" width="18" height="18" alt="crates.io logo"> redb</a></td>
+    <td><a href="https://crates.io/crates/persy"><img src="./website/static/img/services/crates.ico" width="18" height="18" alt="crates.io logo"> persy</a></td>
+    <td><a href="https://github.com/xacrimon/dashmap"><img src="./website/static/img/services/github.svg" width="18" height="18" alt="GitHub logo"> dashmap</a></td>
+  </tr>
+  <tr>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td><a href="https://crates.io/crates/cacache"><img src="./website/static/img/services/crates.ico" width="18" height="18" alt="crates.io logo"> cacache</a></td>
+    <td><a href="https://github.com/moka-rs/moka"><img src="./website/static/img/services/github.svg" width="18" height="18" alt="GitHub logo"> moka</a></td>
+    <td><a href="https://github.com/moka-rs/mini-moka"><img src="./website/static/img/services/github.svg" width="18" height="18" alt="GitHub logo"> mini-moka</a></td>
+  </tr>
+  <tr>
+    <td></td>
+    <td></td>
+    <td></td>
+    <td><a href="https://github.com/foyer-rs/foyer"><img src="./website/static/img/services/github.svg" width="18" height="18" alt="GitHub logo"> foyer</a></td>
+    <td><a href="https://docs.github.com/en/actions/using-workflows/caching-dependencies-to-speed-up-workflows"><img src="./website/static/img/services/github.svg" width="18" height="18" alt="GitHub logo"> ghac</a></td>
+    <td><a href="https://vercel.com/docs/concepts/monorepos/remote-caching">vercel-artifacts</a></td>
+  </tr>
+</table>
 
 ## Examples
 
-The examples are available at [here](./examples/).
+See [examples](./examples/) for runnable usage examples.
 
 ## Documentation
 
-The documentation is available at <https://opendal.apache.org>.
+- Website: <https://opendal.apache.org>
+- Vision: <https://opendal.apache.org/vision>
+- Rust release docs: <https://docs.rs/opendal>
+- Rust dev docs: <https://opendal.apache.org/docs/rust/opendal/>
 
 ## Contribute
 
@@ -255,3 +234,61 @@ For more details, see the [Apache Product Name Usage Guide](https://www.apache.o
 Licensed under the Apache License, Version 2.0: <http://www.apache.org/licenses/LICENSE-2.0>
 
 Apache OpenDAL, OpenDAL, and Apache are either registered trademarks or trademarks of the Apache Software Foundation.
+
+<!-- Link references -->
+
+<!-- Binding references -->
+
+[Rust Core]: core/README.md
+[Rust Core Link]: https://crates.io/crates/opendal
+[Rust Core Release Docs]: https://docs.rs/opendal
+[Rust Core Dev Docs]: https://opendal.apache.org/docs/rust/opendal/
+[C Binding]: bindings/c/README.md
+[C Binding Dev Docs]: https://opendal.apache.org/docs/c/
+[Cpp Binding]: bindings/cpp/README.md
+[Cpp Binding Dev Docs]: https://opendal.apache.org/docs/cpp/
+[D Binding]: bindings/d/README.md
+[Dart Binding]: bindings/dart/README.md
+[Dotnet Binding]: bindings/dotnet/README.md
+[Go Binding]: bindings/go/README.md
+[Go Binding Link]: https://pkg.go.dev/github.com/apache/opendal/bindings/go
+[Go Release Docs]: https://pkg.go.dev/github.com/apache/opendal/bindings/go
+[Haskell Binding]: bindings/haskell/README.md
+[Java Binding]: bindings/java/README.md
+[Java Binding Link]: https://central.sonatype.com/artifact/org.apache.opendal/opendal-java
+[Java Binding Release Docs]: https://javadoc.io/doc/org.apache.opendal/opendal-java
+[Java Binding Dev Docs]: https://opendal.apache.org/docs/java/
+[Lua Binding]: bindings/lua/README.md
+[Node.js Binding]: bindings/nodejs/README.md
+[Node.js Binding Link]: https://www.npmjs.com/package/opendal
+[Node.js Binding Dev Docs]: https://opendal.apache.org/docs/nodejs/
+[OCaml Binding]: bindings/ocaml/README.md
+[PHP Binding]: bindings/php/README.md
+[Python Binding]: bindings/python/README.md
+[Python Binding Link]: https://pypi.org/project/opendal/
+[Python Binding Dev Docs]: https://opendal.apache.org/docs/python/
+[Ruby Binding]: bindings/ruby/README.md
+[Ruby Binding Link]: https://rubygems.org/gems/opendal
+[Ruby Binding Docs]: https://opendal.apache.org/docs/ruby/
+[Swift Binding]: bindings/swift/README.md
+[Zig Binding]: bindings/zig/README.md
+
+<!-- Layer references -->
+
+[Layers Docs]: https://opendal.apache.org/docs/rust/opendal/layers/
+[RetryLayer]: https://opendal.apache.org/docs/rust/opendal/layers/struct.RetryLayer.html
+[TimeoutLayer]: https://opendal.apache.org/docs/rust/opendal/layers/struct.TimeoutLayer.html
+[LoggingLayer]: https://opendal.apache.org/docs/rust/opendal/layers/struct.LoggingLayer.html
+[TracingLayer]: https://opendal.apache.org/docs/rust/opendal/layers/struct.TracingLayer.html
+[MetricsLayer]: https://opendal.apache.org/docs/rust/opendal/layers/struct.MetricsLayer.html
+[PrometheusLayer]: https://opendal.apache.org/docs/rust/opendal/layers/struct.PrometheusLayer.html
+[OtelMetricsLayer]: https://opendal.apache.org/docs/rust/opendal/layers/struct.OtelMetricsLayer.html
+[ThrottleLayer]: https://opendal.apache.org/docs/rust/opendal/layers/struct.ThrottleLayer.html
+[ConcurrentLimitLayer]: https://opendal.apache.org/docs/rust/opendal/layers/struct.ConcurrentLimitLayer.html
+[MimeGuessLayer]: https://opendal.apache.org/docs/rust/opendal/layers/struct.MimeGuessLayer.html
+[RouteLayer]: https://opendal.apache.org/docs/rust/opendal/layers/struct.RouteLayer.html
+[FoyerLayer]: https://opendal.apache.org/docs/rust/opendal/layers/struct.FoyerLayer.html
+
+<!-- Service references -->
+
+[Services Docs]: https://opendal.apache.org/docs/rust/opendal/services/

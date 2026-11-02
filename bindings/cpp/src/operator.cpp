@@ -18,6 +18,7 @@
  */
 
 #include <chrono>
+#include <cstdint>
 #include <cstdio>
 #include <ctime>
 
@@ -27,6 +28,165 @@
 #include "utils/rust_converter.hpp"
 
 namespace opendal {
+
+namespace {
+
+ffi::OptionalString ToFfiOptionalString(
+    const std::optional<std::string> &value) {
+  if (value.has_value()) {
+    return ffi::OptionalString{true, utils::rust_string(*value)};
+  }
+  return ffi::OptionalString{false, rust::String()};
+}
+
+ffi::OptionalU64 ToFfiOptionalU64(const std::optional<std::uint64_t> &value) {
+  if (value.has_value()) {
+    return ffi::OptionalU64{true, *value};
+  }
+  return ffi::OptionalU64{false, 0};
+}
+
+ffi::OptionalUsize ToFfiOptionalUsize(const std::optional<std::size_t> &value) {
+  if (value.has_value()) {
+    return ffi::OptionalUsize{true, *value};
+  }
+  return ffi::OptionalUsize{false, 0};
+}
+
+ffi::OptionalTimestamp ToFfiOptionalTimestamp(
+    const std::optional<std::chrono::system_clock::time_point> &value) {
+  if (!value.has_value()) {
+    return ffi::OptionalTimestamp{false, 0, 0};
+  }
+
+  auto duration = value->time_since_epoch();
+  auto seconds_duration =
+      std::chrono::duration_cast<std::chrono::seconds>(duration);
+  auto nanoseconds = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                         duration - seconds_duration)
+                         .count();
+  auto seconds = seconds_duration.count();
+  if (nanoseconds < 0) {
+    --seconds;
+    nanoseconds += 1000000000;
+  }
+
+  return ffi::OptionalTimestamp{true, static_cast<std::int64_t>(seconds),
+                                static_cast<std::uint32_t>(nanoseconds)};
+}
+
+ffi::FfiBytesRange ToFfiBytesRange(const ReadRange &range) {
+  return ffi::FfiBytesRange{static_cast<std::uint8_t>(range.type), range.start,
+                            range.end};
+}
+
+rust::Vec<ffi::HashMapValue> ToFfiHashMap(
+    const std::unordered_map<std::string, std::string> &map) {
+  rust::Vec<ffi::HashMapValue> values;
+  values.reserve(map.size());
+  for (const auto &[key, value] : map) {
+    values.push_back({utils::rust_string(key), utils::rust_string(value)});
+  }
+  return values;
+}
+
+ffi::FfiStatOptions ToFfiOptions(const StatOptions &options) {
+  return ffi::FfiStatOptions{
+      ToFfiOptionalString(options.version),
+      ToFfiOptionalString(options.if_match),
+      ToFfiOptionalString(options.if_none_match),
+      ToFfiOptionalTimestamp(options.if_modified_since),
+      ToFfiOptionalTimestamp(options.if_unmodified_since),
+      ToFfiOptionalString(options.override_content_type),
+      ToFfiOptionalString(options.override_cache_control),
+      ToFfiOptionalString(options.override_content_disposition),
+  };
+}
+
+ffi::FfiReadOptions ToFfiOptions(const ReadOptions &options) {
+  return ffi::FfiReadOptions{
+      ToFfiBytesRange(options.range),
+      ToFfiOptionalString(options.version),
+      ToFfiOptionalString(options.if_match),
+      ToFfiOptionalString(options.if_none_match),
+      ToFfiOptionalTimestamp(options.if_modified_since),
+      ToFfiOptionalTimestamp(options.if_unmodified_since),
+      ToFfiOptionalU64(options.content_length_hint),
+      options.concurrent,
+      ToFfiOptionalUsize(options.chunk),
+      ToFfiOptionalUsize(options.gap),
+      ToFfiOptionalString(options.override_content_type),
+      ToFfiOptionalString(options.override_cache_control),
+      ToFfiOptionalString(options.override_content_disposition),
+  };
+}
+
+ffi::FfiReaderOptions ToFfiOptions(const ReaderOptions &options) {
+  return ffi::FfiReaderOptions{
+      ToFfiOptionalString(options.version),
+      ToFfiOptionalString(options.if_match),
+      ToFfiOptionalString(options.if_none_match),
+      ToFfiOptionalTimestamp(options.if_modified_since),
+      ToFfiOptionalTimestamp(options.if_unmodified_since),
+      ToFfiOptionalU64(options.content_length_hint),
+      options.concurrent,
+      ToFfiOptionalUsize(options.chunk),
+      ToFfiOptionalUsize(options.gap),
+      options.prefetch,
+  };
+}
+
+ffi::FfiWriteOptions ToFfiOptions(const WriteOptions &options) {
+  auto metadata = options.user_metadata.has_value()
+                      ? ToFfiHashMap(*options.user_metadata)
+                      : rust::Vec<ffi::HashMapValue>();
+  return ffi::FfiWriteOptions{
+      options.append,
+      ToFfiOptionalString(options.cache_control),
+      ToFfiOptionalString(options.content_type),
+      ToFfiOptionalString(options.content_disposition),
+      ToFfiOptionalString(options.content_encoding),
+      options.user_metadata.has_value(),
+      std::move(metadata),
+      ToFfiOptionalString(options.if_match),
+      ToFfiOptionalString(options.if_none_match),
+      options.if_not_exists,
+      options.concurrent,
+      ToFfiOptionalUsize(options.chunk),
+  };
+}
+
+ffi::FfiCopyOptions ToFfiOptions(const CopyOptions &options) {
+  return ffi::FfiCopyOptions{
+      options.if_not_exists,
+      ToFfiOptionalString(options.if_match),
+      ToFfiOptionalString(options.source_version),
+      ToFfiOptionalU64(options.source_content_length_hint),
+      options.concurrent,
+      ToFfiOptionalUsize(options.chunk),
+  };
+}
+
+ffi::FfiRenameOptions ToFfiOptions(const RenameOptions &options) {
+  return ffi::FfiRenameOptions{options.if_not_exists};
+}
+
+ffi::FfiDeleteOptions ToFfiOptions(const DeleteOptions &options) {
+  return ffi::FfiDeleteOptions{ToFfiOptionalString(options.version),
+                               options.recursive};
+}
+
+ffi::FfiListOptions ToFfiOptions(const ListOptions &options) {
+  return ffi::FfiListOptions{
+      ToFfiOptionalUsize(options.limit),
+      ToFfiOptionalString(options.start_after),
+      options.recursive,
+      options.versions,
+      options.deleted,
+  };
+}
+
+}  // namespace
 
 std::optional<std::string> parse_optional_string(ffi::OptionalString &&s) {
   if (s.has_value) {
@@ -106,7 +266,8 @@ void Operator::Destroy() noexcept {
 }
 
 Operator::Operator(std::string_view scheme,
-                   const std::unordered_map<std::string, std::string> &config) {
+                   const std::unordered_map<std::string, std::string> &config,
+                   std::vector<std::unique_ptr<OperatorOption>> options) {
   auto rust_map = rust::Vec<ffi::HashMapValue>();
   rust_map.reserve(config.size());
 
@@ -114,7 +275,15 @@ Operator::Operator(std::string_view scheme,
     rust_map.push_back({utils::rust_string(k), utils::rust_string(v)});
   }
 
-  operator_ = ffi::new_operator(utils::rust_str(scheme), rust_map);
+  auto layers = ffi::layer_builder_new();
+  FfiLayerBuilderMutator mutator(*layers);
+  for (const auto &option : options) {
+    if (option != nullptr) {
+      option->ApplyTo(mutator);
+    }
+  }
+
+  operator_ = ffi::new_operator(utils::rust_str(scheme), rust_map, *layers);
 }
 
 Operator::~Operator() noexcept { Destroy(); }
@@ -143,10 +312,22 @@ std::string Operator::Read(std::string_view path) {
   return {rust_vec.begin(), rust_vec.end()};
 }
 
+std::string Operator::Read(std::string_view path, const ReadOptions &options) {
+  auto rust_vec =
+      operator_->read_options(utils::rust_str(path), ToFfiOptions(options));
+  return {rust_vec.begin(), rust_vec.end()};
+}
+
 void Operator::Write(std::string_view path, std::string_view data) {
-  rust::Vec<uint8_t> vec;
-  std::copy(data.begin(), data.end(), std::back_inserter(vec));
-  operator_->write(utils::rust_str(path), vec);
+  operator_->write(utils::rust_str(path),
+                   utils::rust_slice<const uint8_t>(data));
+}
+
+void Operator::Write(std::string_view path, std::string_view data,
+                     const WriteOptions &options) {
+  operator_->write_options(utils::rust_str(path),
+                           utils::rust_slice<const uint8_t>(data),
+                           ToFfiOptions(options));
 }
 
 bool Operator::Exists(std::string_view path) {
@@ -163,16 +344,46 @@ void Operator::Copy(std::string_view src, std::string_view dst) {
   operator_->copy(utils::rust_str(src), utils::rust_str(dst));
 }
 
+void Operator::Copy(std::string_view src, std::string_view dst,
+                    const CopyOptions &options) {
+  operator_->copy_options(utils::rust_str(src), utils::rust_str(dst),
+                          ToFfiOptions(options));
+}
+
 void Operator::Rename(std::string_view src, std::string_view dst) {
   operator_->rename(utils::rust_str(src), utils::rust_str(dst));
+}
+
+void Operator::Rename(std::string_view src, std::string_view dst,
+                      const RenameOptions &options) {
+  operator_->rename_options(utils::rust_str(src), utils::rust_str(dst),
+                            ToFfiOptions(options));
 }
 
 void Operator::Remove(std::string_view path) {
   operator_->remove(utils::rust_str(path));
 }
 
+void Operator::Remove(std::string_view path, const DeleteOptions &options) {
+  operator_->remove_options(utils::rust_str(path), ToFfiOptions(options));
+}
+
+void Operator::RemoveAll(const std::vector<std::string> &paths) {
+  rust::Vec<rust::String> rust_paths;
+  rust_paths.reserve(paths.size());
+  for (const auto &path : paths) {
+    rust_paths.push_back(utils::rust_string(path));
+  }
+  operator_->remove_all(std::move(rust_paths));
+}
+
 Metadata Operator::Stat(std::string_view path) {
   return parse_meta_data(operator_->stat(utils::rust_str(path)));
+}
+
+Metadata Operator::Stat(std::string_view path, const StatOptions &options) {
+  return parse_meta_data(
+      operator_->stat_options(utils::rust_str(path), ToFfiOptions(options)));
 }
 
 std::vector<Entry> Operator::List(std::string_view path) {
@@ -187,12 +398,46 @@ std::vector<Entry> Operator::List(std::string_view path) {
   return entries;
 }
 
+std::vector<Entry> Operator::List(std::string_view path,
+                                  const ListOptions &options) {
+  auto rust_vec =
+      operator_->list_options(utils::rust_str(path), ToFfiOptions(options));
+
+  std::vector<Entry> entries;
+  entries.reserve(rust_vec.size());
+  for (auto &&entry : rust_vec) {
+    entries.emplace_back(utils::parse_entry(std::move(entry)));
+  }
+
+  return entries;
+}
+
 Lister Operator::GetLister(std::string_view path) {
   return operator_->lister(utils::rust_str(path));
 }
 
+Lister Operator::GetLister(std::string_view path, const ListOptions &options) {
+  return operator_->lister_options(utils::rust_str(path),
+                                   ToFfiOptions(options));
+}
+
 Reader Operator::GetReader(std::string_view path) {
   return operator_->reader(utils::rust_str(path));
+}
+
+Reader Operator::GetReader(std::string_view path,
+                           const ReaderOptions &options) {
+  return operator_->reader_options(utils::rust_str(path),
+                                   ToFfiOptions(options));
+}
+
+Writer Operator::GetWriter(std::string_view path) {
+  return operator_->writer(utils::rust_str(path));
+}
+
+Writer Operator::GetWriter(std::string_view path, const WriteOptions &options) {
+  return operator_->writer_options(utils::rust_str(path),
+                                   ToFfiOptions(options));
 }
 
 }  // namespace opendal

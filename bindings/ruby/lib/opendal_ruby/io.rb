@@ -17,7 +17,7 @@
 
 # frozen_string_literal: true
 
-module OpenDAL
+module OpenDal
   class IO
     # Reads all lines from the stream into an array.
     # @raise [EOFError] when the end of the file is reached.

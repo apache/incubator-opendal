@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-edition = "2021"
+edition = "2024"
 reorder_imports = true
 
 # format_code_in_doc_comments = true

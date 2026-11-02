@@ -20,6 +20,7 @@ use object_store::ObjectMeta;
 use opendal::Metadata;
 use std::future::IntoFuture;
 
+use crate::timestamp_to_datetime;
 /// Conditionally add the `Send` marker trait for the wrapped type.
 /// Only take effect when the `send_wrapper` feature is enabled.
 #[cfg(not(feature = "send_wrapper"))]
@@ -57,7 +58,10 @@ pub fn format_object_store_error(err: opendal::Error, path: &str) -> object_stor
 pub fn format_object_meta(path: &str, meta: &Metadata) -> ObjectMeta {
     ObjectMeta {
         location: path.into(),
-        last_modified: meta.last_modified().unwrap_or_default(),
+        last_modified: meta
+            .last_modified()
+            .and_then(timestamp_to_datetime)
+            .unwrap_or_default(),
         size: meta.content_length(),
         e_tag: meta.etag().map(|x| x.to_string()),
         version: meta.version().map(|x| x.to_string()),

@@ -24,12 +24,11 @@ runs:
     - name: Setup HDFS Native cluster
       shell: bash
       working-directory: fixtures/hdfs
-      run: docker compose -f docker-compose-hdfs-cluster.yml up -d --wait
+      run: docker compose --file docker-compose-hdfs-cluster.yml up --quiet-pull --detach --wait
     - name: Setup opendal env
       shell: bash
       run: |
         cat << EOF >> $GITHUB_ENV
         OPENDAL_HDFS_NATIVE_ROOT=/tmp/opendal/
         OPENDAL_HDFS_NATIVE_NAME_NODE=hdfs://localhost:8020
-        OPENDAL_HDFS_NATIVE_ENABLE_APPEND=true
         EOF

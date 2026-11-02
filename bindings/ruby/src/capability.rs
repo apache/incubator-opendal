@@ -15,11 +15,9 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use magnus::class;
-use magnus::method;
-use magnus::prelude::*;
 use magnus::Error;
 use magnus::RModule;
+use magnus::method;
 
 use crate::*;
 
@@ -45,7 +43,7 @@ macro_rules! bind_methods_to_ruby {
 
 /// @yard
 /// Capability describes OpenDAL supported operations by current Operator.
-#[magnus::wrap(class = "OpenDAL::Capability", free_immediately, size)]
+#[magnus::wrap(class = "OpenDal::Capability", free_immediately, size)]
 pub struct Capability(ocore::Capability);
 
 impl Capability {
@@ -98,8 +96,8 @@ define_accessors!(Capability, {
 });
 
 // includes class into the Ruby module
-pub fn include(gem_module: &RModule) -> Result<(), Error> {
-    let class = gem_module.define_class("Capability", class::object())?;
+pub fn include(ruby: &Ruby, gem_module: &RModule) -> Result<(), Error> {
+    let class = gem_module.define_class("Capability", ruby.class_object())?;
     bind_methods_to_ruby!(class, {
         stat,
         stat_with_if_match,

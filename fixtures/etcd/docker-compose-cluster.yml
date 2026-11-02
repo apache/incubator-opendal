@@ -17,50 +17,50 @@
 
 services:
   etcd1:
-    image: bitnami/etcd:latest
+    image: gcr.io/etcd-development/etcd:v3.6.4
     ports:
       - "23790:2379"
       - "23800:2380"
-    environment:
-      ALLOW_NONE_AUTHENTICATION: "yes"
-      ETCD_NAME: etcd1
-      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd1:2380
-      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
-      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
-      ETCD_ADVERTISE_CLIENT_URLS: http://etcd1:2379
-      ETCD_INITIAL_CLUSTER_TOKEN: etcd-cluster
-      ETCD_INITIAL_CLUSTER: etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
-      ETCD_INITIAL_CLUSTER_STATE: new
-      ETCD_MAX_REQUEST_BYTES: 10485760
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd1
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd1:2379
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-advertise-peer-urls=http://etcd1:2380
+      - --initial-cluster=etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      - --initial-cluster-token=etcd-cluster
+      - --initial-cluster-state=new
+      - --max-request-bytes=10485760
   etcd2:
-    image: bitnami/etcd:latest
+    image: gcr.io/etcd-development/etcd:v3.6.4
     ports:
       - "23791:2379"
       - "23801:2380"
-    environment:
-      ALLOW_NONE_AUTHENTICATION: "yes"
-      ETCD_NAME: etcd2
-      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd2:2380
-      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
-      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
-      ETCD_ADVERTISE_CLIENT_URLS: http://etcd2:2379
-      ETCD_INITIAL_CLUSTER_TOKEN: etcd-cluster
-      ETCD_INITIAL_CLUSTER: etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
-      ETCD_INITIAL_CLUSTER_STATE: new
-      ETCD_MAX_REQUEST_BYTES: 10485760
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd2
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd2:2379
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-advertise-peer-urls=http://etcd2:2380
+      - --initial-cluster=etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      - --initial-cluster-token=etcd-cluster
+      - --initial-cluster-state=new
+      - --max-request-bytes=10485760
   etcd3:
-    image: bitnami/etcd:latest
+    image: gcr.io/etcd-development/etcd:v3.6.4
     ports:
       - "23792:2379"
       - "23802:2380"
-    environment:
-      ALLOW_NONE_AUTHENTICATION: "yes"
-      ETCD_NAME: etcd3
-      ETCD_INITIAL_ADVERTISE_PEER_URLS: http://etcd3:2380
-      ETCD_LISTEN_PEER_URLS: http://0.0.0.0:2380
-      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379
-      ETCD_ADVERTISE_CLIENT_URLS: http://etcd3:2379
-      ETCD_INITIAL_CLUSTER_TOKEN: etcd-cluster
-      ETCD_INITIAL_CLUSTER: etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
-      ETCD_INITIAL_CLUSTER_STATE: new
-      ETCD_MAX_REQUEST_BYTES: 10485760
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd3
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --advertise-client-urls=http://etcd3:2379
+      - --listen-peer-urls=http://0.0.0.0:2380
+      - --initial-advertise-peer-urls=http://etcd3:2380
+      - --initial-cluster=etcd1=http://etcd1:2380,etcd2=http://etcd2:2380,etcd3=http://etcd3:2380
+      - --initial-cluster-token=etcd-cluster
+      - --initial-cluster-state=new
+      - --max-request-bytes=10485760

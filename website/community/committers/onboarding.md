@@ -80,4 +80,6 @@ If you receive an email with the subject "WELCOME to dev@opendal.apache.org", yo
 
 OpenDAL offers a 1Password open-source team license for conducting local integration tests (Thanks to 1Password!). Once you have been added to OpenDAL's committer list, one of the PMC members will invite you to join the team.
 
+OpenDAL committers can also self-register to join the OpenDAL 1Password team by visiting <https://opendal.1password.com/teamjoin/invitation/DHRDX3DG45HDTNMYK63BK5BTQM> and completing the signup with their `apache.org` email address.
+
 Please download your preferred clients to begin using it. You can create your own vault that is accessible only by yourself. Neither the 1password team nor OpenDAL PMC members can access it unless you choose to share it.

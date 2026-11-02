@@ -20,6 +20,34 @@ from uuid import uuid4
 
 import pytest
 
+import opendal
+
+
+@pytest.mark.asyncio
+async def test_async_list_batching_preserves_order():
+    op = opendal.AsyncOperator("memory")
+    expected = [f"items/{idx:03d}" for idx in range(130)]
+    await asyncio.gather(*(op.write(path, b"test") for path in expected))
+
+    actual = [entry.path async for entry in await op.list("items/", recursive=True)]
+    assert actual == expected
+
+
+@pytest.mark.asyncio
+async def test_async_list_cancelled_next_preserves_entry():
+    op = opendal.AsyncOperator("memory")
+    expected = [f"items/{idx:03d}" for idx in range(3)]
+    await asyncio.gather(*(op.write(path, b"test") for path in expected))
+
+    lister = await op.list("items/", recursive=True)
+    pending = anext(lister)
+    pending.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await pending
+
+    actual = [entry.path async for entry in lister]
+    assert actual == expected
+
 
 @pytest.mark.asyncio
 @pytest.mark.need_capability("read", "write", "copy", "list", "list_with_start_after")
@@ -35,10 +63,9 @@ async def test_async_list_with_start_after(service_name, operator, async_operato
     )
 
     # 2. Test basic list
-    entries = []
-    async for entry in await async_operator.list(test_dir):
-        entries.append(entry.path)
-    entries.sort()  # Ensure order for comparison
+    entries = sorted(
+        [entry.path async for entry in await async_operator.list(test_dir)]
+    )  # Ensure order for comparison
     expected_files = sorted([test_dir, *files_to_create])
     assert entries == expected_files, (
         f"Basic list failed. Expected {expected_files}, got {entries}"
@@ -46,13 +73,15 @@ async def test_async_list_with_start_after(service_name, operator, async_operato
 
     # 3. Test list with start_after
     start_after_file = files_to_create[2]  # e.g., test_dir/file_2
-    entries_after = []
     # Note: start_after expects the *full path* relative to the operator root
-    async for entry in await async_operator.list(
-        test_dir, start_after=start_after_file
-    ):
-        entries_after.append(entry.path)
-    entries_after.sort()  # Ensure order
+    entries_after = sorted(
+        [
+            entry.path
+            async for entry in await async_operator.list(
+                test_dir, start_after=start_after_file
+            )
+        ]
+    )
 
     # Expected files are those lexicographically after start_after_file
     expected_files_after = sorted([f for f in files_to_create if f > start_after_file])

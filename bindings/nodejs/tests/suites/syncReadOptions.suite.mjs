@@ -27,6 +27,10 @@ import { generateFixedBytes, generateBytes } from '../utils.mjs'
  */
 export function run(op) {
   const capability = op.capability()
+  const readerWithIfMatch = capability.readWithIfMatch && capability.statWithIfMatch
+  const readerWithIfNoneMatch = capability.readWithIfNoneMatch && capability.statWithIfNoneMatch
+  const readerWithIfModifiedSince = capability.readWithIfModifiedSince && capability.statWithIfModifiedSince
+  const readerWithIfUnmodifiedSince = capability.readWithIfUnmodifiedSince && capability.statWithIfUnmodifiedSince
 
   describe.runIf(capability.read && capability.write)('sync read options', () => {
     test('read with range', () => {
@@ -178,7 +182,7 @@ export function run(op) {
   })
 
   describe.runIf(capability.read && capability.write)('sync reader options', () => {
-    test.runIf(capability.readWithIfMatch)('reader with if match', () => {
+    test.runIf(readerWithIfMatch)('reader with if match', () => {
       const size = 3 * 1024 * 1024
       const filename = `random_file_${randomUUID()}`
       const content = generateFixedBytes(size)
@@ -190,9 +194,8 @@ export function run(op) {
         ifMatch: '"invalid_etag"',
       }
 
-      const reader = op.readerSync(filename, invalidOptions)
-      const buf = Buffer.alloc(content.length)
-      expect(() => reader.read(buf)).toThrowError('ConditionNotMatch')
+      const invalidReader = op.readerSync(filename, invalidOptions)
+      expect(() => invalidReader.read(Buffer.alloc(1))).toThrowError('ConditionNotMatch')
 
       const r = op.readerSync(filename, { ifMatch: meta.etag })
       const rs = r.createReadStream()
@@ -210,7 +213,7 @@ export function run(op) {
       })
     })
 
-    test.runIf(capability.readWithIfNoneMatch)('reader with if none match', () => {
+    test.runIf(readerWithIfNoneMatch)('reader with if none match', () => {
       const size = 3 * 1024 * 1024
       const filename = `random_file_${randomUUID()}`
       const content = generateFixedBytes(size)
@@ -218,9 +221,8 @@ export function run(op) {
       op.writeSync(filename, content)
       const meta = op.statSync(filename)
 
-      const reader = op.readerSync(filename, { ifNoneMatch: meta.etag })
-      const buf = Buffer.alloc(content.length)
-      expect(() => reader.read(buf)).toThrowError('ConditionNotMatch')
+      const invalidReader = op.readerSync(filename, { ifNoneMatch: meta.etag })
+      expect(() => invalidReader.read(Buffer.alloc(1))).toThrowError('ConditionNotMatch')
 
       const r = op.readerSync(filename, { ifNoneMatch: '"invalid_etag"' })
       const rs = r.createReadStream()
@@ -238,7 +240,7 @@ export function run(op) {
       })
     })
 
-    test.runIf(capability.readWithIfModifiedSince)('reader with if modified since', () => {
+    test.runIf(readerWithIfModifiedSince)('reader with if modified since', () => {
       const size = 3 * 1024 * 1024
       const filename = `random_file_${randomUUID()}`
       const content = generateFixedBytes(size)
@@ -264,15 +266,14 @@ export function run(op) {
       setTimeout(() => {
         const sinceAdd = new Date(meta.lastModified)
         sinceAdd.setSeconds(sinceAdd.getSeconds() + 1)
-        const r = op.readerSync(filename, { ifModifiedSince: sinceAdd.toISOString() })
-        const bs2 = Buffer.alloc(content.length)
-        expect(() => r.read(bs2)).toThrowError('ConditionNotMatch')
+        const invalidReader = op.readerSync(filename, { ifModifiedSince: sinceAdd.toISOString() })
+        expect(() => invalidReader.read(Buffer.alloc(1))).toThrowError('ConditionNotMatch')
 
         op.deleteSync(filename)
       }, 1000)
     })
 
-    test.runIf(capability.readWithIfUnmodifiedSince)('reader with if unmodified since', () => {
+    test.runIf(readerWithIfUnmodifiedSince)('reader with if unmodified since', () => {
       const size = 3 * 1024 * 1024
       const filename = `random_file_${randomUUID()}`
       const content = generateFixedBytes(size)
@@ -283,9 +284,8 @@ export function run(op) {
       const sinceMinus = new Date(meta.lastModified)
       sinceMinus.setSeconds(sinceMinus.getSeconds() - 1)
 
-      const r = op.readerSync(filename, { ifUnmodifiedSince: sinceMinus.toISOString() })
-      const bs = Buffer.alloc(content.length)
-      expect(() => r.read(bs)).toThrowError('ConditionNotMatch')
+      const invalidReader = op.readerSync(filename, { ifUnmodifiedSince: sinceMinus.toISOString() })
+      expect(() => invalidReader.read(Buffer.alloc(1))).toThrowError('ConditionNotMatch')
 
       setTimeout(() => {
         const sinceAdd = new Date(meta.lastModified)

@@ -25,6 +25,7 @@ rust-version.workspace = true
 version.workspace = true
 
 [dependencies]
-opendal = { path = "../..", features = ["tests"] }
-tokio = { version = "1", features = ["full"] }
-uuid = { version = "1", features = ["serde", "v4"] }
+logforth = { workspace = true }
+opendal = { path = "../..", features = ["tests", "services-s3"] }
+tokio = { workspace = true, features = ["full"] }
+uuid = { workspace = true, features = ["serde", "v4"] }

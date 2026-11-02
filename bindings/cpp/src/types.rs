@@ -29,10 +29,7 @@ impl From<od::Metadata> for ffi::Metadata {
         let content_type = meta.content_type().map(ToOwned::to_owned).into();
         let content_encoding = meta.content_encoding().map(ToOwned::to_owned).into();
         let etag = meta.etag().map(ToOwned::to_owned).into();
-        let last_modified = meta
-            .last_modified()
-            .map(|time| time.to_rfc3339_opts(chrono::SecondsFormat::Nanos, false))
-            .into();
+        let last_modified = meta.last_modified().map(|time| time.to_string()).into();
         let version = meta.version().map(ToOwned::to_owned).into();
         let is_current = meta.is_current().into();
         let is_deleted = meta.is_deleted();

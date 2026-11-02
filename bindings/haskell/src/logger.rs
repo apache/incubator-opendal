@@ -15,8 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::ffi::c_char;
 use std::ffi::CString;
+use std::ffi::c_char;
 
 pub struct HsLogger {
     pub callback: extern "C" fn(u32, *const c_char),

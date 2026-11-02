@@ -10,10 +10,7 @@
     "${workspaceFolder}/core/Cargo.toml",
     "${workspaceFolder}/bindings/python/Cargo.toml",
     "${workspaceFolder}/bindings/java/Cargo.toml",
-    "${workspaceFolder}/bindings/nodejs/Cargo.toml",
-    "${workspaceFolder}/bin/oli/Cargo.toml",
-    "${workspaceFolder}/bin/oay/Cargo.toml",
-    "${workspaceFolder}/bin/ofs/Cargo.toml"
+    "${workspaceFolder}/bindings/nodejs/Cargo.toml"
   ],
   "java.compile.nullAnalysis.mode": "automatic",
   "cmake.ignoreCMakeListsMissing": true,

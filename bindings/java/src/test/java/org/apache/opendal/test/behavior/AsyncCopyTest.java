@@ -36,7 +36,7 @@ import org.junit.jupiter.api.TestInstance;
 class AsyncCopyTest extends BehaviorTestBase {
     @BeforeAll
     public void precondition() {
-        final Capability capability = asyncOp().info.fullCapability;
+        final Capability capability = asyncOp().info.capability;
         assumeTrue(capability.read && capability.write && capability.copy && capability.createDir);
     }
 

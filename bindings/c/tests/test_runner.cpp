@@ -18,24 +18,27 @@
  */
 
 #include "test_framework.h"
-#include <vector>
 #include <string>
+#include <vector>
 
 // External test suite declarations
 extern opendal_test_suite basic_suite;
 extern opendal_test_suite list_suite;
+extern opendal_test_suite presign_suite;
 extern opendal_test_suite reader_writer_suite;
 
 // List of all test suites
 static opendal_test_suite* all_suites[] = {
     &basic_suite,
     &list_suite,
+    &presign_suite,
     &reader_writer_suite,
 };
 
 static const size_t num_suites = sizeof(all_suites) / sizeof(all_suites[0]);
 
-void print_usage(const char* program_name) {
+void print_usage(const char* program_name)
+{
     printf("Usage: %s [options]\n", program_name);
     printf("\nOptions:\n");
     printf("  -h, --help                Show this help message\n");
@@ -54,7 +57,8 @@ void print_usage(const char* program_name) {
     printf("  OPENDAL_TEST=fs OPENDAL_FS_ROOT=/tmp %s  # Test with filesystem service\n", program_name);
 }
 
-void list_suites() {
+void list_suites()
+{
     printf("Available test suites:\n");
     for (size_t i = 0; i < num_suites; i++) {
         printf("  %s (%zu tests)\n", all_suites[i]->name, all_suites[i]->test_count);
@@ -64,7 +68,8 @@ void list_suites() {
     }
 }
 
-bool run_specific_test(opendal_test_config* config, const char* suite_name, const char* test_name) {
+bool run_specific_test(opendal_test_config* config, const char* suite_name, const char* test_name)
+{
     for (size_t i = 0; i < num_suites; i++) {
         opendal_test_suite* suite = all_suites[i];
         if (strcmp(suite->name, suite_name) == 0) {
@@ -83,7 +88,8 @@ bool run_specific_test(opendal_test_config* config, const char* suite_name, cons
     return false;
 }
 
-bool run_specific_suite(opendal_test_config* config, const char* suite_name) {
+bool run_specific_suite(opendal_test_config* config, const char* suite_name)
+{
     for (size_t i = 0; i < num_suites; i++) {
         if (strcmp(all_suites[i]->name, suite_name) == 0) {
             opendal_run_test_suite(all_suites[i], config);
@@ -94,19 +100,21 @@ bool run_specific_suite(opendal_test_config* config, const char* suite_name) {
     return false;
 }
 
-void run_all_suites(opendal_test_config* config) {
+void run_all_suites(opendal_test_config* config)
+{
     printf("Running all test suites...\n");
-    
+
     for (size_t i = 0; i < num_suites; i++) {
         opendal_run_test_suite(all_suites[i], config);
     }
 }
 
-int main(int argc, char* argv[]) {
+int main(int argc, char* argv[])
+{
     bool verbose = false;
     const char* suite_to_run = nullptr;
     const char* test_to_run = nullptr;
-    
+
     // Parse command line arguments
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
@@ -139,7 +147,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
     }
-    
+
     // Initialize test configuration
     printf("Initializing OpenDAL test framework...\n");
     opendal_test_config* config = opendal_test_config_new();
@@ -147,12 +155,12 @@ int main(int argc, char* argv[]) {
         printf("Failed to initialize test configuration\n");
         return 1;
     }
-    
+
     printf("Service: %s\n", config->scheme);
     if (config->random_root) {
         printf("Random root: %s\n", config->random_root);
     }
-    
+
     // Check operator capabilities first
     opendal_operator_info* info = opendal_operator_info_new(config->operator_instance);
     if (!info) {
@@ -160,9 +168,9 @@ int main(int argc, char* argv[]) {
         opendal_test_config_free(config);
         return 1;
     }
-    
-    opendal_capability cap = opendal_operator_info_get_full_capability(info);
-    
+
+    opendal_capability cap = opendal_operator_info_get_capability(info);
+
     // Check operator availability - only perform list-based check if list is supported
     if (cap.list) {
         opendal_error* check_error = opendal_operator_check(config->operator_instance);
@@ -180,18 +188,18 @@ int main(int argc, char* argv[]) {
         // For KV adapters that don't support list, we'll do a basic capability check instead
         printf("Note: Operator doesn't support list operations (KV adapter), skipping standard check\n");
     }
-    
+
     printf("Operator is ready!\n");
     printf("Capabilities: read=%s, write=%s, list=%s, stat=%s, delete=%s\n",
-           cap.read ? "yes" : "no",
-           cap.write ? "yes" : "no", 
-           cap.list ? "yes" : "no",
-           cap.stat ? "yes" : "no",
-           cap.delete_ ? "yes" : "no");
-    
+        cap.read ? "yes" : "no",
+        cap.write ? "yes" : "no",
+        cap.list ? "yes" : "no",
+        cap.stat ? "yes" : "no",
+        cap.delete_ ? "yes" : "no");
+
     opendal_operator_info_free(info);
     printf("\n");
-    
+
     // Run tests based on command line arguments
     if (test_to_run) {
         // Parse suite::test format
@@ -203,14 +211,14 @@ int main(int argc, char* argv[]) {
             opendal_test_config_free(config);
             return 1;
         }
-        
+
         *delimiter = '\0';
         const char* suite_name = test_spec;
         const char* test_name = delimiter + 2;
-        
+
         bool success = run_specific_test(config, suite_name, test_name);
         free(test_spec);
-        
+
         if (!success) {
             opendal_test_config_free(config);
             return 1;
@@ -224,13 +232,13 @@ int main(int argc, char* argv[]) {
     } else {
         run_all_suites(config);
     }
-    
+
     // Print test summary
     opendal_print_test_summary();
-    
+
     // Cleanup
     opendal_test_config_free(config);
-    
+
     // Return appropriate exit code
     return (failed_tests > 0) ? 1 : 0;
 }

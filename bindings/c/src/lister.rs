@@ -84,9 +84,11 @@ impl opendal_lister {
     /// \brief Free the heap-allocated metadata used by opendal_lister
     #[no_mangle]
     pub unsafe extern "C" fn opendal_lister_free(ptr: *mut opendal_lister) {
-        if !ptr.is_null() {
-            drop(Box::from_raw((*ptr).inner as *mut core::blocking::Lister));
-            drop(Box::from_raw(ptr));
+        unsafe {
+            if !ptr.is_null() {
+                drop(Box::from_raw((*ptr).inner as *mut core::blocking::Lister));
+                drop(Box::from_raw(ptr));
+            }
         }
     }
 }

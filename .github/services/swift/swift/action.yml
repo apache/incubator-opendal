@@ -34,6 +34,8 @@ runs:
         token=$(echo "$response" | grep X-Auth-Token | head -n1 | awk '{print $2}' | tr -d '[:space:]')
         endpoint=$(echo "$response" | grep X-Storage-Url | head -n1 | awk '{print $2}' | tr -d '[:space:]')
         curl --location --request PUT "${endpoint}/testing" --header "X-Auth-Token: $token"
+        # Configure TempURL key on the account for presigned URL tests
+        curl -s -X POST -H "X-Auth-Token: $token" -H "X-Account-Meta-Temp-URL-Key: opendal-swift-test-key" "${endpoint}"
         echo "OPENDAL_SWIFT_TOKEN=${token}" >> $GITHUB_ENV
         echo "OPENDAL_SWIFT_ENDPOINT=${endpoint}" >> $GITHUB_ENV
 
@@ -42,5 +44,6 @@ runs:
       run: |
         cat << EOF >> $GITHUB_ENV
         OPENDAL_SWIFT_CONTAINER=testing
+        OPENDAL_SWIFT_TEMP_URL_KEY=opendal-swift-test-key
         OPENDAL_SWIFT_ROOT=/
         EOF

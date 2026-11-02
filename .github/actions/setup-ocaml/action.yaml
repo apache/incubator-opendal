@@ -22,17 +22,20 @@ inputs:
     description: "Enable the automation feature for opam depext."
   need-pin:
     description: "Enable the automation feature for opam pin."
+    default: "false"
+  need-dune-cache:
+    description: "Enable Dune build caching in ocaml/setup-ocaml."
+    default: "false"
 
 runs:
   using: "composite"
   steps:
     - name: Setup OCaml
-      uses: ocaml/setup-ocaml@v2
+      uses: ocaml/setup-ocaml@v3
       with:
         ocaml-compiler: 4.14
-        opam-depext: ${{inputs.need-depext == true}}
-        opam-pin: ${{inputs.need-pin == true}}
-        dune-cache: true
+        opam-pin: ${{ inputs.need-pin }}
+        dune-cache: ${{ inputs.need-dune-cache }}
 
     - name: Set Opam env
       shell: bash

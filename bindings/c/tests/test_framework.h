@@ -27,6 +27,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <ctype.h>
+#include <curl/curl.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -73,6 +74,8 @@ typedef struct opendal_required_capability {
     bool presign;
     bool presign_read;
     bool presign_write;
+    bool presign_stat;
+    bool presign_delete;
 } opendal_required_capability;
 
 // Test function pointer type
@@ -158,7 +161,7 @@ typedef struct opendal_test_suite {
     } while(0)
 
 // Utility macros
-#define NO_CAPABILITY { false, false, false, false, false, false, false, false, false, false, false, false, false }
+#define NO_CAPABILITY { false, false, false, false, false, false, false, false, false, false, false, false, false, false, false }
 
 // Helper functions for capability creation (C++ compatible)
 inline opendal_required_capability make_capability_read_write() {
@@ -209,6 +212,27 @@ inline opendal_required_capability make_capability_create_dir_list() {
     return cap;
 }
 
+inline opendal_required_capability make_capability_write_create_dir_list_recursive() {
+    opendal_required_capability cap = NO_CAPABILITY;
+    cap.write = true;
+    cap.create_dir = true;
+    cap.list = true;
+    cap.list_with_recursive = true;
+    return cap;
+}
+
+inline opendal_required_capability make_capability_presign() {
+    opendal_required_capability cap = NO_CAPABILITY;
+    cap.read = true;
+    cap.write = true;
+    cap.stat = true;
+    cap.presign = true;
+    cap.presign_read = true;
+    cap.presign_write = true;
+    cap.presign_stat = true;
+    return cap;
+}
+
 // Function declarations
 opendal_test_config* opendal_test_config_new();
 void opendal_test_config_free(opendal_test_config* config);
@@ -228,4 +252,4 @@ typedef struct opendal_test_data {
 opendal_test_data* opendal_test_data_new(const char* path, const char* content);
 void opendal_test_data_free(opendal_test_data* data);
 
-#endif // _OPENDAL_TEST_FRAMEWORK_H 
+#endif // _OPENDAL_TEST_FRAMEWORK_H

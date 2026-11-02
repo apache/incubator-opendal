@@ -17,22 +17,37 @@
 
 services:
   etcd:
-    image: bitnami/etcd:latest
+    image: gcr.io/etcd-development/etcd:v3.6.4
     ports:
       - "2379:2379"
       - "2380:2380"
     volumes:
-      - ./ca.pem:/opt/bitnami/etcd/conf/ca.pem
-      - ./server.pem:/opt/bitnami/etcd/conf/server.pem
-      - ./server-key.pem:/opt/bitnami/etcd/conf/server-key.pem
-      - ./client-key.pem:/opt/bitnami/etcd/client-key.pem
-      - ./client.pem:/opt/bitnami/etcd/client.pem
-    environment:
-      ETCD_NAME: etcd
-      ETCD_ROOT_PASSWORD: opendal
-      ETCD_LISTEN_CLIENT_URLS: https://0.0.0.0:2379
-      ETCD_ADVERTISE_CLIENT_URLS: https://etcd:2379
-      ETCD_MAX_REQUEST_BYTES: 10485760
-      ETCD_TRUSTED_CA_FILE: /opt/bitnami/etcd/conf/ca.pem
-      ETCD_KEY_FILE: /opt/bitnami/etcd/conf/server-key.pem
-      ETCD_CERT_FILE: /opt/bitnami/etcd/conf/server.pem
+      - ./ca.pem:/etc/etcd/certs/ca.pem:ro
+      - ./server.pem:/etc/etcd/certs/server.pem:ro
+      - ./server-key.pem:/etc/etcd/certs/server-key.pem:ro
+      - ./client-key.pem:/etc/etcd/certs/client-key.pem:ro
+      - ./client.pem:/etc/etcd/certs/client.pem:ro
+    command:
+      - /usr/local/bin/etcd
+      - --name=etcd
+      - --listen-client-urls=https://0.0.0.0:2379
+      - --advertise-client-urls=https://127.0.0.1:2379
+      - --max-request-bytes=10485760
+      - --client-cert-auth
+      - --trusted-ca-file=/etc/etcd/certs/ca.pem
+      - --cert-file=/etc/etcd/certs/server.pem
+      - --key-file=/etc/etcd/certs/server-key.pem
+    healthcheck:
+      test: [
+        "CMD",
+        "/usr/local/bin/etcdctl",
+        "endpoint", "health",
+        "--endpoints=https://127.0.0.1:2379",
+        "--cacert=/etc/etcd/certs/ca.pem",
+        "--cert=/etc/etcd/certs/client.pem",
+        "--key=/etc/etcd/certs/client-key.pem"
+      ]
+      interval: 30s
+      timeout: 20s
+      retries: 5
+      start_period: 40s

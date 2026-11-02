@@ -44,7 +44,7 @@ class AsyncListTest extends BehaviorTestBase {
 
     @BeforeAll
     public void precondition() {
-        final Capability capability = asyncOp().info.fullCapability;
+        final Capability capability = asyncOp().info.capability;
         assumeTrue(capability.read && capability.write && capability.list && capability.createDir);
     }
 
@@ -254,7 +254,7 @@ class AsyncListTest extends BehaviorTestBase {
 
     @Test
     void testListWithLimitCollectsAllPages() {
-        assumeTrue(asyncOp().info.fullCapability.listWithLimit);
+        assumeTrue(asyncOp().info.capability.listWithLimit);
 
         String dir = String.format("%s/", UUID.randomUUID());
         asyncOp().createDir(dir).join();
@@ -272,7 +272,7 @@ class AsyncListTest extends BehaviorTestBase {
 
     @Test
     void testListWithStartAfter() {
-        assumeTrue(asyncOp().info.fullCapability.listWithStartAfter);
+        assumeTrue(asyncOp().info.capability.listWithStartAfter);
 
         String dir = String.format("%s/", UUID.randomUUID());
         asyncOp().createDir(dir).join();
@@ -295,7 +295,7 @@ class AsyncListTest extends BehaviorTestBase {
 
     @Test
     void testListWithVersions() {
-        assumeTrue(asyncOp().info.fullCapability.listWithVersions);
+        assumeTrue(asyncOp().info.capability.listWithVersions);
 
         String dir = String.format("%s/", UUID.randomUUID());
         String path = dir + "versioned-file";
@@ -313,7 +313,7 @@ class AsyncListTest extends BehaviorTestBase {
 
     @Test
     void testListWithDeleted() {
-        assumeTrue(asyncOp().info.fullCapability.listWithDeleted);
+        assumeTrue(asyncOp().info.capability.listWithDeleted);
 
         String dir = String.format("%s/", UUID.randomUUID());
         String path = dir + "file";

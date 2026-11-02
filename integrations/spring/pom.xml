@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-
     Licensed to the Apache Software Foundation (ASF) under one
     or more contributor license agreements.  See the NOTICE file
     distributed with this work for additional information
@@ -17,8 +16,8 @@
     KIND, either express or implied.  See the License for the
     specific language governing permissions and limitations
     under the License.
-
 -->
+
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -35,17 +34,19 @@
     </modules>
 
     <properties>
-        <maven.compiler.source>17</maven.compiler.source>
-        <maven.compiler.target>17</maven.compiler.target>
+        <maven.compiler.release>21</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
         <!-- dependency -->
-        <opendal.version>0.47.0</opendal.version>
-        <spring-boot.version>3.3.2</spring-boot.version>
+        <lombok.version>1.18.42</lombok.version>
+        <opendal.version>0.50.0</opendal.version>
+        <spring-boot.version>4.0.3</spring-boot.version>
 
         <!-- plugin -->
+        <maven-compiler-plugin.version>3.15.0</maven-compiler-plugin.version>
         <os-maven-plugin.version>1.7.1</os-maven-plugin.version>
-        <spotless-maven-plugin.version>2.43.0</spotless-maven-plugin.version>
+        <spotless-maven-plugin.version>3.2.0</spotless-maven-plugin.version>
     </properties>
 
     <dependencyManagement>
@@ -57,6 +58,11 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <dependency>
+                <groupId>org.projectlombok</groupId>
+                <artifactId>lombok</artifactId>
+                <version>${lombok.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -64,7 +70,7 @@
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
-            <optional>true</optional>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.opendal</groupId>
@@ -106,6 +112,20 @@
                             <spacesPerTab>4</spacesPerTab>
                         </indent>
                     </java>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>${maven-compiler-plugin.version}</version>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
                 </configuration>
             </plugin>
         </plugins>

@@ -39,13 +39,13 @@ public class BlockingStatOptionsTest extends BehaviorTestBase {
 
     @BeforeAll
     public void precondition() {
-        Capability capability = op().info.fullCapability;
+        Capability capability = op().info.capability;
         assumeTrue(capability.read && capability.write && capability.stat);
     }
 
     @Test
     void testStatWithIfMatch() {
-        assumeTrue(op().info.fullCapability.statWithIfMatch);
+        assumeTrue(op().info.capability.statWithIfMatch);
 
         String path = UUID.randomUUID().toString();
         byte[] content = generateBytes();
@@ -66,7 +66,7 @@ public class BlockingStatOptionsTest extends BehaviorTestBase {
 
     @Test
     void testStatWithIfNoneMatch() {
-        assumeTrue(op().info.fullCapability.statWithIfNoneMatch);
+        assumeTrue(op().info.capability.statWithIfNoneMatch);
 
         String path = UUID.randomUUID().toString();
         byte[] content = generateBytes();
@@ -87,8 +87,68 @@ public class BlockingStatOptionsTest extends BehaviorTestBase {
     }
 
     @Test
+    void testStatWithIfVersionMatch() {
+        assumeTrue(op().info.capability.statWithIfVersionMatch);
+
+        String path = UUID.randomUUID().toString();
+        op().write(path, generateBytes());
+        String staleVersion = op().stat(path).getVersion();
+        op().write(path, generateBytes());
+        String currentVersion = op().stat(path).getVersion();
+
+        assertThat(staleVersion).isNotNull();
+        assertThat(currentVersion).isNotNull().isNotEqualTo(staleVersion);
+
+        StatOptions currentOptions =
+                StatOptions.builder().ifVersionMatch(currentVersion).build();
+        Metadata result = op().stat(path, currentOptions);
+        assertThat(result.getVersion()).isEqualTo(currentVersion);
+
+        StatOptions staleOptions =
+                StatOptions.builder().ifVersionMatch(staleVersion).build();
+        assertThatThrownBy(() -> op().stat(path, staleOptions))
+                .is(OpenDALExceptionCondition.ofSync(OpenDALException.Code.ConditionNotMatch));
+
+        String missingPath = UUID.randomUUID().toString();
+        assertThatThrownBy(() -> op().stat(missingPath, currentOptions))
+                .is(OpenDALExceptionCondition.ofSync(OpenDALException.Code.NotFound));
+
+        op().delete(path);
+    }
+
+    @Test
+    void testStatWithIfVersionNotMatch() {
+        assumeTrue(op().info.capability.statWithIfVersionNotMatch);
+
+        String path = UUID.randomUUID().toString();
+        op().write(path, generateBytes());
+        String staleVersion = op().stat(path).getVersion();
+        op().write(path, generateBytes());
+        String currentVersion = op().stat(path).getVersion();
+
+        assertThat(staleVersion).isNotNull();
+        assertThat(currentVersion).isNotNull().isNotEqualTo(staleVersion);
+
+        StatOptions staleOptions =
+                StatOptions.builder().ifVersionNotMatch(staleVersion).build();
+        Metadata result = op().stat(path, staleOptions);
+        assertThat(result.getVersion()).isEqualTo(currentVersion);
+
+        StatOptions currentOptions =
+                StatOptions.builder().ifVersionNotMatch(currentVersion).build();
+        assertThatThrownBy(() -> op().stat(path, currentOptions))
+                .is(OpenDALExceptionCondition.ofSync(OpenDALException.Code.ConditionNotMatch));
+
+        String missingPath = UUID.randomUUID().toString();
+        assertThatThrownBy(() -> op().stat(missingPath, currentOptions))
+                .is(OpenDALExceptionCondition.ofSync(OpenDALException.Code.NotFound));
+
+        op().delete(path);
+    }
+
+    @Test
     void testStatWithIfModifiedSince() {
-        assumeTrue(op().info.fullCapability.statWithIfModifiedSince);
+        assumeTrue(op().info.capability.statWithIfModifiedSince);
 
         String path = UUID.randomUUID().toString();
         byte[] content = generateBytes();
@@ -117,7 +177,7 @@ public class BlockingStatOptionsTest extends BehaviorTestBase {
 
     @Test
     void testStatWithIfUnmodifiedSince() {
-        assumeTrue(op().info.fullCapability.statWithIfUnmodifiedSince);
+        assumeTrue(op().info.capability.statWithIfUnmodifiedSince);
 
         String path = UUID.randomUUID().toString();
         byte[] content = generateBytes();
@@ -148,7 +208,7 @@ public class BlockingStatOptionsTest extends BehaviorTestBase {
 
     @Test
     void testStatWithVersion() {
-        assumeTrue(op().info.fullCapability.statWithVersion);
+        assumeTrue(op().info.capability.statWithVersion);
 
         String path = UUID.randomUUID().toString();
         byte[] content = generateBytes();
@@ -174,7 +234,7 @@ public class BlockingStatOptionsTest extends BehaviorTestBase {
 
     @Test
     void testStatWithNotExistingVersion() {
-        assumeTrue(op().info.fullCapability.statWithVersion);
+        assumeTrue(op().info.capability.statWithVersion);
 
         String path = UUID.randomUUID().toString();
         byte[] content = generateBytes();

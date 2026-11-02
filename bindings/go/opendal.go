@@ -1,21 +1,19 @@
-/*
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
 
 // Package opendal provides a Go binding for Apache OpenDAL (Open Data Access Layer).
 //
@@ -46,7 +44,7 @@
 //		defer op.Close()
 //
 //		// Perform operations using the operator
-//		err = op.Write("example.txt", []byte("Hello, OpenDAL!"))
+//		_, err = op.Write("example.txt", []byte("Hello, OpenDAL!"))
 //		if err != nil {
 //			log.Fatal(err)
 //		}
@@ -122,7 +120,7 @@ type OperatorOptions map[string]string
 //		defer op.Close() // Ensure the operator is closed when done
 //
 //		// Perform operations using the operator
-//		err = op.Write("example.txt", []byte("Hello, OpenDAL!"))
+//		_, err = op.Write("example.txt", []byte("Hello, OpenDAL!"))
 //		if err != nil {
 //			log.Fatal(err)
 //		}
@@ -165,7 +163,7 @@ type Operator struct {
 //   - error: An error if initialization fails, or nil if successful.
 //
 // Note: Remember to call Close() on the returned Operator when it's no longer needed.
-func NewOperator(scheme Scheme, opts OperatorOptions) (op *Operator, err error) {
+func NewOperator(scheme Scheme, opts OperatorOptions, operatorOptions ...OperatorOption) (op *Operator, err error) {
 	err = scheme.LoadOnce()
 	if err != nil {
 		return
@@ -195,7 +193,27 @@ func NewOperator(scheme Scheme, opts OperatorOptions) (op *Operator, err error) 
 		}
 	}
 
-	inner, err := ffiOperatorNew.symbol(ctx)(scheme, options)
+	config := &operatorConfig{}
+	for _, operatorOption := range operatorOptions {
+		if operatorOption == nil {
+			continue
+		}
+		err = operatorOption.apply(config)
+		if err != nil {
+			return
+		}
+	}
+
+	var inner *opendalOperator
+	layers := ffiOperatorLayersNew.symbol(ctx)()
+	defer ffiOperatorLayersFree.symbol(ctx)(layers)
+	for _, layer := range config.layers {
+		err = layer.apply(ctx, layers)
+		if err != nil {
+			return
+		}
+	}
+	inner, err = ffiOperatorNewWithLayers.symbol(ctx)(scheme, options, layers)
 	if err != nil {
 		return
 	}

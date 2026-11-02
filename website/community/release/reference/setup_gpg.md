@@ -133,8 +133,7 @@ The svn repository of the release branch is: https://dist.apache.org/repos/dist/
 Please always add the public key to KEYS in the release branch:
 
 ```shell
-svn co https://dist.apache.org/repos/dist/release/opendal opendal-dist
-# As this step will copy all the versions, it will take some time. If the network is broken, please use svn cleanup to delete the lock before re-execute it.
+svn co --depth https://dist.apache.org/repos/dist/release/opendal opendal-dist
 cd opendal-dist
 (gpg --list-sigs YOUR_NAME@apache.org && gpg --export --armor YOUR_NAME@apache.org) >> KEYS # Append your key to the KEYS file
 svn add .   # It is not needed if the KEYS document exists before.

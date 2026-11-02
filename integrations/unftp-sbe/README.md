@@ -23,7 +23,6 @@ This crate can help you to access ANY storage services with the same FTP API.
 ```rust
 use anyhow::Result;
 use opendal::Operator;
-use opendal::Scheme;
 use opendal::services;
 use unftp_sbe_opendal::OpendalStorage;
 
@@ -37,10 +36,8 @@ async fn main() -> Result<()> {
             ("secret_key".to_string(), "my_secret_key".to_string()),
             ("endpoint".to_string(), "my_endpoint".to_string()),
             ("region".to_string(), "my_region".to_string()),
-        ]
-            .into_iter()
-            .collect(),
-    )?.finish();
+        ],
+    )?;
 
     // Wrap the operator with `OpendalStorage`
     let backend = OpendalStorage::new(op);

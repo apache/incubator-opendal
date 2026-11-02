@@ -16,7 +16,7 @@
 // under the License.
 
 use bytes::Bytes;
-use opendal::raw::tests::TEST_RUNTIME;
+use opendal::tests::TEST_RUNTIME;
 use opendal::*;
 use rand::prelude::*;
 

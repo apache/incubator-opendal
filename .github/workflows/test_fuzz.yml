@@ -25,37 +25,49 @@ on:
     branches:
       - main
     paths:
-      - "core/src/**"
+      - "core/Cargo.toml"
+      - "core/Cargo.lock"
+      - "core/core/Cargo.toml"
+      - "core/core/src/**"
       - "core/fuzz/**"
-      - "!core/src/docs/**"
-      - ".github/workflows/fuzz_test.yml"
+      - "core/layers/**"
+      - "core/services/**"
+      - "core/testkit/**"
+      - "!core/core/src/docs/**"
+      - ".github/workflows/test_fuzz.yml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
+env:
+  RUST_TOOLCHAIN: nightly-2025-10-10
+
 jobs:
   fuzz:
     name: ${{ matrix.cases.service }} / ${{ matrix.cases.setup }} / ${{ matrix.target }}
-    runs-on: ubuntu-latest
+    # Fuzz targets link against libFuzzer from LLVM 14, which is not
+    # packaged on the default ubuntu-26.04 runner image.
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         target: ["fuzz_reader", "fuzz_writer"]
         cases:
           - { service: "memory", setup: "memory" }
           - { service: "fs", setup: "local_fs" }
-          - { service: "s3", setup: "0_minio_s3" }
+          - { service: "s3", setup: "0_silo_s3" }
           - { service: "azblob", setup: "azurite_azblob" }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
       - name: Set Rust Fuzz
         shell: bash
         run: |
+          sudo apt-get update
           sudo apt-get install -y libfuzzer-14-dev
-          rustup install nightly-2024-11-22
-          cargo +nightly-2024-11-22 install cargo-fuzz
+          rustup install ${{ env.RUST_TOOLCHAIN }}
+          cargo +${{ env.RUST_TOOLCHAIN }} install cargo-fuzz
       - name: Fuzz
         uses: ./.github/actions/fuzz_test
         env:
@@ -64,3 +76,4 @@ jobs:
           setup: ${{ matrix.cases.setup }}
           service: ${{ matrix.cases.service }}
           target: ${{ matrix.target }}
+          toolchain: ${{ env.RUST_TOOLCHAIN }}

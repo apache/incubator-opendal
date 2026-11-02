@@ -17,7 +17,7 @@
 
 # frozen_string_literal: true
 
-module OpenDAL
+module OpenDal
   class Operator
     # Applies a middleware to the operator.
     # @param middleware [Middleware]

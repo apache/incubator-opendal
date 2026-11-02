@@ -26,19 +26,18 @@ use std::sync::Arc;
 use std::sync::Mutex;
 
 use magnus::block::Yield;
-use magnus::class;
-use magnus::method;
-use magnus::prelude::*;
+
 use magnus::Error;
 use magnus::RModule;
 use magnus::Ruby;
+use magnus::method;
 
 use crate::metadata::Metadata;
 use crate::*;
 
 /// @yard
 /// Entry returned by Lister to represent a path and it's relative metadata.
-#[magnus::wrap(class = "OpenDAL::Entry", free_immediately, size)]
+#[magnus::wrap(class = "OpenDal::Entry", free_immediately, size)]
 pub struct Entry(ocore::Entry);
 
 impl Entry {
@@ -83,7 +82,7 @@ impl Entry {
 /// # Safety
 ///
 /// `Lister` is thread-safe.
-#[magnus::wrap(class = "OpenDAL::Lister", free_immediately, size)]
+#[magnus::wrap(class = "OpenDal::Lister", free_immediately, size)]
 pub struct Lister(Arc<Mutex<ocore::blocking::Lister>>);
 
 impl Iterator for Lister {
@@ -126,12 +125,12 @@ impl Lister {
 }
 
 pub fn include(ruby: &Ruby, gem_module: &RModule) -> Result<(), Error> {
-    let entry_class = gem_module.define_class("Entry", class::object())?;
+    let entry_class = gem_module.define_class("Entry", ruby.class_object())?;
     entry_class.define_method("path", method!(Entry::path, 0))?;
     entry_class.define_method("name", method!(Entry::name, 0))?;
     entry_class.define_method("metadata", method!(Entry::metadata, 0))?;
 
-    let lister_class = gem_module.define_class("Lister", class::object())?;
+    let lister_class = gem_module.define_class("Lister", ruby.class_object())?;
     lister_class
         .include_module(ruby.module_enumerable())
         .map_err(|err| Error::new(ruby.exception_runtime_error(), err.to_string()))?;

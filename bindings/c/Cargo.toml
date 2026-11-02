@@ -24,14 +24,14 @@ edition = "2021"
 homepage = "https://opendal.apache.org/"
 license = "Apache-2.0"
 repository = "https://github.com/apache/opendal"
-rust-version = "1.82"
+rust-version = "1.91"
 
 [lib]
 crate-type = ["cdylib", "staticlib"]
 doc = false
 
 [build-dependencies]
-cbindgen = "0.26.0"
+cbindgen = "0.29.0"
 
 [dependencies]
 bytes = "1.4.0"

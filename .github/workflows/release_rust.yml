@@ -15,7 +15,7 @@
 # specific language governing permissions and limitations
 # under the License.
 
-# This workflow is used for publish all rust based packages
+# This workflow publishes all Rust packages that are intended for crates.io.
 
 name: Release Rust Packages
 
@@ -27,64 +27,55 @@ on:
     branches:
       - main
     paths:
+      - ".github/workflows/bootstrap_rust_crates.yml"
       - ".github/workflows/release_rust.yml"
+      - ".github/scripts/release_rust/**"
+      - "core/testkit/Cargo.toml"
+      - "core/http-transports/*/Cargo.toml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  publish:
+  plan:
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-    strategy:
-      # Publish package one by one instead of flooding the registry
-      max-parallel: 1
-      fail-fast: false
-      matrix:
-        # Order here is sensitive, as it will be used to determine the order of publishing
-        package:
-          - "core"
-          - "integrations/object_store"
-          - "integrations/parquet"
-          - "integrations/dav-server"
-          - "integrations/fuse3"
-          - "integrations/unftp-sbe"
-          - "integrations/cloud_filter"
-          - "bin/oay" # depends on integrations/dav-server
-          - "bin/oli"
-          - "bin/ofs" # depends on integrations/{fuse3,cloud_filter}
+    outputs:
+      packages: ${{ steps.plan.outputs.packages }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - name: Test release helpers
+        run: python3 -m unittest discover -s .github/scripts/release_rust -p "test_*.py"
+      - name: Plan publish matrix
+        id: plan
+        run: python3 .github/scripts/release_rust/plan.py --github-output
+
+  publish:
+    if: ${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref, '-') }}
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
       - name: Checkout python env
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
       - name: Checkout java env
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
-          distribution: temurin
-          java-version: "11"
-
+          distribution: zulu
+          java-version: 25
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
         with:
           need-rocksdb: true
           need-protoc: true
-
-      - name: Dryrun ${{ matrix.package }}
-        # Only dryrun test upon core.
-        if: matrix.package == 'core'
-        working-directory: ${{ matrix.package }}
-        run: cargo publish --dry-run
+      - name: Publish Rust crates
         env:
+          PACKAGES: ${{ needs.plan.outputs.packages }}
           LD_LIBRARY_PATH: ${{ env.JAVA_HOME }}/lib/server:${{ env.LD_LIBRARY_PATH }}
-
-      - uses: rust-lang/crates-io-auth-action@v1
-        id: auth
-      - name: Publish ${{ matrix.package }}
-        working-directory: ${{ matrix.package }}
-        # Only publish if it's a tag and the tag is not a pre-release
-        if: ${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref, '-') }}
-        run: cargo publish --no-verify
-        env:
-          LD_LIBRARY_PATH: ${{ env.JAVA_HOME }}/lib/server:${{ env.LD_LIBRARY_PATH }}
-          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+        run: python3 .github/scripts/release_rust/publish.py

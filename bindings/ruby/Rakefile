@@ -18,26 +18,67 @@
 # frozen_string_literal: true
 
 require "bundler/gem_tasks"
+require "fileutils"
 require "rake/testtask"
-require "rake/extensiontask"
+require "rubygems/ext"
+require "rubygems/ext/cargo_builder"
+require "rubygems/package"
 require "standard/rake"
 
 GEMSPEC = Gem::Specification.load("opendal.gemspec")
+PACKAGE_NAME = "opendal"
 CRATE_PACKAGE_NAME = "opendal-ruby"
+# Ruby loads native extensions by basename without the platform suffix.
+# RbConfig::CONFIG["DLEXT"] is Ruby's loadable native-extension suffix for
+# the current platform, such as "bundle" on macOS or "so" on Linux.
+EXTENSION = "opendal_ruby"
+EXTENSION_FILE = "#{EXTENSION}.#{RbConfig::CONFIG["DLEXT"]}"
+EXTENSION_PATH = "lib/#{EXTENSION_FILE}"
 
-Rake::ExtensionTask.new(CRATE_PACKAGE_NAME, GEMSPEC) do |ext|
-  ext.name = "opendal_ruby"
-  ext.ext_dir = "."
-  ext.lib_dir = "lib/opendal_ruby"
+desc "Copy core files for compilation"
+task :copy_core do
+  core_dir = "../../core"
+  distributed_core_dir = "core"
+
+  puts "Copying core files from #{core_dir} to #{distributed_core_dir}..."
+  FileUtils.rm_rf(distributed_core_dir, secure: true)
+  system("cp", "-Lr", core_dir, distributed_core_dir) # resolves symbolic links to a copy
+
+  # Verify core files were copied
+  core_files_count = `git -C #{File.expand_path(core_dir, __dir__)} ls-files -z`.split("\x0").length
+  puts "Copied #{core_files_count} files from core directory"
+
+  # Patch Cargo.toml for source distribution
+  # When core files are copied locally, update Cargo.toml to reference the local copy
+  if File.directory?(distributed_core_dir)
+    cargo_toml = File.read("Cargo.toml")
+
+    # Only patch if we haven't already and we're using the relative path
+    if cargo_toml.include?('path = "../../core"')
+      puts "Patching Cargo.toml to use local core directory..."
+      cargo_toml.gsub!('path = "../../core"', 'path = "core"')
+      File.write("Cargo.toml", cargo_toml)
+    end
+  end
 end
 
-Rake::Task[:test].prerequisites << :compile
-
-Rake::TestTask.new do |t|
+Rake::TestTask.new("test:base") do |t|
   t.libs << "lib"
   t.libs << "test"
-  t.pattern = "test/**/*_test.rb"
+  t.test_files = FileList["test/*_test.rb"]
 end
+
+Rake::TestTask.new("test:service") do |t|
+  t.libs << "lib"
+  t.libs << "test"
+  t.test_files = FileList["test/service/*_test.rb"]
+end
+
+desc "Test base functionality"
+task "test:base" => :test
+
+desc "Test service functionality"
+task "test:service" => :test
 
 namespace :doc do
   task default: %i[rustdoc yard]
@@ -52,7 +93,7 @@ namespace :doc do
     target_dir = "tmp"
     ext_dir = "opendal-ruby"
     run(<<~CMD)
-      cargo +nightly-2025-03-18 rustdoc \
+      cargo +nightly-2025-10-12 rustdoc \
         --target-dir #{target_dir} \
         --package #{ext_dir} \
         -Zunstable-options \
@@ -70,4 +111,94 @@ namespace :doc do
 end
 
 task doc: "doc:default"
-task default: %i[clobber compile test standard]
+task default: %i[compile test standard]
+task purge: %i[clean clobber]
+
+desc "report gem version"
+task :version do
+  print GEMSPEC.version
+end
+
+# Rake's file task below writes into lib/, so model the directory explicitly.
+directory "lib"
+
+extension_sources = FileList["Cargo.toml", "build.rs", "src/**/*.rs"]
+file EXTENSION_PATH => ["lib", "Cargo.lock", *extension_sources] do
+  original_verbose = Gem.configuration.verbose
+  # `:loud` enables RubyGems' highest verbosity and prints the exact Cargo
+  # command plus compiler output. That context is helpful when native CI fails.
+  Gem.configuration.verbose = :loud
+  Gem::Ext::CargoBuilder.new.build("Cargo.toml", ".", [], [], "lib", __dir__)
+  FileUtils.rm_f EXTENSION_FILE
+ensure
+  Gem.configuration.verbose = original_verbose
+end
+
+# Make `rake clean` remove the generated native extension.
+CLEAN.include EXTENSION_PATH
+
+desc "Compile #{EXTENSION}"
+task "compile:#{EXTENSION}" => EXTENSION_PATH
+
+desc "Compile all the extensions"
+task compile: "compile:#{EXTENSION}"
+
+Rake::Task[:test].prerequisites << EXTENSION_PATH
+
+namespace :native do
+  desc "Build a native gem for #{ENV.fetch("OPENDAL_RUBY_PLATFORM", Gem::Platform.local.to_s)}"
+  task PACKAGE_NAME do
+    platform = ENV.fetch("OPENDAL_RUBY_PLATFORM", Gem::Platform.local.to_s)
+    Rake::Task["native:#{PACKAGE_NAME}:#{platform}"].invoke
+  end
+
+  task "#{PACKAGE_NAME}:#{ENV.fetch("OPENDAL_RUBY_PLATFORM", Gem::Platform.local.to_s)}" => EXTENSION_PATH do
+    platform = ENV.fetch("OPENDAL_RUBY_PLATFORM", Gem::Platform.local.to_s)
+    spec = GEMSPEC.dup
+    spec.platform = Gem::Platform.new(platform)
+    spec.extensions.clear
+    spec.files |= [EXTENSION_PATH]
+
+    FileUtils.mkdir_p "pkg"
+    gem_file = Gem::Package.build(spec)
+    FileUtils.mv gem_file, "pkg/#{File.basename(gem_file)}"
+  end
+end
+
+task native: "native:#{PACKAGE_NAME}"
+
+# Ensure core files are copied before compilation and packaging
+Rake::Task["build"].enhance(["copy_core"]) if Rake::Task.task_defined?("build")
+
+Rake::Task["release"].clear # clear the existing release task to allow override
+Rake::Task["release:rubygem_push"].clear if Rake::Task.task_defined?("release:rubygem_push")
+
+# overrides bundler's default rake release task
+# we removed build and git tagging steps. Read more in `./.github/workflows/release-ruby.yml`
+# read more https://github.com/rubygems/rubygems/blob/master/bundler/lib/bundler/gem_helper.rb
+desc "Multi-arch release"
+task release: [
+  "release:guard_clean",
+  "release:rubygem_push"
+]
+
+namespace :release do
+  desc "Push all gems to RubyGems"
+  task :rubygem_push do
+    # Push all gem files (source + platform-specific) like Nokogiri does
+    # Bundler's built_gem_path only returns the last modified gem, so we glob all gems instead
+    gem_files = Gem::Util.glob_files_in_dir("#{GEMSPEC.name}-*.gem", "pkg").sort
+
+    if gem_files.empty?
+      abort "No gem files found in pkg/"
+    end
+
+    puts "Found #{gem_files.length} gem(s) to push:"
+    gem_files.each { |f| puts "  - #{File.basename(f)}" }
+
+    gem_files.each do |gem_file|
+      puts "\nPushing #{File.basename(gem_file)}..."
+      sh "gem push #{gem_file}"
+    end
+  end
+end

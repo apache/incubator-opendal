@@ -21,40 +21,29 @@ description: 'Behavior test for hdfs default over gcs'
 runs:
   using: "composite"
   steps:
-    - name: Setup java env
-      uses: actions/setup-java@v4
-      with:
-        distribution: temurin
-        java-version: "11"
     - name: Load secrets
-      uses: 1password/load-secrets-action@13f58eec611f8e5db52ec16247f58c508398f3e6 # v3
+      uses: 1Password/load-secrets-action@70062d7a876d3eb6334754fa26efd2fbd90c32f2 # v5.0.1
       with:
         export-env: true
       env:
         OPENDAL_GCS_ROOT: op://services/gcs/root
         OPENDAL_GCS_BUCKET: op://services/gcs/bucket
         OPENDAL_GCS_CREDENTIAL: op://services/gcs/credential
-    - name: Setup
+
+    - name: Setup hadoop
+      uses: ./.github/actions/setup-hadoop
+      with:
+        connector-gcs: true
+
+    - name: Setup Haddop GCS connector env
       shell: bash
       run: |
-        curl -LsSf https://dlcdn.apache.org/hadoop/common/hadoop-3.3.5/hadoop-3.3.5.tar.gz | tar zxf - -C /home/runner
-
-        export HADOOP_HOME="/home/runner/hadoop-3.3.5"
-
-        curl -LsSf -o ${HADOOP_HOME}/share/hadoop/common/lib/gcs-connector-hadoop3-2.2.19-shaded.jar https://github.com/GoogleCloudDataproc/hadoop-connectors/releases/download/v2.2.19/gcs-connector-hadoop3-2.2.19-shaded.jar
-
-        export CLASSPATH=$(${HADOOP_HOME}/bin/hadoop classpath --glob)
-
-        cp ./fixtures/hdfs/hdfs-site.xml ${HADOOP_HOME}/etc/hadoop/hdfs-site.xml
-        cp ./fixtures/hdfs/gcs-core-site.xml ${HADOOP_HOME}/etc/hadoop/core-site.xml
+        cp ${{ github.workspace }}/fixtures/hdfs/gcs-core-site.xml ${HADOOP_HOME}/etc/hadoop/core-site.xml
 
         cat << EOF >> $GITHUB_ENV
-        HADOOP_HOME=${HADOOP_HOME}
-        CLASSPATH=${CLASSPATH}
-        LD_LIBRARY_PATH=${JAVA_HOME}/lib/server:${HADOOP_HOME}/lib/native
         OPENDAL_HDFS_ROOT=${OPENDAL_GCS_ROOT}
         OPENDAL_HDFS_NAME_NODE=gs://${OPENDAL_GCS_BUCKET}
-        OPENDAL_HDFS_ENABLE_APPEND=false
+        OPENDAL_TEST_CAPABILITY_OVERRIDES=write_can_append=false
         EOF
 
         mkdir -p /tmp/hdfs

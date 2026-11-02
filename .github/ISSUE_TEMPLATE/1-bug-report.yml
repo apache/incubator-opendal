@@ -22,7 +22,25 @@ labels: ["bug"]
 body:
   - type: markdown
     attributes:
-      value: "Thank you for taking the time to report a bug. Please provide as much information as possible to help us understand and resolve the issue."
+      value: "Thank you for taking your time to report a bug. Bug reports must describe steps and behavior reproducable against an affected component. For service-specific bugs, reproduce against an actual service rather than relying only on a mock, emulator, or source-code analysis."
+
+  - type: input
+    id: opendal-version
+    attributes:
+      label: OpenDAL version or commit
+      description: "Specify a release or commit where you reproduced the bug."
+      placeholder: "For example: v0.58.1 or commit abc1234"
+    validations:
+      required: true
+
+  - type: input
+    id: affected-component
+    attributes:
+      label: Affected service or component
+      description: "Name the service, core component, layer, integration, or binding where you reproduced the bug."
+      placeholder: "For example: services/s3 against AWS S3"
+    validations:
+      required: true
 
   - type: textarea
     id: describe-bug
@@ -37,7 +55,17 @@ body:
     id: steps-to-reproduce
     attributes:
       label: Steps to Reproduce
-      description: "Steps to reproduce the behavior:"
+      description: "Provide minimal code or commands, relevant sanitized configuration, and the actual service or environment used."
+      placeholder: "Provide a minimal, self-contained reproduction."
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual Behavior
+      description: "Include the actual output, error, or other observable behavior."
+      placeholder: "Explain what happened and include relevant sanitized logs."
     validations:
       required: true
 
@@ -61,7 +89,15 @@ body:
 
   - type: markdown
     attributes:
-      value: "Please make sure to include any relevant information such as screenshots, logs, or code snippets that may help in diagnosing the issue."
+      value: "Do not publish credentials or other sensitive data. Report security concerns privately by following the [OpenDAL security process](https://opendal.apache.org/community/security). If you found a possible bug through source analysis but cannot reproduce it, start a [Discussion](https://github.com/apache/opendal/discussions) instead."
+
+  - type: checkboxes
+    id: reproduction-confirmation
+    attributes:
+      label: Reproduction confirmation
+      options:
+        - label: "I reproduced this issue against the affected component. For a service-specific report, I used the actual service rather than only a mock, emulator, or source-code analysis."
+          required: true
 
   - type: checkboxes
     id: willing-to-submit-pr

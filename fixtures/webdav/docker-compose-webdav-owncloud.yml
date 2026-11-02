@@ -17,7 +17,7 @@
 
 services:
   owncloud:
-    image: owncloud/server
+    image: owncloud/server:10.16.0
     ports:
       - "8080:8080"
     environment:

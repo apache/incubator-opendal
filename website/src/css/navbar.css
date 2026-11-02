@@ -1,0 +1,312 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+
+.navbar {
+  background-color: var(--ifm-navbar-background-color);
+}
+
+/* Docusaurus' mobile drawer is part of the navbar DOM. */
+@media (max-width: 996px) {
+  .navbar.navbar-sidebar--show {
+    --ifm-navbar-background-color: var(--odl-surface);
+    background-color: var(--odl-surface);
+  }
+
+  .navbar-sidebar,
+  .navbar-sidebar__brand,
+  .navbar-sidebar__items {
+    background-color: var(--odl-surface) !important;
+  }
+}
+
+.navbar__logo {
+  height: 1.85rem;
+}
+
+.navbar__logo img {
+  height: 100%;
+}
+
+.navbar__title {
+  font-weight: 650;
+  letter-spacing: var(--odl-tracking-tight);
+}
+
+.navbar__toggle {
+  align-items: center;
+  display: none;
+  height: 2rem;
+  justify-content: center;
+  margin: 0 var(--odl-space-2) 0 0;
+  padding: 0;
+  vertical-align: middle;
+  width: 2rem;
+}
+
+.navbar__toggle svg {
+  display: block;
+  flex: none;
+  height: 1.5rem;
+  width: 1.5rem;
+}
+
+.navbar-sidebar__brand {
+  align-items: center;
+  gap: var(--odl-space-3);
+  min-height: var(--ifm-navbar-height);
+}
+
+.header-github-link::before,
+.header-discord-link::before {
+  content: "";
+  width: 22px;
+  height: 22px;
+  display: flex;
+  background-color: var(--odl-navbar-icon);
+  transition: background-color var(--odl-dur-fast) var(--odl-ease);
+}
+
+.header-github-link::before {
+  -webkit-mask: var(--odl-github-icon-mask) no-repeat center / contain;
+  mask: var(--odl-github-icon-mask) no-repeat center / contain;
+}
+
+.header-discord-link::before {
+  -webkit-mask: var(--odl-discord-icon-mask) no-repeat center / contain;
+  mask: var(--odl-discord-icon-mask) no-repeat center / contain;
+}
+
+.header-github-link:hover::before,
+.header-github-link:focus-visible::before,
+.header-discord-link:hover::before,
+.header-discord-link:focus-visible::before {
+  background-color: var(--odl-navbar-icon-hover);
+}
+
+.navbar__items--right {
+  --odl-navbar-icon-gap: 0.35rem;
+  --odl-navbar-theme-search-gap: 0.25rem;
+}
+
+.navbar__items--right > .header-github-link,
+.navbar__items--right > .header-discord-link,
+.navbar__items--right > .odl-navbar-color-mode-toggle,
+.navbar__items--right > div:has(.odl-navbar-color-mode-toggle) {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: 2rem;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  width: 2rem;
+}
+
+.navbar__items--right > .header-discord-link,
+.navbar__items--right > .odl-navbar-color-mode-toggle,
+.navbar__items--right > div:has(.odl-navbar-color-mode-toggle) {
+  margin-left: var(--odl-navbar-icon-gap);
+}
+
+.navbar__items--right
+  > .odl-navbar-color-mode-toggle
+  + div:has(.navbar__search),
+.navbar__items--right
+  > div:has(.odl-navbar-color-mode-toggle)
+  + div:has(.navbar__search) {
+  margin-left: var(--odl-navbar-theme-search-gap);
+}
+
+.odl-navbar-color-mode-toggle {
+  align-items: center;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.odl-navbar-color-mode-toggle button {
+  color: var(--odl-navbar-icon);
+  background: transparent;
+  transition: color var(--odl-dur-fast) var(--odl-ease);
+}
+
+.odl-navbar-color-mode-toggle button svg {
+  height: 22px;
+  width: 22px;
+}
+
+.odl-navbar-color-mode-toggle button:hover,
+.odl-navbar-color-mode-toggle button:focus-visible {
+  background: transparent;
+  color: var(--odl-navbar-icon-hover);
+}
+
+@media (max-width: 996px) {
+  .navbar__toggle {
+    display: inline-flex;
+    transform: translateY(0.2rem);
+  }
+
+  .navbar__items--right > .header-github-link,
+  .navbar__items--right > .header-discord-link,
+  .navbar__items--right > .odl-navbar-color-mode-toggle,
+  .navbar__items--right > div:has(.odl-navbar-color-mode-toggle) {
+    display: none;
+  }
+
+  .navbar-sidebar__brand {
+    display: flex;
+    justify-content: space-between;
+  }
+
+  .navbar-sidebar__brand .navbar__brand {
+    align-items: center;
+    display: inline-flex;
+    min-height: 2rem;
+  }
+
+  .navbar-sidebar__items .header-github-link,
+  .navbar-sidebar__items .header-discord-link {
+    display: none;
+  }
+
+  .navbar-sidebar__items .menu__list-item:has(> .header-github-link),
+  .navbar-sidebar__items .menu__list-item:has(> .header-discord-link) {
+    display: none;
+  }
+}
+
+.odl-mobile-drawer-utilities {
+  margin-top: var(--odl-space-2);
+}
+
+.odl-mobile-drawer-utility {
+  align-items: center;
+  display: flex;
+  color: var(--ifm-menu-color);
+  font-size: inherit;
+  font-weight: var(--ifm-font-weight-semibold);
+  gap: var(--odl-space-2);
+  line-height: inherit;
+  min-height: 2.25rem;
+  padding: var(--ifm-menu-link-padding-vertical)
+    var(--ifm-menu-link-padding-horizontal);
+  position: relative;
+  text-decoration: none;
+  transition: color var(--odl-dur-fast) var(--odl-ease);
+}
+
+button.odl-mobile-drawer-utility {
+  background: transparent;
+  border: 0;
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
+}
+
+.odl-mobile-drawer-utility:hover,
+.odl-mobile-drawer-utility:focus-visible,
+button.odl-mobile-drawer-utility:hover,
+button.odl-mobile-drawer-utility:focus-visible {
+  background: transparent;
+  color: var(--ifm-menu-color-active);
+  text-decoration: none;
+}
+
+.odl-mobile-drawer-utility::before {
+  background-color: currentColor;
+  content: "";
+  display: block;
+  flex: none;
+  height: 1rem;
+  transition: background-color var(--odl-dur-fast) var(--odl-ease);
+  width: 1rem;
+}
+
+.odl-mobile-drawer-utility:hover::before,
+.odl-mobile-drawer-utility:focus-visible::before {
+  background-color: currentColor;
+}
+
+.odl-mobile-drawer-utility-icon {
+  align-items: center;
+  display: inline-flex;
+  flex: 0 0 1rem;
+  height: 1rem;
+  justify-content: center;
+  line-height: 1;
+  max-height: 1rem;
+  max-width: 1rem;
+  min-height: 1rem;
+  min-width: 1rem;
+  width: 1rem;
+}
+
+.navbar
+  button.odl-mobile-drawer-utility--theme
+  .odl-mobile-drawer-utility-icon
+  .odl-mobile-drawer-utility-svg {
+  display: block;
+  flex: none;
+  height: 1rem;
+  max-height: 1rem;
+  max-width: 1rem;
+  min-height: 1rem;
+  min-width: 1rem;
+  width: 1rem;
+}
+
+.odl-mobile-drawer-utility--github::before {
+  -webkit-mask: var(--odl-github-icon-mask) no-repeat center / contain;
+  mask: var(--odl-github-icon-mask) no-repeat center / contain;
+}
+
+.odl-mobile-drawer-utility--discord::before {
+  -webkit-mask: var(--odl-discord-icon-mask) no-repeat center / contain;
+  mask: var(--odl-discord-icon-mask) no-repeat center / contain;
+}
+
+.odl-mobile-drawer-utility--theme {
+  cursor: pointer;
+}
+
+.odl-mobile-drawer-utility--theme::before {
+  content: none;
+}
+
+.navbar button.odl-mobile-drawer-utility--theme {
+  color: var(--ifm-menu-color);
+}
+
+.odl-mobile-drawer-utility--theme:hover,
+.odl-mobile-drawer-utility--theme:focus-within,
+.navbar button.odl-mobile-drawer-utility--theme:hover,
+.navbar button.odl-mobile-drawer-utility--theme:focus-visible {
+  color: var(--ifm-menu-color-active);
+}
+
+.odl-mobile-drawer-utility--theme:focus-within {
+  outline: 2px solid var(--odl-accent);
+  outline-offset: 2px;
+}
+
+.odl-mobile-drawer-utility-separator {
+  border-top: 1px solid var(--odl-border);
+  height: 0;
+  margin: var(--odl-space-2) var(--odl-space-3);
+}

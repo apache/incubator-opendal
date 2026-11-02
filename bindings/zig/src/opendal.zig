@@ -145,12 +145,8 @@ pub const OperatorInfo = struct {
         return std.mem.span(ptr);
     }
 
-    pub fn fullCapability(self: *const OperatorInfo) c.opendal_capability {
-        return c.opendal_operator_info_get_full_capability(self.inner);
-    }
-
-    pub fn nativeCapability(self: *const OperatorInfo) c.opendal_capability {
-        return c.opendal_operator_info_get_native_capability(self.inner);
+    pub fn capability(self: *const OperatorInfo) c.opendal_capability {
+        return c.opendal_operator_info_get_capability(self.inner);
     }
 };
 
@@ -247,6 +243,7 @@ pub const Code = enum(c.opendal_code) {
     IS_SAME_FILE = c.OPENDAL_IS_SAME_FILE,
     CONDITION_NOT_MATCH = c.OPENDAL_CONDITION_NOT_MATCH,
     RANGE_NOT_SATISFIED = c.OPENDAL_RANGE_NOT_SATISFIED,
+    CONFLICT = c.OPENDAL_CONFLICT,
 };
 
 pub const OpendalError = error{
@@ -262,6 +259,7 @@ pub const OpendalError = error{
     IsSameFile,
     ConditionNotMatch,
     RangeNotSatisfied,
+    Conflict,
 };
 
 pub fn codeToError(code: c.opendal_code) OpendalError!void {
@@ -278,6 +276,7 @@ pub fn codeToError(code: c.opendal_code) OpendalError!void {
         c.OPENDAL_IS_SAME_FILE => error.IsSameFile,
         c.OPENDAL_CONDITION_NOT_MATCH => error.ConditionNotMatch,
         c.OPENDAL_RANGE_NOT_SATISFIED => error.RangeNotSatisfied,
+        c.OPENDAL_CONFLICT => error.Conflict,
         else => {},
     };
 }
@@ -296,6 +295,7 @@ pub fn errorToCode(err: OpendalError) c_int {
         error.IsSameFile => c.OPENDAL_IS_SAME_FILE,
         error.ConditionNotMatch => c.OPENDAL_CONDITION_NOT_MATCH,
         error.RangeNotSatisfied => c.OPENDAL_RANGE_NOT_SATISFIED,
+        error.Conflict => c.OPENDAL_CONFLICT,
     };
 }
 const std = @import("std");
@@ -315,6 +315,7 @@ test "Error Tests" {
     try testing.expectError(error.IsSameFile, codeToError(c.OPENDAL_IS_SAME_FILE));
     try testing.expectError(error.ConditionNotMatch, codeToError(c.OPENDAL_CONDITION_NOT_MATCH));
     try testing.expectError(error.RangeNotSatisfied, codeToError(c.OPENDAL_RANGE_NOT_SATISFIED));
+    try testing.expectError(error.Conflict, codeToError(c.OPENDAL_CONFLICT));
 
     // Zig error to C code
     try testing.expectEqual(c.OPENDAL_UNEXPECTED, errorToCode(error.Unexpected));
@@ -329,6 +330,7 @@ test "Error Tests" {
     try testing.expectEqual(c.OPENDAL_IS_SAME_FILE, errorToCode(error.IsSameFile));
     try testing.expectEqual(c.OPENDAL_CONDITION_NOT_MATCH, errorToCode(error.ConditionNotMatch));
     try testing.expectEqual(c.OPENDAL_RANGE_NOT_SATISFIED, errorToCode(error.RangeNotSatisfied));
+    try testing.expectEqual(c.OPENDAL_CONFLICT, errorToCode(error.Conflict));
 }
 
 test "Semantic Analyzer" {
