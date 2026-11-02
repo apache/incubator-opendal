@@ -32,6 +32,7 @@ use md5::Md5;
 use reqsign_aws_v4::AssumeRoleCredentialProvider;
 use reqsign_aws_v4::Credential;
 use reqsign_aws_v4::DefaultCredentialProvider;
+use reqsign_aws_v4::ECSCredentialProvider;
 use reqsign_aws_v4::RequestSigner as AwsV4Signer;
 use reqsign_aws_v4::S3ExpressSessionConfig;
 use reqsign_aws_v4::S3ExpressSessionProvider;
@@ -410,13 +411,74 @@ impl S3Builder {
         self
     }
 
-    /// Disable config load so that opendal will not load config from
-    /// environment.
+    /// Set the relative URI for AWS container credential metadata.
     ///
-    /// For examples:
+    /// An explicit full endpoint takes precedence. The relative URI takes
+    /// precedence over ambient full and relative container credential URIs and
+    /// is joined to [`Self::container_metadata_uri_override`] when set.
     ///
-    /// - envs like `AWS_ACCESS_KEY_ID`
-    /// - files like `~/.aws/config`
+    /// This setting configures the ECS slot in the default credential chain. It
+    /// does not move that slot ahead of earlier default providers.
+    pub fn container_credentials_relative_uri(mut self, uri: &str) -> Self {
+        if !uri.is_empty() {
+            self.config.container_credentials_relative_uri = Some(uri.to_string());
+        }
+        self
+    }
+
+    /// Set the full URI for AWS container credential metadata.
+    ///
+    /// This endpoint takes precedence over the relative URI and both ambient
+    /// container credential URI forms.
+    pub fn container_credentials_endpoint(mut self, endpoint: &str) -> Self {
+        if !endpoint.is_empty() {
+            self.config.container_credentials_endpoint = Some(endpoint.to_string());
+        }
+        self
+    }
+
+    /// Set the authorization token for AWS container credential requests.
+    ///
+    /// This value takes precedence over the configured token file and both
+    /// ambient token forms.
+    pub fn container_authorization_token(mut self, token: &str) -> Self {
+        if !token.is_empty() {
+            self.config.container_authorization_token = Some(token.to_string());
+        }
+        self
+    }
+
+    /// Set the file containing the authorization token for AWS container
+    /// credential requests.
+    ///
+    /// This file takes precedence over both ambient token forms. The credential
+    /// provider trims surrounding whitespace after reading the file.
+    pub fn container_authorization_token_file(mut self, file_path: &str) -> Self {
+        if !file_path.is_empty() {
+            self.config.container_authorization_token_file = Some(file_path.to_string());
+        }
+        self
+    }
+
+    /// Set the base URI used to resolve a relative AWS container credential
+    /// URI.
+    ///
+    /// The override affects relative URIs only and does not alter a configured
+    /// or ambient full URI. The override alone does not select an endpoint.
+    pub fn container_metadata_uri_override(mut self, uri: &str) -> Self {
+        if !uri.is_empty() {
+            self.config.container_metadata_uri_override = Some(uri.to_string());
+        }
+        self
+    }
+
+    /// Disable automatic endpoint loading and the environment/profile
+    /// credential providers.
+    ///
+    /// This skips endpoint environment variables and removes the static
+    /// environment and shared-profile credential slots. Region environment
+    /// lookup and other credential providers, including AWS container
+    /// credentials and EC2 instance metadata, remain enabled.
     pub fn disable_config_load(mut self) -> Self {
         self.config.disable_config_load = true;
         self
@@ -987,6 +1049,33 @@ impl Builder for S3Builder {
 
             if config.disable_ec2_metadata {
                 builder = builder.no_imds();
+            }
+
+            if config.container_credentials_endpoint.is_some()
+                || config.container_credentials_relative_uri.is_some()
+                || config.container_authorization_token.is_some()
+                || config.container_authorization_token_file.is_some()
+                || config.container_metadata_uri_override.is_some()
+            {
+                let mut ecs = ECSCredentialProvider::new();
+
+                if let Some(endpoint) = config.container_credentials_endpoint.as_deref() {
+                    ecs = ecs.with_endpoint(endpoint);
+                }
+                if let Some(relative_uri) = config.container_credentials_relative_uri.as_deref() {
+                    ecs = ecs.with_relative_uri(relative_uri);
+                }
+                if let Some(token) = config.container_authorization_token.as_deref() {
+                    ecs = ecs.with_auth_token(token);
+                }
+                if let Some(token_file) = config.container_authorization_token_file.as_deref() {
+                    ecs = ecs.with_auth_token_file(token_file);
+                }
+                if let Some(uri_override) = config.container_metadata_uri_override.as_deref() {
+                    ecs = ecs.with_metadata_uri_override(uri_override);
+                }
+
+                builder = builder.ecs(ecs);
             }
 
             ProvideCredentialChain::new().push(builder.build())

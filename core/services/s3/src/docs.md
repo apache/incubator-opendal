@@ -46,6 +46,39 @@ Use [`crate::S3Config`] for serializable configuration and this builder's
 methods for direct construction. The field and method documentation defines
 accepted values, defaults, and environment interaction.
 
+## AWS container credentials
+
+The default AWS credential chain already reads ambient container credential
+settings. The container credential options expose the same provider settings
+through typed builder methods, serialized configuration, and URI options. Setting
+any of these options replaces the ECS slot in the default chain without changing
+that slot's position.
+
+Endpoint selection follows this order:
+
+1. `container_credentials_endpoint`
+2. `container_credentials_relative_uri`
+3. `AWS_CONTAINER_CREDENTIALS_FULL_URI`
+4. `AWS_CONTAINER_CREDENTIALS_RELATIVE_URI`
+
+`container_metadata_uri_override` changes the base URI for relative endpoints
+only and does not select an endpoint by itself. Authorization token selection
+follows this order:
+
+1. `container_authorization_token`
+2. `container_authorization_token_file`
+3. `AWS_CONTAINER_AUTHORIZATION_TOKEN`
+4. `AWS_CONTAINER_AUTHORIZATION_TOKEN_FILE`
+
+These options configure the existing ECS slot; they do not force it ahead of
+environment, profile, SSO, web identity, or external process providers.
+Configured static credentials retain their higher priority. [`crate::S3::role_arn`]
+continues to use the assembled provider as the source for role assumption, and
+[`crate::S3::credential_provider_chain`] continues to replace the assembled
+chain. [`crate::S3::disable_config_load`] disables automatic endpoint loading
+and the environment/profile credential slots. Region environment lookup and
+other credential providers, including container credentials, remain enabled.
+
 ## S3 Express One Zone
 
 OpenDAL recognizes valid AWS directory bucket names on AWS endpoints and uses
