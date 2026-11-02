@@ -194,6 +194,24 @@ typedef struct opendal_lister {
 } opendal_lister;
 
 /**
+ * A native logging callback. Levels are DEBUG=0 (including TRACE), INFO=1,
+ * WARN=2, and ERROR=3; these values are not glog severity values.
+ *
+ * File and message are non-null, NUL-terminated strings borrowed only for the
+ * callback invocation. Copy any value retained after the callback returns.
+ * Embedded NUL bytes are rendered as `\0`. An unavailable file is empty and
+ * an unavailable line is zero.
+ *
+ * The callback must remain valid for the lifetime of the program, support
+ * concurrent calls, and not unwind through the C ABI. Recursive logging from
+ * the callback is not supported.
+ */
+typedef void (*opendal_log_callback)(int32_t level,
+                                     const char *file,
+                                     uint32_t line,
+                                     const char *message);
+
+/**
  * \brief The layers to apply when initializing an opendal_operator.
  *
  * \note This is also a heap-allocated struct, please free it after you use it.
@@ -1324,6 +1342,26 @@ struct opendal_result_lister_next opendal_lister_next(struct opendal_lister *sel
  * \brief Free the heap-allocated metadata used by opendal_lister
  */
 void opendal_lister_free(struct opendal_lister *ptr);
+
+/**
+ * \brief Installs one process-global native callback for the library's Rust log facade.
+ *
+ * The default C operator constructor emits operation events through this
+ * callback. The explicit `opendal_operator_new_with_layers` constructor applies
+ * only its supplied layers. The callback can also receive records from other
+ * Rust components using the same log facade.
+ *
+ * Returns NULL on success. A null callback or an already installed logger
+ * returns OPENDAL_CONFIG_INVALID; free that error with `opendal_error_free`.
+ * A registration failure leaves the installed logger and its level unchanged.
+ * This function cannot replace or unregister a logger.
+ *
+ * # Safety
+ *
+ * A non-null callback must satisfy the lifetime and concurrency requirements
+ * documented on `opendal_log_callback`.
+ */
+struct opendal_error *opendal_logging_init(opendal_log_callback callback);
 
 /**
  * \brief Construct a heap-allocated opendal_operator_layers.
