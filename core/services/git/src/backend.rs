@@ -292,6 +292,55 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn named_branch_and_tag_resolve_snapshot() {
+        let (_temp, dir) = init_repo();
+        std::fs::write(dir.join("state.txt"), b"start").unwrap();
+        commit_all(&dir, "initial");
+        let initial_branch = git(&dir, &["symbolic-ref", "--short", "HEAD"]);
+        git(&dir, &["checkout", "-q", "-b", "topic"]);
+        std::fs::write(dir.join("state.txt"), b"topic").unwrap();
+        commit_all(&dir, "topic snapshot");
+        let commit = git(&dir, &["rev-parse", "HEAD"]);
+        git(
+            &dir,
+            &[
+                "-c",
+                "tag.gpgsign=false",
+                "tag",
+                "-a",
+                "snapshot",
+                "-m",
+                "snapshot",
+            ],
+        );
+        git(&dir, &["checkout", "-q", &initial_branch]);
+        std::fs::write(dir.join("state.txt"), b"later").unwrap();
+        commit_all(&dir, "default branch update");
+
+        let ctx = OperationContext::new();
+        for reference in [
+            "topic",
+            "refs/heads/topic",
+            "snapshot",
+            "refs/tags/snapshot",
+            commit.as_str(),
+        ] {
+            let service = GitBuilder::default()
+                .repository(&file_url(&dir))
+                .reference(reference)
+                .resolve_lfs(false)
+                .build()
+                .unwrap();
+            let reader = service.read(&ctx, "state.txt", OpRead::default()).unwrap();
+            let (_, data) = reader
+                .read(BytesRange::new(0, Some(5)))
+                .await
+                .unwrap_or_else(|error| panic!("reference {reference}: {error}"));
+            assert_eq!(data.to_bytes(), Bytes::from_static(b"topic"), "{reference}");
+        }
+    }
+
+    #[tokio::test]
     async fn local_snapshot_root_and_plain_blob() {
         let (_temp, dir) = init_repo();
         std::fs::create_dir_all(dir.join("root")).unwrap();
