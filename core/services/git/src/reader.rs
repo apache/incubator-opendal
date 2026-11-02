@@ -198,11 +198,14 @@ enum LfsFetchError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bytes::Bytes;
     use futures::stream;
     use http::{Request, Response, StatusCode};
+    use opendal_core::Buffer;
     use opendal_core::HttpBody;
     use opendal_core::HttpTransport;
     use opendal_core::HttpTransporter;
+    use opendal_core::Result;
     use opendal_core::raw::oio::ReadStreamDyn as _;
     use sha2::Digest;
     use sha2::Sha256;
