@@ -174,7 +174,11 @@ def normalize_root(value: str) -> str:
 
 
 def endpoint_args(fixture: dict[str, str]) -> list[str]:
-    return ["--endpoint-url", fixture["endpoint"]]
+    endpoint = fixture["endpoint"]
+    # Match the existing S3Builder template rather than signing CLI calls at the global host.
+    if endpoint.rstrip("/") == "https://s3.amazonaws.com":
+        endpoint = f"https://s3.{fixture['region']}.amazonaws.com"
+    return ["--endpoint-url", endpoint]
 
 
 def seed_object(
@@ -457,6 +461,10 @@ def main() -> int:
             raise StageError("source", "dirty")
 
         fixture = fixture_configuration()
+        write_text(
+            evidence_dir / "endpoint-template.applied",
+            str(endpoint_args(fixture)[1] != fixture["endpoint"]).lower(),
+        )
         github_mask(fixture["access_key_id"])
         github_mask(fixture["secret_access_key"])
 
