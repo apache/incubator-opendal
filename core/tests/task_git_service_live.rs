@@ -71,7 +71,11 @@ async fn public_git_lfs_stream_range_and_pointer() {
         payload.extend_from_slice(&buffer.to_bytes());
     }
     assert_eq!(payload.len(), 540_217);
-    assert_eq!(format!("{:x}", Sha256::digest(&payload)), SHA256);
+    let digest: String = Sha256::digest(&payload)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    assert_eq!(digest, SHA256);
 
     let range = operator
         .read_with(PATH)
