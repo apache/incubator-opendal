@@ -15,10 +15,19 @@
 // specific language governing permissions and limitations
 // under the License.
 
-/// Default scheme for git service.
+#![doc = include_str!("../README.md")]
+#![cfg_attr(docsrs, feature(doc_cfg))]
+#![cfg_attr(docsrs, doc(auto_cfg))]
+#![deny(missing_docs)]
+
+/// URI scheme registered for the Git service.
 pub const GIT_SCHEME: &str = "git";
 
-/// Register this service into the given registry.
+/// Register the Git service with an operator registry.
+///
+/// Registration enables scheme-driven construction through
+/// [`opendal_core::Operator::via_iter`]. The service does not implement URI
+/// parsing, so `from_uri` remains unsupported.
 pub fn register_git_service(registry: &opendal_core::OperatorRegistry) {
     registry.register::<Git>(GIT_SCHEME);
 }
@@ -26,9 +35,18 @@ pub fn register_git_service(registry: &opendal_core::OperatorRegistry) {
 mod backend;
 mod config;
 mod core;
-mod error;
 mod lister;
 mod reader;
 
 pub use backend::GitBuilder as Git;
 pub use config::GitConfig;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scheme_is_git() {
+        assert_eq!(GIT_SCHEME, "git");
+    }
+}

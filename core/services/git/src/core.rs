@@ -15,57 +15,71 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::collections::HashMap;
-use std::fmt::Debug;
+use std::num::NonZeroU32;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant, SystemTime};
 
-use base64::Engine;
+use bytes::Bytes;
+use http::HeaderMap;
+use http::HeaderValue;
+use http::header;
+use serde_json::Value;
+use url::Url;
 
+use opendal_core::raw::oio::ReadStream;
 use opendal_core::raw::*;
 use opendal_core::*;
 
-// Constants for Git references and LFS
 const GIT_HEAD_REF: &str = "HEAD";
 const LFS_VERSION_PREFIX: &str = "version https://git-lfs.github.com/spec/v1";
 const LFS_CONTENT_TYPE: &str = "application/vnd.git-lfs+json";
 const LFS_OID_PREFIX: &str = "oid sha256:";
 const LFS_SIZE_PREFIX: &str = "size ";
+const LFS_ACTION_REUSE_CAP: Duration = Duration::from_secs(60);
+const LFS_ACTION_EXPIRY_MARGIN: Duration = Duration::from_secs(5);
 
-/// Git LFS pointer information
+/// Parsed Git LFS pointer.
 #[derive(Debug, Clone)]
-pub struct LfsPointer {
-    pub oid: String,
-    pub size: u64,
+pub(super) struct LfsPointer {
+    pub(super) oid: String,
+    pub(super) size: u64,
 }
 
-/// Wrapper for gix repository with auto-cleanup temp dir
+/// Repository and its temporary object database.
 #[derive(Clone)]
 struct RepoHolder {
     repo: gix::Repository,
     _tempdir: Arc<tempfile::TempDir>,
 }
 
-/// Cached LFS download URL from batch API
-#[derive(Clone, Debug)]
-struct LfsDownloadUrl {
-    url: String,
+/// Resolved LFS download action.
+#[derive(Clone)]
+pub(super) struct LfsAction {
+    pub(super) url: Url,
+    pub(super) headers: HeaderMap,
+    reuse_until: Instant,
 }
 
-/// Core functionality for Git operations.
-pub struct GitCore {
-    pub repository: String,
-    pub reference: String,
-    pub root: String,
-    pub username: Option<String>,
-    pub password: Option<String>,
-    pub resolve_lfs: bool,
+impl LfsAction {
+    pub(super) fn is_fresh(&self, now: Instant) -> bool {
+        self.reuse_until > now
+    }
+}
+
+/// Shared Git service state.
+pub(super) struct GitCore {
+    repository: String,
+    reference: String,
+    root: String,
+    username: Option<String>,
+    password: Option<String>,
+    resolve_lfs: bool,
     repo_cell: Arc<Mutex<Option<RepoHolder>>>,
     commit_oid_cache: Arc<Mutex<Option<gix::hash::ObjectId>>>,
     commit_info_cache: Arc<Mutex<Option<(gix::hash::ObjectId, i64)>>>,
-    lfs_url_cache: Arc<Mutex<HashMap<String, LfsDownloadUrl>>>,
 }
 
-impl Debug for GitCore {
+impl std::fmt::Debug for GitCore {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GitCore")
             .field("repository", &self.repository)
@@ -79,8 +93,7 @@ impl Debug for GitCore {
 }
 
 impl GitCore {
-    /// Create a new GitCore instance
-    pub fn new(
+    pub(super) fn new(
         repository: String,
         reference: String,
         root: String,
@@ -98,8 +111,11 @@ impl GitCore {
             repo_cell: Arc::new(Mutex::new(None)),
             commit_oid_cache: Arc::new(Mutex::new(None)),
             commit_info_cache: Arc::new(Mutex::new(None)),
-            lfs_url_cache: Arc::new(Mutex::new(HashMap::new())),
         }
+    }
+
+    pub(super) fn resolve_lfs(&self) -> bool {
+        self.resolve_lfs
     }
 
     fn get_or_create_repo(&self) -> Result<gix::Repository> {
@@ -109,42 +125,46 @@ impl GitCore {
             .map_err(|_| Error::new(ErrorKind::Unexpected, "repository lock poisoned"))?;
 
         if cell.is_none() {
-            let temp_dir = tempfile::tempdir().map_err(|e| {
-                Error::new(ErrorKind::Unexpected, "failed to create temp dir").set_source(e)
+            let temp_dir = tempfile::tempdir().map_err(|_| {
+                Error::new(
+                    ErrorKind::Unexpected,
+                    "failed to create temporary git directory",
+                )
             })?;
 
-            // Build URL with credentials if provided
-            let clone_url =
-                if let (Some(username), Some(password)) = (&self.username, &self.password) {
-                    // Parse the URL and inject credentials
-                    let url = self.repository.as_str();
-                    if let Some(scheme_end) = url.find("://") {
-                        let (scheme, rest) = url.split_at(scheme_end + 3);
-                        format!("{}{}:{}@{}", scheme, username, password, rest)
-                    } else {
-                        self.repository.clone()
-                    }
-                } else {
-                    self.repository.clone()
-                };
+            let username = self.username.clone();
+            let password = self.password.clone();
+            let mut prepare = gix::prepare_clone(self.repository.as_str(), temp_dir.path())
+                .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to prepare git clone"))?;
 
-            let mut prepare =
-                gix::prepare_clone(clone_url.as_str(), temp_dir.path()).map_err(|e| {
-                    Error::new(ErrorKind::Unexpected, "failed to prepare clone").set_source(e)
-                })?;
-
-            // Use shallow clone for HEAD, full clone for specific refs
             if self.reference == GIT_HEAD_REF {
-                use std::num::NonZeroU32;
                 let depth = NonZeroU32::new(1).expect("1 is non-zero");
                 prepare = prepare.with_shallow(gix::remote::fetch::Shallow::DepthAtRemote(depth));
             }
 
+            prepare = prepare.configure_connection(
+                move |conn| -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                    if let (Some(username), Some(password)) = (username.clone(), password.clone()) {
+                        conn.set_credentials(move |action| match action {
+                            gix::credentials::helper::Action::Get(ctx) => {
+                                Ok(Some(gix::credentials::protocol::Outcome {
+                                    identity: gix::sec::identity::Account {
+                                        username: username.clone(),
+                                        password: password.clone(),
+                                    },
+                                    next: ctx.into(),
+                                }))
+                            }
+                            _ => Ok(None),
+                        });
+                    }
+                    Ok(())
+                },
+            );
+
             let (repo, _) = prepare
                 .fetch_only(gix::progress::Discard, &gix::interrupt::IS_INTERRUPTED)
-                .map_err(|e| {
-                    Error::new(ErrorKind::Unexpected, "failed to fetch repository").set_source(e)
-                })?;
+                .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to fetch git repository"))?;
 
             *cell = Some(RepoHolder {
                 repo,
@@ -152,14 +172,39 @@ impl GitCore {
             });
         }
 
-        Ok(cell
-            .as_ref()
-            .ok_or_else(|| Error::new(ErrorKind::Unexpected, "repository not initialized"))?
-            .repo
-            .clone())
+        cell.as_ref()
+            .map(|holder| holder.repo.clone())
+            .ok_or_else(|| Error::new(ErrorKind::Unexpected, "repository not initialized"))
     }
 
-    /// Get commit tree and time from OID
+    fn resolve_reference(&self, repo: &gix::Repository) -> Result<gix::hash::ObjectId> {
+        if let Some(oid) = *self
+            .commit_oid_cache
+            .lock()
+            .map_err(|_| Error::new(ErrorKind::Unexpected, "commit cache lock poisoned"))?
+        {
+            return Ok(oid);
+        }
+
+        let object = repo
+            .rev_parse_single(self.reference.as_str())
+            .map_err(|_| Error::new(ErrorKind::NotFound, "git reference not found"))?
+            .object()
+            .map_err(|_| Error::new(ErrorKind::NotFound, "git reference object not found"))?;
+        let commit_oid = object
+            .peel_to_commit()
+            .map_err(|_| Error::new(ErrorKind::Unexpected, "git reference is not a commit"))?
+            .id()
+            .detach();
+
+        *self
+            .commit_oid_cache
+            .lock()
+            .map_err(|_| Error::new(ErrorKind::Unexpected, "commit cache lock poisoned"))? =
+            Some(commit_oid);
+        Ok(commit_oid)
+    }
+
     fn get_commit_tree<'a>(
         &self,
         repo: &'a gix::Repository,
@@ -172,93 +217,34 @@ impl GitCore {
         {
             let tree = repo
                 .find_object(tree_oid)
-                .map_err(|e| Error::new(ErrorKind::NotFound, "tree not found").set_source(e))?
-                .into_tree();
+                .map_err(|_| Error::new(ErrorKind::NotFound, "tree not found"))?
+                .try_into_tree()
+                .map_err(|_| Error::new(ErrorKind::Unexpected, "cached object is not a tree"))?;
             return Ok((tree, commit_time));
         }
 
         let commit = repo
             .find_object(commit_oid)
-            .map_err(|e| Error::new(ErrorKind::NotFound, "commit not found").set_source(e))?
+            .map_err(|_| Error::new(ErrorKind::NotFound, "commit not found"))?
             .peel_to_commit()
-            .map_err(|e| {
-                Error::new(ErrorKind::Unexpected, "failed to peel to commit").set_source(e)
-            })?;
-
+            .map_err(|_| Error::new(ErrorKind::Unexpected, "object is not a commit"))?;
         let commit_time = commit
             .time()
-            .map_err(|e| {
-                Error::new(ErrorKind::Unexpected, "failed to get commit time").set_source(e)
-            })?
+            .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to read commit time"))?
             .seconds;
-
         let tree = commit
             .tree()
-            .map_err(|e| Error::new(ErrorKind::Unexpected, "failed to get tree").set_source(e))?;
+            .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to read commit tree"))?;
 
-        let tree_id = tree.id().detach();
         *self
             .commit_info_cache
             .lock()
             .map_err(|_| Error::new(ErrorKind::Unexpected, "commit info cache lock poisoned"))? =
-            Some((tree_id, commit_time));
-
+            Some((tree.id().detach(), commit_time));
         Ok((tree, commit_time))
     }
 
-    /// Resolve reference to commit OID (blocking operation)
-    fn resolve_reference(&self, repo: &gix::Repository) -> Result<gix::hash::ObjectId> {
-        // Return cached OID if available
-        if let Some(oid) = *self
-            .commit_oid_cache
-            .lock()
-            .map_err(|_| Error::new(ErrorKind::Unexpected, "commit cache lock poisoned"))?
-        {
-            return Ok(oid);
-        }
-
-        let commit_oid = if self.reference == GIT_HEAD_REF {
-            let mut head = repo.head().map_err(|e| {
-                Error::new(ErrorKind::Unexpected, "failed to get HEAD").set_source(e)
-            })?;
-            head.peel_to_commit()
-                .map_err(|e| {
-                    Error::new(ErrorKind::Unexpected, "failed to peel HEAD to commit").set_source(e)
-                })?
-                .id()
-                .into()
-        } else {
-            // Try as SHA first, then as ref name
-            if let Ok(oid) = gix::hash::ObjectId::from_hex(self.reference.as_bytes()) {
-                oid
-            } else {
-                // Try as ref name (branch/tag)
-                let reference = repo.find_reference(&self.reference).map_err(|e| {
-                    Error::new(
-                        ErrorKind::NotFound,
-                        format!("reference not found: {}", self.reference),
-                    )
-                    .set_source(e)
-                })?;
-                let object = reference.into_fully_peeled_id().map_err(|e| {
-                    Error::new(ErrorKind::Unexpected, "failed to peel reference").set_source(e)
-                })?;
-                object.detach()
-            }
-        };
-
-        // Cache result for subsequent operations
-        *self
-            .commit_oid_cache
-            .lock()
-            .map_err(|_| Error::new(ErrorKind::Unexpected, "commit cache lock poisoned"))? =
-            Some(commit_oid);
-
-        Ok(commit_oid)
-    }
-
-    /// Get file metadata (blocking operation) - returns (size, is_dir, last_modified)
-    pub fn stat_file_blocking(&self, path: &str) -> Result<(u64, bool, i64)> {
+    pub(super) fn stat_file_blocking(&self, path: &str) -> Result<(u64, bool, i64)> {
         let repo = self.get_or_create_repo()?;
         let commit_oid = self.resolve_reference(&repo)?;
         let (tree, commit_time) = self.get_commit_tree(&repo, commit_oid)?;
@@ -266,21 +252,25 @@ impl GitCore {
         let path = path.trim_start_matches('/');
         let entry = tree
             .lookup_entry_by_path(path)
-            .map_err(|e| Error::new(ErrorKind::Unexpected, "failed to lookup path").set_source(e))?
-            .ok_or_else(|| Error::new(ErrorKind::NotFound, format!("path not found: {}", path)))?;
+            .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to look up git path"))?
+            .ok_or_else(|| Error::new(ErrorKind::NotFound, "path not found"))?;
 
-        let is_dir = entry.mode().is_tree();
-
-        if is_dir {
+        if entry.mode().is_tree() {
             return Ok((0, true, commit_time));
         }
+        if entry.mode().is_commit() {
+            return Err(Error::new(
+                ErrorKind::Unsupported,
+                "submodule entries are not supported",
+            ));
+        }
 
-        let obj = entry
+        let blob = entry
             .object()
-            .map_err(|e| Error::new(ErrorKind::Unexpected, "failed to get object").set_source(e))?;
-        let blob = obj.into_blob();
+            .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to read git object"))?
+            .try_into_blob()
+            .map_err(|_| Error::new(ErrorKind::Unsupported, "git entry is not a blob"))?;
         let mut size = blob.data.len() as u64;
-
         if self.resolve_lfs && Self::is_lfs_pointer(&blob.data) {
             if let Ok(pointer) = Self::parse_lfs_pointer(&blob.data) {
                 size = pointer.size;
@@ -290,250 +280,486 @@ impl GitCore {
         Ok((size, false, commit_time))
     }
 
-    /// List directory contents (blocking operation) - returns Vec<(name, is_dir, size, last_modified)>
-    pub fn list_dir_blocking(&self, path: &str) -> Result<Vec<(String, bool, u64, i64)>> {
+    pub(super) fn list_dir_blocking(&self, path: &str) -> Result<Vec<(String, bool, u64, i64)>> {
         let repo = self.get_or_create_repo()?;
         let commit_oid = self.resolve_reference(&repo)?;
         let (mut tree, commit_time) = self.get_commit_tree(&repo, commit_oid)?;
 
         let path = path.trim_start_matches('/').trim_end_matches('/');
         if !path.is_empty() {
-            let entry = tree
+            let Some(entry) = tree
                 .lookup_entry_by_path(path)
-                .map_err(|e| {
-                    Error::new(ErrorKind::Unexpected, "failed to lookup path").set_source(e)
-                })?
-                .ok_or_else(|| {
-                    Error::new(ErrorKind::NotFound, format!("path not found: {}", path))
-                })?;
-
+                .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to look up git path"))?
+            else {
+                return Ok(Vec::new());
+            };
             if !entry.mode().is_tree() {
                 return Err(Error::new(
                     ErrorKind::NotADirectory,
                     "path is not a directory",
                 ));
             }
-
-            let obj = entry.object().map_err(|e| {
-                Error::new(ErrorKind::Unexpected, "failed to get object").set_source(e)
-            })?;
-            tree = obj.into_tree();
+            tree = entry
+                .object()
+                .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to read git object"))?
+                .try_into_tree()
+                .map_err(|_| Error::new(ErrorKind::Unexpected, "git entry is not a tree"))?;
         }
 
         let mut entries = Vec::new();
         for entry in tree.iter() {
-            let entry = entry.map_err(|e| {
-                Error::new(ErrorKind::Unexpected, "failed to read entry").set_source(e)
-            })?;
+            let entry = entry
+                .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to read tree entry"))?;
             let name = entry.filename().to_string();
-            let is_dir = entry.mode().is_tree();
 
-            let size = if is_dir {
-                0
-            } else {
-                let obj = entry.object().map_err(|e| {
-                    Error::new(ErrorKind::Unexpected, "failed to get object").set_source(e)
-                })?;
-                let blob = obj.into_blob();
-                let mut size = blob.data.len() as u64;
+            if entry.mode().is_tree() {
+                entries.push((name, true, 0, commit_time));
+                continue;
+            }
+            if entry.mode().is_commit() {
+                return Err(Error::new(
+                    ErrorKind::Unsupported,
+                    "submodule entries are not supported",
+                ));
+            }
 
-                if self.resolve_lfs && Self::is_lfs_pointer(&blob.data) {
-                    if let Ok(pointer) = Self::parse_lfs_pointer(&blob.data) {
-                        size = pointer.size;
-                    }
+            let blob = entry
+                .object()
+                .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to read git object"))?
+                .try_into_blob()
+                .map_err(|_| Error::new(ErrorKind::Unsupported, "git entry is not a blob"))?;
+            let mut size = blob.data.len() as u64;
+            if self.resolve_lfs && Self::is_lfs_pointer(&blob.data) {
+                if let Ok(pointer) = Self::parse_lfs_pointer(&blob.data) {
+                    size = pointer.size;
                 }
-
-                size
-            };
-
-            entries.push((name, is_dir, size, commit_time));
+            }
+            entries.push((name, false, size, commit_time));
         }
 
         Ok(entries)
     }
 
-    /// Get blob content (blocking operation) - reads from git objects directly
-    pub fn read_blob_blocking(&self, path: &str) -> Result<bytes::Bytes> {
+    pub(super) fn read_blob_blocking(&self, path: &str) -> Result<Bytes> {
         let repo = self.get_or_create_repo()?;
         let commit_oid = self.resolve_reference(&repo)?;
-        let (tree, _commit_time) = self.get_commit_tree(&repo, commit_oid)?;
+        let (tree, _) = self.get_commit_tree(&repo, commit_oid)?;
 
         let path = path.trim_start_matches('/');
         let entry = tree
             .lookup_entry_by_path(path)
-            .map_err(|e| Error::new(ErrorKind::Unexpected, "failed to lookup path").set_source(e))?
-            .ok_or_else(|| Error::new(ErrorKind::NotFound, format!("path not found: {}", path)))?;
+            .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to look up git path"))?
+            .ok_or_else(|| Error::new(ErrorKind::NotFound, "path not found"))?;
 
         if entry.mode().is_tree() {
             return Err(Error::new(ErrorKind::IsADirectory, "path is a directory"));
         }
-
-        let obj = entry
-            .object()
-            .map_err(|e| Error::new(ErrorKind::Unexpected, "failed to get object").set_source(e))?;
-        let blob = obj.into_blob();
-
-        Ok(bytes::Bytes::copy_from_slice(&blob.data))
-    }
-
-    /// Check if file content is a Git LFS pointer
-    pub fn is_lfs_pointer(content: &[u8]) -> bool {
-        if let Ok(text) = std::str::from_utf8(&content[..256.min(content.len())]) {
-            text.starts_with(LFS_VERSION_PREFIX)
-        } else {
-            false
-        }
-    }
-
-    /// Parse LFS pointer to extract OID and size
-    pub fn parse_lfs_pointer(content: &[u8]) -> Result<LfsPointer> {
-        let text = std::str::from_utf8(content)
-            .map_err(|e| Error::new(ErrorKind::Unexpected, "invalid LFS pointer").set_source(e))?;
-
-        let mut oid = None;
-        let mut size = None;
-
-        for line in text.lines() {
-            if let Some(oid_str) = line.strip_prefix(LFS_OID_PREFIX) {
-                oid = Some(oid_str.trim().to_string());
-            } else if let Some(size_str) = line.strip_prefix(LFS_SIZE_PREFIX) {
-                size = size_str.trim().parse().ok();
-            }
-        }
-
-        match (oid, size) {
-            (Some(oid), Some(size)) => Ok(LfsPointer { oid, size }),
-            _ => Err(Error::new(
-                ErrorKind::Unexpected,
-                "invalid LFS pointer format",
-            )),
-        }
-    }
-
-    /// Get LFS download URL from cache or batch API
-    async fn get_lfs_download_url(&self, pointer: &LfsPointer) -> Result<String> {
-        // Check cache first
-        {
-            let cache = self
-                .lfs_url_cache
-                .lock()
-                .map_err(|_| Error::new(ErrorKind::Unexpected, "LFS cache lock poisoned"))?;
-            if let Some(cached) = cache.get(&pointer.oid) {
-                return Ok(cached.url.clone());
-            }
-        }
-
-        // Not in cache, call batch API
-        let http_client = HttpClient::new()?;
-        let base_url = self
-            .repository
-            .strip_suffix(".git")
-            .unwrap_or(&self.repository);
-        let batch_url = format!("{}.git/info/lfs/objects/batch", base_url);
-
-        let batch_body = format!(
-            r#"{{"operation":"download","transfers":["basic"],"objects":[{{"oid":"{}","size":{}}}]}}"#,
-            pointer.oid, pointer.size
-        );
-
-        let mut batch_req = http::Request::builder()
-            .method(http::Method::POST)
-            .uri(&batch_url)
-            .header("Content-Type", LFS_CONTENT_TYPE)
-            .header("Accept", LFS_CONTENT_TYPE);
-
-        // Add credentials if provided
-        if let (Some(username), Some(password)) = (&self.username, &self.password) {
-            let auth = format!("{}:{}", username, password);
-            let encoded = base64::prelude::BASE64_STANDARD.encode(auth.as_bytes());
-            batch_req = batch_req.header("Authorization", format!("Basic {}", encoded));
-        }
-
-        let batch_req = batch_req.body(Buffer::from(batch_body)).map_err(|e| {
-            Error::new(ErrorKind::Unexpected, "failed to build batch request").set_source(e)
-        })?;
-
-        let batch_resp = http_client.send(batch_req).await?;
-
-        if !batch_resp.status().is_success() {
+        if entry.mode().is_commit() {
             return Err(Error::new(
-                ErrorKind::Unexpected,
-                format!("LFS batch API failed with status: {}", batch_resp.status()),
+                ErrorKind::Unsupported,
+                "submodule entries are not supported",
             ));
         }
 
-        // Parse batch response to get download URL
-        let batch_data = batch_resp.into_body().to_bytes();
-        let batch_json: serde_json::Value = serde_json::from_slice(&batch_data).map_err(|e| {
-            Error::new(ErrorKind::Unexpected, "failed to parse batch response").set_source(e)
-        })?;
+        let blob = entry
+            .object()
+            .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to read git object"))?
+            .try_into_blob()
+            .map_err(|_| Error::new(ErrorKind::Unsupported, "git entry is not a blob"))?;
+        Ok(Bytes::copy_from_slice(&blob.data))
+    }
 
-        let download_url = batch_json["objects"][0]["actions"]["download"]["href"]
-            .as_str()
-            .ok_or_else(|| Error::new(ErrorKind::Unexpected, "no download URL in batch response"))?
-            .to_string();
+    pub(super) fn is_lfs_pointer(content: &[u8]) -> bool {
+        let prefix_len = content.len().min(256);
+        std::str::from_utf8(&content[..prefix_len])
+            .map(|text| text.starts_with(LFS_VERSION_PREFIX))
+            .unwrap_or(false)
+    }
 
-        // Cache the URL for reuse
+    pub(super) fn parse_lfs_pointer(content: &[u8]) -> Result<LfsPointer> {
+        let text = std::str::from_utf8(content)
+            .map_err(|_| Error::new(ErrorKind::Unexpected, "invalid LFS pointer"))?;
+        let mut lines = text.lines();
+
+        if lines.next() != Some(LFS_VERSION_PREFIX) {
+            return Err(Error::new(ErrorKind::Unexpected, "invalid LFS pointer"));
+        }
+        let oid_line = lines
+            .next()
+            .ok_or_else(|| Error::new(ErrorKind::Unexpected, "invalid LFS pointer"))?;
+        let size_line = lines
+            .next()
+            .ok_or_else(|| Error::new(ErrorKind::Unexpected, "invalid LFS pointer"))?;
+        if lines.next().is_some() {
+            return Err(Error::new(ErrorKind::Unexpected, "invalid LFS pointer"));
+        }
+
+        let oid = oid_line
+            .strip_prefix(LFS_OID_PREFIX)
+            .filter(|oid| {
+                oid.len() == 64
+                    && oid
+                        .bytes()
+                        .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
+            })
+            .ok_or_else(|| Error::new(ErrorKind::Unexpected, "invalid LFS pointer"))?;
+        let size = size_line
+            .strip_prefix(LFS_SIZE_PREFIX)
+            .and_then(|size| size.parse::<u64>().ok())
+            .ok_or_else(|| Error::new(ErrorKind::Unexpected, "invalid LFS pointer"))?;
+
+        Ok(LfsPointer {
+            oid: oid.to_string(),
+            size,
+        })
+    }
+
+    pub(super) fn slice_blob(content: Bytes, range: BytesRange) -> Result<(RpRead, Bytes)> {
+        let size = content.len() as u64;
+        let rp = RpRead::new(MetadataBuilder::file(size).build());
+        if range.is_full() {
+            return Ok((rp, content));
+        }
+
+        let offset = range.offset();
+        if offset > size {
+            return Err(Error::new(
+                ErrorKind::RangeNotSatisfied,
+                "range start offset exceeds content length",
+            ));
+        }
+        let end = range
+            .size()
+            .map(|len| offset.saturating_add(len).min(size))
+            .unwrap_or(size);
+        Ok((rp, content.slice(offset as usize..end as usize)))
+    }
+
+    fn repository_url(&self) -> Result<Url> {
+        let url = Url::parse(&self.repository)
+            .map_err(|_| Error::new(ErrorKind::ConfigInvalid, "repository URL is invalid"))?;
+        if !url.username().is_empty() || url.password().is_some() {
+            return Err(Error::new(
+                ErrorKind::ConfigInvalid,
+                "repository URL must not contain userinfo",
+            ));
+        }
+        Ok(url)
+    }
+
+    fn lfs_batch_url(&self) -> Result<Url> {
+        let mut url = self.repository_url()?;
+        if url.scheme() != "https" {
+            return Err(Error::new(
+                ErrorKind::ConfigInvalid,
+                "LFS resolution requires an https repository URL",
+            ));
+        }
+        if url.query().is_some() || url.fragment().is_some() {
+            return Err(Error::new(
+                ErrorKind::ConfigInvalid,
+                "repository URL must not contain a query or fragment",
+            ));
+        }
+
+        let path = url.path().trim_end_matches('/');
+        let path = if path.ends_with(".git") {
+            format!("{path}/info/lfs/objects/batch")
+        } else {
+            format!("{path}.git/info/lfs/objects/batch")
+        };
+        url.set_path(&path);
+        url.set_query(None);
+        url.set_fragment(None);
+        Ok(url)
+    }
+
+    pub(super) async fn resolve_lfs_action(
+        &self,
+        ctx: &OperationContext,
+        oid: &str,
+        size: u64,
+    ) -> Result<LfsAction> {
+        let batch_url = self.lfs_batch_url()?;
+        let body = serde_json::json!({
+            "operation": "download",
+            "transfers": ["basic"],
+            "objects": [{"oid": oid, "size": size}],
+        });
+        let body = serde_json::to_vec(&body)
+            .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to encode LFS request"))?;
+
+        let mut builder = http::Request::builder()
+            .method(http::Method::POST)
+            .uri(batch_url.as_str())
+            .header(header::CONTENT_TYPE, LFS_CONTENT_TYPE)
+            .header(header::ACCEPT, LFS_CONTENT_TYPE);
+        if let Some(auth) = self.basic_authorization_for(&batch_url) {
+            builder = builder.header(header::AUTHORIZATION, auth);
+        }
+        let request = builder
+            .body(Buffer::from(body))
+            .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to build LFS batch request"))?;
+
+        let response = ctx
+            .http_transport()
+            .fetch(request)
+            .await
+            .map_err(|_| Error::new(ErrorKind::Unexpected, "LFS batch request failed"))?;
+        if !response.status().is_success() {
+            return Err(Error::new(
+                ErrorKind::Unexpected,
+                format!("LFS batch request failed with status {}", response.status()),
+            ));
+        }
+
+        let mut body = response.into_body();
+        let buffer = body
+            .read_all()
+            .await
+            .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to read LFS batch response"))?;
+        Self::parse_lfs_action(&buffer.to_bytes(), oid, size)
+    }
+
+    fn parse_lfs_action(body: &[u8], oid: &str, size: u64) -> Result<LfsAction> {
+        let document: Value = serde_json::from_slice(body)
+            .map_err(|_| Error::new(ErrorKind::Unexpected, "invalid LFS batch response"))?;
+        let objects = document
+            .get("objects")
+            .and_then(Value::as_array)
+            .ok_or_else(|| Error::new(ErrorKind::Unexpected, "invalid LFS batch response"))?;
+        if objects.len() != 1 {
+            return Err(Error::new(
+                ErrorKind::Unexpected,
+                "invalid LFS batch response",
+            ));
+        }
+
+        let object = &objects[0];
+        if object.get("oid").and_then(Value::as_str) != Some(oid)
+            || object.get("size").and_then(Value::as_u64) != Some(size)
         {
-            let mut cache = self
-                .lfs_url_cache
-                .lock()
-                .map_err(|_| Error::new(ErrorKind::Unexpected, "LFS cache lock poisoned"))?;
-            cache.insert(
-                pointer.oid.clone(),
-                LfsDownloadUrl {
-                    url: download_url.clone(),
-                },
+            return Err(Error::new(
+                ErrorKind::Unexpected,
+                "LFS batch response object mismatch",
+            ));
+        }
+
+        let action = object
+            .get("actions")
+            .and_then(Value::as_object)
+            .and_then(|actions| actions.get("download"))
+            .and_then(Value::as_object)
+            .ok_or_else(|| Error::new(ErrorKind::Unexpected, "LFS download action is missing"))?;
+        let href = action
+            .get("href")
+            .and_then(Value::as_str)
+            .ok_or_else(|| Error::new(ErrorKind::Unexpected, "invalid LFS download URL"))?;
+        let url = Url::parse(href)
+            .map_err(|_| Error::new(ErrorKind::Unexpected, "invalid LFS download URL"))?;
+        if url.scheme() != "https"
+            || url.host_str().is_none()
+            || !url.username().is_empty()
+            || url.password().is_some()
+        {
+            return Err(Error::new(
+                ErrorKind::Unexpected,
+                "invalid LFS download URL",
+            ));
+        }
+
+        let mut headers = HeaderMap::new();
+        match action.get("header") {
+            None | Some(Value::Null) => {}
+            Some(value) => {
+                let values = value.as_object().ok_or_else(|| {
+                    Error::new(ErrorKind::Unexpected, "invalid LFS action headers")
+                })?;
+                for (name, value) in values {
+                    let name =
+                        http::header::HeaderName::from_bytes(name.as_bytes()).map_err(|_| {
+                            Error::new(ErrorKind::Unexpected, "invalid LFS action headers")
+                        })?;
+                    let value = value.as_str().ok_or_else(|| {
+                        Error::new(ErrorKind::Unexpected, "invalid LFS action headers")
+                    })?;
+                    let value = HeaderValue::from_str(value).map_err(|_| {
+                        Error::new(ErrorKind::Unexpected, "invalid LFS action headers")
+                    })?;
+                    headers.insert(name, value);
+                }
+            }
+        }
+
+        let expires_in = action.get("expires_in").and_then(|value| {
+            value
+                .as_u64()
+                .or_else(|| value.as_str().and_then(|value| value.parse().ok()))
+        });
+        let expires_at = action.get("expires_at").and_then(Value::as_str);
+        let now = Instant::now();
+        let reuse_until = compute_reuse_until(expires_in, expires_at, now, SystemTime::now());
+
+        Ok(LfsAction {
+            url,
+            headers,
+            reuse_until,
+        })
+    }
+
+    pub(super) fn action_headers(&self, action: &LfsAction) -> HeaderMap {
+        let mut headers = action.headers.clone();
+        if !headers.contains_key(header::AUTHORIZATION) {
+            if let Some(auth) = self.basic_authorization_for(&action.url) {
+                if let Ok(value) = HeaderValue::from_str(&auth) {
+                    headers.insert(header::AUTHORIZATION, value);
+                }
+            }
+        }
+        headers
+    }
+
+    fn basic_authorization_for(&self, target: &Url) -> Option<String> {
+        let username = self.username.as_ref()?;
+        let password = self.password.as_ref()?;
+        let repository = self.repository_url().ok()?;
+        if target.origin() != repository.origin() {
+            return None;
+        }
+        format_authorization_by_basic(username, password).ok()
+    }
+}
+
+fn compute_reuse_until(
+    expires_in: Option<u64>,
+    expires_at: Option<&str>,
+    now: Instant,
+    now_system: SystemTime,
+) -> Instant {
+    let mut advertised = expires_in.map(Duration::from_secs);
+    if let Some(expires_at) = expires_at {
+        if let Ok(timestamp) = expires_at.parse::<Timestamp>() {
+            let expires_at: SystemTime = timestamp.into();
+            let duration = expires_at
+                .duration_since(now_system)
+                .unwrap_or(Duration::ZERO);
+            advertised = Some(
+                advertised
+                    .map(|current| current.min(duration))
+                    .unwrap_or(duration),
             );
         }
-
-        Ok(download_url)
     }
 
-    /// Fetch LFS file content via HTTP with range support
-    pub async fn fetch_lfs_http(
-        &self,
-        pointer: &LfsPointer,
-        range: BytesRange,
-    ) -> Result<bytes::Bytes> {
-        let http_client = HttpClient::new()?;
+    let lifetime = advertised
+        .map(|duration| duration.saturating_sub(LFS_ACTION_EXPIRY_MARGIN))
+        .unwrap_or(LFS_ACTION_REUSE_CAP);
+    now + lifetime.min(LFS_ACTION_REUSE_CAP)
+}
 
-        // Get download URL (from cache or batch API)
-        let download_url = self.get_lfs_download_url(pointer).await?;
+pub(super) fn join_error(err: tokio::task::JoinError) -> Error {
+    Error::new(ErrorKind::Unexpected, "git task failed").set_source(err)
+}
 
-        // Download from the URL with range support
-        let mut download_req = http::Request::builder()
-            .method(http::Method::GET)
-            .uri(&download_url);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
 
-        // Add Range header if specified
-        if !range.is_full() {
-            download_req = download_req.header("Range", range.to_header());
+    fn action(href: &str, headers: &[(&str, &str)]) -> LfsAction {
+        let mut map = HeaderMap::new();
+        for (name, value) in headers {
+            map.insert(
+                http::header::HeaderName::from_bytes(name.as_bytes()).unwrap(),
+                HeaderValue::from_str(value).unwrap(),
+            );
         }
-
-        // Add credentials if provided
-        if let (Some(username), Some(password)) = (&self.username, &self.password) {
-            let auth = format!("{}:{}", username, password);
-            let encoded = base64::prelude::BASE64_STANDARD.encode(auth.as_bytes());
-            download_req = download_req.header("Authorization", format!("Basic {}", encoded));
+        LfsAction {
+            url: Url::parse(href).unwrap(),
+            headers: map,
+            reuse_until: Instant::now(),
         }
+    }
 
-        let download_req = download_req.body(Buffer::new()).map_err(|e| {
-            Error::new(ErrorKind::Unexpected, "failed to build download request").set_source(e)
-        })?;
+    fn core(username: Option<&str>, password: Option<&str>) -> GitCore {
+        GitCore::new(
+            "https://example.com/repo".to_string(),
+            "HEAD".to_string(),
+            "/".to_string(),
+            username.map(ToString::to_string),
+            password.map(ToString::to_string),
+            true,
+        )
+    }
 
-        let download_resp = http_client.send(download_req).await?;
+    #[test]
+    fn parse_pointer_rejects_uppercase_oid() {
+        let pointer = format!(
+            "{LFS_VERSION_PREFIX}\noid sha256:{}\nsize 4\n",
+            "A".repeat(64)
+        );
+        assert!(GitCore::parse_lfs_pointer(pointer.as_bytes()).is_err());
+    }
 
-        if !download_resp.status().is_success() {
-            return Err(Error::new(
-                ErrorKind::Unexpected,
-                format!(
-                    "LFS download failed with status: {}",
-                    download_resp.status()
-                ),
-            ));
-        }
+    #[test]
+    fn action_authorization_takes_precedence() {
+        let core = core(Some("user"), Some("pass"));
+        let action = action(
+            "https://example.com/object",
+            &[("Authorization", "Bearer action-token")],
+        );
+        let headers = core.action_headers(&action);
+        assert_eq!(
+            headers
+                .get(header::AUTHORIZATION)
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            "Bearer action-token"
+        );
+    }
 
-        Ok(download_resp.into_body().to_bytes())
+    #[test]
+    fn repository_auth_is_same_origin_only() {
+        let core = core(Some("user"), Some("pass"));
+        let same = action("https://example.com/object", &[]);
+        assert!(
+            core.action_headers(&same)
+                .contains_key(header::AUTHORIZATION)
+        );
+
+        let cross = action("https://cdn.example.net/object", &[]);
+        assert!(
+            !core
+                .action_headers(&cross)
+                .contains_key(header::AUTHORIZATION)
+        );
+    }
+
+    #[test]
+    fn missing_expiry_uses_cap() {
+        let now = Instant::now();
+        let reuse_until = compute_reuse_until(None, None, now, SystemTime::now());
+        assert_eq!(reuse_until.duration_since(now), LFS_ACTION_REUSE_CAP);
+    }
+
+    #[test]
+    fn advertised_expiry_is_capped_and_margined() {
+        let now = Instant::now();
+        let now_system = SystemTime::now();
+        let reuse_until = compute_reuse_until(Some(120), None, now, now_system);
+        assert_eq!(reuse_until.duration_since(now), LFS_ACTION_REUSE_CAP);
+
+        let reuse_until = compute_reuse_until(Some(30), None, now, now_system);
+        assert_eq!(reuse_until.duration_since(now), Duration::from_secs(25));
+    }
+
+    #[test]
+    fn advertised_expires_at_can_be_shorter() {
+        let now = Instant::now();
+        let now_system: SystemTime = Timestamp::from_str("2030-01-01T00:00:00Z").unwrap().into();
+        let reuse_until =
+            compute_reuse_until(Some(120), Some("2030-01-01T00:00:20Z"), now, now_system);
+        assert_eq!(reuse_until.duration_since(now), Duration::from_secs(15));
     }
 }

@@ -15,8 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::fmt::Debug;
-
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -27,47 +25,60 @@ use super::backend::GitBuilder;
 #[serde(default)]
 #[non_exhaustive]
 pub struct GitConfig {
-    /// Git repository URL (required).
+    /// Git repository URL or local path.
     ///
     /// Examples:
-    /// - https://github.com/apache/opendal.git
-    /// - https://gitlab.com/user/repo.git
-    /// - https://huggingface.co/meta-llama/Llama-2-7b
+    ///
+    /// - `https://github.com/apache/opendal.git`
+    /// - `https://huggingface.co/hf-internal-testing/tiny-random-bert`
+    /// - `file:///path/to/repository.git`
+    ///
+    /// This is required.
     pub repository: Option<String>,
 
-    /// Git reference (branch, tag, or commit hash).
+    /// Git reference to resolve.
     ///
-    /// If not set, will use whatever HEAD points to in the remote repository.
+    /// The value can be a branch, tag, commit hash, or `HEAD`. The reference is
+    /// resolved once when the operator first reads the repository. Later
+    /// operations use the same immutable snapshot and do not refresh it.
+    ///
+    /// The default is `HEAD`.
     pub reference: Option<String>,
 
     /// Root path within the repository.
     ///
-    /// Default is "/".
+    /// All operations are relative to this path. The default is `/`.
     pub root: Option<String>,
 
-    /// Username for authentication (optional).
+    /// Username used for the Git fetch and same-origin LFS requests.
+    ///
+    /// Credentials are not sent to a cross-origin LFS download action. This is
+    /// optional.
     pub username: Option<String>,
 
-    /// Password or personal access token for authentication (optional).
+    /// Password or personal access token used for the Git fetch and
+    /// same-origin LFS requests.
+    ///
+    /// Credentials are not sent to a cross-origin LFS download action. This is
+    /// optional.
     pub password: Option<String>,
 
     /// Whether to resolve Git LFS pointer files.
     ///
-    /// When enabled (default), the service will automatically detect
-    /// Git LFS pointer files and stream the actual LFS content instead
-    /// of the pointer file itself.
-    ///
-    /// Default is true.
+    /// When enabled, the service detects Git LFS pointers and streams the
+    /// referenced object. When disabled, the pointer file itself is returned.
+    /// The default is `true`.
     pub resolve_lfs: Option<bool>,
 }
 
-impl Debug for GitConfig {
+impl std::fmt::Debug for GitConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("GitConfig")
             .field("repository", &self.repository)
             .field("reference", &self.reference)
             .field("root", &self.root)
             .field("username", &self.username)
+            .field("password", &"<redacted>")
             .field("resolve_lfs", &self.resolve_lfs)
             .finish_non_exhaustive()
     }
@@ -78,18 +89,5 @@ impl opendal_core::Configurator for GitConfig {
 
     fn into_builder(self) -> Self::Builder {
         GitBuilder { config: self }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_git_config_default() {
-        let config = GitConfig::default();
-        assert_eq!(config.repository, None);
-        assert_eq!(config.reference, None);
-        assert_eq!(config.root, None);
     }
 }
