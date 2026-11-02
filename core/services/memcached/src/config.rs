@@ -35,6 +35,10 @@ pub struct MemcachedConfig {
     ///
     /// For example: "tcp://localhost:11211"
     pub endpoint: Option<String>,
+    /// Enable TLS for TCP connections. Defaults to false.
+    ///
+    /// The server certificate must match the endpoint host and a native trust root.
+    pub enable_tls: bool,
     /// the working directory of the service. Can be "/path/to/dir"
     ///
     /// default is "/"
@@ -55,6 +59,7 @@ impl Debug for MemcachedConfig {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("MemcachedConfig")
             .field("endpoint", &self.endpoint)
+            .field("enable_tls", &self.enable_tls)
             .field("root", &self.root)
             .field("username", &self.username)
             .field("default_ttl", &self.default_ttl)
@@ -102,6 +107,17 @@ mod tests {
         let cfg = MemcachedConfig::from_uri(&uri)?;
         assert_eq!(cfg.endpoint.as_deref(), Some("tcp://cache.local:11211"));
         assert_eq!(cfg.root.as_deref(), Some("app/session"));
+        assert!(!cfg.enable_tls);
+        Ok(())
+    }
+
+    #[test]
+    fn from_uri_enables_tls() -> Result<()> {
+        let uri = OperatorUri::new(
+            "memcached://cache.local:11212/",
+            vec![("enable_tls".to_string(), "true".to_string())],
+        )?;
+        assert!(MemcachedConfig::from_uri(&uri)?.enable_tls);
         Ok(())
     }
 

@@ -2049,6 +2049,11 @@ public interface ServiceConfig {
          */
         public final Duration defaultTtl;
         /**
+         * <p>Enable TLS for TCP connections. Defaults to false.</p>
+         * <p>The server certificate must match the endpoint host and a native trust root.</p>
+         */
+        public final Boolean enableTls;
+        /**
          * <p>network address of the memcached service.</p>
          * <p>For example: &quot;tcp://localhost:11211&quot;</p>
          */
@@ -2080,6 +2085,9 @@ public interface ServiceConfig {
             }
             if (defaultTtl != null) {
                 map.put("default_ttl", defaultTtl.toString());
+            }
+            if (enableTls != null) {
+                map.put("enable_tls", String.valueOf(enableTls));
             }
             if (endpoint != null) {
                 map.put("endpoint", endpoint);

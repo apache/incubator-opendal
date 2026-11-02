@@ -83,3 +83,27 @@ format `include/opendal.h`.
 Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
 
 Apache OpenDAL, OpenDAL, and Apache are either registered trademarks or trademarks of the Apache Software Foundation.
+
+## Native logging
+
+Call `opendal_logging_init` once to install a program-lifetime, thread-safe C
+callback for OpenDAL's Rust log facade. The default `opendal_operator_new`
+constructor emits operation events through that callback. The explicit
+`opendal_operator_new_with_layers` constructor uses only the supplied layers.
+The callback may also receive other Rust log records from the same library.
+Successful registration enables all Rust log levels for this facade.
+
+The callback receives DEBUG=0 (including TRACE), INFO=1, WARN=2, or ERROR=3,
+a source file, a line number, and a message. File and message are borrowed,
+NUL-terminated strings valid only during the callback. Copy values that must
+outlive the invocation. Embedded NUL bytes are escaped as `\0`. The callback
+must not unwind or recursively log through this facade.
+
+The initializer returns NULL on success. Free a returned error with
+`opendal_error_free`; a null callback or an already installed logger returns
+`OPENDAL_CONFIG_INVALID`. Failed registration keeps the existing logger and
+its level. The library cannot replace or unregister it.
+
+When adapting to glog, map levels explicitly: DEBUG to `VLOG(1)`, INFO to
+`LOG(INFO)`, WARN to `LOG(WARNING)`, and ERROR to `LOG(ERROR)`. The callback's
+integer values are not glog severity constants.
