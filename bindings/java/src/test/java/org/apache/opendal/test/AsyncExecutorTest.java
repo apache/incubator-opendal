@@ -64,7 +64,9 @@ public class AsyncExecutorTest {
             }
         }
         final String output = new String(Files.readAllBytes(log), StandardCharsets.UTF_8);
-        assertThat(exited).as("Child JVM must complete the executor probe: %s", output).isTrue();
+        assertThat(exited)
+                .as("Child JVM must complete the executor probe: %s", output)
+                .isTrue();
         assertThat(process.exitValue()).as(output).isZero();
         assertThat(output).contains("INVALID_CORES_REJECTED");
     }
