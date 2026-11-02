@@ -170,7 +170,7 @@ def model_request(item, files):
         },
         "components": {
             "type": "array",
-            "items": {"type": "string", "enum": list(components)},
+            "items": {"type": "string"},
         },
     }
     if is_pr:
