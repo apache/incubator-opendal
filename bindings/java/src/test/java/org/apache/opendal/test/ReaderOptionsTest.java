@@ -49,6 +49,7 @@ public class ReaderOptionsTest {
     private static final byte[] CONTENT = "0123456789".getBytes(StandardCharsets.UTF_8);
     private final List<Headers> requests = new CopyOnWriteArrayList<>();
     private final List<URI> urls = new CopyOnWriteArrayList<>();
+    private final List<InetSocketAddress> peers = new CopyOnWriteArrayList<>();
     private HttpServer server;
     private String endpoint;
 
@@ -59,7 +60,11 @@ public class ReaderOptionsTest {
             try {
                 requests.add(exchange.getRequestHeaders());
                 urls.add(exchange.getRequestURI());
+                peers.add(exchange.getRemoteAddress());
                 if ("changed".equals(exchange.getRequestHeaders().getFirst("If-Match"))) {
+                    if (Boolean.getBoolean("opendal.task.completeRequest")) {
+                        exchange.getRequestBody().close();
+                    }
                     exchange.sendResponseHeaders(412, -1);
                     return;
                 }
@@ -173,6 +178,9 @@ public class ReaderOptionsTest {
                 assertThatThrownBy(in::read)
                         .is(OpenDALExceptionCondition.ofSync(OpenDALException.Code.ConditionNotMatch));
             }
+        } finally {
+            System.err.println("completeRequest=" + Boolean.getBoolean("opendal.task.completeRequest")
+                    + ", recordedPeers=" + peers);
         }
     }
 }
