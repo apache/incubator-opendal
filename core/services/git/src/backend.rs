@@ -314,7 +314,7 @@ mod tests {
         let reader = first_service
             .read(&ctx, "state.txt", OpRead::default())
             .unwrap();
-        let (_, data) = reader.read(BytesRange::default()).await.unwrap();
+        let (_, data) = reader.read(BytesRange::new(0, Some(3))).await.unwrap();
         assert_eq!(data.to_bytes(), Bytes::from_static(b"one"));
 
         let head_service = GitBuilder::default()
@@ -354,12 +354,12 @@ mod tests {
             .build()
             .unwrap();
         let reader = service.read(&ctx, "state.txt", OpRead::default()).unwrap();
-        let (_, initial) = reader.read(BytesRange::default()).await.unwrap();
+        let (_, initial) = reader.read(BytesRange::new(0, Some(3))).await.unwrap();
         assert_eq!(initial.to_bytes(), Bytes::from_static(b"one"));
 
         std::fs::write(dir.join("state.txt"), b"two").unwrap();
         commit_all(&dir, "advance head");
-        let (_, retained) = reader.read(BytesRange::default()).await.unwrap();
+        let (_, retained) = reader.read(BytesRange::new(0, Some(3))).await.unwrap();
         assert_eq!(retained.to_bytes(), Bytes::from_static(b"one"));
 
         let fresh = GitBuilder::default()
@@ -367,7 +367,7 @@ mod tests {
             .build()
             .unwrap();
         let reader = fresh.read(&ctx, "state.txt", OpRead::default()).unwrap();
-        let (_, current) = reader.read(BytesRange::default()).await.unwrap();
+        let (_, current) = reader.read(BytesRange::new(0, Some(3))).await.unwrap();
         assert_eq!(current.to_bytes(), Bytes::from_static(b"two"));
     }
 
@@ -396,7 +396,10 @@ mod tests {
         assert_eq!(stat.into_metadata().content_length(), pointer.len() as u64);
 
         let reader = service.read(&ctx, "model.bin", OpRead::default()).unwrap();
-        let (_, data) = reader.read(BytesRange::default()).await.unwrap();
+        let (_, data) = reader
+            .read(BytesRange::new(0, Some(pointer.len() as u64)))
+            .await
+            .unwrap();
         assert_eq!(data.to_bytes(), Bytes::from(pointer.into_bytes()));
     }
 
