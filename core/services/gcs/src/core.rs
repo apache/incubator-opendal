@@ -896,51 +896,50 @@ impl GcsCore {
         self.send(ctx, req).await
     }
 
+    fn gcs_build_list_objects_request(
+        &self,
+        path: &str,
+        page_token: &str,
+        args: &OpList,
+    ) -> Result<Request<Buffer>> {
+        let p = build_abs_path(&self.root, path);
+        let url = format!("{}/storage/v1/b/{}/o", self.endpoint, self.bucket);
+        let mut url = QueryPairsWriter::new(&url);
+        url = url.push("prefix", &gcs_percent_encode_path(&p));
+        if args.versions() {
+            url = url.push("versions", "true");
+        }
+        if !args.recursive() {
+            url = url.push("delimiter", "/");
+        }
+        if let Some(limit) = args.limit() {
+            url = url.push("maxResults", &limit.to_string());
+        }
+        if page_token.is_empty() {
+            if let Some(start_after) = args.start_after() {
+                let start_after = build_abs_path(&self.root, start_after);
+                url = url.push("startOffset", &gcs_percent_encode_path(&start_after));
+            }
+        } else {
+            url = url.push("pageToken", &gcs_percent_encode_path(page_token));
+        }
+
+        Request::get(url.finish())
+            .extension(Operation::List)
+            .extension(ServiceOperation("ListObjects"))
+            .body(Buffer::new())
+            .map_err(new_request_build_error)
+    }
+
     pub async fn gcs_list_objects(
         &self,
         ctx: &OperationContext,
         path: &str,
         page_token: &str,
-        delimiter: &str,
-        limit: Option<usize>,
-        start_after: Option<String>,
+        args: &OpList,
     ) -> Result<Response<Buffer>> {
-        let p = build_abs_path(&self.root, path);
-
-        let url = format!("{}/storage/v1/b/{}/o", self.endpoint, self.bucket,);
-
-        let mut url = QueryPairsWriter::new(&url);
-        url = url.push("prefix", &gcs_percent_encode_path(&p));
-
-        if !delimiter.is_empty() {
-            url = url.push("delimiter", delimiter);
-        }
-        if let Some(limit) = limit {
-            url = url.push("maxResults", &limit.to_string());
-        }
-        if let Some(start_after) = start_after {
-            let start_after = build_abs_path(&self.root, &start_after);
-            url = url.push("startOffset", &gcs_percent_encode_path(&start_after));
-        }
-
-        if !page_token.is_empty() {
-            // NOTE:
-            //
-            // GCS uses pageToken in request and nextPageToken in response
-            //
-            // Don't know how will those tokens be like so this part are copied
-            // directly from AWS S3 service.
-            url = url.push("pageToken", &gcs_percent_encode_path(page_token));
-        }
-
-        let req = Request::get(url.finish())
-            .extension(Operation::List)
-            .extension(ServiceOperation("ListObjects"))
-            .body(Buffer::new())
-            .map_err(new_request_build_error)?;
-
+        let req = self.gcs_build_list_objects_request(path, page_token, args)?;
         let req = self.sign(ctx, req).await?;
-
         self.send(ctx, req).await
     }
 
@@ -1392,6 +1391,56 @@ mod tests {
 
     fn copy_args(options: options::CopyOptions) -> OpCopy {
         OpCopy::from_options(&Capability::default(), options).unwrap()
+    }
+
+    #[test]
+    fn test_list_request_defaults() {
+        let core = test_core();
+        let request = core
+            .gcs_build_list_objects_request("dir/", "", &OpList::default())
+            .unwrap();
+        let query = request.uri().query().unwrap();
+        assert!(query.contains(&format!("prefix={}", gcs_percent_encode_path("dir/"))));
+        assert!(query.contains("delimiter=/"));
+        assert!(!query.contains("versions="));
+        assert!(!query.contains("pageToken="));
+        assert!(!query.contains("startOffset="));
+        assert_eq!(request.method(), http::Method::GET);
+    }
+
+    #[test]
+    fn test_version_list_request_preserves_pagination_options() {
+        let core = test_core();
+        let args = OpList::from(options::ListOptions {
+            versions: true,
+            recursive: true,
+            limit: Some(2),
+            start_after: Some("after one/".to_owned()),
+            ..Default::default()
+        });
+        let first = core
+            .gcs_build_list_objects_request("dir/", "", &args)
+            .unwrap();
+        let query = first.uri().query().unwrap();
+        assert!(query.contains("versions=true"));
+        assert!(query.contains("maxResults=2"));
+        assert!(query.contains(&format!(
+            "startOffset={}",
+            gcs_percent_encode_path("after one/")
+        )));
+        assert!(!query.contains("delimiter="));
+        assert!(!query.contains("pageToken="));
+
+        let next = core
+            .gcs_build_list_objects_request("dir/", "page+/=", &args)
+            .unwrap();
+        let query = next.uri().query().unwrap();
+        assert!(query.contains(&format!("prefix={}", gcs_percent_encode_path("dir/"))));
+        assert!(query.contains("versions=true"));
+        assert!(query.contains("maxResults=2"));
+        assert!(query.contains(&format!("pageToken={}", gcs_percent_encode_path("page+/="))));
+        assert!(!query.contains("startOffset="));
+        assert!(!query.contains("delimiter="));
     }
 
     #[tokio::test]

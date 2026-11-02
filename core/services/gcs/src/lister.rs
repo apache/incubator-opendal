@@ -31,33 +31,17 @@ pub struct GcsLister {
     ctx: OperationContext,
 
     path: String,
-    delimiter: &'static str,
-    limit: Option<usize>,
-
-    /// Filter results to objects whose names are lexicographically
-    /// **equal to or after** startOffset
-    start_after: Option<String>,
+    args: OpList,
 }
 
 impl GcsLister {
     /// Generate a new directory walker
-    pub fn new(
-        core: Arc<GcsCore>,
-        ctx: OperationContext,
-        path: &str,
-        recursive: bool,
-        limit: Option<usize>,
-        start_after: Option<&str>,
-    ) -> Self {
-        let delimiter = if recursive { "" } else { "/" };
+    pub fn new(core: Arc<GcsCore>, ctx: OperationContext, path: &str, args: OpList) -> Self {
         Self {
             core,
             ctx,
-
             path: path.to_string(),
-            delimiter,
-            limit,
-            start_after: start_after.map(String::from),
+            args,
         }
     }
 }
@@ -66,18 +50,7 @@ impl oio::PageList for GcsLister {
     async fn next_page(&self, ctx: &mut oio::PageContext) -> Result<()> {
         let resp = self
             .core
-            .gcs_list_objects(
-                &self.ctx,
-                &self.path,
-                &ctx.token,
-                self.delimiter,
-                self.limit,
-                if ctx.token.is_empty() {
-                    self.start_after.clone()
-                } else {
-                    None
-                },
-            )
+            .gcs_list_objects(&self.ctx, &self.path, &ctx.token, &self.args)
             .await?;
 
         if !resp.status().is_success() {
@@ -112,7 +85,7 @@ impl oio::PageList for GcsLister {
             if path.is_empty() {
                 path = "/".to_string();
             }
-            if self.start_after.as_ref() == Some(&path) {
+            if self.args.start_after() == Some(path.as_str()) {
                 continue;
             }
 
