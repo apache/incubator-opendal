@@ -95,6 +95,10 @@ impl std::fmt::Debug for GitConfig {
 impl opendal_core::Configurator for GitConfig {
     type Builder = GitBuilder;
 
+    fn from_uri(uri: &opendal_core::OperatorUri) -> opendal_core::Result<Self> {
+        Self::from_iter(uri.options().clone())
+    }
+
     fn into_builder(self) -> Self::Builder {
         GitBuilder { config: self }
     }
