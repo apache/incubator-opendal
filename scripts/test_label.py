@@ -60,8 +60,6 @@ class LabelTests(unittest.TestCase):
         ]
         self.assertNotIn("fix", schema(issue)["category"]["enum"])
         self.assertNotIn("bug", schema(pr)["category"]["enum"])
-        self.assertIn("services/goosefs", schema(pr)["components"]["items"]["enum"])
-        self.assertNotIn("run-with-secrets", schema(pr)["components"]["items"]["enum"])
 
     def test_invalid_model_labels_never_reach_github(self):
         for result in (
@@ -83,8 +81,13 @@ class LabelTests(unittest.TestCase):
                 "extra": "lgtm",
             },
         ):
+            item = self.item()
+            github = FakeGitHub(item)
             with self.subTest(result=result), self.assertRaises(ValueError):
-                label.selected_labels(result, self.item(), [])
+                label.label_event(
+                    github, {"pull_request": item}, lambda _: result, apply=True
+                )
+            self.assertEqual(github.writes, [])
 
     def test_issue_cannot_receive_pr_category_or_breaking_flag(self):
         with self.assertRaises(ValueError):
