@@ -4,7 +4,9 @@ import copy
 import hashlib
 import json
 import os
+import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
@@ -40,6 +42,9 @@ def infer(request_body):
         "message_keys": sorted(message),
         "content_chars": len(content),
         "reasoning_chars": len(message.get("reasoning_content") or message.get("reasoning") or ""),
+        "quoted_items": Counter(re.findall(r'"[^"\n]*"', content)).most_common(8),
+        "json_prefix": content[:240] if content.lstrip().startswith("{") else None,
+        "json_suffix": content[-160:] if content.lstrip().startswith("{") else None,
     }
     try:
         parsed = json.loads(content)
@@ -57,7 +62,7 @@ baseline = infer(body)
 if baseline["finish_reason"] != "length":
     raise RuntimeError("Token exhaustion was not reproduced; inspect before changing the budget")
 candidate_body = copy.deepcopy(body)
-candidate_body["max_tokens"] = 2048
+candidate_body["response_format"]["json_schema"]["properties"]["components"]["uniqueItems"] = True
 candidate = infer(candidate_body)
 assert candidate["finish_reason"] == "stop" and candidate["valid_json"]
 current = github.call("/issues/6836")
