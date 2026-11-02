@@ -459,4 +459,30 @@ mod tests {
         assert_eq!(err.kind(), ErrorKind::NotFound);
         assert_eq!(std::fs::read(&outside).unwrap(), b"content");
     }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_list_symlink_to_directory_has_trailing_slash() {
+        use opendal_core::Operator;
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let root = temp_dir.path();
+
+        std::fs::create_dir(root.join("real")).unwrap();
+        std::os::unix::fs::symlink("real", root.join("link")).unwrap();
+
+        let op = Operator::new(crate::Fs::default().root(root.to_str().unwrap())).unwrap();
+        let entries = op.list("/").await.unwrap();
+        let modes: std::collections::HashMap<String, EntryMode> = entries
+            .iter()
+            .map(|e| (e.path().to_string(), e.metadata().mode()))
+            .collect();
+
+        assert_eq!(
+            modes.get("link/"),
+            Some(&EntryMode::DIR),
+            "symlink to a directory must be listed as a directory path: {modes:?}"
+        );
+        assert_eq!(modes.get("real/"), Some(&EntryMode::DIR));
+    }
 }

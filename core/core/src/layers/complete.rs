@@ -243,12 +243,18 @@ impl CompleteLister {
             return Ok(entry);
         }
 
-        let (path, metadata) = entry.into_parts();
+        let (mut path, metadata) = entry.into_parts();
         let mut builder = metadata.into_builder();
         if stat_metadata.is_file() {
             builder.set_file(stat_metadata.content_length());
         } else {
             builder.set_dir();
+            // Directory paths must end with `/`: the completion stat may
+            // resolve an entry (e.g. a symlink to a directory) to a
+            // directory while its listed path has no trailing slash.
+            if !path.ends_with('/') {
+                path.push('/');
+            }
         }
         Ok(oio::Entry::with(path, builder.build()))
     }
