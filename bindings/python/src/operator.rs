@@ -20,7 +20,10 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use pyo3::IntoPyObjectExt;
+use pyo3::exceptions::PyTypeError;
+use pyo3::types::PyBytes;
 use pyo3::types::PyDict;
+use pyo3::types::PyString;
 use pyo3::types::PyTuple;
 use pyo3::types::PyType;
 use pyo3_async_runtimes::tokio::future_into_py;
@@ -63,6 +66,26 @@ fn build_blocking_operator_from_uri(
 
 fn normalize_scheme(raw: &str) -> String {
     raw.trim().to_ascii_lowercase().replace('_', "-")
+}
+
+fn extract_delete_paths(paths: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
+    // A scalar path must not become an iterable of characters or components.
+    if paths.is_instance_of::<PyString>()
+        || paths.is_instance_of::<PyBytes>()
+        || paths.hasattr("__fspath__")?
+    {
+        return Err(PyTypeError::new_err(
+            "delete_many requires an iterable of paths, not a single path",
+        ));
+    }
+
+    paths
+        .try_iter()?
+        .map(|entry| {
+            let path = entry?.extract::<PathBuf>()?;
+            Ok(path.to_string_lossy().into_owned())
+        })
+        .collect()
 }
 
 /// Convert a config value into the string form core's config deserializer
@@ -771,6 +794,32 @@ impl Operator {
         } else {
             py.detach(move || this.delete(&path)).map_err(format_pyerr)
         }
+    }
+
+    /// Delete an explicit collection of paths with default delete options.
+    ///
+    /// Notes
+    /// -----
+    /// This method collects the iterable and converts its Python path objects
+    /// before deletion starts, using memory proportional to the number of paths.
+    /// Empty collections do nothing. Paths that do not exist are ignored.
+    /// Storage or path-validation errors can leave some paths deleted; this
+    /// operation is not atomic and does not guarantee a single remote request.
+    /// Use `remove_all` to recursively delete a path prefix.
+    ///
+    /// Parameters
+    /// ----------
+    /// paths : Iterable[str | PathLike[str]]
+    ///     The paths to delete. A single path is not accepted.
+    #[pyo3(signature = (paths: "collections.abc.Iterable[str | PathLike[str]]"))]
+    pub fn delete_many(&self, py: Python<'_>, paths: &Bound<'_, PyAny>) -> PyResult<()> {
+        let paths = extract_delete_paths(paths)?;
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let this = self.core.clone();
+        py.detach(move || this.delete_iter(paths))
+            .map_err(format_pyerr)
     }
 
     /// Check if a path exists.
@@ -1628,6 +1677,42 @@ impl AsyncOperator {
             } else {
                 this.delete(&path).await.map_err(format_pyerr)
             }
+        })
+    }
+
+    /// Delete an explicit collection of paths with default delete options.
+    ///
+    /// Notes
+    /// -----
+    /// This method collects the iterable and converts its Python path objects
+    /// before deletion starts, using memory proportional to the number of paths.
+    /// Empty collections do nothing. Paths that do not exist are ignored.
+    /// Storage or path-validation errors can leave some paths deleted; this
+    /// operation is not atomic and does not guarantee a single remote request.
+    /// Use `remove_all` to recursively delete a path prefix.
+    ///
+    /// Parameters
+    /// ----------
+    /// paths : Iterable[str | PathLike[str]]
+    ///     The paths to delete. A single path is not accepted.
+    ///
+    /// Returns
+    /// -------
+    /// Awaitable[None]
+    ///     An awaitable that completes when deletion finishes.
+    #[pyo3(signature = (paths: "collections.abc.Iterable[str | PathLike[str]]") -> "collections.abc.Awaitable[None]")]
+    pub fn delete_many<'p>(
+        &'p self,
+        py: Python<'p>,
+        paths: &Bound<'_, PyAny>,
+    ) -> PyResult<Bound<'p, PyAny>> {
+        let paths = extract_delete_paths(paths)?;
+        let this = self.core.clone();
+        future_into_py(py, async move {
+            if paths.is_empty() {
+                return Ok(());
+            }
+            this.delete_iter(paths).await.map_err(format_pyerr)
         })
     }
 

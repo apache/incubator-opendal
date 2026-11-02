@@ -32,6 +32,7 @@ use md5::Md5;
 use reqsign_aws_v4::AssumeRoleCredentialProvider;
 use reqsign_aws_v4::Credential;
 use reqsign_aws_v4::DefaultCredentialProvider;
+use reqsign_aws_v4::ECSCredentialProvider;
 use reqsign_aws_v4::RequestSigner as AwsV4Signer;
 use reqsign_aws_v4::S3ExpressSessionConfig;
 use reqsign_aws_v4::S3ExpressSessionProvider;
@@ -410,13 +411,74 @@ impl S3Builder {
         self
     }
 
-    /// Disable config load so that opendal will not load config from
-    /// environment.
+    /// Set the relative URI for AWS container credential metadata.
     ///
-    /// For examples:
+    /// An explicit full endpoint takes precedence. The relative URI takes
+    /// precedence over ambient full and relative container credential URIs and
+    /// is joined to [`Self::container_metadata_uri_override`] when set.
     ///
-    /// - envs like `AWS_ACCESS_KEY_ID`
-    /// - files like `~/.aws/config`
+    /// This setting configures the ECS slot in the default credential chain. It
+    /// does not move that slot ahead of earlier default providers.
+    pub fn container_credentials_relative_uri(mut self, uri: &str) -> Self {
+        if !uri.is_empty() {
+            self.config.container_credentials_relative_uri = Some(uri.to_string());
+        }
+        self
+    }
+
+    /// Set the full URI for AWS container credential metadata.
+    ///
+    /// This endpoint takes precedence over the relative URI and both ambient
+    /// container credential URI forms.
+    pub fn container_credentials_endpoint(mut self, endpoint: &str) -> Self {
+        if !endpoint.is_empty() {
+            self.config.container_credentials_endpoint = Some(endpoint.to_string());
+        }
+        self
+    }
+
+    /// Set the authorization token for AWS container credential requests.
+    ///
+    /// This value takes precedence over the configured token file and both
+    /// ambient token forms.
+    pub fn container_authorization_token(mut self, token: &str) -> Self {
+        if !token.is_empty() {
+            self.config.container_authorization_token = Some(token.to_string());
+        }
+        self
+    }
+
+    /// Set the file containing the authorization token for AWS container
+    /// credential requests.
+    ///
+    /// This file takes precedence over both ambient token forms. The credential
+    /// provider trims surrounding whitespace after reading the file.
+    pub fn container_authorization_token_file(mut self, file_path: &str) -> Self {
+        if !file_path.is_empty() {
+            self.config.container_authorization_token_file = Some(file_path.to_string());
+        }
+        self
+    }
+
+    /// Set the base URI used to resolve a relative AWS container credential
+    /// URI.
+    ///
+    /// The override affects relative URIs only and does not alter a configured
+    /// or ambient full URI. The override alone does not select an endpoint.
+    pub fn container_metadata_uri_override(mut self, uri: &str) -> Self {
+        if !uri.is_empty() {
+            self.config.container_metadata_uri_override = Some(uri.to_string());
+        }
+        self
+    }
+
+    /// Disable automatic endpoint loading and the environment/profile
+    /// credential providers.
+    ///
+    /// This skips endpoint environment variables and removes the static
+    /// environment and shared-profile credential slots. Region environment
+    /// lookup and other credential providers, including AWS container
+    /// credentials and EC2 instance metadata, remain enabled.
     pub fn disable_config_load(mut self) -> Self {
         self.config.disable_config_load = true;
         self
@@ -989,6 +1051,33 @@ impl Builder for S3Builder {
                 builder = builder.no_imds();
             }
 
+            if config.container_credentials_endpoint.is_some()
+                || config.container_credentials_relative_uri.is_some()
+                || config.container_authorization_token.is_some()
+                || config.container_authorization_token_file.is_some()
+                || config.container_metadata_uri_override.is_some()
+            {
+                let mut ecs = ECSCredentialProvider::new();
+
+                if let Some(endpoint) = config.container_credentials_endpoint.as_deref() {
+                    ecs = ecs.with_endpoint(endpoint);
+                }
+                if let Some(relative_uri) = config.container_credentials_relative_uri.as_deref() {
+                    ecs = ecs.with_relative_uri(relative_uri);
+                }
+                if let Some(token) = config.container_authorization_token.as_deref() {
+                    ecs = ecs.with_auth_token(token);
+                }
+                if let Some(token_file) = config.container_authorization_token_file.as_deref() {
+                    ecs = ecs.with_auth_token_file(token_file);
+                }
+                if let Some(uri_override) = config.container_metadata_uri_override.as_deref() {
+                    ecs = ecs.with_metadata_uri_override(uri_override);
+                }
+
+                builder = builder.ecs(ecs);
+            }
+
             ProvideCredentialChain::new().push(builder.build())
         };
 
@@ -1464,6 +1553,7 @@ mod tests {
 
     use bytes::Bytes;
     use http::HeaderMap;
+    use http::HeaderValue;
     use http::Method;
     use http::Request;
     use http::Response;
@@ -1625,7 +1715,78 @@ mod tests {
                 ));
             }
 
-            Ok(Self::response(StatusCode::OK, Bytes::new()))
+            let mut response = Self::response(StatusCode::OK, Bytes::new());
+            response
+                .headers_mut()
+                .insert(http::header::ETAG, HeaderValue::from_static("\"etag\""));
+            Ok(response)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_multipart_sse_kms_header_scope() {
+        const PART_SIZE: usize = 5 * 1024 * 1024;
+        for is_copy in [false, true] {
+            let transport = S3ExpressMockTransport::new(CreateSessionOutcome::Success);
+            let op = Operator::new(
+                S3Builder::default()
+                    .bucket("example")
+                    .region("us-west-2")
+                    .server_side_encryption("aws:kms")
+                    .server_side_encryption_aws_kms_key_id("example-kms-key")
+                    .skip_signature()
+                    .disable_config_load()
+                    .disable_ec2_metadata(),
+            )
+            .unwrap()
+            .with_context(
+                OperationContext::new()
+                    .with_http_transport(HttpTransporter::new(transport.clone())),
+            );
+            if is_copy {
+                op.copy_with("source", "target")
+                    .source_content_length_hint(PART_SIZE as u64 + 1)
+                    .chunk(PART_SIZE)
+                    .await
+                    .unwrap();
+            } else {
+                let mut writer = op.writer_with("target").chunk(PART_SIZE).await.unwrap();
+                writer.write(vec![0; PART_SIZE]).await.unwrap();
+                writer.write("x").await.unwrap();
+                writer.close().await.unwrap();
+            }
+            let requests = transport.requests();
+            let initiate = requests
+                .iter()
+                .find(|request| request.uri.query() == Some("uploads"))
+                .unwrap();
+            assert_eq!(header(initiate, "x-amz-server-side-encryption"), "aws:kms");
+            assert_eq!(
+                header(initiate, "x-amz-server-side-encryption-aws-kms-key-id"),
+                "example-kms-key"
+            );
+            let mut parts = 0;
+            let mut completions = 0;
+            for request in requests.iter().filter(|request| {
+                request
+                    .uri
+                    .query()
+                    .is_some_and(|query| query.contains("uploadId="))
+            }) {
+                if request.method == Method::PUT {
+                    parts += 1;
+                } else if request.method == Method::POST {
+                    completions += 1;
+                }
+                assert!(!request.headers.contains_key("x-amz-server-side-encryption"));
+                assert!(
+                    !request
+                        .headers
+                        .contains_key("x-amz-server-side-encryption-aws-kms-key-id")
+                );
+            }
+            assert_eq!(parts, 2);
+            assert_eq!(completions, 1);
         }
     }
 

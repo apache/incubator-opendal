@@ -90,7 +90,9 @@ fn build_operator(
 ) -> core::Result<core::blocking::Operator> {
     core::init_default_registry();
 
-    let op = core::Operator::via_iter(schema, map)?.layer(core::layers::RetryLayer::new());
+    let op = core::Operator::via_iter(schema, map)?
+        .layer(core::layers::RetryLayer::new())
+        .layer(core::layers::LoggingLayer::default());
 
     build_blocking_operator(op)
 }

@@ -52,7 +52,7 @@ runs:
               fi
             env:
               OPENDAL_TEST: ${{ inputs.service }}
-              CGO_ENABLE: 0
+              CGO_ENABLED: "0"
         EOF
     - name: Run
       uses: ./dynamic_test_binding_go

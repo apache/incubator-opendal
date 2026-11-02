@@ -1,0 +1,25 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+services:
+  memcached_tls:
+    image: docker.io/library/memcached@sha256:462fa779babc9b64a235a69dd843cb79fb3591f229ee1f3ff6cb2ca058d8a759
+    command: ["memcached", "-Z", "-I", "16777216", "-o", "ssl_chain_cert=/certs/server.pem,ssl_key=/certs/server.key,ssl_verify_mode=0"]
+    ports:
+      - "127.0.0.1:11212:11211"
+    volumes:
+      - "${MEMCACHED_TLS_CERT_DIR:?}:/certs:ro"

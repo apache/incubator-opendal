@@ -156,6 +156,31 @@ class AsyncOperator:
         if_match : str, optional
             If set, only delete when the existing object's ETag matches.
         """
+    def delete_many(
+        self, /, paths: collections.abc.Iterable[str | PathLike[str]]
+    ) -> collections.abc.Awaitable[None]:
+        """
+        Delete an explicit collection of paths with default delete options.
+
+        Notes
+        -----
+        This method collects the iterable and converts its Python path objects
+        before deletion starts, using memory proportional to the number of paths.
+        Empty collections do nothing. Paths that do not exist are ignored.
+        Storage or path-validation errors can leave some paths deleted; this
+        operation is not atomic and does not guarantee a single remote request.
+        Use `remove_all` to recursively delete a path prefix.
+
+        Parameters
+        ----------
+        paths : Iterable[str | PathLike[str]]
+            The paths to delete. A single path is not accepted.
+
+        Returns
+        -------
+        Awaitable[None]
+            An awaitable that completes when deletion finishes.
+        """
     def exists(self, /, path: str | PathLike[str]) -> collections.abc.Awaitable[bool]:
         """
         Check if a path exists.
@@ -813,6 +838,26 @@ class Operator:
             Only supported on backends that support recursive delete.
         if_match : str, optional
             If set, only delete when the existing object's ETag matches.
+        """
+    def delete_many(
+        self, /, paths: collections.abc.Iterable[str | PathLike[str]]
+    ) -> None:
+        """
+        Delete an explicit collection of paths with default delete options.
+
+        Notes
+        -----
+        This method collects the iterable and converts its Python path objects
+        before deletion starts, using memory proportional to the number of paths.
+        Empty collections do nothing. Paths that do not exist are ignored.
+        Storage or path-validation errors can leave some paths deleted; this
+        operation is not atomic and does not guarantee a single remote request.
+        Use `remove_all` to recursively delete a path prefix.
+
+        Parameters
+        ----------
+        paths : Iterable[str | PathLike[str]]
+            The paths to delete. A single path is not accepted.
         """
     def exists(self, /, path: str | PathLike[str]) -> bool:
         """
