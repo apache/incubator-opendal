@@ -18,7 +18,7 @@
 use std::ffi::{CStr, CString};
 use std::fs::File;
 use std::os::fd::AsRawFd;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
@@ -63,6 +63,7 @@ struct Pool {
     block_size: usize,
     retain_limit: usize,
     slots: Mutex<Slots>,
+    available: Condvar,
     permits: Arc<Semaphore>,
 }
 
@@ -89,6 +90,7 @@ impl Pool {
             return Err(new_std_io_error(std::io::Error::from_raw_os_error(-result)));
         }
         Ok(Arc::new(Self {
+            available: Condvar::new(),
             api,
             iov,
             block_size,
@@ -153,6 +155,8 @@ impl Drop for Slot {
             slots.retained -= 1;
         }
         slots.free.push(self.index);
+        drop(slots);
+        self.pool.available.notify_one();
     }
 }
 
@@ -161,7 +165,7 @@ struct Request {
     offset: usize,
     size: usize,
     slot: Option<Slot>,
-    reply: oneshot::Sender<Result<(usize, Buffer)>>,
+    reply: oneshot::Sender<Result<(usize, Option<Slot>)>>,
 }
 
 struct Pending {
@@ -280,9 +284,12 @@ impl IoDriver {
             })
             .await
             .map_err(|_| Error::new(ErrorKind::Unexpected, "USRBIO driver stopped"))?;
-        result
+        // Read overflow copies run on the caller, leaving the driver free to
+        // submit and reap other requests.
+        let (size, slot) = result
             .await
-            .map_err(|_| Error::new(ErrorKind::Unexpected, "USRBIO driver stopped"))?
+            .map_err(|_| Error::new(ErrorKind::Unexpected, "USRBIO driver stopped"))??;
+        Ok((size, slot.map_or_else(Buffer::new, Slot::into_buffer)))
     }
 }
 
@@ -308,15 +315,20 @@ impl Worker {
     ) -> Result<Self> {
         let pool = Pool::new(api.clone(), mount, depth, block_size, read)?;
         let mut ring = unsafe { std::mem::zeroed() };
-        // io_depth=0 dispatches partial batches immediately, including one I/O.
-        // Leave headroom for a completion whose submission slot is not reclaimed yet.
+        // Submission entries retire in order, even when I/O completes out of
+        // order. Leave headroom for delayed entries without raising the I/O limit.
+        let entries = depth
+            .saturating_mul(64)
+            .saturating_add(1)
+            .min(i32::MAX as usize);
         let result = unsafe {
             (api.iorcreate4)(
                 &mut ring,
                 mount.as_ptr(),
-                (depth + 1) as i32,
+                entries as i32,
                 read,
-                0,
+                // Complete requests independently instead of waiting for a batch.
+                -1,
                 0,
                 -1,
                 0,
@@ -341,15 +353,12 @@ impl Worker {
         if request.reply.is_closed() {
             return None;
         }
-        let slot = request.slot.take().unwrap_or_else(|| {
-            let index = self
-                .pool
-                .slots
-                .lock()
-                .unwrap()
-                .free
-                .pop()
-                .expect("reserved I/O slot");
+        let slot = if let Some(slot) = request.slot.take() {
+            slot
+        } else {
+            let Some(index) = self.pool.slots.lock().unwrap().free.pop() else {
+                return Some(request);
+            };
             Slot {
                 pool: self.pool.clone(),
                 index,
@@ -357,7 +366,7 @@ impl Worker {
                 retained: false,
                 _permit: None,
             }
-        });
+        };
         let index = slot.index;
         // The slot is exclusive, and the request fits within one Iov block.
         let ptr = unsafe { self.pool.iov.base.add(index * self.pool.block_size) };
@@ -397,9 +406,9 @@ impl Worker {
         let mut waiting = None;
         loop {
             let mut prepared = false;
-            // A completed request can leave its submission slot occupied until
-            // an earlier batch finishes. Drain before retrying a full ring.
-            while self.active < self.depth && (waiting.is_none() || self.active == 0) {
+            // Retry submission after reaping completions, including when earlier
+            // requests are still in flight.
+            while self.active < self.depth {
                 let request = if waiting.is_some() {
                     waiting.take()
                 } else if self.active == 0 {
@@ -415,8 +424,20 @@ impl Worker {
                 }
             }
             if self.active == 0 {
-                if waiting.is_some() {
-                    std::thread::sleep(Duration::from_millis(1));
+                if let Some(request) = &waiting {
+                    if request.slot.is_none() {
+                        // Callers still copying completed reads can hold all slots.
+                        drop(
+                            self.pool
+                                .available
+                                .wait_while(self.pool.slots.lock().unwrap(), |slots| {
+                                    slots.free.is_empty()
+                                })
+                                .unwrap(),
+                        );
+                    } else {
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
                     continue;
                 }
                 return Ok(());
@@ -428,7 +449,7 @@ impl Worker {
                 }
             }
             // A bounded wait lets newly queued requests join an outstanding batch.
-            let deadline = (SystemTime::now() + Duration::from_millis(1))
+            let deadline = (SystemTime::now() + Duration::from_micros(100))
                 .duration_since(UNIX_EPOCH)
                 .unwrap();
             let timeout = libc::timespec {
@@ -467,12 +488,8 @@ impl Worker {
                 } else {
                     let size = cqe.result as usize;
                     slot.len = size;
-                    let buffer = if self.read && size > 0 {
-                        slot.into_buffer()
-                    } else {
-                        Buffer::new()
-                    };
-                    Ok((size, buffer))
+                    let slot = (self.read && size > 0).then_some(slot);
+                    Ok((size, slot))
                 };
                 let _ = request.reply.send(result);
             }

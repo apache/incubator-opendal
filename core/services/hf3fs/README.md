@@ -35,15 +35,20 @@ Tokio runtime. The operation context supplies the executor for concurrent writes
 ## Memory and concurrency
 
 Each operator owns a read driver and a write driver. Each driver submits and
-reaps batches on its own thread. `queue_depth` defaults to 32 requests per ring;
+reaps completions on its own thread. Requests complete independently so a slow
+request does not delay the rest of a batch. `queue_depth` defaults to 32 requests per ring;
 `block_size` defaults to 1 MiB. Shared memory uses approximately
 `3 * queue_depth * block_size`, plus the rings, and request queues are bounded.
+The submission rings have extra entries for out-of-order completions; the number
+of in-flight requests remains bounded by `queue_depth`.
 Cloned operators share these resources.
 
 Reads return shared-memory-backed buffers without copying while fewer than
 `queue_depth` slots remain retained by callers. Additional completions copy to
-ordinary buffers so collecting large files cannot exhaust the I/O pool and
-deadlock. Buffer clones retain their slot until the last clone is dropped,
+ordinary buffers on the calling task so copying does not block the driver.
+The driver waits for a free slot if completed reads awaiting their callers fill
+the pool. Collecting large files still progresses because retained buffers
+remain bounded by `queue_depth`. Buffer clones retain their slot until the last clone is dropped,
 even after the operator is dropped. Writes reserve a shared-memory slot and copy
 their input on the calling task before submitting it to the driver. Concurrent
 tasks can copy in parallel on a multithreaded runtime; the write pool remains
