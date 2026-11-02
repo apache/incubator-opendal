@@ -147,7 +147,11 @@ def model_request(item, files):
         "Choose one category based on substantive purpose. A title prefix is evidence, not an overriding rule. "
         "Choose only directly affected components; omit incidental examples, dependencies and generated mirrors. "
         "A service or binding using core does not by itself affect core. "
-        "If no listed component matches, return an empty components array. Never choose unrelated substitutes. "
+        "Components is an exhaustive allowlist. New components can be absent from it. "
+        "Use no label for a missing component; never substitute a similar name or a related provider. "
+        "For example, if services/github is listed but services/git is not, a PR adding only "
+        "the new Git backend has an empty components array. Still include other directly "
+        "changed components whose exact labels are listed. "
         + (
             "A docstring-only fix is docs; a routine dependency bump is build, regardless of quoted upstream fixes. "
             "Mark breaking_change only for an explicitly stated incompatible API or behavior change, not an empty template heading. "
