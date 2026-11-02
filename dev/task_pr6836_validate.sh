@@ -24,6 +24,8 @@ task_log=$(cd "$task_log" && pwd)
 exec 9>/tmp/opendal-pr-delivery-20261031-build.lock
 flock 9
 export CARGO_BUILD_JOBS=4
+export RUST_LOG=off
+export CARGO_TERM_COLOR=never
 cd "$task_repo"
 git rev-parse HEAD HEAD^{tree} > "$task_log/source.txt"
 git status --porcelain > "$task_log/source-status.txt"
@@ -54,7 +56,7 @@ run unit cargo test --locked -p opendal-service-git --lib -- --nocapture
 run doc cargo test --locked -p opendal-service-git --doc
 run service-clippy cargo clippy --locked -p opendal-service-git --all-targets -- -D warnings
 run facade-clippy cargo clippy --locked -p opendal --features services-git --all-targets -- -D warnings
-run live cargo test --locked -p opendal --features services-git --test task_git_service_live -- --nocapture
+run live timeout 900 cargo test --locked -p opendal --features services-git --test task_git_service_live -- --nocapture
 run fmt cargo fmt --all -- --check
 cd "$task_repo"
 run diff-check git diff --check

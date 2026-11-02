@@ -80,11 +80,13 @@ async fn public_git_lfs_stream_range_and_pointer() {
         .unwrap_or_else(|error| panic!("range read failed: {:?}", error.kind()));
     assert_eq!(range.to_bytes().as_ref(), &payload[101..509]);
 
-    let raw = Operator::new(
-        Git::default()
-            .repository(REPOSITORY)
-            .reference(COMMIT)
-            .resolve_lfs(false),
+    let raw = Operator::via_iter(
+        "git",
+        [
+            ("repository".to_string(), REPOSITORY.to_string()),
+            ("reference".to_string(), COMMIT.to_string()),
+            ("resolve_lfs".to_string(), "false".to_string()),
+        ],
     )
     .unwrap_or_else(|error| panic!("raw operator build failed: {:?}", error.kind()));
     let pointer = raw
