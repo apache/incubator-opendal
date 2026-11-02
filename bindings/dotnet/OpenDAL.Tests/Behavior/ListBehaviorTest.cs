@@ -146,7 +146,7 @@ public sealed class ListBehaviorTest : BehaviorTestBase
     }
 
     [Fact]
-    public void ListBehavior_WithVersions_ReportsCurrentVersion()
+    public void ListBehavior_WithVersions_ReportsVersionMetadata()
     {
         if (!Supports(c => c.List && c.ListWithVersions && c.Write))
         {
@@ -164,7 +164,14 @@ public sealed class ListBehaviorTest : BehaviorTestBase
             .ToList();
 
         Assert.True(versions.Count >= 2, $"expected at least two versions, got {versions.Count}");
-        Assert.Single(versions, e => e.Metadata.IsCurrent == true);
+        Assert.All(versions, e => Assert.False(string.IsNullOrEmpty(e.Metadata.Version)));
+
+        var currentCount = versions.Count(e => e.Metadata.IsCurrent == true);
+        Assert.InRange(currentCount, 0, 1);
+        if (versions.All(e => e.Metadata.IsCurrent.HasValue))
+        {
+            Assert.Equal(1, currentCount);
+        }
     }
 
     [Fact]

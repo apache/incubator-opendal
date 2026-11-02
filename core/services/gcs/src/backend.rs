@@ -422,6 +422,7 @@ impl Builder for GcsBuilder {
             list_with_limit: true,
             list_with_start_after: true,
             list_with_recursive: true,
+            list_with_versions: true,
 
             presign: true,
             presign_stat: true,
@@ -549,14 +550,7 @@ impl Service for GcsBackend {
 
     fn list(&self, ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
         let output: oio::PageLister<GcsLister> = {
-            let l = GcsLister::new(
-                self.core.clone(),
-                ctx.clone(),
-                path,
-                args.recursive(),
-                args.limit(),
-                args.start_after(),
-            );
+            let l = GcsLister::new(self.core.clone(), ctx.clone(), path, args);
 
             Ok(oio::PageLister::new(l))
         }?;

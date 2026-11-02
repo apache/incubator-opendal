@@ -60,6 +60,8 @@ public class ReaderOptionsTest {
                 requests.add(exchange.getRequestHeaders());
                 urls.add(exchange.getRequestURI());
                 if ("changed".equals(exchange.getRequestHeaders().getFirst("If-Match"))) {
+                    // Finish the request before the bodyless response completes the exchange.
+                    exchange.getRequestBody().close();
                     exchange.sendResponseHeaders(412, -1);
                     return;
                 }

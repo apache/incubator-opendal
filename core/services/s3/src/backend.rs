@@ -1464,6 +1464,7 @@ mod tests {
 
     use bytes::Bytes;
     use http::HeaderMap;
+    use http::HeaderValue;
     use http::Method;
     use http::Request;
     use http::Response;
@@ -1625,7 +1626,78 @@ mod tests {
                 ));
             }
 
-            Ok(Self::response(StatusCode::OK, Bytes::new()))
+            let mut response = Self::response(StatusCode::OK, Bytes::new());
+            response
+                .headers_mut()
+                .insert(http::header::ETAG, HeaderValue::from_static("\"etag\""));
+            Ok(response)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_multipart_sse_kms_header_scope() {
+        const PART_SIZE: usize = 5 * 1024 * 1024;
+        for is_copy in [false, true] {
+            let transport = S3ExpressMockTransport::new(CreateSessionOutcome::Success);
+            let op = Operator::new(
+                S3Builder::default()
+                    .bucket("example")
+                    .region("us-west-2")
+                    .server_side_encryption("aws:kms")
+                    .server_side_encryption_aws_kms_key_id("example-kms-key")
+                    .skip_signature()
+                    .disable_config_load()
+                    .disable_ec2_metadata(),
+            )
+            .unwrap()
+            .with_context(
+                OperationContext::new()
+                    .with_http_transport(HttpTransporter::new(transport.clone())),
+            );
+            if is_copy {
+                op.copy_with("source", "target")
+                    .source_content_length_hint(PART_SIZE as u64 + 1)
+                    .chunk(PART_SIZE)
+                    .await
+                    .unwrap();
+            } else {
+                let mut writer = op.writer_with("target").chunk(PART_SIZE).await.unwrap();
+                writer.write(vec![0; PART_SIZE]).await.unwrap();
+                writer.write("x").await.unwrap();
+                writer.close().await.unwrap();
+            }
+            let requests = transport.requests();
+            let initiate = requests
+                .iter()
+                .find(|request| request.uri.query() == Some("uploads"))
+                .unwrap();
+            assert_eq!(header(initiate, "x-amz-server-side-encryption"), "aws:kms");
+            assert_eq!(
+                header(initiate, "x-amz-server-side-encryption-aws-kms-key-id"),
+                "example-kms-key"
+            );
+            let mut parts = 0;
+            let mut completions = 0;
+            for request in requests.iter().filter(|request| {
+                request
+                    .uri
+                    .query()
+                    .is_some_and(|query| query.contains("uploadId="))
+            }) {
+                if request.method == Method::PUT {
+                    parts += 1;
+                } else if request.method == Method::POST {
+                    completions += 1;
+                }
+                assert!(!request.headers.contains_key("x-amz-server-side-encryption"));
+                assert!(
+                    !request
+                        .headers
+                        .contains_key("x-amz-server-side-encryption-aws-kms-key-id")
+                );
+            }
+            assert_eq!(parts, 2);
+            assert_eq!(completions, 1);
         }
     }
 

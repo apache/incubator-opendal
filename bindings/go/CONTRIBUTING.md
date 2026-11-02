@@ -11,11 +11,11 @@ cd tests/behavior_tests
 # Test a specific backend
 export OPENDAL_TEST=memory
 # Run all tests
-CGO_ENABLE=0 go test -v -run TestBehavior
+CGO_ENABLED=0 go test -v -run TestBehavior
 # Run specific test
-CGO_ENABLE=0 go test -v -run TestBehavior/Write
+CGO_ENABLED=0 go test -v -run TestBehavior/Write
 # Run synchronously
-CGO_ENABLE=0 GOMAXPROCS=1 go test -v -run TestBehavior
+CGO_ENABLED=0 GOMAXPROCS=1 go test -v -run TestBehavior
 ```
 
 ### Benchmark
