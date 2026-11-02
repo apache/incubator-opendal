@@ -54,6 +54,8 @@ within a Tokio runtime.
 
 - A configured reference is resolved once and is not refreshed.
 - `resolve_lfs=false` returns the LFS pointer file itself.
+- LFS resolution requires an HTTPS repository URL without userinfo, a query,
+  or a fragment. Use the username and password options for authentication.
 - LFS payloads are streamed from the composed HTTP transport.
 - Repository credentials are not sent to cross-origin LFS download actions.
 - Submodule entries return `Unsupported`.
