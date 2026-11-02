@@ -28,6 +28,7 @@ pub fn tests(op: &Operator, tests: &mut Vec<Trial>) {
         tests.extend(async_trials!(
             op,
             test_delete_file,
+            test_delete_file_through_directory_path,
             test_delete_empty_dir,
             test_delete_with_special_chars,
             test_delete_not_existing,
@@ -89,6 +90,29 @@ pub async fn test_delete_file(op: Operator) -> Result<()> {
 
     // Stat it again to check.
     assert!(!op.exists(&path).await?);
+
+    Ok(())
+}
+
+/// Deleting a directory path must never remove the file with the same name.
+///
+/// A path ending with `/` denotes a directory, so `delete("f.txt/")` must not
+/// delete the file `f.txt`. Services differ in whether the delete itself
+/// errors or is a no-op, so this test only asserts the file survives.
+pub async fn test_delete_file_through_directory_path(op: Operator) -> Result<()> {
+    let (path, content, _) = TEST_FIXTURE.new_file(op.clone());
+
+    op.write(&path, content).await.expect("write must succeed");
+
+    let dir_path = format!("{path}/");
+    let _ = op.delete(&dir_path).await;
+
+    assert!(
+        op.exists(&path).await?,
+        "file must survive deleting its directory path"
+    );
+
+    op.delete(&path).await.expect("cleanup must succeed");
 
     Ok(())
 }
