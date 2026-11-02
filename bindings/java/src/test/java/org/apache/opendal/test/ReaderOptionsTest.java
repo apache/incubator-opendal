@@ -174,6 +174,9 @@ public class ReaderOptionsTest {
                 assertThatThrownBy(in::read)
                         .is(OpenDALExceptionCondition.ofSync(OpenDALException.Code.ConditionNotMatch));
             }
+        } catch (AssertionError | RuntimeException failure) {
+            System.err.println("conditional probe observed requests=" + requests.size() + ", urls=" + urls);
+            throw failure;
         }
     }
 }
