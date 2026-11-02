@@ -40,6 +40,7 @@ import org.apache.opendal.ServiceConfig;
 import org.apache.opendal.test.condition.OpenDALExceptionCondition;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.RepeatedTest;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
@@ -161,7 +162,7 @@ public class ReaderOptionsTest {
         assertThat(urls.get(0).getQuery()).contains("ifGenerationMatch=17", "ifGenerationNotMatch=18");
     }
 
-    @Test
+    @RepeatedTest(100)
     void testConditionalErrorsKeepTheirCode() {
         try (Operator op = Operator.of(
                         ServiceConfig.Http.builder().endpoint(endpoint).build());
