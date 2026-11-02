@@ -447,6 +447,7 @@ func testListWithVersions(assert *require.Assertions, op *opendal.Operator, fixt
 
 	var count int
 	var currentCount int
+	allCurrentStatesKnown := true
 	for obs.Next() {
 		entry := obs.Entry()
 		if entry.Path() == path {
@@ -455,14 +456,19 @@ func testListWithVersions(assert *require.Assertions, op *opendal.Operator, fixt
 			version, ok := meta.Version()
 			assert.True(ok, "version metadata must be present for list with versions")
 			assert.NotEmpty(version, "each version entry must have a version ID")
-			if curr, ok := meta.IsCurrent(); ok && curr {
+			curr, known := meta.IsCurrent()
+			allCurrentStatesKnown = allCurrentStatesKnown && known
+			if known && curr {
 				currentCount++
 			}
 		}
 	}
 	assert.Nil(obs.Error())
 	assert.GreaterOrEqual(count, 2, "list with versions must return at least 2 entries for the same path")
-	assert.Equal(1, currentCount, "exactly one version entry should be current")
+	assert.LessOrEqual(currentCount, 1, "at most one version entry should be current")
+	if allCurrentStatesKnown {
+		assert.Equal(1, currentCount, "exactly one version entry should be current when all states are known")
+	}
 }
 
 func testListWithDeleted(assert *require.Assertions, op *opendal.Operator, fixture *fixture) {

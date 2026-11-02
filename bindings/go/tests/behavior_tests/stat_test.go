@@ -348,7 +348,7 @@ func testStatWithIfModifiedSince(assert *require.Assertions, op *opendal.Operato
 	assert.Nil(err, "stat with older if_modified_since must succeed")
 	assert.Equal(lastModified, meta.LastModified())
 
-	_, err = op.Stat(path, opendal.StatWithIfModifiedSince(lastModified.Add(time.Second)))
+	_, err = op.Stat(path, opendal.StatWithIfModifiedSince(lastModified))
 	assert.NotNil(err)
 	assert.Equal(opendal.CodeConditionNotMatch, assertErrorCode(err))
 }
