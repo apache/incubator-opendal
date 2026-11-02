@@ -55,7 +55,9 @@ class LabelTests(unittest.TestCase):
     def test_schema_separates_issue_and_pr_categories(self):
         issue = label.model_request(self.item(False), [])
         pr = label.model_request(self.item(), [])
-        schema = lambda body: body["response_format"]["json_schema"]["properties"]
+        schema = lambda body: body["response_format"]["json_schema"]["schema"][
+            "properties"
+        ]
         self.assertNotIn("fix", schema(issue)["category"]["enum"])
         self.assertNotIn("bug", schema(pr)["category"]["enum"])
         self.assertIn("services/goosefs", schema(pr)["components"]["items"]["enum"])
@@ -212,26 +214,37 @@ class LabelTests(unittest.TestCase):
 
     def test_cloudflare_response_is_parsed_and_truncation_rejected(self):
         response = {
-            "success": True,
-            "result": {
-                "choices": [
-                    {
-                        "finish_reason": "stop",
-                        "message": {"content": '{"category":"bug","components":[]}'},
-                    }
-                ]
-            },
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {"content": '{"category":"bug","components":[]}'},
+                }
+            ],
         }
         with (
             patch.dict(
                 "os.environ",
                 {"CLOUDFLARE_ACCOUNT_ID": "a" * 32, "CLOUDFLARE_API_TOKEN": "test"},
             ),
-            patch.object(label, "request", return_value=response),
+            patch.object(label, "request", return_value=response) as request,
             patch("builtins.print"),
         ):
-            self.assertEqual(label.classify({}), {"category": "bug", "components": []})
-            response["result"]["choices"][0]["finish_reason"] = "length"
+            body = label.model_request(self.item(False), [])
+            self.assertEqual(
+                label.classify(body), {"category": "bug", "components": []}
+            )
+            self.assertEqual(
+                request.call_args.args,
+                (
+                    "https://api.cloudflare.com/client/v4/accounts/"
+                    + "a" * 32
+                    + "/ai/v1/chat/completions",
+                    "test",
+                    "POST",
+                    body,
+                ),
+            )
+            response["choices"][0]["finish_reason"] = "length"
             with self.assertRaises(ValueError):
                 label.classify({})
 

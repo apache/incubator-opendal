@@ -28,7 +28,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-MODEL = "@cf/qwen/qwen3-30b-a3b-fp8"
+MODEL = "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
 PR_CATEGORIES = {
     "feat": "Adds a user-facing feature or capability.",
     "fix": "Fixes incorrect behavior, including a downstream compilation regression.",
@@ -154,7 +154,7 @@ def model_request(item, files):
             if is_pr
             else "Choose unclassified if none of the issue categories apply. "
         )
-        + "Return JSON only. /no_think\nCategories:\n"
+        + "Return JSON only.\nCategories:\n"
         + json.dumps(categories)
         + "\nComponents:\n"
         + json.dumps(components)
@@ -188,6 +188,7 @@ def model_request(item, files):
         "partial_diff": excerpts,
     }
     return {
+        "model": MODEL,
         "messages": [
             {"role": "system", "content": prompt},
             {"role": "user", "content": json.dumps(data)},
@@ -197,10 +198,14 @@ def model_request(item, files):
         "response_format": {
             "type": "json_schema",
             "json_schema": {
-                "type": "object",
-                "properties": properties,
-                "required": list(properties),
-                "additionalProperties": False,
+                "name": "opendal_label",
+                "strict": True,
+                "schema": {
+                    "type": "object",
+                    "properties": properties,
+                    "required": list(properties),
+                    "additionalProperties": False,
+                },
             },
         },
     }
@@ -211,15 +216,12 @@ def classify(body):
     token = os.environ["CLOUDFLARE_API_TOKEN"]
     if not re.fullmatch(r"[a-fA-F0-9]{32}", account) or not token:
         raise ValueError("Configure CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN")
-    response = request(
-        f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/run/{MODEL}",
+    result = request(
+        f"https://api.cloudflare.com/client/v4/accounts/{account}/ai/v1/chat/completions",
         token,
         "POST",
         body,
     )
-    if not response.get("success"):
-        raise RuntimeError("Workers AI inference failed")
-    result = response["result"]
     choice = result["choices"][0]
     if choice["finish_reason"] != "stop":
         raise ValueError("Incomplete model output")
