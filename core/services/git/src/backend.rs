@@ -41,7 +41,7 @@ impl GitBuilder {
     /// This is required.
     pub fn repository(mut self, repository: &str) -> Self {
         if !repository.is_empty() {
-            self.config.repository = Some(repository.to_string());
+            self.config.repository = repository.to_string();
         }
         self
     }
@@ -103,10 +103,13 @@ impl Builder for GitBuilder {
     fn build(self) -> Result<impl Service> {
         debug!("git backend build started");
 
-        let repository = self.config.repository.clone().ok_or_else(|| {
-            Error::new(ErrorKind::ConfigInvalid, "repository is required")
-                .with_context("service", GIT_SCHEME)
-        })?;
+        let repository = self.config.repository.clone();
+        if repository.is_empty() {
+            return Err(
+                Error::new(ErrorKind::ConfigInvalid, "repository is required")
+                    .with_context("service", GIT_SCHEME),
+            );
+        }
         let reference = self
             .config
             .reference
