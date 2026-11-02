@@ -47,3 +47,4 @@ serde = { workspace = true, features = ["derive"] }
 [dev-dependencies]
 bytes = { workspace = true }
 rand = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
