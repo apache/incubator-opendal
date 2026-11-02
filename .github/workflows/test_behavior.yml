@@ -15,220 +15,57 @@
 # specific language governing permissions and limitations
 # under the License.
 
+# Task-only proof of the public S3 container credential provider API.
 name: Behavior Test
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
-    inputs:
-      pr_number:
-        description: "Upstream PR number (for mirrored runs)"
-        required: false
-        type: string
 
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: true
+permissions:
+  contents: read
 
 jobs:
-  plan:
+  s3-container-provider-proof:
     runs-on: ubuntu-latest
-    outputs:
-      plan: ${{ steps.plan.outputs.plan }}
-
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
+
+      - name: Setup Rust toolchain
+        uses: ./.github/actions/setup
         with:
-          # fetch depth set to 0 to make sure we have correct diff result.
-          fetch-depth: 0
+          need-protoc: true
+          need-rocksdb: true
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Plan
-        id: plan
+      - name: Setup existing 1Password Connect access
+        shell: bash
+        env:
+          OP_CONNECT_HOST: ${{ secrets.OP_CONNECT_HOST }}
+          OP_CONNECT_TOKEN: ${{ secrets.OP_CONNECT_TOKEN }}
         run: |
-          event_name="${{ github.event_name }}"
-          repository="${{ github.repository }}"
-          files_changed=""
-          has_secrets="false"
-          is_push="false"
+          printf '::add-mask::%s\n' "$OP_CONNECT_HOST"
+          printf '::add-mask::%s\n' "$OP_CONNECT_TOKEN"
+          printf 'OP_CONNECT_HOST=%s\n' "$OP_CONNECT_HOST" >> "$GITHUB_ENV"
+          printf 'OP_CONNECT_TOKEN=%s\n' "$OP_CONNECT_TOKEN" >> "$GITHUB_ENV"
 
-          # Handle event-specific logic
-          if [ "$event_name" == "push" ]; then
-            if [ "$repository" == "apache/opendal" ]; then
-              is_push="true"
-              has_secrets="true"
-            fi
-          elif [ "$event_name" == "pull_request" ]; then
-            pr_head_repo_fork="${{ github.event.pull_request.head.repo.fork }}"
-            # Only expose secrets for main repo and non-dependabot runs to mitigate security risks
-            if [ "$pr_head_repo_fork" != "true" ] && [ "${{ github.actor }}" != "dependabot[bot]" ]; then
-              has_secrets="true"
-            fi
+      - name: Load existing AWS S3 fixture
+        uses: ./.github/services/s3/aws_s3
 
-            files_changed=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }})
-            echo "Files changed:"
-            echo "$files_changed"
-          elif [ "$event_name" == "workflow_dispatch" ]; then
-            # Mirror runs are explicitly triggered by maintainers; allow secrets.
-            has_secrets="true"
-            # Compare against main to infer affected components.
-            git fetch --no-tags --prune --depth=1 origin main
-            files_changed=$(git diff --name-only origin/main HEAD)
-            echo "Files changed (main..HEAD):"
-            echo "$files_changed"
-          fi
+      - name: Run one native S3 container provider proof
+        if: always()
+        shell: bash
+        env:
+          CARGO_BUILD_JOBS: 4
+          CARGO_TERM_COLOR: never
+          RUST_LOG: off
+          OPENDAL_TASK_EVIDENCE_DIR: ${{ runner.temp }}/opendal-s3-container-provider-evidence
+        run: python3 dev/task_s3_container_provider.py
 
-          # Export variables
-          export GITHUB_HAS_SECRETS=$has_secrets
-          export GITHUB_IS_PUSH=$is_push
-
-          # Run the workflow planner script
-          PLAN=$(./.github/scripts/test_behavior/plan.py $files_changed)
-          echo "Plan:"
-          echo "$PLAN" | jq .
-          echo "plan=$PLAN" >> $GITHUB_OUTPUT
-
-  test_core:
-    name: core / ${{ matrix.os }}
-    needs: [ plan ]
-    if: fromJson(needs.plan.outputs.plan).components.core
-    secrets: inherit
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.plan.outputs.plan).core }}
-    uses: ./.github/workflows/test_behavior_core.yml
-    with:
-      os: ${{ matrix.os }}
-      cases: ${{ toJson(matrix.cases) }}
-
-  test_binding_java:
-    name: binding_java / ${{ matrix.os }}
-    needs: [ plan ]
-    if: fromJson(needs.plan.outputs.plan).components.binding_java
-    secrets: inherit
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.plan.outputs.plan).binding_java }}
-    uses: ./.github/workflows/test_behavior_binding_java.yml
-    with:
-      os: ${{ matrix.os }}
-      cases: ${{ toJson(matrix.cases) }}
-
-  test_binding_python:
-    name: binding_python / ${{ matrix.os }}
-    needs: [ plan ]
-    if: fromJson(needs.plan.outputs.plan).components.binding_python
-    secrets: inherit
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.plan.outputs.plan).binding_python }}
-    uses: ./.github/workflows/test_behavior_binding_python.yml
-    with:
-      os: ${{ matrix.os }}
-      cases: ${{ toJson(matrix.cases) }}
-  
-  test_binding_ruby:
-    name: binding_ruby / ${{ matrix.os }}
-    needs: [ plan ]
-    if: fromJson(needs.plan.outputs.plan).components.binding_ruby
-    secrets: inherit
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.plan.outputs.plan).binding_ruby }}
-    uses: ./.github/workflows/test_behavior_binding_ruby.yml
-    with:
-      os: ${{ matrix.os }}
-      cases: ${{ toJson(matrix.cases) }}
-
-  test_binding_nodejs:
-    name: binding_nodejs / ${{ matrix.os }}
-    needs: [ plan ]
-    if: fromJson(needs.plan.outputs.plan).components.binding_nodejs
-    secrets: inherit
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.plan.outputs.plan).binding_nodejs }}
-    uses: ./.github/workflows/test_behavior_binding_nodejs.yml
-    with:
-      os: ${{ matrix.os }}
-      cases: ${{ toJson(matrix.cases) }}
-
-  test_binding_go:
-    name: binding_go / ${{ matrix.os }}
-    needs: [ plan ]
-    if: fromJson(needs.plan.outputs.plan).components.binding_go
-    secrets: inherit
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.plan.outputs.plan).binding_go }}
-    uses: ./.github/workflows/test_behavior_binding_go.yml
-    with:
-      os: ${{ matrix.os }}
-      cases: ${{ toJson(matrix.cases) }}
-
-  test_binding_c:
-    name: binding_c / ${{ matrix.os }}
-    needs: [ plan ]
-    if: fromJson(needs.plan.outputs.plan).components.binding_c
-    secrets: inherit
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.plan.outputs.plan).binding_c }}
-    uses: ./.github/workflows/test_behavior_binding_c.yml
-    with:
-      os: ${{ matrix.os }}
-      cases: ${{ toJson(matrix.cases) }}
-
-  test_binding_cpp:
-    name: binding_cpp / ${{ matrix.os }}
-    needs: [ plan ]
-    if: fromJson(needs.plan.outputs.plan).components.binding_cpp
-    secrets: inherit
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.plan.outputs.plan).binding_cpp }}
-    uses: ./.github/workflows/test_behavior_binding_cpp.yml
-    with:
-      os: ${{ matrix.os }}
-      cases: ${{ toJson(matrix.cases) }}
-
-  test_binding_dotnet:
-    name: binding_dotnet / ${{ matrix.os }}
-    needs: [ plan ]
-    if: fromJson(needs.plan.outputs.plan).components.binding_dotnet
-    secrets: inherit
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.plan.outputs.plan).binding_dotnet }}
-    uses: ./.github/workflows/test_behavior_binding_dotnet.yml
-    with:
-      os: ${{ matrix.os }}
-      cases: ${{ toJson(matrix.cases) }}
-
-
-  test_integration_object_store:
-    name: integration_object_store / ${{ matrix.os }}
-    needs: [ plan ]
-    if: fromJson(needs.plan.outputs.plan).components.integration_object_store
-    secrets: inherit
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.plan.outputs.plan).integration_object_store }}
-    uses: ./.github/workflows/test_behavior_integration_object_store.yml
-    with:
-      os: ${{ matrix.os }}
-      cases: ${{ toJson(matrix.cases) }}
+      - name: Preserve sanitized evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: s3-container-provider-proof
+          path: ${{ runner.temp }}/opendal-s3-container-provider-evidence
+          if-no-files-found: warn
