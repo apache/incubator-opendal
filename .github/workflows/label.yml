@@ -18,6 +18,7 @@
 name: Label
 
 on:
+  workflow_dispatch:
   issues:
     types: [opened, edited, reopened]
   pull_request_target:
@@ -56,7 +57,7 @@ jobs:
         run: python3 scripts/label.py sync
 
   classify:
-    if: github.event_name != 'push'
+    if: github.event_name == 'issues' || github.event_name == 'pull_request_target'
     runs-on: ubuntu-slim
     timeout-minutes: 5
     permissions:
@@ -75,3 +76,22 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         run: python3 scripts/label.py event --apply
+
+  probe:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-slim
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Inspect inference termination without writing labels
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: python3 dev/task_label_budget_probe.py
