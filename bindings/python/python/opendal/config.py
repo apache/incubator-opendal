@@ -493,6 +493,8 @@ class MemcachedConfig(TypedDict):
     """The maximum number of connections allowed.  default is 10"""
     default_ttl: NotRequired[str]
     """The default ttl for put operations. A human readable duration string, e.g. "5s" (see https://docs.rs/humantime/latest/humantime/fn.parse_duration.html)."""
+    enable_tls: NotRequired[bool]
+    """Enable TLS for TCP connections. Defaults to false.  The server certificate must match the endpoint host and a native trust root."""
     endpoint: NotRequired[str]
     """network address of the memcached service.  For example: "tcp://localhost:11211\""""
     password: NotRequired[str]
