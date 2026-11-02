@@ -252,7 +252,6 @@ fn unsupported(operation: &'static str) -> Error {
 mod tests {
     use super::*;
     use bytes::Bytes;
-    use opendal_core::raw::Service as _;
     use opendal_core::raw::oio::List as _;
     use opendal_core::raw::oio::Read as _;
     use std::path::Path;
@@ -329,7 +328,7 @@ mod tests {
             .stat(&ctx, "/", OpStat::default())
             .await
             .unwrap();
-        assert!(stat.metadata().mode().is_dir());
+        assert!(stat.into_metadata().mode().is_dir());
 
         let mut lister = head_service.list(&ctx, "/", OpList::default()).unwrap();
         let entry = lister.next().await.unwrap().unwrap();
@@ -394,7 +393,7 @@ mod tests {
             .stat(&ctx, "model.bin", OpStat::default())
             .await
             .unwrap();
-        assert_eq!(stat.metadata().content_length(), pointer.len() as u64);
+        assert_eq!(stat.into_metadata().content_length(), pointer.len() as u64);
 
         let reader = service.read(&ctx, "model.bin", OpRead::default()).unwrap();
         let (_, data) = reader.read(BytesRange::default()).await.unwrap();

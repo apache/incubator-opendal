@@ -21,7 +21,6 @@ use std::time::Instant;
 use bytes::Bytes;
 use http::StatusCode;
 use http::header;
-use opendal_core::raw::oio::ReadStream;
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -275,7 +274,10 @@ mod tests {
 
     impl MockTransport {
         fn new(payload: &[u8]) -> Self {
-            let oid = format!("{:x}", Sha256::digest(payload));
+            let oid = Sha256::digest(payload)
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect();
             Self {
                 payload: payload.to_vec(),
                 oid,
