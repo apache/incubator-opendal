@@ -141,6 +141,12 @@ impl GitCore {
             if self.reference == GIT_HEAD_REF {
                 let depth = NonZeroU32::new(1).expect("1 is non-zero");
                 prepare = prepare.with_shallow(gix::remote::fetch::Shallow::DepthAtRemote(depth));
+            } else if gix::hash::ObjectId::from_hex(self.reference.as_bytes()).is_err() {
+                prepare = prepare
+                    .with_ref_name(Some(self.reference.as_str()))
+                    .map_err(|_| {
+                        Error::new(ErrorKind::ConfigInvalid, "git reference is invalid")
+                    })?;
             }
 
             prepare = prepare.configure_connection(
