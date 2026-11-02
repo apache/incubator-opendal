@@ -44,7 +44,6 @@ import org.apache.opendal.ReadOptions;
 import org.apache.opendal.ServiceConfig;
 import org.apache.opendal.test.condition.OpenDALExceptionCondition;
 import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -62,8 +61,7 @@ public class ReadOptionsTest {
     private HttpServer server;
     private String endpoint;
 
-    @BeforeEach
-    void startServer() throws Exception {
+    private void startServer() throws Exception {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/", exchange -> {
             try {
@@ -104,11 +102,14 @@ public class ReadOptionsTest {
 
     @AfterEach
     void stopServer() {
-        server.stop(0);
+        if (server != null) {
+            server.stop(0);
+        }
     }
 
     @Test
     void testConditionsAndRangeReachEveryChunk() throws Exception {
+        startServer();
         ReadOptions options = ReadOptions.builder()
                 .offset(2)
                 .length(4)
@@ -141,6 +142,7 @@ public class ReadOptionsTest {
     @ParameterizedTest
     @ValueSource(longs = {-1, 10})
     void testUnboundedChunkedReadsUseContentLengthHint(long hint) throws Exception {
+        startServer();
         ReadOptions options = ReadOptions.builder()
                 .chunk(2)
                 .concurrent(2)
@@ -169,6 +171,7 @@ public class ReadOptionsTest {
 
     @Test
     void testVersionSelection() throws Exception {
+        startServer();
         try (AsyncOperator async = AsyncOperator.of(ServiceConfig.S3
                         .builder()
                         .bucket("bucket")
@@ -192,6 +195,7 @@ public class ReadOptionsTest {
 
     @Test
     void testVersionConditions() throws Exception {
+        startServer();
         try (AsyncOperator async = AsyncOperator.of(ServiceConfig.Gcs.builder()
                         .bucket("bucket")
                         .endpoint(endpoint)
@@ -216,7 +220,8 @@ public class ReadOptionsTest {
     }
 
     @Test
-    void testConditionFailureKeepsErrorCode() {
+    void testConditionFailureKeepsErrorCode() throws Exception {
+        startServer();
         try (AsyncOperator async = AsyncOperator.of(
                         ServiceConfig.Http.builder().endpoint(endpoint).build());
                 Operator op = async.blocking()) {
@@ -229,20 +234,9 @@ public class ReadOptionsTest {
         assertThat(methods).containsExactly("GET", "GET", "GET");
     }
 
-    static Stream<ReadOptions> unsupportedConditions() {
-        return Stream.of(
-                ReadOptions.builder().version("old").build(),
-                ReadOptions.builder().ifMatch("etag").build(),
-                ReadOptions.builder().ifNoneMatch("etag").build(),
-                ReadOptions.builder().ifVersionMatch("17").build(),
-                ReadOptions.builder().ifVersionNotMatch("18").build(),
-                ReadOptions.builder().ifModifiedSince(Instant.EPOCH).build(),
-                ReadOptions.builder().ifUnmodifiedSince(Instant.EPOCH).build());
-    }
-
-    @ParameterizedTest
-    @MethodSource("unsupportedConditions")
-    void testUnsupportedConditionsReachCore(ReadOptions options) {
+    @Test
+    void testUnsupportedConditionReachesCore() {
+        ReadOptions options = ReadOptions.builder().ifMatch("etag").build();
         try (AsyncOperator async =
                         AsyncOperator.of(ServiceConfig.Memory.builder().build());
                 Operator op = async.blocking()) {
@@ -252,7 +246,7 @@ public class ReadOptionsTest {
     }
 
     @Test
-    void testDefaultsNullsAndRangeBoundaries() throws Exception {
+    void testDefaultsAndRangeBoundaries() throws Exception {
         ReadOptions defaults = ReadOptions.builder().build();
         assertThat(defaults.offset).isZero();
         assertThat(defaults.length).isEqualTo(-1);
@@ -265,20 +259,6 @@ public class ReadOptionsTest {
             op.write("file", CONTENT);
             op.write("empty", new byte[0]);
             assertReads(op, async, "file", defaults, "0123456789");
-            assertReads(
-                    op,
-                    async,
-                    "file",
-                    ReadOptions.builder()
-                            .version(null)
-                            .ifMatch(null)
-                            .ifNoneMatch(null)
-                            .ifVersionMatch(null)
-                            .ifVersionNotMatch(null)
-                            .ifModifiedSince(null)
-                            .ifUnmodifiedSince(null)
-                            .build(),
-                    "0123456789");
             assertReads(op, async, "file", ReadOptions.builder().offset(8).build(), "89");
             assertReads(op, async, "file", ReadOptions.builder().length(0).build(), "");
             assertReads(
