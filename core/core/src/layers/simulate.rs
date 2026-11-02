@@ -517,7 +517,15 @@ impl oio::List for ServicerFlatLister {
                         );
                         continue;
                     }
-                    Err(e) => return Err(e),
+                    Err(e) => {
+                        // `de` was taken out of `next_dir` above and is not in
+                        // `active_lister` yet, so dropping it here would lose
+                        // the directory: a caller that retries this `next()`
+                        // would resume from the parent and return `Ok` with
+                        // the directory's entries missing.
+                        self.next_dir = Some(de);
+                        return Err(e);
+                    }
                 };
                 let first = loop {
                     match l.next().await {
@@ -529,7 +537,14 @@ impl oio::List for ServicerFlatLister {
                             );
                             continue;
                         }
-                        Err(e) => return Err(e),
+                        Err(e) => {
+                            // Same here, and this is the path a temporary
+                            // error takes: nothing has been yielded from `l`
+                            // yet, so the directory can be listed again from
+                            // the start.
+                            self.next_dir = Some(de);
+                            return Err(e);
+                        }
                     }
                 };
                 if let Some(v) = first {
@@ -644,16 +659,90 @@ impl oio::Delete for SimulateDeleter {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::sync::Mutex;
 
     use super::*;
 
-    #[derive(Debug)]
+    #[derive(Debug, Default)]
     struct MockService {
         capability: Capability,
+        tree: Option<Arc<TreeState>>,
     }
 
     struct MockLister(bool);
+
+    /// A directory tree for `TreeLister`, with one-shot listing faults.
+    ///
+    /// Each fault fires exactly once and carries a temporary error, which is
+    /// what a 503 or a dropped connection looks like to the lister once
+    /// `RetryLayer` has classified it, without needing a server to inject it.
+    /// The two cover the lister's two ways of failing to open a directory:
+    /// `list` itself returning an error, and the first `next()` on the lister
+    /// it returned.
+    #[derive(Debug, Default)]
+    struct TreeState {
+        /// Directory path to its children, as `(path, is_dir)`.
+        tree: HashMap<String, Vec<(String, bool)>>,
+        fail_first_list_on: Option<String>,
+        fail_first_next_on: Option<String>,
+        list_injected: Mutex<bool>,
+        next_injected: Mutex<bool>,
+        /// Every path passed to `list`, so a test can assert on retries.
+        listed: Mutex<Vec<String>>,
+    }
+
+    impl TreeState {
+        /// Claim a one-shot fault for `path`, if it is armed and unused.
+        fn take_fault(&self, armed: &Option<String>, used: &Mutex<bool>, path: &str) -> bool {
+            if armed.as_deref() != Some(path) {
+                return false;
+            }
+            let mut used = used.lock().expect("mutex must not poison");
+            let first_time = !*used;
+            *used = true;
+            first_time
+        }
+    }
+
+    struct TreeLister {
+        entries: std::vec::IntoIter<(String, bool)>,
+        fail_first: bool,
+    }
+
+    impl TreeLister {
+        fn new(state: &Arc<TreeState>, path: &str) -> Self {
+            Self {
+                entries: state
+                    .tree
+                    .get(path)
+                    .cloned()
+                    .unwrap_or_default()
+                    .into_iter(),
+                fail_first: state.take_fault(&state.fail_first_next_on, &state.next_injected, path),
+            }
+        }
+    }
+
+    impl oio::List for TreeLister {
+        async fn next(&mut self) -> Result<Option<oio::Entry>> {
+            if self.fail_first {
+                self.fail_first = false;
+                return Err(
+                    Error::new(ErrorKind::Unexpected, "injected listing failure").set_temporary(),
+                );
+            }
+
+            Ok(self.entries.next().map(|(path, is_dir)| {
+                let meta = if is_dir {
+                    MetadataBuilder::dir().build()
+                } else {
+                    MetadataBuilder::file(0).build()
+                };
+                oio::Entry::new(&path, meta)
+            }))
+        }
+    }
 
     impl oio::List for MockLister {
         async fn next(&mut self) -> Result<Option<oio::Entry>> {
@@ -671,7 +760,7 @@ mod tests {
     impl Service for MockService {
         type Reader = ();
         type Writer = ();
-        type Lister = MockLister;
+        type Lister = TwoWays<MockLister, TreeLister>;
         type Deleter = ();
         type Copier = ();
         type Composer = ();
@@ -724,9 +813,24 @@ mod tests {
             ))
         }
 
-        fn list(&self, _ctx: &OperationContext, _: &str, _: OpList) -> Result<Self::Lister> {
+        fn list(&self, _ctx: &OperationContext, path: &str, _: OpList) -> Result<Self::Lister> {
+            if let Some(state) = &self.tree {
+                state
+                    .listed
+                    .lock()
+                    .expect("mutex must not poison")
+                    .push(path.to_string());
+
+                if state.take_fault(&state.fail_first_list_on, &state.list_injected, path) {
+                    return Err(
+                        Error::new(ErrorKind::Unexpected, "injected list failure").set_temporary()
+                    );
+                }
+
+                return Ok(TwoWays::Two(TreeLister::new(state, path)));
+            }
             if self.capability.list {
-                return Ok(MockLister(false));
+                return Ok(TwoWays::One(MockLister(false)));
             }
             Err(Error::new(ErrorKind::Unsupported, "list is not supported"))
         }
@@ -794,7 +898,10 @@ mod tests {
             read_with_suffix: false,
             ..Default::default()
         };
-        let srv = Arc::new(MockService { capability }) as Servicer;
+        let srv = Arc::new(MockService {
+            capability,
+            ..Default::default()
+        }) as Servicer;
 
         let srv = SimulateLayer::default().apply_service(srv);
 
@@ -808,7 +915,10 @@ mod tests {
             read_with_suffix: false,
             ..Default::default()
         };
-        let srv = Arc::new(MockService { capability }) as Servicer;
+        let srv = Arc::new(MockService {
+            capability,
+            ..Default::default()
+        }) as Servicer;
 
         let srv = SimulateLayer::default()
             .with_read_with_suffix(false)
@@ -825,7 +935,10 @@ mod tests {
             list_with_recursive: false,
             ..Default::default()
         };
-        let srv = Arc::new(MockService { capability }) as Servicer;
+        let srv = Arc::new(MockService {
+            capability,
+            ..Default::default()
+        }) as Servicer;
         let srv = SimulateLayer::default().apply_service(srv);
 
         let metadata = srv
@@ -849,6 +962,7 @@ mod tests {
             OperationContext::new(),
             Arc::new(MockService {
                 capability: Capability::default(),
+                ..Default::default()
             }),
             "test".to_string(),
             args,
@@ -866,5 +980,191 @@ mod tests {
         );
 
         Ok(())
+    }
+
+    /// Recursively list a two-directory tree in which `a/` fails once.
+    ///
+    /// Returns the files yielded, how many errors surfaced, and every path
+    /// that reached `list`.
+    async fn list_tree_with_one_fault(state: Arc<TreeState>) -> (Vec<String>, u32, Vec<String>) {
+        let srv = Arc::new(MockService {
+            capability: Capability {
+                list: true,
+                ..Default::default()
+            },
+            tree: Some(state.clone()),
+        }) as Servicer;
+
+        let mut lister = ServicerFlatLister::new(OperationContext::new(), srv, "/");
+
+        // Drain it the way RetryLayer does: a temporary error is retried by
+        // calling `next()` again on the same lister.
+        let mut files = Vec::new();
+        let mut errors = 0;
+        loop {
+            match oio::List::next(&mut lister).await {
+                Ok(Some(entry)) => {
+                    if entry.mode().is_file() {
+                        files.push(entry.path().to_string());
+                    }
+                }
+                Ok(None) => break,
+                Err(err) => {
+                    assert!(err.is_temporary(), "injected error is temporary: {err}");
+                    errors += 1;
+                    assert!(errors <= 2, "the fault is injected once, not repeatedly");
+                }
+            }
+        }
+        files.sort();
+
+        let listed = state.listed.lock().expect("mutex must not poison").clone();
+        (files, errors, listed)
+    }
+
+    fn tree_with_two_dirs() -> HashMap<String, Vec<(String, bool)>> {
+        // `oio::Entry` normalizes an empty path to "/", so the root is listed
+        // under that name.
+        HashMap::from([
+            (
+                "/".to_string(),
+                vec![("a/".to_string(), true), ("b/".to_string(), true)],
+            ),
+            ("a/".to_string(), vec![("a/one.txt".to_string(), false)]),
+            ("b/".to_string(), vec![("b/two.txt".to_string(), false)]),
+        ])
+    }
+
+    /// The directory is lost when its first `next()` fails.
+    #[tokio::test]
+    async fn servicer_flat_lister_retries_a_directory_whose_first_entry_failed() {
+        let state = Arc::new(TreeState {
+            tree: tree_with_two_dirs(),
+            fail_first_next_on: Some("a/".to_string()),
+            ..Default::default()
+        });
+
+        let (files, errors, listed) = list_tree_with_one_fault(state).await;
+
+        assert_eq!(
+            errors, 1,
+            "the injected fault must surface; listed {listed:?}"
+        );
+        assert_eq!(
+            files,
+            vec!["a/one.txt".to_string(), "b/two.txt".to_string()],
+            "the directory that failed must be listed again, not skipped"
+        );
+        assert_eq!(
+            listed.iter().filter(|path| path.as_str() == "a/").count(),
+            2,
+            "a/ must be requested again after the temporary error; listed {listed:?}"
+        );
+    }
+
+    /// The same loss happens one step earlier, when `list` itself fails.
+    #[tokio::test]
+    async fn servicer_flat_lister_retries_a_directory_whose_list_failed() {
+        let state = Arc::new(TreeState {
+            tree: tree_with_two_dirs(),
+            fail_first_list_on: Some("a/".to_string()),
+            ..Default::default()
+        });
+
+        let (files, errors, listed) = list_tree_with_one_fault(state).await;
+
+        assert_eq!(
+            errors, 1,
+            "the injected fault must surface; listed {listed:?}"
+        );
+        assert_eq!(
+            files,
+            vec!["a/one.txt".to_string(), "b/two.txt".to_string()],
+            "the directory that failed must be listed again, not skipped"
+        );
+        assert_eq!(
+            listed.iter().filter(|path| path.as_str() == "a/").count(),
+            2,
+            "a/ must be requested again after the temporary error; listed {listed:?}"
+        );
+    }
+
+    /// The same loss, but two levels down, where the restored `next_dir` has to
+    /// coexist with a non-empty `active_lister` stack.
+    ///
+    /// The flat cases above fail a directory while only the root's lister is on
+    /// the stack. Here `/` and `a/` are both open when `a/b/` fails, so a lost
+    /// entry would be masked by the parent resuming instead: the listing would
+    /// pop back to `/`, move on to `c/`, and return `Ok` without `deep.txt`.
+    #[tokio::test]
+    async fn servicer_flat_lister_retries_a_nested_directory() {
+        let state = Arc::new(TreeState {
+            tree: HashMap::from([
+                (
+                    "/".to_string(),
+                    vec![("a/".to_string(), true), ("c/".to_string(), true)],
+                ),
+                ("a/".to_string(), vec![("a/b/".to_string(), true)]),
+                (
+                    "a/b/".to_string(),
+                    vec![("a/b/deep.txt".to_string(), false)],
+                ),
+                ("c/".to_string(), vec![("c/two.txt".to_string(), false)]),
+            ]),
+            fail_first_next_on: Some("a/b/".to_string()),
+            ..Default::default()
+        });
+
+        let (files, errors, listed) = list_tree_with_one_fault(state).await;
+
+        assert_eq!(
+            errors, 1,
+            "the injected fault must surface; listed {listed:?}"
+        );
+        assert_eq!(
+            files,
+            vec!["a/b/deep.txt".to_string(), "c/two.txt".to_string()],
+            "the nested directory must be listed again, not skipped by the parent"
+        );
+        assert_eq!(
+            listed.iter().filter(|path| path.as_str() == "a/b/").count(),
+            2,
+            "a/b/ must be requested again after the temporary error; listed {listed:?}"
+        );
+    }
+
+    /// A permanent error must still end the listing rather than lose entries
+    /// silently, so the restored `next_dir` cannot mask a real failure.
+    #[tokio::test]
+    async fn servicer_flat_lister_reports_a_directory_that_keeps_failing() {
+        let state = Arc::new(TreeState {
+            tree: tree_with_two_dirs(),
+            fail_first_next_on: Some("a/".to_string()),
+            ..Default::default()
+        });
+        let srv = Arc::new(MockService {
+            capability: Capability {
+                list: true,
+                ..Default::default()
+            },
+            tree: Some(state.clone()),
+        }) as Servicer;
+
+        let mut lister = ServicerFlatLister::new(OperationContext::new(), srv, "/");
+
+        // Walk until the fault, then stop: a caller that does not retry must
+        // see the error instead of a short, successful listing.
+        let mut saw_error = false;
+        for _ in 0..8 {
+            if let Err(err) = oio::List::next(&mut lister).await {
+                assert!(err.is_temporary());
+                saw_error = true;
+                break;
+            }
+        }
+        assert!(
+            saw_error,
+            "the error must reach a caller that does not retry"
+        );
     }
 }
