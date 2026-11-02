@@ -207,6 +207,7 @@ mod tests {
     use opendal_core::HttpTransporter;
     use opendal_core::Result;
     use opendal_core::raw::oio::ReadStreamDyn as _;
+    use opendal_core::raw::oio::StreamRead as _;
     use sha2::Digest;
     use sha2::Sha256;
     use std::path::Path;
@@ -245,7 +246,7 @@ mod tests {
                 *self.batch_count.lock().unwrap() += 1;
                 let body = serde_json::json!({
                     "objects": [{
-                        "oid": self.oid,
+                        "oid": self.oid.clone(),
                         "size": self.payload.len(),
                         "actions": {
                             "download": {

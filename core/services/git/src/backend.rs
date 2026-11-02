@@ -378,15 +378,8 @@ mod tests {
         std::fs::write(dir.join("plain.txt"), b"hello").unwrap();
         commit_all(&dir, "initial");
         let head = git(&dir, &["rev-parse", "HEAD"]);
-        git(
-            &dir,
-            &[
-                "update-index",
-                "--add",
-                "--cacheinfo",
-                &format!("160000,{head},submodule"),
-            ],
-        );
+        let cacheinfo = format!("160000,{head},submodule");
+        git(&dir, &["update-index", "--add", "--cacheinfo", &cacheinfo]);
         git(&dir, &["commit", "-q", "-m", "submodule"]);
         let head = git(&dir, &["rev-parse", "HEAD"]);
 
