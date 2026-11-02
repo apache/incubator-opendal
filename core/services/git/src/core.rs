@@ -251,7 +251,11 @@ impl GitCore {
         let commit_oid = self.resolve_reference(&repo)?;
         let (tree, commit_time) = self.get_commit_tree(&repo, commit_oid)?;
 
-        let path = path.trim_start_matches('/');
+        let rooted_path = build_rooted_abs_path(&self.root, path);
+        let path = rooted_path.trim_matches('/');
+        if path.is_empty() {
+            return Ok((0, true, commit_time));
+        }
         let entry = tree
             .lookup_entry_by_path(path)
             .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to look up git path"))?
@@ -287,7 +291,8 @@ impl GitCore {
         let commit_oid = self.resolve_reference(&repo)?;
         let (mut tree, commit_time) = self.get_commit_tree(&repo, commit_oid)?;
 
-        let path = path.trim_start_matches('/').trim_end_matches('/');
+        let rooted_path = build_rooted_abs_path(&self.root, path);
+        let path = rooted_path.trim_matches('/');
         if !path.is_empty() {
             let Some(entry) = tree
                 .lookup_entry_by_path(path)
@@ -347,7 +352,8 @@ impl GitCore {
         let commit_oid = self.resolve_reference(&repo)?;
         let (tree, _) = self.get_commit_tree(&repo, commit_oid)?;
 
-        let path = path.trim_start_matches('/');
+        let rooted_path = build_rooted_abs_path(&self.root, path);
+        let path = rooted_path.trim_matches('/');
         let entry = tree
             .lookup_entry_by_path(path)
             .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to look up git path"))?
@@ -503,11 +509,7 @@ impl GitCore {
             .body(Buffer::from(body))
             .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to build LFS batch request"))?;
 
-        let response = ctx
-            .http_transport()
-            .fetch(request)
-            .await
-            .map_err(|_| Error::new(ErrorKind::Unexpected, "LFS batch request failed"))?;
+        let response = ctx.http_transport().fetch(request).await?;
         if !response.status().is_success() {
             return Err(Error::new(
                 ErrorKind::Unexpected,
@@ -519,9 +521,7 @@ impl GitCore {
         let mut bufs = Vec::new();
         let mut total = 0;
         loop {
-            let buf = body.read().await.map_err(|_| {
-                Error::new(ErrorKind::Unexpected, "failed to read LFS batch response")
-            })?;
+            let buf = body.read().await?;
             if buf.is_empty() {
                 break;
             }

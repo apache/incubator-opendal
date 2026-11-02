@@ -176,10 +176,6 @@ impl Service for GitBackend {
     }
 
     async fn stat(&self, _ctx: &OperationContext, path: &str, _args: OpStat) -> Result<RpStat> {
-        if path == "/" {
-            return Ok(RpStat::new(MetadataBuilder::dir().build()));
-        }
-
         let core = self.core.clone();
         let path = path.to_string();
         let (size, is_dir, last_modified) =
@@ -280,6 +276,7 @@ mod tests {
         git(&dir, &["init", "-q"]);
         git(&dir, &["config", "user.email", "opendal@example.com"]);
         git(&dir, &["config", "user.name", "OpenDAL"]);
+        git(&dir, &["config", "commit.gpgsign", "false"]);
         (temp, dir)
     }
 

@@ -21,6 +21,7 @@ use std::time::Instant;
 use bytes::Bytes;
 use http::StatusCode;
 use http::header;
+use opendal_core::raw::oio::ReadStream;
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -88,6 +89,16 @@ impl GitReader {
         range: BytesRange,
         pointer: &LfsPointer,
     ) -> Result<(RpRead, Box<dyn oio::ReadStreamDyn>)> {
+        if range.offset() > pointer.size {
+            return Err(Error::new(
+                ErrorKind::RangeNotSatisfied,
+                "range start offset exceeds content length",
+            ));
+        }
+        if range.offset() == pointer.size || range.size() == Some(0) {
+            let rp = RpRead::new(MetadataBuilder::file(pointer.size).build());
+            return Ok((rp, Box::new(Bytes::new())));
+        }
         if let Some(action) = self.cached_action()? {
             match self.fetch_payload(&action, range, pointer.size).await {
                 Ok(result) => return Ok(result),
@@ -139,16 +150,24 @@ impl GitReader {
             .http_transport()
             .fetch(request)
             .await
-            .map_err(|_| {
-                LfsFetchError::Other(Error::new(
-                    ErrorKind::Unexpected,
-                    "LFS download request failed",
-                ))
-            })?;
+            .map_err(LfsFetchError::Other)?;
 
         let status = response.status();
         if status.is_success() {
             let rp = RpRead::new(MetadataBuilder::file(size).build());
+            if status == StatusCode::OK && !range.is_full() {
+                return Ok((
+                    rp,
+                    Box::new(LfsRangeStream {
+                        body: response.into_body(),
+                        skip: range.offset(),
+                        remaining: range
+                            .size()
+                            .unwrap_or(size - range.offset())
+                            .min(size - range.offset()),
+                    }),
+                ));
+            }
             return Ok((
                 rp,
                 Box::new(response.into_body()) as Box<dyn oio::ReadStreamDyn>,
@@ -176,6 +195,35 @@ impl GitReader {
     }
 }
 
+/// Apply a byte range incrementally when a server sends the full object.
+struct LfsRangeStream {
+    body: HttpBody,
+    skip: u64,
+    remaining: u64,
+}
+
+impl oio::ReadStream for LfsRangeStream {
+    async fn read(&mut self) -> Result<Buffer> {
+        while self.remaining > 0 {
+            let buffer = self.body.read().await?;
+            if buffer.is_empty() {
+                return Ok(buffer);
+            }
+            let length = buffer.len() as u64;
+            if self.skip >= length {
+                self.skip -= length;
+                continue;
+            }
+            let start = self.skip as usize;
+            let length = (length - self.skip).min(self.remaining);
+            self.skip = 0;
+            self.remaining -= length;
+            return Ok(buffer.slice(start..start + length as usize));
+        }
+        Ok(Buffer::new())
+    }
+}
+
 impl oio::StreamRead for GitReader {
     async fn open(&self, range: BytesRange) -> Result<(RpRead, Box<dyn oio::ReadStreamDyn>)> {
         let content = self.read_blob().await?;
@@ -199,7 +247,7 @@ enum LfsFetchError {
 mod tests {
     use super::*;
     use bytes::Bytes;
-    use futures::stream;
+    use futures::{FutureExt, StreamExt, stream};
     use http::{Request, Response, StatusCode};
     use opendal_core::Buffer;
     use opendal_core::HttpBody;
@@ -207,11 +255,8 @@ mod tests {
     use opendal_core::HttpTransporter;
     use opendal_core::Result;
     use opendal_core::raw::oio::ReadStreamDyn as _;
-    use opendal_core::raw::oio::StreamRead as _;
     use sha2::Digest;
     use sha2::Sha256;
-    use std::path::Path;
-    use std::process::Command;
     use std::sync::{Arc, Mutex};
 
     type SharedHeader = std::sync::Arc<std::sync::Mutex<std::option::Option<std::string::String>>>;
@@ -224,6 +269,8 @@ mod tests {
         range: SharedHeader,
         batch_count: Arc<Mutex<usize>>,
         payload_count: Arc<Mutex<usize>>,
+        pending_tail: bool,
+        reject_cached: bool,
     }
 
     impl MockTransport {
@@ -236,6 +283,8 @@ mod tests {
                 range: SharedHeader::default(),
                 batch_count: Arc::new(Mutex::new(0)),
                 payload_count: Arc::new(Mutex::new(0)),
+                pending_tail: false,
+                reject_cached: false,
             }
         }
     }
@@ -264,6 +313,12 @@ mod tests {
             }
 
             *self.payload_count.lock().unwrap() += 1;
+            if self.reject_cached && *self.payload_count.lock().unwrap() == 2 {
+                return Ok(Response::builder()
+                    .status(StatusCode::FORBIDDEN)
+                    .body(HttpBody::new(stream::empty(), Some(0)))
+                    .unwrap());
+            }
             *self.authorization.lock().unwrap() = req
                 .headers()
                 .get(http::header::AUTHORIZATION)
@@ -279,71 +334,51 @@ mod tests {
                 Ok(Buffer::from(Bytes::copy_from_slice(&self.payload[..4]))),
                 Ok(Buffer::from(Bytes::copy_from_slice(&self.payload[4..]))),
             ];
+            let body = if self.pending_tail {
+                HttpBody::new(
+                    stream::iter(chunks.into_iter().take(1)).chain(stream::pending()),
+                    Some(self.payload.len() as u64),
+                )
+            } else {
+                HttpBody::new(stream::iter(chunks), Some(self.payload.len() as u64))
+            };
             Ok(Response::builder()
                 .status(StatusCode::OK)
-                .body(HttpBody::new(
-                    stream::iter(chunks),
-                    Some(self.payload.len() as u64),
-                ))
+                .body(body)
                 .unwrap())
         }
     }
 
-    fn git(dir: &Path, args: &[&str]) -> String {
-        let output = Command::new("git")
-            .current_dir(dir)
-            .args(args)
-            .output()
-            .expect("git must be installed for the git service tests");
-        assert!(
-            output.status.success(),
-            "git {args:?} failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        String::from_utf8(output.stdout).unwrap().trim().to_string()
-    }
-
-    fn pointer_repo(payload: &[u8]) -> (tempfile::TempDir, std::path::PathBuf, String, String) {
-        let temp = tempfile::tempdir().unwrap();
-        let dir = temp.path().to_path_buf();
-        git(&dir, &["init", "-q"]);
-        git(&dir, &["config", "user.email", "opendal@example.com"]);
-        git(&dir, &["config", "user.name", "OpenDAL"]);
-
-        let oid = format!("{:x}", Sha256::digest(payload));
-        let pointer = format!(
-            "version https://git-lfs.github.com/spec/v1\noid sha256:{oid}\nsize {}\n",
-            payload.len()
-        );
-        std::fs::write(dir.join("model.bin"), pointer).unwrap();
-        git(&dir, &["add", "."]);
-        git(&dir, &["commit", "-q", "-m", "pointer"]);
-        let commit = git(&dir, &["rev-parse", "HEAD"]);
-
-        let repository = format!("file://{}", dir.display());
-        (temp, dir, repository, commit)
-    }
-
-    fn context(transport: MockTransport) -> OperationContext {
-        OperationContext::new().with_http_transport(HttpTransporter::new(transport))
-    }
-
-    #[tokio::test]
-    async fn lfs_reader_streams_action_chunks() {
-        let payload = b"0123456789";
-        let (_temp, _dir, repository, commit) = pointer_repo(payload);
-        let transport = MockTransport::new(payload);
+    fn reader(transport: impl HttpTransport) -> GitReader {
         let core = Arc::new(GitCore::new(
-            repository,
-            commit,
+            "https://example.com/repo".to_string(),
+            "HEAD".to_string(),
             "/".to_string(),
             None,
             None,
             true,
         ));
-        let reader = GitReader::new(core, context(transport.clone()), "model.bin".to_string());
+        let context = OperationContext::new().with_http_transport(HttpTransporter::new(transport));
+        GitReader::new(core, context, "model.bin".to_string())
+    }
 
-        let (rp, mut stream) = reader.open(BytesRange::default()).await.unwrap();
+    fn pointer(transport: &MockTransport) -> LfsPointer {
+        LfsPointer {
+            oid: transport.oid.clone(),
+            size: transport.payload.len() as u64,
+        }
+    }
+
+    #[tokio::test]
+    async fn lfs_reader_streams_action_chunks() {
+        let payload = b"0123456789";
+        let transport = MockTransport::new(payload);
+        let reader = reader(transport.clone());
+
+        let (rp, mut stream) = reader
+            .open_lfs(BytesRange::default(), &pointer(&transport))
+            .await
+            .unwrap();
         assert_eq!(rp.metadata().unwrap().content_length(), 10);
         assert_eq!(
             stream.read_dyn().await.unwrap().to_bytes(),
@@ -363,25 +398,107 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn lfs_reader_requests_requested_range() {
+    async fn lfs_reader_slices_ignored_range() {
         let payload = b"0123456789";
-        let (_temp, _dir, repository, commit) = pointer_repo(payload);
         let transport = MockTransport::new(payload);
-        let core = Arc::new(GitCore::new(
-            repository,
-            commit,
-            "/".to_string(),
-            None,
-            None,
-            true,
-        ));
-        let reader = GitReader::new(core, context(transport.clone()), "model.bin".to_string());
+        let reader = reader(transport.clone());
 
-        let _ = reader.open(BytesRange::new(0, Some(4))).await.unwrap();
+        let (rp, mut stream) = reader
+            .open_lfs(BytesRange::new(2, Some(4)), &pointer(&transport))
+            .await
+            .unwrap();
+        let mut result = Vec::new();
+        loop {
+            let buffer = stream.read_dyn().await.unwrap();
+            if buffer.is_empty() {
+                break;
+            }
+            result.extend_from_slice(&buffer.to_bytes());
+        }
+        assert_eq!(result, b"2345");
+        assert_eq!(rp.metadata().unwrap().content_length(), 10);
         assert_eq!(
             transport.range.lock().unwrap().as_deref(),
-            Some("bytes=0-3")
+            Some("bytes=2-5")
         );
         assert_eq!(*transport.payload_count.lock().unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn lfs_range_completes_without_waiting_for_full_body() {
+        let mut transport = MockTransport::new(b"0123456789");
+        transport.pending_tail = true;
+        let reader = reader(transport.clone());
+        let pointer = pointer(&transport);
+        let (_, mut stream) = reader
+            .open_lfs(BytesRange::new(0, Some(4)), &pointer)
+            .now_or_never()
+            .expect("opening must not buffer the payload")
+            .unwrap();
+        let first = stream
+            .read_dyn()
+            .now_or_never()
+            .expect("the first chunk is ready")
+            .unwrap();
+        assert_eq!(first.to_bytes(), Bytes::from_static(b"0123"));
+        assert!(
+            stream
+                .read_dyn()
+                .now_or_never()
+                .expect("the range is complete despite a pending tail")
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn rejected_cached_action_is_refreshed_once() {
+        let mut transport = MockTransport::new(b"0123456789");
+        transport.reject_cached = true;
+        let reader = reader(transport.clone());
+        let pointer = pointer(&transport);
+        let _ = reader
+            .open_lfs(BytesRange::default(), &pointer)
+            .await
+            .unwrap();
+        let _ = reader
+            .open_lfs(BytesRange::default(), &pointer)
+            .await
+            .unwrap();
+        assert_eq!(*transport.batch_count.lock().unwrap(), 2);
+        assert_eq!(*transport.payload_count.lock().unwrap(), 3);
+    }
+
+    struct TemporaryFailure;
+
+    impl HttpTransport for TemporaryFailure {
+        async fn fetch(&self, _: Request<Buffer>) -> Result<Response<HttpBody>> {
+            Err(Error::new(ErrorKind::Unexpected, "temporary transport failure").set_temporary())
+        }
+    }
+
+    #[tokio::test]
+    async fn transport_errors_keep_retry_state() {
+        let transport = MockTransport::new(b"0123456789");
+        let pointer = pointer(&transport);
+        let mut reader = reader(transport);
+        let action = reader
+            .core
+            .resolve_lfs_action(&reader.ctx, &pointer.oid, pointer.size)
+            .await
+            .unwrap();
+        reader.ctx =
+            OperationContext::new().with_http_transport(HttpTransporter::new(TemporaryFailure));
+        match reader
+            .fetch_payload(&action, BytesRange::default(), pointer.size)
+            .await
+        {
+            Err(LfsFetchError::Other(error)) => assert!(error.is_temporary()),
+            _ => panic!("the transport error must propagate"),
+        }
+        match reader.open_lfs(BytesRange::default(), &pointer).await {
+            Err(error) => assert!(error.is_temporary()),
+            _ => panic!("the batch transport error must propagate"),
+        }
     }
 }
