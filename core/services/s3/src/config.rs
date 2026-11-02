@@ -136,6 +136,57 @@ pub struct S3Config {
     /// <!-- @group Credentials -->
     #[serde(alias = "aws_session_token", alias = "aws_token", alias = "token")]
     pub session_token: Option<String>,
+    /// Relative URI for AWS container credential metadata.
+    ///
+    /// An explicit full endpoint takes precedence over this value. This value
+    /// takes precedence over the ambient full and relative container credential
+    /// URIs. OpenDAL joins it to `container_metadata_uri_override` when set,
+    /// otherwise to `http://169.254.170.2`.
+    ///
+    /// Setting any container credential field replaces the ECS slot in the
+    /// default credential chain. It does not move that slot ahead of earlier
+    /// default providers.
+    ///
+    /// <!-- @group Credentials -->
+    #[serde(alias = "aws_container_credentials_relative_uri")]
+    pub container_credentials_relative_uri: Option<String>,
+    /// Full URI for AWS container credential metadata.
+    ///
+    /// This endpoint takes precedence over the relative container credential
+    /// URI and both ambient container credential URI forms. It does not change
+    /// the position or priority of the default ECS credential provider.
+    ///
+    /// <!-- @group Credentials -->
+    #[serde(
+        alias = "container_credentials_full_uri",
+        alias = "aws_container_credentials_full_uri"
+    )]
+    pub container_credentials_endpoint: Option<String>,
+    /// Authorization token sent to the AWS container credential endpoint.
+    ///
+    /// This token takes precedence over the configured token file and the
+    /// ambient direct and file token forms.
+    ///
+    /// <!-- @group Credentials -->
+    #[serde(alias = "aws_container_authorization_token")]
+    pub container_authorization_token: Option<String>,
+    /// File containing the authorization token sent to the AWS container
+    /// credential endpoint.
+    ///
+    /// This file takes precedence over both ambient token forms. The credential
+    /// provider trims surrounding whitespace after reading the file.
+    ///
+    /// <!-- @group Credentials -->
+    #[serde(alias = "aws_container_authorization_token_file")]
+    pub container_authorization_token_file: Option<String>,
+    /// Base URI used to resolve a relative AWS container credential URI.
+    ///
+    /// This override affects relative URIs only. It does not alter a configured
+    /// or ambient full URI. The override alone does not select an endpoint.
+    ///
+    /// <!-- @group Credentials -->
+    #[serde(alias = "aws_container_metadata_uri_override")]
+    pub container_metadata_uri_override: Option<String>,
     /// role_arn for this backend.
     ///
     /// If `role_arn` is set, we will use already known config as source
@@ -159,13 +210,13 @@ pub struct S3Config {
     ///
     /// <!-- @group Assume role -->
     pub assume_role_session_tags: Option<HashMap<String, String>>,
-    /// Disable config load so that opendal will not load config from
-    /// environment.
+    /// Disable automatic endpoint loading and the environment/profile
+    /// credential providers.
     ///
-    /// For examples:
-    ///
-    /// - envs like `AWS_ACCESS_KEY_ID`
-    /// - files like `~/.aws/config`
+    /// This skips endpoint environment variables and removes the static
+    /// environment and shared-profile credential slots. Region environment
+    /// lookup and other credential providers, including AWS container
+    /// credentials and EC2 instance metadata, remain enabled.
     ///
     /// <!-- @group Credentials -->
     pub disable_config_load: bool,
@@ -503,5 +554,124 @@ mod tests {
             cfg.endpoint.as_deref(),
             Some("https://custom-s3-endpoint.com")
         );
+    }
+
+    fn assert_container_credentials(config: &S3Config) {
+        assert_eq!(
+            config.container_credentials_relative_uri.as_deref(),
+            Some("/relative/credentials")
+        );
+        assert_eq!(
+            config.container_credentials_endpoint.as_deref(),
+            Some("http://127.0.0.1:8080/credentials")
+        );
+        assert_eq!(
+            config.container_authorization_token.as_deref(),
+            Some("direct-token")
+        );
+        assert_eq!(
+            config.container_authorization_token_file.as_deref(),
+            Some("/run/secrets/container-token")
+        );
+        assert_eq!(
+            config.container_metadata_uri_override.as_deref(),
+            Some("http://127.0.0.1:8080")
+        );
+    }
+
+    #[test]
+    fn test_s3_config_container_credentials_names() {
+        let canonical: S3Config = serde_json::from_str(
+            r#"{
+                "bucket": "test-bucket",
+                "container_credentials_relative_uri": "/relative/credentials",
+                "container_credentials_endpoint": "http://127.0.0.1:8080/credentials",
+                "container_authorization_token": "direct-token",
+                "container_authorization_token_file": "/run/secrets/container-token",
+                "container_metadata_uri_override": "http://127.0.0.1:8080"
+            }"#,
+        )
+        .unwrap();
+        assert_container_credentials(&canonical);
+
+        let aws_aliases: S3Config = serde_json::from_str(
+            r#"{
+                "bucket": "test-bucket",
+                "aws_container_credentials_relative_uri": "/relative/credentials",
+                "aws_container_credentials_full_uri": "http://127.0.0.1:8080/credentials",
+                "aws_container_authorization_token": "direct-token",
+                "aws_container_authorization_token_file": "/run/secrets/container-token",
+                "aws_container_metadata_uri_override": "http://127.0.0.1:8080"
+            }"#,
+        )
+        .unwrap();
+        assert_container_credentials(&aws_aliases);
+    }
+
+    #[test]
+    fn test_s3_config_container_credentials_full_uri_alias() {
+        let config: S3Config = serde_json::from_str(
+            r#"{
+                "bucket": "test-bucket",
+                "container_credentials_full_uri": "http://127.0.0.1:8080/credentials"
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            config.container_credentials_endpoint.as_deref(),
+            Some("http://127.0.0.1:8080/credentials")
+        );
+    }
+
+    #[test]
+    fn test_s3_config_does_not_map_ec2_metadata_aliases() {
+        for alias in ["aws_metadata_endpoint", "metadata_endpoint"] {
+            let json = format!(r#"{{"bucket":"test-bucket","{alias}":"http://127.0.0.1:1338"}}"#);
+            let config: S3Config = serde_json::from_str(&json).unwrap();
+
+            assert_eq!(config.container_metadata_uri_override, None, "{alias}");
+        }
+    }
+
+    #[test]
+    fn from_uri_extracts_container_credentials() {
+        let uri = OperatorUri::new(
+            concat!(
+                "s3://example-bucket/root?",
+                "container_credentials_relative_uri=%2Frelative%2Fcredentials",
+                "&container_credentials_full_uri=",
+                "http%3A%2F%2F127.0.0.1%3A8080%2Fcredentials",
+                "&aws_container_authorization_token=direct-token",
+                "&aws_container_authorization_token_file=%2Frun%2Fsecrets%2Fcontainer-token",
+                "&aws_container_metadata_uri_override=http%3A%2F%2F127.0.0.1%3A8080"
+            ),
+            iter::empty(),
+        )
+        .unwrap();
+        let config = S3Config::from_uri(&uri).unwrap();
+
+        assert_container_credentials(&config);
+    }
+
+    #[test]
+    fn test_s3_config_and_builder_debug_omit_container_secrets() {
+        let config: S3Config = serde_json::from_str(
+            r#"{
+                "bucket": "test-bucket",
+                "container_credentials_endpoint": "http://metadata.example/container-secret-endpoint",
+                "container_authorization_token": "configured-container-token",
+                "container_authorization_token_file": "/run/secrets/container-secret-token"
+            }"#,
+        )
+        .unwrap();
+
+        let config_debug = format!("{config:?}");
+        let builder_debug = format!("{:?}", config.clone().into_builder());
+        for debug in [&config_debug, &builder_debug] {
+            assert!(!debug.contains("container-secret-endpoint"));
+            assert!(!debug.contains("configured-container-token"));
+            assert!(!debug.contains("container-secret-token"));
+        }
     }
 }

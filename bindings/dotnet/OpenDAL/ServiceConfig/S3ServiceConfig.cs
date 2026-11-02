@@ -55,6 +55,26 @@ namespace OpenDAL.ServiceConfig
         /// </summary>
         public string? ChecksumAlgorithm { get; init; }
         /// <summary>
+        /// Authorization token sent to the AWS container credential endpoint. This token takes precedence over the configured token file and the ambient direct and file token forms.
+        /// </summary>
+        public string? ContainerAuthorizationToken { get; init; }
+        /// <summary>
+        /// File containing the authorization token sent to the AWS container credential endpoint. This file takes precedence over both ambient token forms. The credential provider trims surrounding whitespace after reading the file.
+        /// </summary>
+        public string? ContainerAuthorizationTokenFile { get; init; }
+        /// <summary>
+        /// Full URI for AWS container credential metadata. This endpoint takes precedence over the relative container credential URI and both ambient container credential URI forms. It does not change the position or priority of the default ECS credential provider.
+        /// </summary>
+        public string? ContainerCredentialsEndpoint { get; init; }
+        /// <summary>
+        /// Relative URI for AWS container credential metadata. An explicit full endpoint takes precedence over this value. This value takes precedence over the ambient full and relative container credential URIs. OpenDAL joins it to `container_metadata_uri_override` when set, otherwise to `http://169.254.170.2`. Setting any container credential field replaces the ECS slot in the default credential chain. It does not move that slot ahead of earlier default providers.
+        /// </summary>
+        public string? ContainerCredentialsRelativeUri { get; init; }
+        /// <summary>
+        /// Base URI used to resolve a relative AWS container credential URI. This override affects relative URIs only. It does not alter a configured or ambient full URI. The override alone does not select an endpoint.
+        /// </summary>
+        public string? ContainerMetadataUriOverride { get; init; }
+        /// <summary>
         /// Default ACL for new objects. Note that some s3 services like minio do not support this option.
         /// </summary>
         public string? DefaultAcl { get; init; }
@@ -72,7 +92,7 @@ namespace OpenDAL.ServiceConfig
         [System.Obsolete("S3 delete batch capability is enabled by default. Use CapabilityOverrideLayer to override delete_max_size for specific endpoints.")]
         public long? DeleteMaxSize { get; init; }
         /// <summary>
-        /// Disable config load so that opendal will not load config from environment. For examples: - envs like `AWS_ACCESS_KEY_ID` - files like `~/.aws/config`
+        /// Disable automatic endpoint loading and the environment/profile credential providers. This skips endpoint environment variables and removes the static environment and shared-profile credential slots. Region environment lookup and other credential providers, including AWS container credentials and EC2 instance metadata, remain enabled.
         /// </summary>
         public bool? DisableConfigLoad { get; init; }
         /// <summary>
@@ -208,6 +228,26 @@ namespace OpenDAL.ServiceConfig
             if (ChecksumAlgorithm is not null)
             {
                 map["checksum_algorithm"] = Utilities.ToOptionString(ChecksumAlgorithm);
+            }
+            if (ContainerAuthorizationToken is not null)
+            {
+                map["container_authorization_token"] = Utilities.ToOptionString(ContainerAuthorizationToken);
+            }
+            if (ContainerAuthorizationTokenFile is not null)
+            {
+                map["container_authorization_token_file"] = Utilities.ToOptionString(ContainerAuthorizationTokenFile);
+            }
+            if (ContainerCredentialsEndpoint is not null)
+            {
+                map["container_credentials_endpoint"] = Utilities.ToOptionString(ContainerCredentialsEndpoint);
+            }
+            if (ContainerCredentialsRelativeUri is not null)
+            {
+                map["container_credentials_relative_uri"] = Utilities.ToOptionString(ContainerCredentialsRelativeUri);
+            }
+            if (ContainerMetadataUriOverride is not null)
+            {
+                map["container_metadata_uri_override"] = Utilities.ToOptionString(ContainerMetadataUriOverride);
             }
             if (DefaultAcl is not null)
             {

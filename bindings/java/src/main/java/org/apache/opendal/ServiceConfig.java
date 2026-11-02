@@ -3086,6 +3086,43 @@ public interface ServiceConfig {
          */
         public final String checksumAlgorithm;
         /**
+         * <p>Authorization token sent to the AWS container credential endpoint.</p>
+         * <p>This token takes precedence over the configured token file and the
+         * ambient direct and file token forms.</p>
+         */
+        public final String containerAuthorizationToken;
+        /**
+         * <p>File containing the authorization token sent to the AWS container
+         * credential endpoint.</p>
+         * <p>This file takes precedence over both ambient token forms. The credential
+         * provider trims surrounding whitespace after reading the file.</p>
+         */
+        public final String containerAuthorizationTokenFile;
+        /**
+         * <p>Full URI for AWS container credential metadata.</p>
+         * <p>This endpoint takes precedence over the relative container credential
+         * URI and both ambient container credential URI forms. It does not change
+         * the position or priority of the default ECS credential provider.</p>
+         */
+        public final String containerCredentialsEndpoint;
+        /**
+         * <p>Relative URI for AWS container credential metadata.</p>
+         * <p>An explicit full endpoint takes precedence over this value. This value
+         * takes precedence over the ambient full and relative container credential
+         * URIs. OpenDAL joins it to <code>container_metadata_uri_override</code> when set,
+         * otherwise to <code>http://169.254.170.2</code>.</p>
+         * <p>Setting any container credential field replaces the ECS slot in the
+         * default credential chain. It does not move that slot ahead of earlier
+         * default providers.</p>
+         */
+        public final String containerCredentialsRelativeUri;
+        /**
+         * <p>Base URI used to resolve a relative AWS container credential URI.</p>
+         * <p>This override affects relative URIs only. It does not alter a configured
+         * or ambient full URI. The override alone does not select an endpoint.</p>
+         */
+        public final String containerMetadataUriOverride;
+        /**
          * <p>Default ACL for new objects.
          * Note that some s3 services like minio do not support this option.</p>
          */
@@ -3120,13 +3157,12 @@ public interface ServiceConfig {
          */
         public final Long deleteMaxSize;
         /**
-         * <p>Disable config load so that opendal will not load config from
-         * environment.</p>
-         * <p>For examples:</p>
-         * <ul>
-         * <li>envs like <code>AWS_ACCESS_KEY_ID</code></li>
-         * <li>files like <code>~/.aws/config</code></li>
-         * </ul>
+         * <p>Disable automatic endpoint loading and the environment/profile
+         * credential providers.</p>
+         * <p>This skips endpoint environment variables and removes the static
+         * environment and shared-profile credential slots. Region environment
+         * lookup and other credential providers, including AWS container
+         * credentials and EC2 instance metadata, remain enabled.</p>
          */
         public final Boolean disableConfigLoad;
         /**
@@ -3324,6 +3360,21 @@ public interface ServiceConfig {
             map.put("bucket", bucket);
             if (checksumAlgorithm != null) {
                 map.put("checksum_algorithm", checksumAlgorithm);
+            }
+            if (containerAuthorizationToken != null) {
+                map.put("container_authorization_token", containerAuthorizationToken);
+            }
+            if (containerAuthorizationTokenFile != null) {
+                map.put("container_authorization_token_file", containerAuthorizationTokenFile);
+            }
+            if (containerCredentialsEndpoint != null) {
+                map.put("container_credentials_endpoint", containerCredentialsEndpoint);
+            }
+            if (containerCredentialsRelativeUri != null) {
+                map.put("container_credentials_relative_uri", containerCredentialsRelativeUri);
+            }
+            if (containerMetadataUriOverride != null) {
+                map.put("container_metadata_uri_override", containerMetadataUriOverride);
             }
             if (defaultAcl != null) {
                 map.put("default_acl", defaultAcl);
