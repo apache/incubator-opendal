@@ -52,8 +52,12 @@ def infer(request_body):
         summary["valid_json"] = False
     else:
         summary["valid_json"] = True
+        summary["classification"] = parsed
         if choice["finish_reason"] == "stop":
-            summary["selected_labels"] = sorted(label.selected_labels(parsed, item, files))
+            try:
+                summary["selected_labels"] = sorted(label.selected_labels(parsed, item, files))
+            except ValueError as error:
+                summary["classification_error"] = str(error)
     print(json.dumps(summary), flush=True)
     return summary
 
@@ -64,9 +68,9 @@ if baseline["finish_reason"] != "length":
 if not any(count > 1 and token.strip('"') in label.component_labels() for token, count in baseline["quoted_items"]):
     raise RuntimeError("No repeated component was observed; inspect before changing array uniqueness")
 candidate_body = copy.deepcopy(body)
-candidate_body["response_format"]["json_schema"]["properties"]["components"]["uniqueItems"] = True
+del candidate_body["response_format"]["json_schema"]["properties"]["components"]["items"]["enum"]
 candidate = infer(candidate_body)
-assert candidate["finish_reason"] == "stop" and candidate["valid_json"]
+assert candidate["finish_reason"] == "stop" and candidate["valid_json"] and "selected_labels" in candidate
 current = github.call("/issues/6836")
 assert (current["title"], current.get("body")) == (item["title"], item.get("body"))
 assert github.call("/pulls/6836")["head"]["sha"] == head
