@@ -6645,8 +6645,10 @@ version = "0.59.5"
 dependencies = [
  "asyncband",
  "opendal-core",
+ "rustls-native-certs 0.8.4",
  "serde",
  "tokio",
+ "tokio-rustls 0.26.4",
  "url",
 ]
 

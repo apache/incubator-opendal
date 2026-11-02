@@ -48,6 +48,16 @@ impl MemcachedBuilder {
         self
     }
 
+    /// Enable TLS for TCP connections.
+    ///
+    /// Defaults to false. The service loads native trust roots when it is built
+    /// and verifies the server certificate against the endpoint host or IP address.
+    /// Enabling TLS for a Unix socket returns ConfigInvalid when building the service.
+    pub fn enable_tls(mut self, enable: bool) -> Self {
+        self.config.enable_tls = enable;
+        self
+    }
+
     /// set the working directory, all operations will be performed under it.
     ///
     /// default: "/"
@@ -148,11 +158,23 @@ impl Builder for MemcachedBuilder {
                         .with_context("service", MEMCACHED_SCHEME)
                         .with_context("endpoint", &endpoint_raw)
                 })?;
-                Endpoint::Tcp(format!("{host}:{port}"))
+                let address = format!("{host}:{port}");
+                if self.config.enable_tls {
+                    Endpoint::tls(address, host)?
+                } else {
+                    Endpoint::Tcp(address)
+                }
             }
 
             #[cfg(unix)]
             "unix" => {
+                if self.config.enable_tls {
+                    return Err(Error::new(
+                        ErrorKind::ConfigInvalid,
+                        "TLS is only supported for TCP endpoints",
+                    )
+                    .with_context("service", MEMCACHED_SCHEME));
+                }
                 let path = parsed.path();
                 if path.is_empty() {
                     return Err(Error::new(
@@ -363,6 +385,17 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn build_rejects_tls_for_unix_socket() {
+        let err = MemcachedBuilder::default()
+            .endpoint("unix:///tmp/opendal-memcached.sock")
+            .enable_tls(true)
+            .build()
+            .expect_err("TLS must reject Unix endpoints");
+        assert_eq!(err.kind(), ErrorKind::ConfigInvalid);
+    }
 
     /// memcached reads an expiration over 30 days as an absolute unix timestamp,
     /// so a longer offset would store the entry already expired. Refuse it at

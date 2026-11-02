@@ -21,6 +21,12 @@ Use [`crate::MemcachedConfig`] for serializable configuration and this builder's
 methods for direct construction. The field and method documentation defines
 accepted values, defaults, and environment interaction.
 
+Set `enable_tls(true)` for a TCP endpoint that requires TLS. The service verifies
+the server certificate and endpoint hostname or IP address using native trust
+roots loaded when the service is built. Build a new operator to reload changes
+to those trust roots. TLS is disabled by default and is not supported for Unix
+socket endpoints.
+
 ## Example
 
 ### Via Builder
