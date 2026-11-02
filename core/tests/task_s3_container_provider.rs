@@ -35,29 +35,9 @@ use opendal::reqsign_core::ProvideCredentialChain;
 use opendal::services::S3;
 use opendal::services::reqsign_aws_v4::Credential;
 use opendal::services::reqsign_aws_v4::ECSCredentialProvider;
-use serde::Deserialize;
-use serde::Serialize;
 
 const EXPECTED_BODY: &[u8] = b"opendal-s3-container-provider-proof\n";
 const CASE_TIMEOUT: Duration = Duration::from_secs(180);
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "PascalCase")]
-struct RuntimeCredentials {
-    access_key_id: String,
-    secret_access_key: String,
-    session_token: String,
-    expiration: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "PascalCase")]
-struct MetadataResponse<'a> {
-    access_key_id: &'a str,
-    secret_access_key: &'a str,
-    token: &'a str,
-    expiration: &'a str,
-}
 
 #[derive(Default)]
 struct ServerState {
@@ -75,7 +55,7 @@ struct MetadataServer {
 }
 
 impl MetadataServer {
-    fn start(credentials: RuntimeCredentials, expected_token: String) -> std::io::Result<Self> {
+    fn start(metadata_body: Vec<u8>, expected_token: String) -> std::io::Result<Self> {
         let listener = TcpListener::bind(("127.0.0.1", 0))?;
         listener.set_nonblocking(true)?;
         let address = listener.local_addr()?;
@@ -84,13 +64,11 @@ impl MetadataServer {
         let stop = Arc::new(AtomicBool::new(false));
         let thread_state = state.clone();
         let thread_stop = stop.clone();
-        let credentials = Arc::new(credentials);
-
         let handle = thread::spawn(move || {
             while !thread_stop.load(Ordering::Acquire) {
                 match listener.accept() {
                     Ok((stream, _)) => {
-                        handle_connection(stream, &thread_state, &credentials, &expected_token);
+                        handle_connection(stream, &thread_state, &metadata_body, &expected_token);
                     }
                     Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                         thread::sleep(Duration::from_millis(5));
@@ -139,7 +117,7 @@ impl Drop for MetadataServer {
 fn handle_connection(
     mut stream: TcpStream,
     state: &Arc<Mutex<ServerState>>,
-    credentials: &RuntimeCredentials,
+    metadata_body: &[u8],
     expected_token: &str,
 ) {
     let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
@@ -183,31 +161,13 @@ fn handle_connection(
             .lock()
             .expect("metadata state lock poisoned")
             .full_accepted += 1;
-        (
-            "200 OK",
-            serde_json::to_vec(&MetadataResponse {
-                access_key_id: &credentials.access_key_id,
-                secret_access_key: &credentials.secret_access_key,
-                token: &credentials.session_token,
-                expiration: &credentials.expiration,
-            })
-            .unwrap_or_default(),
-        )
+        ("200 OK", metadata_body.to_vec())
     } else if path == "/relative" {
         state
             .lock()
             .expect("metadata state lock poisoned")
             .relative_accepted += 1;
-        (
-            "200 OK",
-            serde_json::to_vec(&MetadataResponse {
-                access_key_id: &credentials.access_key_id,
-                secret_access_key: &credentials.secret_access_key,
-                token: &credentials.session_token,
-                expiration: &credentials.expiration,
-            })
-            .unwrap_or_default(),
-        )
+        ("200 OK", metadata_body.to_vec())
     } else {
         state.lock().expect("metadata state lock poisoned").other += 1;
         ("403 Forbidden", b"denied".to_vec())
@@ -266,21 +226,23 @@ async fn read_expected(operator: &Operator, key: &str) -> Result<bool, ErrorKind
 }
 
 async fn run_case() {
-    let credentials_path = required_env("OPENDAL_TASK_S3_CREDENTIAL_FILE");
+    let metadata_response_path = required_env("OPENDAL_TASK_S3_METADATA_RESPONSE_FILE");
     let token_file = required_env("OPENDAL_TASK_S3_TOKEN_FILE");
     let relative_key = required_env("OPENDAL_TASK_S3_RELATIVE_KEY");
 
-    let credentials: RuntimeCredentials = serde_json::from_slice(
-        &fs::read(&credentials_path).expect("runtime credential file must be readable"),
-    )
-    .expect("runtime credential file must contain the expected fields");
+    let metadata_body =
+        fs::read(&metadata_response_path).expect("runtime metadata response must be readable");
+    assert!(
+        !metadata_body.is_empty(),
+        "metadata response must not be empty"
+    );
 
     let valid_token = uuid::Uuid::new_v4().to_string();
     let wrong_token = uuid::Uuid::new_v4().to_string();
     write_private_file(&token_file, valid_token.as_bytes())
         .expect("metadata token file must be writable");
 
-    let mut server = MetadataServer::start(credentials, valid_token.clone())
+    let mut server = MetadataServer::start(metadata_body, valid_token.clone())
         .expect("metadata server must start");
 
     let full = build_operator(

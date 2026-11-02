@@ -205,7 +205,7 @@ def seed_object(
 
 def native_environment(
     fixture: dict[str, str],
-    credentials_file: Path,
+    metadata_response_file: Path,
     token_file: Path,
     relative_key: str,
 ) -> dict[str, str]:
@@ -224,7 +224,7 @@ def native_environment(
             FIXTURE_ENV["bucket"]: fixture["bucket"],
             FIXTURE_ENV["endpoint"]: fixture["endpoint"],
             FIXTURE_ENV["region"]: fixture["region"],
-            "OPENDAL_TASK_S3_CREDENTIAL_FILE": str(credentials_file),
+            "OPENDAL_TASK_S3_METADATA_RESPONSE_FILE": str(metadata_response_file),
             "OPENDAL_TASK_S3_TOKEN_FILE": str(token_file),
             "OPENDAL_TASK_S3_RELATIVE_KEY": relative_key,
             "CARGO_BUILD_JOBS": "4",
@@ -466,12 +466,20 @@ def main() -> int:
         aws_env = aws_environment(fixture)
 
         minted = mint_temporary_credentials(aws, aws_env)
-        credentials_file = private_dir / "runtime-credentials.json"
+        metadata_response_file = private_dir / "metadata-response.json"
         token_file = private_dir / "metadata-token"
         body_file = private_dir / "expected-body"
         write_private_file(
-            credentials_file,
-            json.dumps(minted, separators=(",", ":")).encode("utf-8"),
+            metadata_response_file,
+            json.dumps(
+                {
+                    "AccessKeyId": minted["AccessKeyId"],
+                    "SecretAccessKey": minted["SecretAccessKey"],
+                    "Token": minted["SessionToken"],
+                    "Expiration": minted["Expiration"],
+                },
+                separators=(",", ":"),
+            ).encode("utf-8"),
         )
         write_private_file(body_file, EXPECTED_BODY)
 
@@ -487,7 +495,7 @@ def main() -> int:
         seed_attempted = True
         seed_object(aws, aws_env, fixture, full_key, body_file)
 
-        native_env = native_environment(fixture, credentials_file, token_file, relative_key)
+        native_env = native_environment(fixture, metadata_response_file, token_file, relative_key)
         native_code, native_footer = run_native(
             repo,
             native_env,
