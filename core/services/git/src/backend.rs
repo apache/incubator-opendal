@@ -341,6 +341,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn head_snapshot_remains_fixed_after_first_read() {
+        let (_temp, dir) = init_repo();
+        std::fs::write(dir.join("state.txt"), b"one").unwrap();
+        commit_all(&dir, "initial");
+        let repository = file_url(&dir);
+        let ctx = OperationContext::new();
+        let service = GitBuilder::default()
+            .repository(&repository)
+            .build()
+            .unwrap();
+        let reader = service.read(&ctx, "state.txt", OpRead::default()).unwrap();
+        let (_, initial) = reader.read(BytesRange::default()).await.unwrap();
+        assert_eq!(initial.to_bytes(), Bytes::from_static(b"one"));
+
+        std::fs::write(dir.join("state.txt"), b"two").unwrap();
+        commit_all(&dir, "advance head");
+        let (_, retained) = reader.read(BytesRange::default()).await.unwrap();
+        assert_eq!(retained.to_bytes(), Bytes::from_static(b"one"));
+
+        let fresh = GitBuilder::default()
+            .repository(&repository)
+            .build()
+            .unwrap();
+        let reader = fresh.read(&ctx, "state.txt", OpRead::default()).unwrap();
+        let (_, current) = reader.read(BytesRange::default()).await.unwrap();
+        assert_eq!(current.to_bytes(), Bytes::from_static(b"two"));
+    }
+
+    #[tokio::test]
     async fn resolve_lfs_false_returns_pointer() {
         let (_temp, dir) = init_repo();
         let pointer = format!(
