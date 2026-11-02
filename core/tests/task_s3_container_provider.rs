@@ -288,10 +288,16 @@ async fn run_case() {
             .with_endpoint(format!("{}/full", server.base_url()))
             .with_auth_token(valid_token.clone()),
     )
-    .unwrap_or_else(|kind| panic!("full endpoint operator build failed: {kind:?}"));
+    .unwrap_or_else(|kind| {
+        println!("TASK_failure_stage=full_operator_build error_kind={kind:?}");
+        panic!("full endpoint operator build failed");
+    });
     let full_success = read_expected(&full, &relative_key)
         .await
-        .unwrap_or_else(|kind| panic!("full endpoint S3 read failed: {kind:?}"));
+        .unwrap_or_else(|kind| {
+            println!("TASK_failure_stage=full_endpoint_read error_kind={kind:?}");
+            panic!("full endpoint S3 read failed");
+        });
 
     let relative = build_operator(
         ECSCredentialProvider::new()
@@ -299,17 +305,26 @@ async fn run_case() {
             .with_metadata_uri_override(server.base_url())
             .with_auth_token_file(token_file.clone()),
     )
-    .unwrap_or_else(|kind| panic!("relative URI operator build failed: {kind:?}"));
+    .unwrap_or_else(|kind| {
+        println!("TASK_failure_stage=relative_operator_build error_kind={kind:?}");
+        panic!("relative URI operator build failed");
+    });
     let relative_success = read_expected(&relative, &relative_key)
         .await
-        .unwrap_or_else(|kind| panic!("relative URI S3 read failed: {kind:?}"));
+        .unwrap_or_else(|kind| {
+            println!("TASK_failure_stage=relative_uri_read error_kind={kind:?}");
+            panic!("relative URI S3 read failed");
+        });
 
     let wrong = build_operator(
         ECSCredentialProvider::new()
             .with_endpoint(format!("{}/wrong", server.base_url()))
             .with_auth_token(wrong_token),
     )
-    .unwrap_or_else(|kind| panic!("wrong nonce operator build failed: {kind:?}"));
+    .unwrap_or_else(|kind| {
+        println!("TASK_failure_stage=wrong_nonce_operator_build error_kind={kind:?}");
+        panic!("wrong nonce operator build failed");
+    });
     let wrong_result = read_expected(&wrong, &relative_key).await;
     let wrong_failed = wrong_result.is_err();
     let wrong_kind = wrong_result

@@ -53,12 +53,11 @@ jobs:
         uses: ./.github/services/s3/aws_s3
 
       - name: Run one native S3 container provider proof
-        if: always()
         shell: bash
         env:
           CARGO_BUILD_JOBS: 4
           CARGO_TERM_COLOR: never
-          RUST_LOG: off
+          RUST_LOG: 'off'
           OPENDAL_TASK_EVIDENCE_DIR: ${{ runner.temp }}/opendal-s3-container-provider-evidence
         run: python3 dev/task_s3_container_provider.py
 

@@ -79,7 +79,7 @@ def run_capture(command: list[str], *, cwd: Path | None = None, env=None, timeou
 
 
 def aws_error_code(stderr: str, returncode: int) -> str:
-    match = re.search(r"An error occurred \(([^)]+)\)", stderr)
+    match = re.search(r"An error occurred \(([A-Za-z0-9_.-]{1,80})\)", stderr)
     if match:
         return match.group(1)
     match = re.search(r"\((AccessDenied|InvalidClientTokenId|ExpiredToken|TokenRefreshRequired)\)", stderr)
@@ -89,8 +89,8 @@ def aws_error_code(stderr: str, returncode: int) -> str:
 
 
 def fixture_configuration() -> dict[str, str]:
-    values = {name: os.environ.get(name, "") for name in FIXTURE_ENV.values()}
-    if any(not value for value in values.values()):
+    values = {field: os.environ.get(name, "") for field, name in FIXTURE_ENV.items()}
+    if any(not value for field, value in values.items() if field != "root"):
         raise StageError("fixture", "missing")
     return values
 
@@ -170,7 +170,7 @@ def write_private_file(path: Path, content: bytes) -> None:
 
 
 def normalize_root(value: str) -> str:
-    return "/".join(part for part in value.strip().split("/") if part)
+    return "/".join(part for part in value.split("/") if part)
 
 
 def endpoint_args(fixture: dict[str, str]) -> list[str]:
@@ -211,7 +211,11 @@ def native_environment(
 ) -> dict[str, str]:
     env = os.environ.copy()
     for name in list(env):
-        if name.startswith("AWS_") or name.startswith("OPENDAL_TASK_S3_"):
+        if (
+            name.startswith("AWS_")
+            or name.startswith("OPENDAL_TASK_S3_")
+            or name in (FIXTURE_ENV["access_key_id"], FIXTURE_ENV["secret_access_key"])
+        ):
             env.pop(name, None)
 
     env.update(
@@ -332,34 +336,24 @@ def delete_exact_versions(
     aws: str,
     env: dict[str, str],
     fixture: dict[str, str],
-    private_dir: Path,
     objects: list[tuple[str, str]],
 ) -> None:
-    for offset in range(0, len(objects), 1000):
-        chunk = objects[offset : offset + 1000]
-        payload = {
-            "Objects": [{"Key": key, "VersionId": version} for key, version in chunk],
-            "Quiet": True,
-        }
-        payload_path = private_dir / f"delete-{offset}.json"
-        write_private_file(
-            payload_path,
-            json.dumps(payload, separators=(",", ":")).encode("utf-8"),
-        )
+    for key, version in objects:
         proc = run_aws(
             aws,
             [
                 "s3api",
-                "delete-objects",
+                "delete-object",
                 "--bucket",
                 fixture["bucket"],
-                "--delete",
-                f"file://{payload_path}",
+                "--key",
+                key,
+                "--version-id",
+                version,
                 *endpoint_args(fixture),
             ],
             env,
         )
-        payload_path.unlink(missing_ok=True)
         if proc.returncode != 0:
             raise StageError("cleanup_delete", aws_error_code(proc.stderr, proc.returncode))
 
@@ -368,12 +362,11 @@ def cleanup_exact_object(
     aws: str,
     env: dict[str, str],
     fixture: dict[str, str],
-    private_dir: Path,
     full_key: str,
 ) -> str:
     try:
         objects = list_exact_key(aws, env, fixture, full_key)
-        delete_exact_versions(aws, env, fixture, private_dir, objects)
+        delete_exact_versions(aws, env, fixture, objects)
         remaining = list_exact_key(aws, env, fixture, full_key)
         if remaining:
             return f"failed:remaining_{len(remaining)}"
@@ -536,7 +529,6 @@ def main() -> int:
                         aws,
                         aws_environment(fixtures),
                         fixtures,
-                        private_dir,
                         full_key,
                     )
             except StageError as error:
