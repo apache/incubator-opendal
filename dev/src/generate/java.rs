@@ -25,7 +25,7 @@ use std::path::PathBuf;
 fn enabled_service(srv: &str) -> bool {
     match srv {
         // not enabled in bindings/java/Cargo.toml
-        "foundationdb" | "ftp" | "hdfs" | "rocksdb" | "tikv" => false,
+        "foundationdb" | "ftp" | "git" | "hdfs" | "rocksdb" | "tikv" => false,
         _ => true,
     }
 }

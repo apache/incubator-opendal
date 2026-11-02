@@ -332,12 +332,12 @@ pub mod services {
     pub use opendal_service_gcs::*;
     #[cfg(feature = "services-gcs-grpc")]
     pub use opendal_service_gcs_grpc::*;
-    #[cfg(feature = "services-git")]
-    pub use opendal_service_git::*;
     #[cfg(feature = "services-gdrive")]
     pub use opendal_service_gdrive::*;
     #[cfg(feature = "services-ghac")]
     pub use opendal_service_ghac::*;
+    #[cfg(feature = "services-git")]
+    pub use opendal_service_git::*;
     #[cfg(feature = "services-github")]
     pub use opendal_service_github::*;
     #[cfg(feature = "services-goosefs")]

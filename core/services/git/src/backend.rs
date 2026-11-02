@@ -49,7 +49,7 @@ impl GitBuilder {
     /// Set the Git reference to resolve.
     ///
     /// The value may be a branch, tag, commit hash, or `HEAD`. It is resolved
-    /// once when the operator first reads the repository and remains fixed for
+    /// once when the operator first accesses the repository and remains fixed for
     /// the lifetime of that operator. The default is `HEAD`.
     pub fn reference(mut self, reference: &str) -> Self {
         if !reference.is_empty() {
@@ -286,7 +286,7 @@ mod tests {
     }
 
     fn file_url(dir: &Path) -> String {
-        format!("file://{}", dir.display())
+        url::Url::from_file_path(dir).unwrap().to_string()
     }
 
     #[tokio::test]

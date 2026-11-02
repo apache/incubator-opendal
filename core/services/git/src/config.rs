@@ -39,7 +39,7 @@ pub struct GitConfig {
     /// Git reference to resolve.
     ///
     /// The value can be a branch, tag, commit hash, or `HEAD`. The reference is
-    /// resolved once when the operator first reads the repository. Later
+    /// resolved once when the operator first accesses the repository. Later
     /// operations use the same immutable snapshot and do not refresh it.
     ///
     /// The default is `HEAD`.
