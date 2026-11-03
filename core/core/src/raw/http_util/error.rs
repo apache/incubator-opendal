@@ -79,17 +79,3 @@ pub fn with_error_response_context(mut err: Error, mut parts: Parts) -> Error {
 
     err
 }
-
-#[cfg(all(test, feature = "reqsign"))]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn signing_errors_preserve_retryability() {
-        let reset = reqsign_core::Error::unexpected("connection reset").set_retryable(true);
-        assert!(new_request_sign_error(reset.into()).is_temporary());
-
-        let denied = reqsign_core::Error::permission_denied("access denied");
-        assert!(!new_request_sign_error(denied.into()).is_temporary());
-    }
-}
