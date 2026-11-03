@@ -39,11 +39,15 @@ pub fn new_request_credential_error(err: anyhow::Error) -> Error {
     .set_source(err)
 }
 
-/// Create a new error happened during signing request.
+/// Wrap a signing failure, preserving reqsign's retryability when available.
 pub fn new_request_sign_error(err: anyhow::Error) -> Error {
-    Error::new(ErrorKind::Unexpected, "signing http request")
-        .with_operation("reqsign::Sign")
-        .set_source(err)
+    let error = Error::new(ErrorKind::Unexpected, "signing http request");
+    #[cfg(feature = "reqsign")]
+    let error = error.with_temporary(
+        err.downcast_ref::<reqsign_core::Error>()
+            .is_some_and(reqsign_core::Error::is_retryable),
+    );
+    error.with_operation("reqsign::Sign").set_source(err)
 }
 
 /// Add response context to error.
@@ -74,4 +78,18 @@ pub fn with_error_response_context(mut err: Error, mut parts: Parts) -> Error {
     err = err.with_context("response", format!("{parts:?}"));
 
     err
+}
+
+#[cfg(all(test, feature = "reqsign"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn signing_errors_preserve_retryability() {
+        let reset = reqsign_core::Error::unexpected("connection reset").set_retryable(true);
+        assert!(new_request_sign_error(reset.into()).is_temporary());
+
+        let denied = reqsign_core::Error::permission_denied("access denied");
+        assert!(!new_request_sign_error(denied.into()).is_temporary());
+    }
 }
