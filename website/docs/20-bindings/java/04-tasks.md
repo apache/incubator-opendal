@@ -52,17 +52,13 @@ byte[] data = op.read("path/to/file", options);
 ```
 
 `ReadOptions` supports the version and condition fields described below for
-`ReaderOptions`, plus `contentLengthHint`, `concurrent`, and `chunk`.
-The default `concurrent` is 1 and must be positive. A positive `chunk` enables
-internal range requests; -1 keeps unchunked streaming. Zero and other negative
-chunk sizes are invalid, and chunk sizes must fit the native platform's
-unsigned pointer-sized integer. `contentLengthHint` is the known full object
-length, independent of the requested range. Its default of -1 means unknown;
-zero is valid for empty objects. A correct hint can avoid a metadata request;
-an incorrect hint can produce incomplete reads or errors. These controls are
-execution hints, not consistency conditions. Invalid numeric controls fail with
-`ConfigInvalid`. `prefetch` is available only on `ReaderOptions`, and neither
-Java options type exposes the multi-range `gap` control.
+`ReaderOptions`. Use `chunk` to set the size of each read request and
+`concurrent` to limit parallel requests.
+
+`contentLengthHint` specifies the total object size in bytes, not the length of
+the requested range. It can avoid a metadata request when OpenDAL needs the
+object length to plan a read. An incorrect hint may cause incomplete reads or
+errors.
 
 For repeated reads from the same file, create an `OperatorReader`. It uses a
 Rust core reader and lets each call select an independent byte range:
