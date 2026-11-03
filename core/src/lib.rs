@@ -233,6 +233,9 @@ fn init_default_registry_inner(registry: &OperatorRegistry) {
     #[cfg(feature = "services-sled")]
     opendal_service_sled::register_sled_service(registry);
 
+    #[cfg(feature = "services-smb")]
+    opendal_service_smb::register_smb_service(registry);
+
     #[cfg(feature = "services-sqlite")]
     opendal_service_sqlite::register_sqlite_service(registry);
 
@@ -400,6 +403,8 @@ pub mod services {
     pub use opendal_service_sftp::*;
     #[cfg(feature = "services-sled")]
     pub use opendal_service_sled::*;
+    #[cfg(feature = "services-smb")]
+    pub use opendal_service_smb::*;
     #[cfg(feature = "services-sqlite")]
     pub use opendal_service_sqlite::*;
     #[cfg(feature = "services-surrealdb")]

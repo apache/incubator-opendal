@@ -4702,6 +4702,60 @@
       ]
     },
     {
+      "name": "smb",
+      "scheme": "smb",
+      "groups": [
+        "General"
+      ],
+      "configs": [
+        {
+          "name": "endpoint",
+          "type": "string",
+          "required": true,
+          "group": "General",
+          "example": "server.example.com:445",
+          "comments": "Required server hostname or IP address, with an optional port. The default port is 445."
+        },
+        {
+          "name": "share",
+          "type": "string",
+          "required": true,
+          "group": "General",
+          "example": "documents",
+          "comments": "Required name of the SMB share."
+        },
+        {
+          "name": "root",
+          "type": "string",
+          "required": false,
+          "group": "General",
+          "comments": "Root directory within the share. Defaults to `/`."
+        },
+        {
+          "name": "user",
+          "type": "string",
+          "required": false,
+          "group": "General",
+          "comments": "NTLM username, optionally qualified as `DOMAIN\\user` or `user@domain`."
+        },
+        {
+          "name": "password",
+          "type": "string",
+          "required": false,
+          "group": "General",
+          "comments": "Password for the configured user."
+        }
+      ],
+      "examples": [
+        {
+          "binding": "rust",
+          "language": "rust",
+          "minimal": "use opendal::Operator;\n\nlet operator = Operator::via_iter(\"smb\", [\n    (\"endpoint\".to_string(), \"server.example.com:445\".to_string()),\n    (\"share\".to_string(), \"documents\".to_string()),\n])?;",
+          "full": "use opendal::Operator;\n\nlet operator = Operator::via_iter(\"smb\", [\n    // Required server hostname or IP address, with an optional port. The default port is 445.\n    (\"endpoint\".to_string(), \"server.example.com:445\".to_string()),\n\n    // Required name of the SMB share.\n    (\"share\".to_string(), \"documents\".to_string()),\n\n    // Root directory within the share. Defaults to `/`.\n    // (\"root\".to_string(), \"...\".to_string()),\n\n    // NTLM username, optionally qualified as `DOMAIN\\user` or `user@domain`.\n    // (\"user\".to_string(), \"...\".to_string()),\n\n    // Password for the configured user.\n    // (\"password\".to_string(), \"...\".to_string()),\n])?;"
+        }
+      ]
+    },
+    {
       "name": "sqlite",
       "scheme": "sqlite",
       "groups": [

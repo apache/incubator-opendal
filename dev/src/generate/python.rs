@@ -29,7 +29,7 @@ fn enabled_service(srv: &str) -> bool {
         // not enabled in bindings/python/Cargo.toml
         "etcd" | "foundationdb" | "hdfs" | "rocksdb" | "tikv" | "github" | "cloudflare_kv"
         | "monoiofs" | "dbfs" | "surrealdb" | "d1" | "opfs" | "compfs" | "lakefs" | "pcloud"
-        | "vercel_blob" | "foyer" | "goosefs" | "git" => false,
+        | "vercel_blob" | "foyer" | "goosefs" | "git" | "smb" => false,
         _ => true,
     }
 }
