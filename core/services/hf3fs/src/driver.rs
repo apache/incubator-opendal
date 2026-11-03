@@ -19,7 +19,7 @@ use std::ffi::{CStr, CString};
 use std::fs::File;
 use std::os::fd::AsRawFd;
 use std::sync::{Arc, Condvar, Mutex};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use bytes::Bytes;
 use opendal_core::raw::new_std_io_error;
@@ -404,6 +404,7 @@ impl Worker {
             .map(|_| unsafe { std::mem::zeroed() })
             .collect();
         let mut waiting = None;
+        let mut refill_until = Instant::now();
         loop {
             let mut prepared = false;
             // Retry submission after reaping completions, including when earlier
@@ -448,7 +449,8 @@ impl Worker {
                     return Err(new_std_io_error(std::io::Error::from_raw_os_error(-result)));
                 }
             }
-            // A bounded wait lets newly queued requests join an outstanding batch.
+            // Give callers just woken by completions a brief chance to refill the queue.
+            let poll = self.read && self.active < self.depth && Instant::now() < refill_until;
             let deadline = (SystemTime::now() + Duration::from_micros(100))
                 .duration_since(UNIX_EPOCH)
                 .unwrap();
@@ -461,10 +463,13 @@ impl Worker {
                     self.ring.as_ref().unwrap(),
                     cqes.as_mut_ptr(),
                     cqes.len() as i32,
-                    1,
+                    i32::from(!poll),
                     &timeout,
                 )
             };
+            if poll && count == 0 {
+                std::hint::spin_loop();
+            }
             if count == -libc::ETIMEDOUT || count == -libc::EINTR {
                 continue;
             }
@@ -492,6 +497,9 @@ impl Worker {
                     Ok((size, slot))
                 };
                 let _ = request.reply.send(result);
+            }
+            if self.read && count > 0 {
+                refill_until = Instant::now() + Duration::from_micros(20);
             }
         }
     }

@@ -43,6 +43,10 @@ The submission rings have extra entries for out-of-order completions; the number
 of in-flight requests remains bounded by `queue_depth`.
 Cloned operators share these resources.
 
+After read completions, the driver briefly polls for follow-up requests before
+blocking again. This reduces submission latency at the cost of some additional
+CPU time while reads are active. Idle drivers block on their request queues.
+
 Reads return shared-memory-backed buffers without copying while fewer than
 `queue_depth` slots remain retained by callers. Additional completions copy to
 ordinary buffers on the calling task so copying does not block the driver.
