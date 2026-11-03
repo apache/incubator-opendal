@@ -129,7 +129,7 @@ Pick the storage services that your application needs. See the full OpenDAL serv
     <td><a href="https://huggingface.co/"><img src="./website/static/img/services/huggingface.ico" width="18" height="18" alt="Hugging Face logo"> hf</a></td>
     <td><a href="https://github.com/"><img src="./website/static/img/services/github.svg" width="18" height="18" alt="GitHub logo"> github</a></td>
     <td><a href="https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02"><img src="./website/static/img/services/sftp.png" width="18" height="18" alt="SFTP icon"> sftp</a></td>
-    <td></td>
+    <td><a href="https://git-scm.com/"><img src="./website/static/img/services/github.svg" width="18" height="18" alt="Git logo"> git</a></td>
     <td></td>
   </tr>
   <tr>
