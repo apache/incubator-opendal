@@ -93,6 +93,12 @@ pub struct S3Config {
     /// <!-- @example us-east-1 -->
     #[serde(alias = "aws_region")]
     pub region: Option<String>,
+    /// Fallback signing region when neither `region`, `AWS_REGION`, nor
+    /// `AWS_DEFAULT_REGION` supplies one.
+    ///
+    /// <!-- @group General -->
+    #[serde(alias = "aws_default_region")]
+    pub default_region: Option<String>,
 
     /// AWS profile.
     ///
@@ -224,6 +230,7 @@ pub struct S3Config {
     /// Skip signature will skip loading credentials and signing requests.
     ///
     /// <!-- @group Credentials -->
+    #[serde(alias = "aws_skip_signature")]
     pub skip_signature: bool,
     /// Allow anonymous will allow opendal to send request without signing
     /// when credential is not loaded.
@@ -255,6 +262,14 @@ pub struct S3Config {
     /// <!-- @group Encryption -->
     #[serde(alias = "aws_sse_kms_key_id")]
     pub server_side_encryption_aws_kms_key_id: Option<String>,
+    /// Control S3 Bucket Keys for SSE-KMS writes and copies.
+    ///
+    /// Omit this option to inherit the bucket setting. `false` disables Bucket
+    /// Keys for destination objects, and `true` enables them.
+    ///
+    /// <!-- @group Encryption -->
+    #[serde(alias = "aws_sse_bucket_key_enabled")]
+    pub server_side_encryption_bucket_key_enabled: Option<bool>,
     /// server_side_encryption_customer_algorithm for this backend.
     ///
     /// Available values: `AES256`.

@@ -58,19 +58,17 @@ class LabelTests(unittest.TestCase):
         schema = lambda body: body["response_format"]["json_schema"]["properties"]
         self.assertNotIn("fix", schema(issue)["category"]["enum"])
         self.assertNotIn("bug", schema(pr)["category"]["enum"])
-        self.assertIn("services/goosefs", schema(pr)["components"]["items"]["enum"])
-        self.assertNotIn("run-with-secrets", schema(pr)["components"]["items"]["enum"])
 
-    def test_invalid_model_labels_never_reach_github(self):
+    def test_invalid_model_shapes_never_reach_github(self):
         for result in (
             {
                 "category": "fix",
-                "components": ["run-with-secrets"],
+                "components": "services/goosefs",
                 "breaking_change": False,
             },
             {
                 "category": "fix",
-                "components": ["services/invented"],
+                "components": [1],
                 "breaking_change": False,
             },
             {"category": "fix", "components": [], "breaking_change": "false"},
@@ -81,8 +79,42 @@ class LabelTests(unittest.TestCase):
                 "extra": "lgtm",
             },
         ):
+            item = self.item()
+            github = FakeGitHub(item)
             with self.subTest(result=result), self.assertRaises(ValueError):
-                label.selected_labels(result, self.item(), [])
+                label.label_event(
+                    github, {"pull_request": item}, lambda _: result, apply=True
+                )
+            self.assertEqual(github.writes, [])
+
+    def test_component_proposals_only_apply_trusted_catalog_labels(self):
+        item = self.item()
+        github = FakeGitHub(item)
+        with patch("builtins.print"):
+            label.label_event(
+                github,
+                {"pull_request": item},
+                lambda _: {
+                    "category": "fix",
+                    "components": [
+                        "services/goosefs",
+                        "services/invented",
+                        "run-with-secrets",
+                    ],
+                    "breaking_change": False,
+                },
+                apply=True,
+            )
+        self.assertEqual(
+            github.writes,
+            [
+                (
+                    "/issues/1/labels",
+                    "POST",
+                    {"labels": ["releases-note/fix", "services/goosefs", "size:XS"]},
+                ),
+            ],
+        )
 
     def test_issue_cannot_receive_pr_category_or_breaking_flag(self):
         with self.assertRaises(ValueError):

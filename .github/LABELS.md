@@ -11,7 +11,7 @@ only. There is no scheduled scan or historical backfill.
 | --- | --- | --- | --- |
 | `bug`, `enhancement`, `documentation`, `research`, `release` | Yes | No | AI chooses one type; it may abstain when none applies. |
 | `releases-note/feat`, `releases-note/fix`, `releases-note/refactor`, `releases-note/docs`, `releases-note/ci`, `releases-note/build`, `releases-note/chore` | No | Yes | AI chooses one release-note category. |
-| `core`, `website`, `services/*`, `bindings/*`, `integrations/*` | Yes | Yes | AI selects directly affected components from the repository catalog. |
+| `core`, `website`, `services/*`, `bindings/*`, `integrations/*` | Yes | Yes | AI proposes directly affected components; the script applies only catalogued names. |
 | `breaking-changes` | No | Yes | AI may add it for an explicit incompatible API or behavior change. |
 | `size:*` | No | Yes | The script calculates changed lines. |
 
@@ -48,6 +48,9 @@ labels, and the `hf` service uses `services/huggingface`. New component labels
 are created when catalog inputs change on `main`. Synchronization only creates
 missing labels; it does not rename, delete or overwrite existing labels.
 The classifier never creates labels from model-generated names.
+Component proposals absent from the trusted catalog are logged and omitted.
+This lets a new service PR receive its category and size labels before its
+component is registered on `main`.
 
 ## Size labels
 
@@ -89,8 +92,8 @@ before applying its result and skips a result if the item changed during
 inference. These reads are not an atomic lock against concurrent edits.
 
 Requests retry HTTP 429 and transient server errors up to three attempts.
-Missing credentials, quota exhaustion, truncated output and invalid labels
-fail the job without applying a classification. After fixing the cause, rerun
+Missing credentials, quota exhaustion, truncated output, malformed responses and
+invalid categories fail the job without applying a classification. After fixing the cause, rerun
 the failed job. Logs contain proposed label changes and model token/Neuron
 usage. They do not publish model-generated explanations as comments.
 

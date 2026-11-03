@@ -24,6 +24,7 @@ use std::sync::LazyLock;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use bytes::Buf;
+use http::HeaderValue;
 use http::StatusCode;
 use log::debug;
 use log::warn;
@@ -146,6 +147,18 @@ impl S3Builder {
             self.config.region = Some(region.to_string())
         }
 
+        self
+    }
+
+    /// Set the fallback signing region.
+    ///
+    /// OpenDAL uses this value only when `region`, `AWS_REGION`, and
+    /// `AWS_DEFAULT_REGION` do not supply a region. Without any region,
+    /// building the service returns [`ErrorKind::ConfigInvalid`].
+    pub fn default_region(mut self, region: &str) -> Self {
+        if !region.is_empty() {
+            self.config.default_region = Some(region.to_string());
+        }
         self
     }
 
@@ -290,6 +303,16 @@ impl S3Builder {
             self.config.server_side_encryption_aws_kms_key_id = Some(v.to_string())
         }
 
+        self
+    }
+
+    /// Control S3 Bucket Keys for SSE-KMS writes and copies.
+    ///
+    /// `true` enables Bucket Keys for destination objects; `false` explicitly
+    /// disables them. If this method is not called, objects inherit the bucket
+    /// setting. This option does not change the bucket's configuration.
+    pub fn server_side_encryption_bucket_key_enabled(mut self, enabled: bool) -> Self {
+        self.config.server_side_encryption_bucket_key_enabled = Some(enabled);
         self
     }
 
@@ -997,10 +1020,12 @@ impl Builder for S3Builder {
         } else {
             std::env::var("AWS_REGION")
                 .or_else(|_| std::env::var("AWS_DEFAULT_REGION"))
-                .map_err(|_| {
+                .ok()
+                .or_else(|| config.default_region.clone().filter(|v| !v.is_empty()))
+                .ok_or_else(|| {
                     Error::new(
                         ErrorKind::ConfigInvalid,
-                        "region is missing. Please find it by S3::detect_region() or set them in env.",
+                        "region is missing. Set region, an AWS region environment variable, or default_region.",
                     )
                     .with_operation("Builder::build")
                     .with_context("service", S3_SCHEME)
@@ -1259,6 +1284,11 @@ impl Builder for S3Builder {
                 root,
                 server_side_encryption,
                 server_side_encryption_aws_kms_key_id,
+                server_side_encryption_bucket_key_enabled: config
+                    .server_side_encryption_bucket_key_enabled
+                    .map(|enabled| {
+                        HeaderValue::from_static(if enabled { "true" } else { "false" })
+                    }),
                 server_side_encryption_customer_algorithm,
                 server_side_encryption_customer_key,
                 server_side_encryption_customer_key_md5,
@@ -1559,6 +1589,101 @@ mod tests {
     use http::Response;
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_bucket_key_presign_headers() {
+        let header = "x-amz-server-side-encryption-bucket-key-enabled";
+        for (key, value) in [
+            ("server_side_encryption_bucket_key_enabled", None),
+            ("server_side_encryption_bucket_key_enabled", Some("false")),
+            ("server_side_encryption_bucket_key_enabled", Some("true")),
+            ("aws_sse_bucket_key_enabled", Some("false")),
+        ] {
+            let mut config = vec![
+                ("bucket".to_string(), "test-bucket".to_string()),
+                ("region".to_string(), "us-east-1".to_string()),
+                ("access_key_id".to_string(), "test-access-key".to_string()),
+                (
+                    "secret_access_key".to_string(),
+                    "test-secret-key".to_string(),
+                ),
+                ("disable_config_load".to_string(), "true".to_string()),
+                ("server_side_encryption".to_string(), "aws:kms".to_string()),
+            ];
+            if let Some(value) = value {
+                config.push((key.to_string(), value.to_string()));
+            }
+            let op = opendal_core::Operator::from_iter::<S3Builder>(config).unwrap();
+            let write = op
+                .presign_write("test", std::time::Duration::from_secs(60))
+                .await
+                .unwrap();
+            assert_eq!(
+                write.header().get(header).map(|v| v.to_str().unwrap()),
+                value
+            );
+            let read = op
+                .presign_read("test", std::time::Duration::from_secs(60))
+                .await
+                .unwrap();
+            assert!(!read.header().contains_key(header));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_default_region_presign_scope() {
+        let environment_region = std::env::var("AWS_REGION")
+            .or_else(|_| std::env::var("AWS_DEFAULT_REGION"))
+            .ok();
+        for (explicit, expected) in [
+            (None, environment_region.as_deref().unwrap_or("us-west-2")),
+            (Some("us-east-1"), "us-east-1"),
+        ] {
+            let mut config = vec![
+                ("bucket".to_string(), "test-bucket".to_string()),
+                ("aws_default_region".to_string(), "us-west-2".to_string()),
+                ("access_key_id".to_string(), "test-access-key".to_string()),
+                (
+                    "secret_access_key".to_string(),
+                    "test-secret-key".to_string(),
+                ),
+                ("disable_config_load".to_string(), "true".to_string()),
+            ];
+            if let Some(region) = explicit {
+                config.push(("region".to_string(), region.to_string()));
+            }
+            let op = opendal_core::Operator::from_iter::<S3Builder>(config).unwrap();
+            let request = op
+                .presign_read("test", std::time::Duration::from_secs(60))
+                .await
+                .unwrap();
+            let url = url::Url::parse(&request.uri().to_string()).unwrap();
+            let credential = url
+                .query_pairs()
+                .find_map(|(key, value)| (key == "X-Amz-Credential").then(|| value.into_owned()))
+                .unwrap();
+            assert_eq!(credential.split('/').nth(2), Some(expected));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_aws_skip_signature_alias() {
+        let config = [
+            ("bucket", "test-bucket"),
+            ("region", "us-east-1"),
+            ("aws_skip_signature", "true"),
+            ("disable_config_load", "true"),
+            ("disable_ec2_metadata", "true"),
+        ]
+        .map(|(key, value)| (key.to_string(), value.to_string()));
+        let op = opendal_core::Operator::from_iter::<S3Builder>(config).unwrap();
+        let request = op
+            .presign_read("test", std::time::Duration::from_secs(60))
+            .await
+            .unwrap();
+        assert!(request.uri().query().is_none());
+        assert!(!request.header().contains_key(http::header::AUTHORIZATION));
+    }
 
     #[derive(Clone, Copy)]
     enum CreateSessionOutcome {

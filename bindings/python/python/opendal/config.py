@@ -768,6 +768,8 @@ class S3Config(TypedDict):
     """Base URI used to resolve a relative AWS container credential URI.  This override affects relative URIs only. It does not alter a configured or ambient full URI. The override alone does not select an endpoint."""
     default_acl: NotRequired[str]
     """Default ACL for new objects. Note that some s3 services like minio do not support this option."""
+    default_region: NotRequired[str]
+    """Fallback signing region when neither `region`, `AWS_REGION`, nor `AWS_DEFAULT_REGION` supplies one."""
     default_storage_class: NotRequired[str]
     """default storage_class for this backend.  Available values: - `DEEP_ARCHIVE` - `GLACIER` - `GLACIER_IR` - `INTELLIGENT_TIERING` - `ONEZONE_IA` - `EXPRESS_ONEZONE` - `OUTPOSTS` - `REDUCED_REDUNDANCY` - `STANDARD` - `STANDARD_IA`  S3 compatible services don't support all of them"""
     delete_max_size: NotRequired[int]
@@ -810,6 +812,8 @@ class S3Config(TypedDict):
     """server_side_encryption for this backend.  Available values: `AES256`, `aws:kms`."""
     server_side_encryption_aws_kms_key_id: NotRequired[str]
     """server_side_encryption_aws_kms_key_id for this backend  - If `server_side_encryption` set to `aws:kms`, and `server_side_encryption_aws_kms_key_id` is not set, S3 will use aws managed kms key to encrypt data. - If `server_side_encryption` set to `aws:kms`, and `server_side_encryption_aws_kms_key_id` is a valid kms key id, S3 will use the provided kms key to encrypt data. - If the `server_side_encryption_aws_kms_key_id` is invalid or not found, an error will be returned. - If `server_side_encryption` is not `aws:kms`, setting `server_side_encryption_aws_kms_key_id` is a noop."""
+    server_side_encryption_bucket_key_enabled: NotRequired[bool]
+    """Control S3 Bucket Keys for SSE-KMS writes and copies.  Omit this option to inherit the bucket setting. `false` disables Bucket Keys for destination objects, and `true` enables them."""
     server_side_encryption_customer_algorithm: NotRequired[str]
     """server_side_encryption_customer_algorithm for this backend.  Available values: `AES256`."""
     server_side_encryption_customer_key: NotRequired[str]

@@ -55,7 +55,8 @@ public class AsyncExecutorTest {
                 .start();
         final boolean exited;
         try {
-            exited = process.waitFor(15, TimeUnit.SECONDS);
+            // Windows JVM initialization can enumerate network interfaces while loading the JNI library.
+            exited = process.waitFor(60, TimeUnit.SECONDS);
         } finally {
             if (process.isAlive()) {
                 process.destroyForcibly();
@@ -63,7 +64,9 @@ public class AsyncExecutorTest {
             }
         }
         final String output = new String(Files.readAllBytes(log), StandardCharsets.UTF_8);
-        assertThat(exited).as("JVM must exit after main returns: %s", output).isTrue();
+        assertThat(exited)
+                .as("Child JVM must complete the executor probe: %s", output)
+                .isTrue();
         assertThat(process.exitValue()).as(output).isZero();
         assertThat(output).contains("INVALID_CORES_REJECTED");
     }
