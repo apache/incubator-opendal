@@ -21,28 +21,11 @@ pub mod options;
 use crate::error::OpenDALError;
 use crate::utils::config_invalid_error;
 
-pub(crate) fn validate_non_zero_u64(value: u64, field: &str) -> Result<(), OpenDALError> {
-    if value == 0 {
-        return Err(config_invalid_error(format!(
-            "{field} must be greater than zero"
-        )));
-    }
-
-    Ok(())
-}
-
-pub(crate) fn validate_non_zero_u32(value: u32, field: &str) -> Result<(), OpenDALError> {
-    if value == 0 {
-        return Err(config_invalid_error(format!(
-            "{field} must be greater than zero"
-        )));
-    }
-
-    Ok(())
-}
-
-pub(crate) fn validate_non_zero_usize(value: usize, field: &str) -> Result<(), OpenDALError> {
-    if value == 0 {
+pub(crate) fn validate_positive_integer<T: PartialOrd + From<u8>>(
+    value: T,
+    field: &str,
+) -> Result<(), OpenDALError> {
+    if value <= T::from(0) {
         return Err(config_invalid_error(format!(
             "{field} must be greater than zero"
         )));

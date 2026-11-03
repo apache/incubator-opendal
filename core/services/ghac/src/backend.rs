@@ -208,6 +208,7 @@ impl Service for GhacBackend {
     type Lister = ();
     type Deleter = ();
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -243,7 +244,10 @@ impl Service for GhacBackend {
                 let meta = parse_into_metadata(path, resp.headers())?;
                 Ok(RpStat::new(meta))
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetCacheEntry")),
+                resp,
+            )),
         }
     }
     fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
@@ -288,7 +292,6 @@ impl Service for GhacBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,

@@ -60,8 +60,8 @@ public sealed class WriteBehaviorTest : BehaviorTestBase
         var path = NewPath("write-async");
         var content = RandomBytes(1024);
 
-        await Op.WriteAsync(path, content, CT);
-        var actual = await Op.ReadAsync(path, CT);
+        await Op.WriteAsync(path, content, cancellationToken: CT);
+        var actual = await Op.ReadAsync(path, cancellationToken: CT);
 
         Assert.Equal(content, actual);
     }
@@ -99,8 +99,8 @@ public sealed class WriteBehaviorTest : BehaviorTestBase
         var path = NewPath("write-async-large");
         var content = RandomBytes(256 * 1024);
 
-        await Op.WriteAsync(path, content, CT);
-        var actual = await Op.ReadAsync(path, CT);
+        await Op.WriteAsync(path, content, cancellationToken: CT);
+        var actual = await Op.ReadAsync(path, cancellationToken: CT);
 
         Assert.Equal(content, actual);
     }
@@ -122,7 +122,7 @@ public sealed class WriteBehaviorTest : BehaviorTestBase
             writer.Advance(content.Length);
         }, sizeHint: content.Length, cancellationToken: CT);
 
-        var actual = await Op.ReadAsync(path, CT);
+        var actual = await Op.ReadAsync(path, cancellationToken: CT);
         Assert.Equal(content, actual);
 
         var syncPath = NewPath("write-fill-sync");
@@ -151,7 +151,7 @@ public sealed class WriteBehaviorTest : BehaviorTestBase
 
         await Op.WriteAsync(path, writer => FillInChunks(writer, content), cancellationToken: CT);
 
-        var actual = await Op.ReadAsync(path, CT);
+        var actual = await Op.ReadAsync(path, cancellationToken: CT);
         Assert.Equal(content, actual);
 
         static void FillInChunks(IBufferWriter<byte> writer, byte[] content)
@@ -188,7 +188,7 @@ public sealed class WriteBehaviorTest : BehaviorTestBase
         }, cancellationToken: CT);
 
         var actual = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, int[]>>(
-            await Op.ReadAsync(path, CT));
+            await Op.ReadAsync(path, cancellationToken: CT));
         Assert.NotNull(actual);
         Assert.Equal(expected["values"], actual!["values"]);
     }
@@ -259,8 +259,8 @@ public sealed class WriteBehaviorTest : BehaviorTestBase
         Assert.Empty(Op.Read(path));
 
         var asyncPath = NewPath("write-empty-async");
-        await Op.WriteAsync(asyncPath, Array.Empty<byte>(), CT);
-        Assert.Empty(await Op.ReadAsync(asyncPath, CT));
+        await Op.WriteAsync(asyncPath, Array.Empty<byte>(), cancellationToken: CT);
+        Assert.Empty(await Op.ReadAsync(asyncPath, cancellationToken: CT));
     }
 
     [Fact]
@@ -312,13 +312,13 @@ public sealed class WriteBehaviorTest : BehaviorTestBase
         var first = RandomBytes(128);
         var second = RandomBytes(64);
 
-        await Op.WriteAsync(path, first, CT);
+        await Op.WriteAsync(path, first, cancellationToken: CT);
 
         var ex = await Assert.ThrowsAsync<OpenDALException>(() =>
             Op.WriteAsync(path, second, new WriteOptions { IfNotExists = true }, CT));
 
         Assert.Contains(ex.Code, new[] { ErrorCode.ConditionNotMatch, ErrorCode.AlreadyExists });
-        Assert.Equal(first, await Op.ReadAsync(path, CT));
+        Assert.Equal(first, await Op.ReadAsync(path, cancellationToken: CT));
     }
 
     [Fact]
@@ -348,6 +348,75 @@ public sealed class WriteBehaviorTest : BehaviorTestBase
         await Op.WriteAsync(path, System.Text.Encoding.UTF8.GetBytes("a"), new WriteOptions { Append = true }, CT);
         await Op.WriteAsync(path, System.Text.Encoding.UTF8.GetBytes("b"), new WriteOptions { Append = true }, CT);
 
-        Assert.Equal("ab", System.Text.Encoding.UTF8.GetString(await Op.ReadAsync(path, CT)));
+        Assert.Equal("ab", System.Text.Encoding.UTF8.GetString(await Op.ReadAsync(path, cancellationToken: CT)));
+    }
+
+    [Fact]
+    public void WriteBehavior_ReturnsMetadataOfWrittenObject()
+    {
+        if (!Supports(c => c.Write))
+        {
+            return;
+        }
+
+        var path = NewPath("write-returns-metadata");
+        var content = RandomBytes(512);
+
+        var meta = Op.Write(path, content);
+
+        Assert.Equal((ulong)content.Length, meta.ContentLength);
+    }
+
+    [Fact]
+    public async Task WriteBehavior_ReturnsMetadataOfWrittenObjectAsync()
+    {
+        if (!Supports(c => c.Write))
+        {
+            return;
+        }
+
+        var path = NewPath("write-returns-metadata-async");
+        var content = RandomBytes(512);
+
+        var meta = await Op.WriteAsync(path, content, cancellationToken: CT);
+
+        Assert.Equal((ulong)content.Length, meta.ContentLength);
+    }
+
+    [Fact]
+    public async Task WriteBehavior_FillCallback_ReturnsMetadataAsync()
+    {
+        if (!Supports(c => c.Write))
+        {
+            return;
+        }
+
+        var path = NewPath("write-fill-returns-metadata");
+        var content = RandomBytes(300);
+
+        var meta = await Op.WriteAsync(path, writer => writer.Write(content), cancellationToken: CT);
+
+        Assert.Equal((ulong)content.Length, meta.ContentLength);
+    }
+
+    [Fact]
+    public void WriteBehavior_WithUserMetadata_RoundtripsThroughStat()
+    {
+        if (!Supports(c => c.Write && c.Stat && c.WriteWithUserMetadata))
+        {
+            return;
+        }
+
+        var path = NewPath("write-user-metadata");
+        var userMetadata = new Dictionary<string, string>
+        {
+            ["location"] = "everywhere",
+        };
+
+        Op.Write(path, RandomBytes(64), new WriteOptions { UserMetadata = userMetadata });
+        var meta = Op.Stat(path);
+
+        Assert.NotNull(meta.UserMetadata);
+        Assert.Equal("everywhere", meta.UserMetadata["location"]);
     }
 }

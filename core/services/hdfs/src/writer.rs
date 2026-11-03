@@ -92,7 +92,11 @@ impl oio::Write for HdfsWriter<hdrs::AsyncFile> {
                 .map_err(new_std_io_error)?
         }
 
-        Ok(Metadata::default().with_content_length(self.size))
+        Ok({
+            let mut metadata = MetadataBuilder::unknown();
+            metadata.set_file(self.size);
+            metadata.build()
+        })
     }
 
     async fn abort(&mut self) -> Result<()> {

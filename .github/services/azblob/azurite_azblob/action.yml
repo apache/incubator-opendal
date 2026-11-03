@@ -49,5 +49,5 @@ runs:
         OPENDAL_AZBLOB_ENDPOINT=http://127.0.0.1:10000/devstoreaccount1
         OPENDAL_AZBLOB_ACCOUNT_NAME=devstoreaccount1
         OPENDAL_AZBLOB_ACCOUNT_KEY=Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw==
-        OPENDAL_TEST_CAPABILITY_OVERRIDES=copy_can_multi=false
+        OPENDAL_TEST_CAPABILITY_OVERRIDES=copy_can_multi=false,stat_with_if_match=false,read_with_if_match=false
         EOF

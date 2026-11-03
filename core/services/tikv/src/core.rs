@@ -22,7 +22,19 @@ use tikv_client::Config;
 use tikv_client::RawClient;
 
 use super::TIKV_SCHEME;
+use opendal_core::raw::ServiceOperation;
 use opendal_core::*;
+
+#[derive(Clone, Copy, Debug)]
+struct ErrorContext {
+    service_operation: ServiceOperation,
+}
+
+impl ErrorContext {
+    const fn new(service_operation: ServiceOperation) -> Self {
+        Self { service_operation }
+    }
+}
 
 /// TikvCore holds the configuration and client for interacting with TiKV.
 #[derive(Clone)]
@@ -49,9 +61,9 @@ impl TikvCore {
         self.client
             .get_or_try_init(|| async {
                 if self.insecure {
-                    return RawClient::new(self.endpoints.clone())
-                        .await
-                        .map_err(parse_tikv_config_error);
+                    return RawClient::new(self.endpoints.clone()).await.map_err(|err| {
+                        parse_error(ErrorContext::new(ServiceOperation("Connect")), err)
+                    });
                 }
 
                 if let Some(ca_path) = self.ca_path.as_ref()
@@ -61,7 +73,9 @@ impl TikvCore {
                     let config = Config::default().with_security(ca_path, cert_path, key_path);
                     return RawClient::new_with_config(self.endpoints.clone(), config)
                         .await
-                        .map_err(parse_tikv_config_error);
+                        .map_err(|err| {
+                            parse_error(ErrorContext::new(ServiceOperation("Connect")), err)
+                        });
                 }
 
                 Err(
@@ -79,7 +93,7 @@ impl TikvCore {
             .await?
             .get(path.to_owned())
             .await
-            .map_err(parse_tikv_error)?;
+            .map_err(|err| parse_error(ErrorContext::new(ServiceOperation("Get")), err))?;
         Ok(result.map(Buffer::from))
     }
 
@@ -88,7 +102,7 @@ impl TikvCore {
             .await?
             .put(path.to_owned(), value.to_vec())
             .await
-            .map_err(parse_tikv_error)
+            .map_err(|err| parse_error(ErrorContext::new(ServiceOperation("Put")), err))
     }
 
     pub async fn delete(&self, path: &str) -> Result<()> {
@@ -96,16 +110,19 @@ impl TikvCore {
             .await?
             .delete(path.to_owned())
             .await
-            .map_err(parse_tikv_error)
+            .map_err(|err| parse_error(ErrorContext::new(ServiceOperation("Delete")), err))
     }
 }
 
-fn parse_tikv_error(e: tikv_client::Error) -> Error {
-    Error::new(ErrorKind::Unexpected, "error from tikv").set_source(e)
-}
+fn parse_error(ctx: ErrorContext, err: tikv_client::Error) -> Error {
+    let (kind, message) = if ctx.service_operation.0 == "Connect" {
+        (ErrorKind::ConfigInvalid, "invalid configuration")
+    } else {
+        (ErrorKind::Unexpected, "error from tikv")
+    };
 
-fn parse_tikv_config_error(e: tikv_client::Error) -> Error {
-    Error::new(ErrorKind::ConfigInvalid, "invalid configuration")
+    Error::new(kind, message)
         .with_context("service", TIKV_SCHEME)
-        .set_source(e)
+        .with_context("service_operation", ctx.service_operation.0)
+        .set_source(err)
 }

@@ -32,9 +32,9 @@ use reqsign_file_read_tokio::TokioFileRead;
 
 use super::AZFILE_SCHEME;
 use super::config::AzfileConfig;
-use super::core::AzfileCore;
 use super::core::X_MS_META_PREFIX;
 use super::core::parse_error;
+use super::core::{AzfileCore, ErrorContext};
 use super::deleter::AzfileDeleter;
 use super::lister::AzfileLister;
 use super::reader::*;
@@ -237,6 +237,9 @@ impl Builder for AzfileBuilder {
 
             write: true,
             write_with_user_metadata: true,
+            // Azure Files limits each Put Range update to 4 MiB.
+            // ref: <https://learn.microsoft.com/en-us/rest/api/storageservices/put-range>
+            write_total_max_size: Some(4 * 1024 * 1024),
 
             create_dir: true,
             delete: true,
@@ -275,6 +278,7 @@ impl Service for AzfileBackend {
     type Lister = oio::PageLister<AzfileLister>;
     type Deleter = oio::OneShotDeleter<AzfileDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -311,7 +315,10 @@ impl Service for AzfileBackend {
                 {
                     Ok(RpCreateDir::default())
                 } else {
-                    Err(parse_error(resp))
+                    Err(parse_error(
+                        ErrorContext::new(ServiceOperation("CreateDirectory")),
+                        resp,
+                    ))
                 }
             }
         }
@@ -328,14 +335,21 @@ impl Service for AzfileBackend {
         match status {
             StatusCode::OK => {
                 let headers = resp.headers();
-                let mut meta = parse_into_metadata(path, headers)?;
+                let mut meta = parse_into_metadata(path, headers)?.into_builder();
                 let user_meta = parse_prefixed_headers(headers, X_MS_META_PREFIX);
                 if !user_meta.is_empty() {
-                    meta = meta.with_user_metadata(user_meta);
+                    meta.user_metadata(user_meta);
                 }
-                Ok(RpStat::new(meta))
+                Ok(RpStat::new(meta.build()))
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(if path.ends_with('/') {
+                    ServiceOperation("GetDirectoryProperties")
+                } else {
+                    ServiceOperation("GetFileProperties")
+                }),
+                resp,
+            )),
         }
     }
     fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
@@ -402,7 +416,6 @@ impl Service for AzfileBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,
@@ -422,7 +435,10 @@ impl Service for AzfileBackend {
         let status = resp.status();
         match status {
             StatusCode::OK => Ok(RpRename::default()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Rename")),
+                resp,
+            )),
         }
     }
 

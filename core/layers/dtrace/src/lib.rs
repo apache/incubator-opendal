@@ -159,6 +159,7 @@ impl Service for DTraceService {
     type Lister = oio::Lister;
     type Deleter = oio::Deleter;
     type Copier = oio::Copier;
+    type Composer = oio::Composer;
 
     fn info(&self) -> ServiceInfo {
         self.inner.info()
@@ -166,6 +167,10 @@ impl Service for DTraceService {
 
     fn capability(&self) -> Capability {
         self.inner.capability()
+    }
+
+    fn compose(&self, ctx: &OperationContext, to: &str, args: OpCompose) -> Result<Self::Composer> {
+        self.inner.compose(ctx, to, args)
     }
 
     async fn create_dir(
@@ -210,11 +215,10 @@ impl Service for DTraceService {
         from: &str,
         to: &str,
         args: OpCopy,
-        opts: OpCopier,
     ) -> Result<Self::Copier> {
         let c_from = CString::new(from).unwrap();
         probe_lazy!(opendal, copy_start, c_from.as_ptr());
-        let result = self.inner.copy(ctx, from, to, args, opts);
+        let result = self.inner.copy(ctx, from, to, args);
         probe_lazy!(opendal, copy_end, c_from.as_ptr());
         result
     }

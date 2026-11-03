@@ -129,7 +129,10 @@ pub async fn test_copy_file_with_ascii_name(op: Operator) -> Result<()> {
 
     let target_path = uuid::Uuid::new_v4().to_string();
 
-    op.copy(&source_path, &target_path).await?;
+    let metadata = op.copy(&source_path, &target_path).await?;
+    if metadata.is_file() {
+        assert_eq!(metadata.content_length(), source_content.len() as u64);
+    }
 
     let target_content = op
         .read(&target_path)

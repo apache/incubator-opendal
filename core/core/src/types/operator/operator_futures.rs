@@ -85,53 +85,57 @@ where
 pub type FutureStat<F> = OperatorFuture<options::StatOptions, Metadata, F>;
 
 impl<F: Future<Output = Result<Metadata>>> FutureStat<F> {
-    /// Set the If-Match for this operation.
+    /// Stat only when the file has this exact ETag.
     ///
-    /// Refer to [`options::StatOptions::if_match`] for more details.
+    /// Refer to [`options::StatOptions::if_match`] for the full contract.
     pub fn if_match(mut self, v: &str) -> Self {
         self.args.if_match = Some(v.to_string());
         self
     }
 
-    /// Set the If-None-Match for this operation.
+    /// Stat only when the file does not have this ETag.
     ///
-    /// Refer to [`options::StatOptions::if_none_match`] for more details.
+    /// Refer to [`options::StatOptions::if_none_match`] for the full contract.
     pub fn if_none_match(mut self, v: &str) -> Self {
         self.args.if_none_match = Some(v.to_string());
         self
     }
 
-    /// Refer to [`options::StatOptions::if_version_match`] for more details.
+    /// Stat only when the file has this exact version.
+    ///
+    /// Refer to [`options::StatOptions::if_version_match`] for the full contract.
     pub fn if_version_match(mut self, v: &str) -> Self {
         self.args.if_version_match = Some(v.to_string());
         self
     }
 
-    /// Refer to [`options::StatOptions::if_version_not_match`] for more details.
+    /// Stat only when the file does not have this version.
+    ///
+    /// Refer to [`options::StatOptions::if_version_not_match`] for the full contract.
     pub fn if_version_not_match(mut self, v: &str) -> Self {
         self.args.if_version_not_match = Some(v.to_string());
         self
     }
 
-    /// Set the If-Modified-Since for this operation.
+    /// Stat only when the file was modified after this timestamp.
     ///
-    /// Refer to [`options::StatOptions::if_modified_since`] for more details.
+    /// Refer to [`options::StatOptions::if_modified_since`] for the full contract.
     pub fn if_modified_since(mut self, v: Timestamp) -> Self {
         self.args.if_modified_since = Some(v);
         self
     }
 
-    /// Set the If-Unmodified-Since for this operation.
+    /// Stat only when the file was not modified after this timestamp.
     ///
-    /// Refer to [`options::StatOptions::if_unmodified_since`] for more details.
+    /// Refer to [`options::StatOptions::if_unmodified_since`] for the full contract.
     pub fn if_unmodified_since(mut self, v: Timestamp) -> Self {
         self.args.if_unmodified_since = Some(v);
         self
     }
 
-    /// Set the version for this operation.
+    /// Stat the given version of the file instead of the current one.
     ///
-    /// Refer to [`options::StatOptions::version`] for more details.
+    /// Refer to [`options::StatOptions::version`] for the full contract.
     pub fn version(mut self, v: &str) -> Self {
         self.args.version = Some(v.to_string());
         self
@@ -163,13 +167,17 @@ impl<F: Future<Output = Result<PresignedRequest>>> FuturePresignStat<F> {
         self
     }
 
-    /// Refer to [`options::StatOptions::if_match`] for more details.
+    /// Make the presigned request stat only when the file has this exact ETag.
+    ///
+    /// Refer to [`options::StatOptions::if_match`] for the full contract.
     pub fn if_match(mut self, v: &str) -> Self {
         self.args.0.if_match = Some(v.to_string());
         self
     }
 
-    /// Refer to [`options::StatOptions::if_none_match`] for more details.
+    /// Make the presigned request stat only when the file does not have this ETag.
+    ///
+    /// Refer to [`options::StatOptions::if_none_match`] for the full contract.
     pub fn if_none_match(mut self, v: &str) -> Self {
         self.args.0.if_none_match = Some(v.to_string());
         self
@@ -209,13 +217,17 @@ impl<F: Future<Output = Result<PresignedRequest>>> FuturePresignRead<F> {
         self
     }
 
-    /// Refer to [`options::ReadOptions::if_match`] for more details.
+    /// Make the presigned request read only when the file has this exact ETag.
+    ///
+    /// Refer to [`options::ReadOptions::if_match`] for the full contract.
     pub fn if_match(mut self, v: &str) -> Self {
         self.args.0.if_match = Some(v.to_string());
         self
     }
 
-    /// Refer to [`options::ReadOptions::if_none_match`] for more details.
+    /// Make the presigned request read only when the file does not have this ETag.
+    ///
+    /// Refer to [`options::ReadOptions::if_none_match`] for the full contract.
     pub fn if_none_match(mut self, v: &str) -> Self {
         self.args.0.if_none_match = Some(v.to_string());
         self
@@ -330,11 +342,9 @@ impl<F: Future<Output = Result<Buffer>>> FutureRead<F> {
         self
     }
 
-    /// Set `version` for this `read` request.
+    /// Read the given version of the file instead of the current one.
     ///
-    /// This feature can be used to retrieve the data of a specified version of the given path.
-    ///
-    /// If the version doesn't exist, an error with kind [`ErrorKind::NotFound`] will be returned.
+    /// Refer to [`options::ReadOptions::version`] for the full contract.
     ///
     /// ```
     /// # use opendal_core::Result;
@@ -350,12 +360,9 @@ impl<F: Future<Output = Result<Buffer>>> FutureRead<F> {
         self
     }
 
-    /// Set `if_match` for this `read` request.
+    /// Read only when the file has this exact ETag.
     ///
-    /// This feature can be used to check if the file's `ETag` matches the given `ETag`.
-    ///
-    /// If file exists and it's etag doesn't match, an error with kind [`ErrorKind::ConditionNotMatch`]
-    /// will be returned.
+    /// Refer to [`options::ReadOptions::if_match`] for the full contract.
     ///
     /// ```
     /// # use opendal_core::Result;
@@ -370,12 +377,9 @@ impl<F: Future<Output = Result<Buffer>>> FutureRead<F> {
         self
     }
 
-    /// Set `if_none_match` for this `read` request.
+    /// Read only when the file does not have this ETag.
     ///
-    /// This feature can be used to check if the file's `ETag` doesn't match the given `ETag`.
-    ///
-    /// If file exists and it's etag match, an error with kind [`ErrorKind::ConditionNotMatch`]
-    /// will be returned.
+    /// Refer to [`options::ReadOptions::if_none_match`] for the full contract.
     ///
     /// ```
     /// # use opendal_core::Result;
@@ -390,26 +394,25 @@ impl<F: Future<Output = Result<Buffer>>> FutureRead<F> {
         self
     }
 
-    /// Set the current object version that this read must match.
+    /// Read only when the file has this exact version.
+    ///
+    /// Refer to [`options::ReadOptions::if_version_match`] for the full contract.
     pub fn if_version_match(mut self, v: &str) -> Self {
         self.args.if_version_match = Some(v.to_string());
         self
     }
 
-    /// Set the current object version that this read must not match.
+    /// Read only when the file does not have this version.
+    ///
+    /// Refer to [`options::ReadOptions::if_version_not_match`] for the full contract.
     pub fn if_version_not_match(mut self, v: &str) -> Self {
         self.args.if_version_not_match = Some(v.to_string());
         self
     }
 
-    /// ## `if_modified_since`
+    /// Read only when the file was modified after this timestamp.
     ///
-    /// Set `if_modified_since` for this `read` request.
-    ///
-    /// This feature can be used to check if the file has been modified since the given timestamp.
-    ///
-    /// If file exists and it hasn't been modified since the specified time, an error with kind
-    /// [`ErrorKind::ConditionNotMatch`] will be returned.
+    /// Refer to [`options::ReadOptions::if_modified_since`] for the full contract.
     ///
     /// ```
     /// # use opendal_core::Result;
@@ -425,12 +428,9 @@ impl<F: Future<Output = Result<Buffer>>> FutureRead<F> {
         self
     }
 
-    /// Set `if_unmodified_since` for this `read` request.
+    /// Read only when the file was not modified after this timestamp.
     ///
-    /// This feature can be used to check if the file hasn't been modified since the given timestamp.
-    ///
-    /// If file exists and it has been modified since the specified time, an error with kind
-    /// [`ErrorKind::ConditionNotMatch`] will be returned.
+    /// Refer to [`options::ReadOptions::if_unmodified_since`] for the full contract.
     ///
     /// ```
     /// # use opendal_core::Result;
@@ -460,11 +460,9 @@ impl<F: Future<Output = Result<Buffer>>> FutureRead<F> {
 pub type FutureReader<F> = OperatorFuture<options::ReaderOptions, Reader, F>;
 
 impl<F: Future<Output = Result<Reader>>> FutureReader<F> {
-    /// Set `version` for this `reader`.
+    /// Read the given version of the file instead of the current one.
     ///
-    /// This feature can be used to retrieve the data of a specified version of the given path.
-    ///
-    /// If the version doesn't exist, an error with kind [`ErrorKind::NotFound`] will be returned.
+    /// Refer to [`options::ReaderOptions::version`] for the full contract.
     ///
     /// ```
     /// # use opendal_core::Result;
@@ -564,12 +562,9 @@ impl<F: Future<Output = Result<Reader>>> FutureReader<F> {
         self
     }
 
-    /// Set `if-match` for this `read` request.
+    /// Read only when the file has this exact ETag.
     ///
-    /// This feature can be used to check if the file's `ETag` matches the given `ETag`.
-    ///
-    /// If file exists and it's etag doesn't match, an error with kind [`ErrorKind::ConditionNotMatch`]
-    /// will be returned.
+    /// Refer to [`options::ReaderOptions::if_match`] for the full contract.
     ///
     /// ```
     /// # use opendal_core::Result;
@@ -584,12 +579,9 @@ impl<F: Future<Output = Result<Reader>>> FutureReader<F> {
         self
     }
 
-    /// Set `if-none-match` for this `read` request.
+    /// Read only when the file does not have this ETag.
     ///
-    /// This feature can be used to check if the file's `ETag` doesn't match the given `ETag`.
-    ///
-    /// If file exists and it's etag match, an error with kind [`ErrorKind::ConditionNotMatch`]
-    /// will be returned.
+    /// Refer to [`options::ReaderOptions::if_none_match`] for the full contract.
     ///
     /// ```
     /// # use opendal_core::Result;
@@ -604,24 +596,25 @@ impl<F: Future<Output = Result<Reader>>> FutureReader<F> {
         self
     }
 
-    /// Set the current object version that this reader must match.
+    /// Read only when the file has this exact version.
+    ///
+    /// Refer to [`options::ReaderOptions::if_version_match`] for the full contract.
     pub fn if_version_match(mut self, version: &str) -> Self {
         self.args.if_version_match = Some(version.to_string());
         self
     }
 
-    /// Set the current object version that this reader must not match.
+    /// Read only when the file does not have this version.
+    ///
+    /// Refer to [`options::ReaderOptions::if_version_not_match`] for the full contract.
     pub fn if_version_not_match(mut self, version: &str) -> Self {
         self.args.if_version_not_match = Some(version.to_string());
         self
     }
 
-    /// Set `if-modified-since` for this `read` request.
+    /// Read only when the file was modified after this timestamp.
     ///
-    /// This feature can be used to check if the file has been modified since the given timestamp.
-    ///
-    /// If file exists and it hasn't been modified since the specified time, an error with kind
-    /// [`ErrorKind::ConditionNotMatch`] will be returned.
+    /// Refer to [`options::ReaderOptions::if_modified_since`] for the full contract.
     ///
     /// ```
     /// # use opendal_core::Result;
@@ -640,12 +633,9 @@ impl<F: Future<Output = Result<Reader>>> FutureReader<F> {
         self
     }
 
-    /// Set `if-unmodified-since` for this `read` request.
+    /// Read only when the file was not modified after this timestamp.
     ///
-    /// This feature can be used to check if the file hasn't been modified since the given timestamp.
-    ///
-    /// If file exists and it has been modified since the specified time, an error with kind
-    /// [`ErrorKind::ConditionNotMatch`] will be returned.
+    /// Refer to [`options::ReaderOptions::if_unmodified_since`] for the full contract.
     ///
     /// ```
     /// # use opendal_core::Result;
@@ -856,9 +846,9 @@ impl<F: Future<Output = Result<Metadata>>> FutureWrite<F> {
         self
     }
 
-    /// Sets If-Match header for this write request.
+    /// Write only when the file at the write path has this exact ETag.
     ///
-    /// Refer to [`options::WriteOptions::if_match`] for more details.
+    /// Refer to [`options::WriteOptions::if_match`] for the full contract.
     ///
     /// ### Example
     ///
@@ -882,9 +872,9 @@ impl<F: Future<Output = Result<Metadata>>> FutureWrite<F> {
         self
     }
 
-    /// Sets If-None-Match header for this write request.
+    /// Write only when the file at the write path does not have this ETag.
     ///
-    /// Refer to [`options::WriteOptions::if_none_match`] for more details.
+    /// Refer to [`options::WriteOptions::if_none_match`] for the full contract.
     ///
     /// ### Example
     ///
@@ -908,27 +898,33 @@ impl<F: Future<Output = Result<Metadata>>> FutureWrite<F> {
         self
     }
 
-    /// Set the current object version that this write must match.
+    /// Write only when the file at the write path has this exact version.
+    ///
+    /// Refer to [`options::WriteOptions::if_version_match`] for the full contract.
     pub fn if_version_match(mut self, version: &str) -> Self {
         self.args.0.if_version_match = Some(version.to_string());
         self
     }
 
-    /// Set the current object version that this write must not match.
+    /// Write only when the file at the write path does not have this version.
+    ///
+    /// Refer to [`options::WriteOptions::if_version_not_match`] for the full contract.
     pub fn if_version_not_match(mut self, version: &str) -> Self {
         self.args.0.if_version_not_match = Some(version.to_string());
         self
     }
 
-    /// Write only when the object still matches `metadata`.
+    /// Write only when the file still has the identity recorded in `metadata`.
+    ///
+    /// Refer to [`options::WriteOptions::if_not_changed`] for the full contract.
     pub fn if_not_changed(mut self, metadata: &Metadata) -> Self {
         self.args.0.if_not_changed = Some(metadata.clone());
         self
     }
 
-    /// Sets the condition that write operation will succeed only if target does not exist.
+    /// Write only when no file exists at the write path.
     ///
-    /// Refer to [`options::WriteOptions::if_not_exists`] for more details.
+    /// Refer to [`options::WriteOptions::if_not_exists`] for the full contract.
     ///
     /// ### Example
     ///
@@ -1193,21 +1189,11 @@ impl<F: Future<Output = Result<Writer>>> FutureWriter<F> {
         self
     }
 
-    /// Sets If-Match header for this write request.
+    /// Write only when the file at the write path has this exact ETag.
     ///
-    /// Refer to [`options::WriteOptions::if_match`] for more details.
-    ///
-    /// ### Behavior
-    ///
-    /// - If supported, the write operation will only succeed if the target's ETag matches the specified value
-    /// - The value should be a valid ETag string
-    /// - Common values include:
-    ///   - A specific ETag value like `"686897696a7c876b7e"`
-    ///   - `*` - Matches any existing resource
-    /// - If not supported, the value will be ignored
-    ///
-    /// This operation provides conditional write functionality based on ETag matching,
-    /// helping prevent unintended overwrites in concurrent scenarios.
+    /// Refer to [`options::WriteOptions::if_match`] for the full contract.
+    /// Depending on the service, the conditional error may surface when
+    /// creating the writer, while writing, or when closing it.
     ///
     /// ### Example
     ///
@@ -1234,9 +1220,9 @@ impl<F: Future<Output = Result<Writer>>> FutureWriter<F> {
         self
     }
 
-    /// Sets If-None-Match header for this write request.
+    /// Write only when the file at the write path does not have this ETag.
     ///
-    /// Refer to [`options::WriteOptions::if_none_match`] for more details.
+    /// Refer to [`options::WriteOptions::if_none_match`] for the full contract.
     ///
     /// ### Example
     ///
@@ -1263,27 +1249,33 @@ impl<F: Future<Output = Result<Writer>>> FutureWriter<F> {
         self
     }
 
-    /// Set the current object version that this writer must match.
+    /// Write only when the file at the write path has this exact version.
+    ///
+    /// Refer to [`options::WriteOptions::if_version_match`] for the full contract.
     pub fn if_version_match(mut self, version: &str) -> Self {
         self.args.if_version_match = Some(version.to_string());
         self
     }
 
-    /// Set the current object version that this writer must not match.
+    /// Write only when the file at the write path does not have this version.
+    ///
+    /// Refer to [`options::WriteOptions::if_version_not_match`] for the full contract.
     pub fn if_version_not_match(mut self, version: &str) -> Self {
         self.args.if_version_not_match = Some(version.to_string());
         self
     }
 
-    /// Write only when the object still matches `metadata`.
+    /// Write only when the file still has the identity recorded in `metadata`.
+    ///
+    /// Refer to [`options::WriteOptions::if_not_changed`] for the full contract.
     pub fn if_not_changed(mut self, metadata: &Metadata) -> Self {
         self.args.if_not_changed = Some(metadata.clone());
         self
     }
 
-    /// Sets the condition that write operation will succeed only if target does not exist.
+    /// Write only when no file exists at the write path.
     ///
-    /// Refer to [`options::WriteOptions::if_not_exists`] for more details.
+    /// Refer to [`options::WriteOptions::if_not_exists`] for the full contract.
     ///
     /// ### Example
     ///
@@ -1345,43 +1337,57 @@ impl<F: Future<Output = Result<Writer>>> FutureWriter<F> {
 pub type FutureDelete<F> = OperatorFuture<options::DeleteOptions, (), F>;
 
 impl<F: Future<Output = Result<()>>> FutureDelete<F> {
-    /// Change the version of this delete operation.
+    /// Delete the given version of the file instead of the current one.
+    ///
+    /// Refer to [`options::DeleteOptions::version`] for the full contract.
     pub fn version(mut self, v: &str) -> Self {
         self.args.version = Some(v.to_string());
         self
     }
 
     /// Enable recursive deletion.
+    ///
+    /// Refer to [`options::DeleteOptions::recursive`] for the full contract.
     pub fn recursive(mut self, recursive: bool) -> Self {
         self.args.recursive = recursive;
         self
     }
 
-    /// Set `if_match` for this delete operation.
+    /// Delete only when the file at the delete path has this exact ETag.
+    ///
+    /// Refer to [`options::DeleteOptions::if_match`] for the full contract.
     pub fn if_match(mut self, etag: &str) -> Self {
         self.args.if_match = Some(etag.to_string());
         self
     }
 
-    /// Set `if_none_match` for this delete operation.
+    /// Delete only when the file at the delete path does not have this ETag.
+    ///
+    /// Refer to [`options::DeleteOptions::if_none_match`] for the full contract.
     pub fn if_none_match(mut self, etag: &str) -> Self {
         self.args.if_none_match = Some(etag.to_string());
         self
     }
 
-    /// Set the current object version that this delete must match.
+    /// Delete only when the file at the delete path has this exact version.
+    ///
+    /// Refer to [`options::DeleteOptions::if_version_match`] for the full contract.
     pub fn if_version_match(mut self, version: &str) -> Self {
         self.args.if_version_match = Some(version.to_string());
         self
     }
 
-    /// Set the current object version that this delete must not match.
+    /// Delete only when the file at the delete path does not have this version.
+    ///
+    /// Refer to [`options::DeleteOptions::if_version_not_match`] for the full contract.
     pub fn if_version_not_match(mut self, version: &str) -> Self {
         self.args.if_version_not_match = Some(version.to_string());
         self
     }
 
-    /// Delete only when the object still matches `metadata`.
+    /// Delete only when the file still has the identity recorded in `metadata`.
+    ///
+    /// Refer to [`options::DeleteOptions::if_not_changed`] for the full contract.
     pub fn if_not_changed(mut self, metadata: &Metadata) -> Self {
         self.args.if_not_changed = Some(metadata.clone());
         self
@@ -1515,15 +1521,180 @@ impl<F: Future<Output = Result<Lister>>> FutureLister<F> {
     }
 }
 
+/// [`Operator::compose_with`] returns this future.
+///
+/// Use its methods to configure the destination before awaiting it.
+pub type FutureCompose<F> = OperatorFuture<
+    (
+        options::ComposeOptions,
+        Vec<(String, options::ComposeSourceOptions)>,
+    ),
+    Metadata,
+    F,
+>;
+
+impl<F: Future<Output = Result<Metadata>>> FutureCompose<F> {
+    /// Set destination Cache-Control metadata.
+    pub fn cache_control(mut self, value: &str) -> Self {
+        self.args.0.cache_control = Some(value.to_string());
+        self
+    }
+
+    /// Set destination Content-Type metadata.
+    pub fn content_type(mut self, value: &str) -> Self {
+        self.args.0.content_type = Some(value.to_string());
+        self
+    }
+
+    /// Set destination Content-Disposition metadata.
+    pub fn content_disposition(mut self, value: &str) -> Self {
+        self.args.0.content_disposition = Some(value.to_string());
+        self
+    }
+
+    /// Set destination Content-Encoding metadata.
+    pub fn content_encoding(mut self, value: &str) -> Self {
+        self.args.0.content_encoding = Some(value.to_string());
+        self
+    }
+
+    /// Set destination user metadata.
+    pub fn user_metadata(mut self, value: HashMap<String, String>) -> Self {
+        self.args.0.user_metadata = Some(value);
+        self
+    }
+
+    /// Require a missing destination object.
+    pub fn if_not_exists(mut self, value: bool) -> Self {
+        self.args.0.if_not_exists = value;
+        self
+    }
+
+    /// Require this destination ETag.
+    pub fn if_match(mut self, value: &str) -> Self {
+        self.args.0.if_match = Some(value.to_string());
+        self
+    }
+
+    /// Require a different destination ETag.
+    pub fn if_none_match(mut self, value: &str) -> Self {
+        self.args.0.if_none_match = Some(value.to_string());
+        self
+    }
+
+    /// Require this destination version.
+    pub fn if_version_match(mut self, value: &str) -> Self {
+        self.args.0.if_version_match = Some(value.to_string());
+        self
+    }
+
+    /// Require a different destination version.
+    pub fn if_version_not_match(mut self, value: &str) -> Self {
+        self.args.0.if_version_not_match = Some(value.to_string());
+        self
+    }
+
+    /// Require the destination to retain the identity in `metadata`.
+    pub fn if_not_changed(mut self, metadata: &Metadata) -> Self {
+        self.args.0.if_not_changed = Some(metadata.clone());
+        self
+    }
+
+    /// Set the maximum number of independent backend tasks.
+    pub fn concurrent(mut self, value: usize) -> Self {
+        self.args.0.concurrent = value.max(1);
+        self
+    }
+}
+
+/// [`Operator::composer_with`] returns this future.
+///
+/// Use its methods to configure the destination before awaiting it.
+pub type FutureComposer<F> = OperatorFuture<options::ComposeOptions, Composer, F>;
+
+impl<F: Future<Output = Result<Composer>>> FutureComposer<F> {
+    /// Set destination Cache-Control metadata.
+    pub fn cache_control(mut self, value: &str) -> Self {
+        self.args.cache_control = Some(value.to_string());
+        self
+    }
+
+    /// Set destination Content-Type metadata.
+    pub fn content_type(mut self, value: &str) -> Self {
+        self.args.content_type = Some(value.to_string());
+        self
+    }
+
+    /// Set destination Content-Disposition metadata.
+    pub fn content_disposition(mut self, value: &str) -> Self {
+        self.args.content_disposition = Some(value.to_string());
+        self
+    }
+
+    /// Set destination Content-Encoding metadata.
+    pub fn content_encoding(mut self, value: &str) -> Self {
+        self.args.content_encoding = Some(value.to_string());
+        self
+    }
+
+    /// Set destination user metadata.
+    pub fn user_metadata(mut self, value: HashMap<String, String>) -> Self {
+        self.args.user_metadata = Some(value);
+        self
+    }
+
+    /// Require a missing destination object.
+    pub fn if_not_exists(mut self, value: bool) -> Self {
+        self.args.if_not_exists = value;
+        self
+    }
+
+    /// Require this destination ETag.
+    pub fn if_match(mut self, value: &str) -> Self {
+        self.args.if_match = Some(value.to_string());
+        self
+    }
+
+    /// Require a different destination ETag.
+    pub fn if_none_match(mut self, value: &str) -> Self {
+        self.args.if_none_match = Some(value.to_string());
+        self
+    }
+
+    /// Require this destination version.
+    pub fn if_version_match(mut self, value: &str) -> Self {
+        self.args.if_version_match = Some(value.to_string());
+        self
+    }
+
+    /// Require a different destination version.
+    pub fn if_version_not_match(mut self, value: &str) -> Self {
+        self.args.if_version_not_match = Some(value.to_string());
+        self
+    }
+
+    /// Require the destination to retain the identity in `metadata`.
+    pub fn if_not_changed(mut self, metadata: &Metadata) -> Self {
+        self.args.if_not_changed = Some(metadata.clone());
+        self
+    }
+
+    /// Set the maximum number of independent backend tasks.
+    pub fn concurrent(mut self, value: usize) -> Self {
+        self.args.concurrent = value.max(1);
+        self
+    }
+}
+
 /// [`Operator::copy_with`] returns this future.
 ///
 /// Use its methods to configure the operation before awaiting it.
 pub type FutureCopy<F> = OperatorFuture<(options::CopyOptions, String), Metadata, F>;
 
 impl<F: Future<Output = Result<Metadata>>> FutureCopy<F> {
-    /// Sets the condition that copy operation will succeed only if target does not exist.
+    /// Copy only when no file exists at the destination path.
     ///
-    /// Refer to [`options::CopyOptions::if_not_exists`] for more details.
+    /// Refer to [`options::CopyOptions::if_not_exists`] for the full contract.
     ///
     /// ### Example
     ///
@@ -1544,42 +1715,49 @@ impl<F: Future<Output = Result<Metadata>>> FutureCopy<F> {
         self
     }
 
-    /// Sets the condition that copy operation will succeed only if the
-    /// destination object currently has the given ETag.
+    /// Copy only when the destination file has this exact ETag.
     ///
-    /// Refer to [`options::CopyOptions::if_match`] for more details.
+    /// Refer to [`options::CopyOptions::if_match`] for the full contract.
     pub fn if_match(mut self, etag: &str) -> Self {
         self.args.0.if_match = Some(etag.to_string());
         self
     }
 
-    /// Set the destination ETag that this copy must not match.
+    /// Copy only when the destination file does not have this ETag.
+    ///
+    /// Refer to [`options::CopyOptions::if_none_match`] for the full contract.
     pub fn if_none_match(mut self, etag: &str) -> Self {
         self.args.0.if_none_match = Some(etag.to_string());
         self
     }
 
-    /// Set the current destination version that this copy must match.
+    /// Copy only when the destination file has this exact version.
+    ///
+    /// Refer to [`options::CopyOptions::if_version_match`] for the full contract.
     pub fn if_version_match(mut self, version: &str) -> Self {
         self.args.0.if_version_match = Some(version.to_string());
         self
     }
 
-    /// Set the current destination version that this copy must not match.
+    /// Copy only when the destination file does not have this version.
+    ///
+    /// Refer to [`options::CopyOptions::if_version_not_match`] for the full contract.
     pub fn if_version_not_match(mut self, version: &str) -> Self {
         self.args.0.if_version_not_match = Some(version.to_string());
         self
     }
 
-    /// Copy only when the destination still matches `metadata`.
+    /// Copy only when the destination file still has the identity recorded in `metadata`.
+    ///
+    /// Refer to [`options::CopyOptions::if_not_changed`] for the full contract.
     pub fn if_not_changed(mut self, metadata: &Metadata) -> Self {
         self.args.0.if_not_changed = Some(metadata.clone());
         self
     }
 
-    /// Sets source version for this copy operation.
+    /// Copy from this source file version instead of the current one.
     ///
-    /// Refer to [`options::CopyOptions::source_version`] for more details.
+    /// Refer to [`options::CopyOptions::source_version`] for the full contract.
     pub fn source_version(mut self, version: impl Into<String>) -> Self {
         self.args.0.source_version = Some(version.into());
         self
@@ -1616,50 +1794,57 @@ impl<F: Future<Output = Result<Metadata>>> FutureCopy<F> {
 pub type FutureCopier<F> = OperatorFuture<(options::CopyOptions, String), Copier, F>;
 
 impl<F: Future<Output = Result<Copier>>> FutureCopier<F> {
-    /// Sets the condition that copy operation will succeed only if target does not exist.
+    /// Copy only when no file exists at the destination path.
     ///
-    /// Refer to [`options::CopyOptions::if_not_exists`] for more details.
+    /// Refer to [`options::CopyOptions::if_not_exists`] for the full contract.
     pub fn if_not_exists(mut self, v: bool) -> Self {
         self.args.0.if_not_exists = v;
         self
     }
 
-    /// Sets the condition that copy operation will succeed only if the
-    /// destination object currently has the given ETag.
+    /// Copy only when the destination file has this exact ETag.
     ///
-    /// Refer to [`options::CopyOptions::if_match`] for more details.
+    /// Refer to [`options::CopyOptions::if_match`] for the full contract.
     pub fn if_match(mut self, etag: &str) -> Self {
         self.args.0.if_match = Some(etag.to_string());
         self
     }
 
-    /// Set the destination ETag that this copier must not match.
+    /// Copy only when the destination file does not have this ETag.
+    ///
+    /// Refer to [`options::CopyOptions::if_none_match`] for the full contract.
     pub fn if_none_match(mut self, etag: &str) -> Self {
         self.args.0.if_none_match = Some(etag.to_string());
         self
     }
 
-    /// Set the current destination version that this copier must match.
+    /// Copy only when the destination file has this exact version.
+    ///
+    /// Refer to [`options::CopyOptions::if_version_match`] for the full contract.
     pub fn if_version_match(mut self, version: &str) -> Self {
         self.args.0.if_version_match = Some(version.to_string());
         self
     }
 
-    /// Set the current destination version that this copier must not match.
+    /// Copy only when the destination file does not have this version.
+    ///
+    /// Refer to [`options::CopyOptions::if_version_not_match`] for the full contract.
     pub fn if_version_not_match(mut self, version: &str) -> Self {
         self.args.0.if_version_not_match = Some(version.to_string());
         self
     }
 
-    /// Copy only when the destination still matches `metadata`.
+    /// Copy only when the destination file still has the identity recorded in `metadata`.
+    ///
+    /// Refer to [`options::CopyOptions::if_not_changed`] for the full contract.
     pub fn if_not_changed(mut self, metadata: &Metadata) -> Self {
         self.args.0.if_not_changed = Some(metadata.clone());
         self
     }
 
-    /// Sets source version for this copier operation.
+    /// Copy from this source file version instead of the current one.
     ///
-    /// Refer to [`options::CopyOptions::source_version`] for more details.
+    /// Refer to [`options::CopyOptions::source_version`] for the full contract.
     pub fn source_version(mut self, version: impl Into<String>) -> Self {
         self.args.0.source_version = Some(version.into());
         self
@@ -1696,9 +1881,9 @@ impl<F: Future<Output = Result<Copier>>> FutureCopier<F> {
 pub type FutureRename<F> = OperatorFuture<(options::RenameOptions, String), (), F>;
 
 impl<F: Future<Output = Result<()>>> FutureRename<F> {
-    /// Sets the condition that rename operation will succeed only if target does not exist.
+    /// Rename only when no file exists at the destination path.
     ///
-    /// Refer to [`options::RenameOptions::if_not_exists`] for more details.
+    /// Refer to [`options::RenameOptions::if_not_exists`] for the full contract.
     ///
     /// ### Example
     ///
@@ -1725,13 +1910,17 @@ impl<F: Future<Output = Result<()>>> FutureRename<F> {
 pub type FutureRestore<F> = OperatorFuture<options::RestoreOptions, (), F>;
 
 impl<F: Future<Output = Result<()>>> FutureRestore<F> {
-    /// Restore the specified historical version as the current version.
+    /// Restore this historical version as the current version.
+    ///
+    /// Refer to [`options::RestoreOptions::version`] for the full contract.
     pub fn version(mut self, version: impl Into<String>) -> Self {
         self.args.version = Some(version.into());
         self
     }
 
-    /// Restore the selected version only if the path does not currently exist.
+    /// Restore the selected version only when no file currently exists at the restore path.
+    ///
+    /// Refer to [`options::RestoreOptions::if_not_exists`] for the full contract.
     pub fn if_not_exists(mut self, if_not_exists: bool) -> Self {
         self.args.if_not_exists = if_not_exists;
         self

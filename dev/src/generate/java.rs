@@ -25,7 +25,7 @@ use std::path::PathBuf;
 fn enabled_service(srv: &str) -> bool {
     match srv {
         // not enabled in bindings/java/Cargo.toml
-        "foundationdb" | "ftp" | "hdfs" | "rocksdb" | "tikv" => false,
+        "foundationdb" | "ftp" | "git" | "hdfs" | "rocksdb" | "smb" | "tikv" => false,
         _ => true,
     }
 }
@@ -110,41 +110,39 @@ fn make_populate_map(field: ViaDeserialize<Config>) -> Result<String, minijinja:
     let mut result = String::new();
     let w = &mut result;
 
-    let populate = match field.value {
+    let name = case_java_field_name(&field.name);
+    let value = match field.value {
         ConfigType::Usize
         | ConfigType::U64
         | ConfigType::I64
         | ConfigType::Bool
         | ConfigType::U32
-        | ConfigType::U16 => format!(
-            "map.put(\"{}\", String.valueOf({}));",
-            field.name,
-            case_java_field_name(&field.name)
-        ),
-        ConfigType::String => format!(
-            "map.put(\"{}\", {});",
-            field.name,
-            case_java_field_name(&field.name)
-        ),
-        ConfigType::Duration => format!(
-            "map.put(\"{}\", {}.toString());",
-            field.name,
-            case_java_field_name(&field.name)
-        ),
-        ConfigType::Vec => format!(
-            "map.put(\"{}\", String.join(\",\", {}));",
-            field.name,
-            case_java_field_name(&field.name)
-        ),
-        ConfigType::HashMap => format!("map.putAll({});", case_java_field_name(&field.name)),
+        | ConfigType::U16 => Some(format!("String.valueOf({name})")),
+        ConfigType::String => Some(name.clone()),
+        ConfigType::Duration => Some(format!("{name}.toString()")),
+        ConfigType::Vec => Some(format!("String.join(\",\", {name})")),
+        ConfigType::HashMap => None,
     };
 
+    let indent = if field.optional { "    " } else { "" };
     if field.optional {
-        writeln!(w, "if ({} != null) {{", case_java_field_name(&field.name))?;
-        writeln!(w, "    {populate}")?;
-        writeln!(w, "}}")?;
+        writeln!(w, "if ({name} != null) {{")?;
+    }
+    if let Some(value) = value {
+        let populate = format!("map.put(\"{}\", {value});", field.name);
+        // java.j2 adds 12 columns; keep calls within the formatter's 120-column layout.
+        if 12 + indent.len() + populate.len() > 120 {
+            writeln!(w, "{indent}map.put(")?;
+            writeln!(w, "{indent}        \"{}\",", field.name)?;
+            writeln!(w, "{indent}        {value});")?;
+        } else {
+            writeln!(w, "{indent}{populate}")?;
+        }
     } else {
-        writeln!(w, "{populate}")?;
+        writeln!(w, "{indent}map.putAll({name});")?;
+    }
+    if field.optional {
+        writeln!(w, "}}")?;
     }
 
     Ok(result)

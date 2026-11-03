@@ -132,7 +132,7 @@ internal sealed class WriteBuffer : IBufferWriter<byte>, IDisposable
 
         var nextCapacity = (int)Math.Max(needed, Math.Min((long)capacity * 2, MaxSegmentCapacity));
         var result = NativeMethods.write_buffer_add_segment(handle, (nuint)tailWritten, (nuint)nextCapacity);
-        var segment = Operator.ToValueOrThrowAndRelease<OpenDALWriteBuffer, OpenDALWriteBufferResult>(result);
+        var segment = Operator.ToValueOrThrowAndRelease<OpenDALWriteBuffer, OpenDALWriteResult>(result);
 
         data = segment.Data;
         capacity = checked((int)segment.Capacity);

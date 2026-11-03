@@ -162,6 +162,7 @@ impl Builder for FtpBuilder {
 
         let manager = Manager {
             endpoint: endpoint.clone(),
+            host: host.to_string(),
             root: root.clone(),
             user: user.clone(),
             password: password.clone(),
@@ -190,6 +191,7 @@ impl Service for FtpBackend {
     type Lister = FtpLazyLister;
     type Deleter = oio::OneShotDeleter<FtpDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info()
@@ -240,11 +242,14 @@ impl Service for FtpBackend {
             EntryMode::Unknown
         };
 
-        let mut meta = Metadata::new(mode);
-        meta.set_content_length(file.size() as u64);
-        meta.set_last_modified(Timestamp::try_from(file.modified())?);
+        let mut meta = match mode {
+            EntryMode::FILE => MetadataBuilder::file(file.size() as u64),
+            EntryMode::DIR => MetadataBuilder::dir(),
+            EntryMode::Unknown => MetadataBuilder::unknown(),
+        };
+        meta.last_modified(Timestamp::try_from(file.modified())?);
 
-        Ok(RpStat::new(meta))
+        Ok(RpStat::new(meta.build()))
     }
     fn read(&self, _ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
         let output: oio::StreamReader<FtpReader> = {
@@ -279,7 +284,6 @@ impl Service for FtpBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,

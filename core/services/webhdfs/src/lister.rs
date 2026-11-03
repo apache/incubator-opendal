@@ -20,8 +20,8 @@ use std::sync::Arc;
 use bytes::Buf;
 use http::StatusCode;
 
-use super::core::WebhdfsCore;
 use super::core::parse_error;
+use super::core::{ErrorContext, WebhdfsCore};
 use super::message::*;
 use opendal_core::raw::oio;
 use opendal_core::raw::*;
@@ -52,7 +52,7 @@ impl oio::PageList for WebhdfsLister {
                     ctx.done = true;
                     ctx.entries.push_back(oio::Entry::new(
                         format!("{}/", self.path).as_str(),
-                        Metadata::new(EntryMode::DIR),
+                        MetadataBuilder::dir().build(),
                     ));
 
                     let bs = resp.into_body();
@@ -65,7 +65,12 @@ impl oio::PageList for WebhdfsLister {
                     ctx.done = true;
                     return Ok(());
                 }
-                _ => return Err(parse_error(resp)),
+                _ => {
+                    return Err(parse_error(
+                        ErrorContext::new(ServiceOperation("ListStatus")),
+                        resp,
+                    ));
+                }
             }
         } else {
             let resp = self
@@ -83,7 +88,7 @@ impl oio::PageList for WebhdfsLister {
                     if directory_listing.remaining_entries == 0 {
                         ctx.entries.push_back(oio::Entry::new(
                             format!("{}/", self.path).as_str(),
-                            Metadata::new(EntryMode::DIR),
+                            MetadataBuilder::dir().build(),
                         ));
 
                         ctx.done = true;
@@ -98,7 +103,12 @@ impl oio::PageList for WebhdfsLister {
                     ctx.done = true;
                     return Ok(());
                 }
-                _ => return Err(parse_error(resp)),
+                _ => {
+                    return Err(parse_error(
+                        ErrorContext::new(ServiceOperation("ListStatusBatch")),
+                        resp,
+                    ));
+                }
             }
         };
 
@@ -110,10 +120,12 @@ impl oio::PageList for WebhdfsLister {
             };
 
             let meta = match status.ty {
-                FileStatusType::Directory => Metadata::new(EntryMode::DIR),
-                FileStatusType::File => Metadata::new(EntryMode::FILE)
-                    .with_content_length(status.length)
-                    .with_last_modified(Timestamp::from_millisecond(status.modification_time)?),
+                FileStatusType::Directory => MetadataBuilder::dir().build(),
+                FileStatusType::File => {
+                    let mut metadata = MetadataBuilder::file(status.length);
+                    metadata.last_modified(Timestamp::from_millisecond(status.modification_time)?);
+                    metadata.build()
+                }
             };
 
             if meta.mode().is_file() {

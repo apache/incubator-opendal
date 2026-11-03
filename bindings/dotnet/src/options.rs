@@ -16,6 +16,8 @@
 // under the License.
 
 use std::collections::HashMap;
+use std::fmt::Display;
+use std::str::FromStr;
 
 use opendal::raw::Timestamp;
 
@@ -39,23 +41,20 @@ fn parse_bool(values: &HashMap<String, String>, key: &str) -> Result<Option<bool
     }
 }
 
-fn parse_usize(values: &HashMap<String, String>, key: &str) -> Result<Option<usize>, OpenDALError> {
+fn parse_number<T>(values: &HashMap<String, String>, key: &str) -> Result<Option<T>, OpenDALError>
+where
+    T: FromStr,
+    T::Err: Display,
+{
     let Some(raw) = values.get(key) else {
         return Ok(None);
     };
 
-    raw.parse::<usize>().map(Some).map_err(|err| {
-        crate::utils::config_invalid_error(format!("invalid usize value for {key}: {raw}, {err}"))
-    })
-}
-
-fn parse_u64(values: &HashMap<String, String>, key: &str) -> Result<Option<u64>, OpenDALError> {
-    let Some(raw) = values.get(key) else {
-        return Ok(None);
-    };
-
-    raw.parse::<u64>().map(Some).map_err(|err| {
-        crate::utils::config_invalid_error(format!("invalid u64 value for {key}: {raw}, {err}"))
+    raw.parse::<T>().map(Some).map_err(|err| {
+        crate::utils::config_invalid_error(format!(
+            "invalid {} value for {key}: {raw}, {err}",
+            std::any::type_name::<T>()
+        ))
     })
 }
 
@@ -87,8 +86,8 @@ pub fn parse_read_options(
 ) -> Result<opendal::options::ReadOptions, OpenDALError> {
     let mut options = opendal::options::ReadOptions::default();
 
-    let offset = parse_u64(values, "offset")?.unwrap_or_default();
-    let length = parse_u64(values, "length")?;
+    let offset = parse_number::<u64>(values, "offset")?.unwrap_or_default();
+    let length = parse_number::<u64>(values, "length")?;
     if offset > 0 || length.is_some() {
         options.range = match validate_read_range_end(offset, length)? {
             Some(end) => (offset..end).into(),
@@ -102,17 +101,17 @@ pub fn parse_read_options(
     options.if_modified_since = parse_timestamp(values, "if_modified_since")?;
     options.if_unmodified_since = parse_timestamp(values, "if_unmodified_since")?;
 
-    if let Some(concurrent) = parse_usize(values, "concurrent")? {
+    if let Some(concurrent) = parse_number::<usize>(values, "concurrent")? {
         validate_read_concurrent(concurrent)?;
         options.concurrent = concurrent;
     }
 
-    if let Some(chunk) = parse_usize(values, "chunk")? {
+    if let Some(chunk) = parse_number::<usize>(values, "chunk")? {
         validate_read_chunk(chunk)?;
         options.chunk = Some(chunk);
     }
 
-    if let Some(gap) = parse_usize(values, "gap")? {
+    if let Some(gap) = parse_number::<usize>(values, "gap")? {
         validate_read_gap(gap)?;
         options.gap = Some(gap);
     }
@@ -144,12 +143,12 @@ pub fn parse_write_options(
         options.if_not_exists = if_not_exists;
     }
 
-    if let Some(concurrent) = parse_usize(values, "concurrent")? {
+    if let Some(concurrent) = parse_number::<usize>(values, "concurrent")? {
         validate_write_concurrent(concurrent)?;
         options.concurrent = concurrent;
     }
 
-    if let Some(chunk) = parse_usize(values, "chunk")? {
+    if let Some(chunk) = parse_number::<usize>(values, "chunk")? {
         validate_write_chunk(chunk)?;
         options.chunk = Some(chunk);
     }
@@ -194,7 +193,7 @@ pub fn parse_list_options(
         options.recursive = recursive;
     }
 
-    if let Some(limit) = parse_usize(values, "limit")? {
+    if let Some(limit) = parse_number::<usize>(values, "limit")? {
         validate_list_limit(limit)?;
         options.limit = Some(limit);
     }

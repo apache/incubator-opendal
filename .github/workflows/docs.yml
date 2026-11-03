@@ -35,6 +35,16 @@ on:
     branches:
       - main
     paths: *paths
+  workflow_dispatch:
+    inputs:
+      deploy-nightlies:
+        description: "Deploy built documentation to nightlies"
+        type: boolean
+        default: true
+      release_version:
+        description: "Release tag to deploy to nightlies"
+        required: true
+        type: string
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -44,7 +54,7 @@ env:
   # This is the toolchain used by docs.rs
   #
   # Check this page for updating: https://docs.rs/crate/opendal/latest/builds
-  RUST_DOC_TOOLCHAIN: nightly-2026-04-30
+  RUST_DOC_TOOLCHAIN: nightly-2026-09-22
   # Enable cfg docsrs to make sure docs are built.
   RUSTDOCFLAGS: >-
     --cfg docsrs
@@ -87,11 +97,35 @@ jobs:
         env:
           LD_LIBRARY_PATH: ${{ env.JAVA_HOME }}/lib/server:${{ env.LD_LIBRARY_PATH }}
 
+      # Cargo replaces the facade's HTML when switching to rustdoc JSON.
       - name: Upload docs
         uses: actions/upload-artifact@v7
         with:
           name: rust-documentation
           path: ./core/target/doc
+
+      - name: Build Rustdoc JSON
+        working-directory: core
+        # Match the HTML build's workspace features to reuse compiled dependencies.
+        run: |
+          RUSTDOCFLAGS="$RUSTDOCFLAGS -Z unstable-options --output-format json" \
+            cargo +${{ env.RUST_DOC_TOOLCHAIN }} doc \
+            --workspace --lib --no-deps --all-features
+        env:
+          LD_LIBRARY_PATH: ${{ env.JAVA_HOME }}/lib/server:${{ env.LD_LIBRARY_PATH }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: "website/.node-version"
+
+      - name: Generate Rust LLM documentation
+        run: node website/scripts/generate-rustdoc-llms.cjs core/target/doc/opendal.json core/target/llms.json
+
+      - name: Upload Rust LLM documentation
+        uses: actions/upload-artifact@v7
+        with:
+          name: rust-llms-documentation
+          path: ./core/target/llms.json
 
   build-java-doc:
     runs-on: ubuntu-latest
@@ -162,7 +196,7 @@ jobs:
         uses: ./.github/actions/setup
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           enable-cache: true
 
@@ -225,7 +259,9 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup doxygen
-        run: sudo apt-get install doxygen
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y doxygen
 
       - name: Build Docs
         working-directory: bindings/c
@@ -244,7 +280,9 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Setup lua-ldoc
-        run: sudo apt-get install lua-ldoc
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y lua-ldoc
 
       - name: Build Docs
         working-directory: "bindings/lua"
@@ -334,7 +372,8 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get install doxygen graphviz ninja-build
+          sudo apt-get update
+          sudo apt-get install -y doxygen graphviz ninja-build
 
       - name: Build Cpp docs
         working-directory: "bindings/cpp"
@@ -418,7 +457,6 @@ jobs:
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup
 
-      # Revert to nightly after https://github.com/apache/opendal/issues/4161 addressed
       - name: Setup Rust Nightly
         run: |
           rustup toolchain install ${{ env.RUST_DOC_TOOLCHAIN }}
@@ -481,6 +519,9 @@ jobs:
 
   build-website:
     runs-on: ubuntu-latest
+    env:
+      DOCUSAURUS_PERF_LOGGER: "true"
+      OPENDAL_RUSTDOC_LLMS: ${{ github.workspace }}/website/static/docs/rust/llms.json
     permissions:
       contents: write
     needs:
@@ -538,6 +579,8 @@ jobs:
 
           # Becasue `website/static/docs/` maps to `/docs/` on website, we want to organize paths
           mv static/docs/rust-documentation/ static/docs/rust/
+          mv static/docs/rust-llms-documentation/llms.json static/docs/rust/llms.json
+          rmdir static/docs/rust-llms-documentation/
           mv static/docs/binding-java-documentation/ static/docs/java/
           mv static/docs/binding-nodejs-documentation/ static/docs/nodejs/
           mv static/docs/binding-python-documentation/ static/docs/python/
@@ -627,11 +670,11 @@ jobs:
           cp ${{ github.workspace }}/.asf.yaml ./build/.asf.yaml
         env:
           # Keep this same with the remote_path below
-          OPENDAL_WEBSITE_BASE_URL: /opendal/opendal-docs-release-${{ github.ref_name }}/
+          OPENDAL_WEBSITE_BASE_URL: /opendal/opendal-docs-release-${{ inputs.release_version || github.ref_name }}/
           OPENDAL_WEBSITE_NOT_LATEST: true
 
       - name: Deploy to nightlies for tagged version
-        if: ${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'rc') }}
+        if: ${{ (github.event_name != 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'rc')) || (github.event_name == 'workflow_dispatch' && inputs.deploy-nightlies) }}
         shell: bash
         env:
           NIGHTLIES_RSYNC_HOST: ${{ secrets.NIGHTLIES_RSYNC_HOST }}
@@ -641,12 +684,12 @@ jobs:
           NIGHTLIES_RSYNC_USER: ${{ secrets.NIGHTLIES_RSYNC_USER }}
         run: |
           mkdir -p "${HOME}/.ssh"
-          printf '%s' "${NIGHTLIES_RSYNC_KEY}" > "${HOME}/.ssh/nightlies_rsync"
+          printf '%s\n' "${NIGHTLIES_RSYNC_KEY}" > "${HOME}/.ssh/nightlies_rsync"
           chmod 0600 "${HOME}/.ssh/nightlies_rsync"
           rsync -avzr \
             -e "ssh -i ${HOME}/.ssh/nightlies_rsync -p ${NIGHTLIES_RSYNC_PORT} -o StrictHostKeyChecking=no" \
             build/ \
-            "${NIGHTLIES_RSYNC_USER}@${NIGHTLIES_RSYNC_HOST}:${NIGHTLIES_RSYNC_PATH}/opendal/opendal-docs-release-${{ github.ref_name }}/"
+            "${NIGHTLIES_RSYNC_USER}@${NIGHTLIES_RSYNC_HOST}:${NIGHTLIES_RSYNC_PATH}/opendal/opendal-docs-release-${{ inputs.release_version || github.ref_name }}/"
 
       - name: Clear build
         run: rm -rf ./build
@@ -659,7 +702,7 @@ jobs:
           OPENDAL_WEBSITE_BASE_URL: /opendal/opendal-docs-stable/
 
       - name: Deploy to nightlies for stable version
-        if: ${{ startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'rc') }}
+        if: ${{ (github.event_name != 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/') && !contains(github.ref, 'rc')) || (github.event_name == 'workflow_dispatch' && inputs.deploy-nightlies) }}
         shell: bash
         env:
           NIGHTLIES_RSYNC_HOST: ${{ secrets.NIGHTLIES_RSYNC_HOST }}
@@ -669,7 +712,7 @@ jobs:
           NIGHTLIES_RSYNC_USER: ${{ secrets.NIGHTLIES_RSYNC_USER }}
         run: |
           mkdir -p "${HOME}/.ssh"
-          printf '%s' "${NIGHTLIES_RSYNC_KEY}" > "${HOME}/.ssh/nightlies_rsync"
+          printf '%s\n' "${NIGHTLIES_RSYNC_KEY}" > "${HOME}/.ssh/nightlies_rsync"
           chmod 0600 "${HOME}/.ssh/nightlies_rsync"
           rsync -avzr --delete \
             -e "ssh -i ${HOME}/.ssh/nightlies_rsync -p ${NIGHTLIES_RSYNC_PORT} -o StrictHostKeyChecking=no" \

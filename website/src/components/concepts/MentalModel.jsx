@@ -21,12 +21,14 @@ import React, { useState } from "react";
 import CodeWindow from "../ui/CodeWindow";
 import styles from "./styles.module.css";
 
-// The OpenDAL mental model in one picture: an application calls an operator,
-// the operator is wrapped by layers, and the operator talks to one configured
-// service. Selecting a concept highlights its place in the diagram; the
-// one-line hint lives in the window title bar. The diagram is decorative
-// (aria-hidden) — the page prose carries the same information for assistive
-// technology.
+// The OpenDAL mental model in one picture, as the Rust core defines it: an
+// application calls an operator, optional layers wrap the operator, and the
+// operator talks to one configured service. Bindings map this model onto
+// their own types — some rename or hide the operator, and not all expose
+// layers; the page prose carries those caveats. Selecting a concept
+// highlights its place in the diagram; the one-line hint lives in the window
+// title bar. The diagram is decorative (aria-hidden) — the page prose carries
+// the same information for assistive technology.
 const CONCEPTS = [
   {
     id: "service",
@@ -44,13 +46,13 @@ const CONCEPTS = [
     id: "layer",
     index: "03",
     name: "layer",
-    hint: "wraps the operator, sees every call",
+    hint: "optional wrapper, sees every call",
   },
   {
     id: "operation",
     index: "04",
     name: "operation",
-    hint: "the same verbs on every backend",
+    hint: "the same verbs, bounded by capabilities",
   },
 ];
 

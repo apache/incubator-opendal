@@ -19,8 +19,8 @@ use std::sync::Arc;
 
 use http::StatusCode;
 
-use super::core::WebhdfsCore;
 use super::core::parse_error;
+use super::core::{ErrorContext, WebhdfsCore};
 use opendal_core::raw::oio;
 use opendal_core::raw::*;
 use opendal_core::*;
@@ -42,7 +42,10 @@ impl oio::OneShotDelete for WebhdfsDeleter {
 
         match resp.status() {
             StatusCode::OK => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Delete")),
+                resp,
+            )),
         }
     }
 }

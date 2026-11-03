@@ -23,6 +23,7 @@ import io.github.cdimascio.dotenv.Dotenv;
 import io.github.cdimascio.dotenv.DotenvEntry;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import java.nio.file.Paths;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -59,10 +60,18 @@ public class BehaviorExtension implements BeforeAllCallback, AfterAllCallback, T
                 }
             }
 
-            // Use random root unless OPENDAL_DISABLE_RANDOM_ROOT is set to true.
+            // Isolate each test class unless OPENDAL_DISABLE_RANDOM_ROOT is set to true.
             if (!Boolean.parseBoolean(dotenv.get("OPENDAL_DISABLE_RANDOM_ROOT"))) {
-                final String root = config.getOrDefault("root", "/") + UUID.randomUUID() + "/";
+                final String fixtureId = UUID.randomUUID().toString();
+                final String root = config.getOrDefault("root", "/") + fixtureId + "/";
                 config.put("root", root);
+                if ("sled".equalsIgnoreCase(scheme)) {
+                    final String datadir = config.get("datadir");
+                    if (datadir != null && !datadir.isEmpty()) {
+                        // Sled locks its physical database; logical roots do not isolate database handles.
+                        config.put("datadir", Paths.get(datadir, fixtureId).toString());
+                    }
+                }
             }
 
             @Cleanup

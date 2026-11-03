@@ -39,10 +39,8 @@
 //!             ("secret_key".to_string(), "my_secret_key".to_string()),
 //!             ("endpoint".to_string(), "my_endpoint".to_string()),
 //!             ("region".to_string(), "my_region".to_string()),
-//!         ]
-//!             .into_iter()
-//!             .collect(),
-//!     )?.finish();
+//!         ],
+//!     )?;
 //!
 //!     // Wrap the operator with `OpendalStorage`
 //!     let backend = OpendalStorage::new(op);

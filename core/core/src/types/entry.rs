@@ -23,22 +23,14 @@ use crate::*;
 /// [`Lister`] and [`crate::blocking::Lister`] return `Entry` values.
 #[derive(Clone, Debug)]
 pub struct Entry {
-    /// Path of this entry.
-    path: String,
-
     /// Metadata of this entry.
     metadata: Metadata,
 }
 
 impl Entry {
-    /// Create an entry with metadata.
-    ///
-    /// # Notes
-    ///
-    /// The only way to get an entry with associated cached metadata
-    /// is `Operator::list`.
-    pub(crate) fn new(path: String, metadata: Metadata) -> Self {
-        Self { path, metadata }
+    pub(crate) fn from_metadata(metadata: Metadata) -> Self {
+        debug_assert!(metadata.path().is_some());
+        Self { metadata }
     }
 
     /// Path of entry. Path is relative to operator's root.
@@ -48,7 +40,9 @@ impl Entry {
     /// If this entry is a dir, `path` MUST end with `/`
     /// Otherwise, `path` MUST NOT end with `/`.
     pub fn path(&self) -> &str {
-        &self.path
+        self.metadata
+            .path()
+            .expect("listed entry metadata contains its path")
     }
 
     /// Name of entry. Name is the last segment of path.
@@ -56,7 +50,7 @@ impl Entry {
     /// If this entry is a dir, `name` MUST end with `/`
     /// Otherwise, `name` MUST NOT end with `/`.
     pub fn name(&self) -> &str {
-        get_basename(&self.path)
+        get_basename(self.path())
     }
 
     /// Fetch metadata of this entry.
@@ -66,6 +60,6 @@ impl Entry {
 
     /// Consume this entry to get its path and metadata.
     pub fn into_parts(self) -> (String, Metadata) {
-        (self.path, self.metadata)
+        (self.path().to_string(), self.metadata)
     }
 }

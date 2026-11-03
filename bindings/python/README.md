@@ -7,7 +7,7 @@
 This package provides a native Python binding for **Apache OpenDAL™**, a data access
 layer that allows you to access various storage services in a unified way.
 
-![OpenDAL Python Usage Demo](https://github.com/apache/opendal/assets/5351546/87bbf6e5-f19e-449a-b368-3e283016c887)
+![OpenDAL Architecture](https://opendal.apache.org/img/architectural.png)
 
 We release the OpenDAL Python binding independently of the
 [`opendal` crate](https://crates.io/crates/opendal) (Rust core). For updates
@@ -24,8 +24,22 @@ version.
 
 ## Installation
 
+Install from PyPI:
+
 ```bash
 pip install opendal
+```
+
+Or install from [Anaconda main](https://anaconda.org/main/opendal):
+
+```bash
+conda install opendal
+```
+
+Or install from [conda-forge](https://anaconda.org/conda-forge/opendal):
+
+```bash
+conda install conda-forge::opendal
 ```
 
 ## Quickstart
@@ -82,3 +96,7 @@ components. Their source code is available from the linked project pages:
 - `persy` 1.8.1 ([source](https://crates.io/crates/persy/1.8.1), [homepage](https://persy.rs)), licensed under MPL-2.0.
 
 The distribution includes the MPL-2.0 text in `LICENSE-MPL-2.0.txt`.
+
+Musllinux wheels also bundle `libgcc_s`, the [GCC runtime library](https://gcc.gnu.org/),
+licensed under `GPL-3.0-or-later WITH GCC-exception-3.1`. The complete license and
+exception texts are included in `LICENSE-libgcc.txt`.

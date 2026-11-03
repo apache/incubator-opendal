@@ -34,6 +34,40 @@ String text = new String(data);
 byte[] data = op.read("path/to/file", 0, 1024);
 ```
 
+For repeated reads from the same file, create an `OperatorReader`. It uses a
+Rust core reader and lets each call select an independent byte range:
+
+```java
+import org.apache.opendal.OperatorReader;
+import org.apache.opendal.ReaderOptions;
+
+ReaderOptions options = ReaderOptions.builder()
+        .chunk(8 * 1024 * 1024L)
+        .concurrent(4)
+        .prefetch(2)
+        .build();
+try (OperatorReader reader = op.createReader("path/to/file", options)) {
+    byte[] first = reader.read(0, 1024);
+    byte[] next = reader.read(1024, 1024);
+}
+```
+
+A positive `chunk` enables internal range requests; `concurrent` limits those
+requests and `prefetch` counts completed chunks buffered ahead. Setting
+`concurrent` alone keeps unchunked streaming. A reader does not snapshot the
+file, so subsequent reads may observe changes.
+
+`ReaderOptions` omits `gap` because Java does not expose multi-range reads.
+
+`ReaderOptions` also supports `version`, `ifMatch`, `ifNoneMatch`,
+`ifVersionMatch`, `ifVersionNotMatch`, `ifModifiedSince`, and
+`ifUnmodifiedSince`. The time conditions accept `java.time.Instant`.
+Version selection and conditions require service support. Unsupported options
+fail with `Unsupported`; a failed condition on an existing file fails with
+`ConditionNotMatch`. Conditions apply to all requests through the reader,
+including its streams. Errors may surface when creating the reader
+or while reading from it.
+
 ## Stream a large file
 
 Don't load gigabytes into memory — read through an `InputStream` in chunks:
@@ -49,6 +83,12 @@ try (InputStream in = op.createInputStream("big.bin")) {
     }
 }
 ```
+
+For a configured reader, use `reader.createInputStream()` for the whole file
+or `reader.createInputStream(offset, length)` for a range. A length of `-1`
+reads to the end; zero selects an empty range. Each stream has its own cursor.
+Close each reader and stream separately: closing a reader does not close its
+streams, and closing the operator does not close its readers.
 
 ## Write a whole file
 
@@ -148,4 +188,26 @@ try (AsyncOperator op = AsyncOperator.of("s3", conf)) {
 
 `presignWrite` and `presignStat` produce presigned requests for the matching
 operations.
+
+Pass `ReadOptions` to set response headers, for example to give a download a
+filename:
+
+```java
+import org.apache.opendal.ReadOptions;
+
+try (AsyncOperator op = AsyncOperator.of("s3", conf)) {
+    ReadOptions options = ReadOptions.builder()
+        .overrideContentDisposition("attachment; filename=\"report.csv\"")
+        .overrideContentType("text/csv")
+        .overrideCacheControl("private, max-age=60")
+        .build();
+    PresignedRequest req =
+        op.presignRead("reports/latest.csv", Duration.ofHours(1), options).join();
+}
+```
+
+`presignStat` accepts `StatOptions`, and `presignWrite` accepts `WriteOptions`.
+The overloads without options retain their existing behavior. Support for each
+option depends on the storage service. Send the returned method and headers
+along with the URI when using the presigned request.
 </content>

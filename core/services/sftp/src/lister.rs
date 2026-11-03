@@ -62,9 +62,9 @@ impl oio::List for SftpLister {
                         if self.prefix.is_empty() {
                             path = "/";
                         }
-                        return Ok(Some(Entry::new(path, to_metadata(e.metadata()))));
+                        return Ok(Some(Entry::new(path, to_metadata(e.metadata())?)));
                     } else {
-                        return Ok(Some(map_entry(self.prefix.as_str(), e)));
+                        return Ok(Some(map_entry(self.prefix.as_str(), e)?));
                     }
                 }
                 None => return Ok(None),
@@ -73,7 +73,7 @@ impl oio::List for SftpLister {
     }
 }
 
-fn map_entry(prefix: &str, value: DirEntry) -> Entry {
+fn map_entry(prefix: &str, value: DirEntry) -> Result<Entry> {
     let path = format!(
         "{}{}{}",
         prefix,
@@ -85,5 +85,5 @@ fn map_entry(prefix: &str, value: DirEntry) -> Entry {
         }
     );
 
-    Entry::new(path.as_str(), to_metadata(value.metadata()))
+    Ok(Entry::new(path.as_str(), to_metadata(value.metadata())?))
 }

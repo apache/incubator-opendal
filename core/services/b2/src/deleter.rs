@@ -44,7 +44,7 @@ impl oio::OneShotDelete for B2Deleter {
         match status {
             StatusCode::OK => Ok(()),
             _ => {
-                let err = parse_error(resp);
+                let err = parse_error(ErrorContext::new(ServiceOperation("HideFile")), resp);
                 match err.kind() {
                     ErrorKind::NotFound => Ok(()),
                     // Representative deleted

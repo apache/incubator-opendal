@@ -88,7 +88,7 @@ impl<W: PositionWrite> PositionWriter<W> {
             next_offset: 0,
             cache: None,
 
-            tasks: ConcurrentTasks::new(executor, concurrent, 8192, |input| {
+            tasks: ConcurrentTasks::new(executor, concurrent, 0, |input| {
                 Box::pin(async move {
                     let fut = input.w.write_all_at(input.offset, input.bytes.clone());
                     match input.executor.timeout() {
@@ -227,7 +227,7 @@ mod tests {
         }
 
         async fn close(&self, _size: u64) -> Result<Metadata> {
-            Ok(Metadata::default())
+            Ok(MetadataBuilder::unknown().build())
         }
 
         async fn abort(&self) -> Result<()> {
@@ -279,5 +279,45 @@ mod tests {
 
         let actual_size = w.w.lock().unwrap().length;
         assert_eq!(actual_size, total_size);
+    }
+
+    struct FailingWrite;
+
+    impl PositionWrite for FailingWrite {
+        async fn write_all_at(&self, _offset: u64, _buf: Buffer) -> Result<()> {
+            Err(Error::new(ErrorKind::Unexpected, "backend write failed"))
+        }
+
+        async fn close(&self, _size: u64) -> Result<Metadata> {
+            Ok(MetadataBuilder::unknown().build())
+        }
+
+        async fn abort(&self) -> Result<()> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_position_writer_surfaces_permanent_error_within_concurrent_window() {
+        let concurrent = 8;
+        let mut w = PositionWriter::new(Executor::default(), FailingWrite, concurrent);
+        let bs = Buffer::from(vec![0u8; 8]);
+
+        let mut first_error_at = None;
+        for i in 1..=concurrent + 4 {
+            match w.write(bs.clone()).await {
+                Ok(()) => continue,
+                Err(_) => {
+                    first_error_at = Some(i);
+                    break;
+                }
+            }
+        }
+
+        let first_error_at = first_error_at
+            .expect("write must surface the backend error inside the concurrent window");
+        // One write stays in cache; ConcurrentTasks then holds at most `concurrent`
+        // tasks when prefetch is 0. The next write awaits the queue head.
+        assert_eq!(first_error_at, concurrent + 2);
     }
 }

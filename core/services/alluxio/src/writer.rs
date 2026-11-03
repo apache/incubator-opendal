@@ -60,11 +60,11 @@ impl oio::Write for AlluxioWriter {
 
     async fn close(&mut self) -> Result<Metadata> {
         let Some(stream_id) = self.stream_id else {
-            return Ok(Metadata::default());
+            return Ok(MetadataBuilder::unknown().build());
         };
         self.core.close(&self.ctx, stream_id).await?;
 
-        Ok(Metadata::default())
+        Ok(MetadataBuilder::unknown().build())
     }
 
     async fn abort(&mut self) -> Result<()> {

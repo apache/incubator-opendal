@@ -44,7 +44,10 @@ impl oio::BatchDelete for SwiftDeleter {
         match status {
             StatusCode::NO_CONTENT | StatusCode::OK => Ok(()),
             StatusCode::NOT_FOUND => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("DeleteObject")),
+                resp,
+            )),
         }
     }
 
@@ -53,7 +56,10 @@ impl oio::BatchDelete for SwiftDeleter {
 
         let status = resp.status();
         if status != StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("BulkDelete")),
+                resp,
+            ));
         }
 
         let bs = resp.into_body().to_bytes();

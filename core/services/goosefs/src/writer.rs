@@ -24,7 +24,7 @@ use std::time::UNIX_EPOCH;
 use goosefs_sdk::io::GoosefsFileWriter as ClientWriter;
 
 use super::core::GoosefsCore;
-use super::core::parse_error;
+use super::core::{ErrorContext, parse_error};
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -226,7 +226,10 @@ impl oio::Write for GoosefsWriter {
         // Iterator yields one `Bytes` per segment; the SDK writer
         // takes `&[u8]`, so each chunk flows through without a copy.
         for chunk in bs {
-            writer.write(&chunk).await.map_err(parse_error)?;
+            writer
+                .write(&chunk)
+                .await
+                .map_err(|err| parse_error(ErrorContext::new(ServiceOperation("Write")), err))?;
         }
         Ok(())
     }
@@ -235,7 +238,11 @@ impl oio::Write for GoosefsWriter {
         if let Some(mut writer) = self.writer.take() {
             // Commit the temp inode on the master, then publish it
             // onto the caller's final path via `finalize_rename`.
-            if let Err(e) = writer.close().await.map_err(parse_error) {
+            if let Err(e) = writer
+                .close()
+                .await
+                .map_err(|err| parse_error(ErrorContext::new(ServiceOperation("Close")), err))
+            {
                 // Close failed — the temp is in an indeterminate state
                 // on the master; best-effort sweep to avoid leaks.
                 if let Some(tmp) = self.tmp_path.take() {
@@ -244,12 +251,12 @@ impl oio::Write for GoosefsWriter {
                 return Err(e);
             }
             // Capture file_id before rename; Master rename keeps the same inode id.
-            let mut meta = Metadata::default();
+            let mut meta = MetadataBuilder::unknown();
             if let Some(fid) = writer.file_info().file_id {
-                meta.set_etag(&fid.to_string());
+                meta.etag(fid.to_string());
             }
             self.finalize_rename().await?;
-            return Ok(meta);
+            return Ok(meta.build());
         }
 
         // Zero-write path: the caller closed without ever calling
@@ -267,17 +274,21 @@ impl oio::Write for GoosefsWriter {
 
         let tmp = Self::make_tmp_path(&self.path);
         let mut w = self.core.create_writer(&tmp).await?;
-        if let Err(e) = w.close().await.map_err(parse_error) {
+        if let Err(e) = w
+            .close()
+            .await
+            .map_err(|err| parse_error(ErrorContext::new(ServiceOperation("Close")), err))
+        {
             let _ = self.core.delete(&tmp).await;
             return Err(e);
         }
-        let mut meta = Metadata::default();
+        let mut meta = MetadataBuilder::unknown();
         if let Some(fid) = w.file_info().file_id {
-            meta.set_etag(&fid.to_string());
+            meta.etag(fid.to_string());
         }
         self.tmp_path = Some(tmp);
         self.finalize_rename().await?;
-        Ok(meta)
+        Ok(meta.build())
     }
 
     async fn abort(&mut self) -> Result<()> {

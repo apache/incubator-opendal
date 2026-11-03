@@ -384,6 +384,10 @@ impl AzblobCore {
             "AppendBlob",
         );
 
+        if args.if_not_exists() {
+            req = req.header(IF_NONE_MATCH, "*");
+        }
+
         if let Some(ty) = args.content_type() {
             req = req.header(CONTENT_TYPE, ty)
         }
@@ -940,6 +944,25 @@ mod tests {
     use reqsign_azure_storage::RequestSigner;
     use reqsign_azure_storage::StaticCredentialProvider;
 
+    fn test_core() -> AzblobCore {
+        AzblobCore {
+            info: ServiceInfo::new("azblob", "/", "c"),
+            capability: Capability::default(),
+            container: "c".to_string(),
+            root: "/".to_string(),
+            endpoint: "https://acc.blob.core.windows.net".to_string(),
+            encryption_key: None,
+            encryption_key_sha256: None,
+            encryption_algorithm: None,
+            skip_signature: true,
+            signer: Signer::new(
+                Context::new(),
+                StaticCredentialProvider::new_shared_key("acc", "a2V5"),
+                RequestSigner::new(),
+            ),
+        }
+    }
+
     #[test]
     fn test_parse_xml() {
         let bs = bytes::Bytes::from(
@@ -1126,28 +1149,19 @@ mod tests {
     /// have to be carried here as well as on the one-shot Put Blob path.
     #[test]
     fn test_put_block_list_carries_content_type_and_user_metadata() {
-        let core = AzblobCore {
-            info: ServiceInfo::new("azblob", "/", "c"),
-            capability: Capability::default(),
-            container: "c".to_string(),
-            root: "/".to_string(),
-            endpoint: "https://acc.blob.core.windows.net".to_string(),
-            encryption_key: None,
-            encryption_key_sha256: None,
-            encryption_algorithm: None,
-            skip_signature: true,
-            signer: Signer::new(
-                Context::new(),
-                StaticCredentialProvider::new_shared_key("acc", "a2V5"),
-                RequestSigner::new(),
-            ),
-        };
+        let core = test_core();
 
         let mut meta = HashMap::new();
         meta.insert("k".to_string(), "v".to_string());
-        let args = OpWrite::default()
-            .with_content_type("application/json")
-            .with_user_metadata(meta);
+        let (args, _) = OpWrite::from_options(
+            &Capability::default(),
+            options::WriteOptions {
+                content_type: Some("application/json".to_owned()),
+                user_metadata: Some(meta),
+                ..Default::default()
+            },
+        )
+        .unwrap();
 
         let req = core
             .azblob_complete_put_block_list_request("a.txt", vec![Uuid::nil()], &args)
@@ -1164,6 +1178,31 @@ mod tests {
                 .get("x-ms-meta-k")
                 .map(|v| v.to_str().unwrap()),
             Some("v")
+        );
+    }
+
+    #[test]
+    fn init_appendable_blob_carries_if_not_exists() {
+        let core = test_core();
+        let (args, _) = OpWrite::from_options(
+            &Capability {
+                write_with_if_not_exists: true,
+                ..Default::default()
+            },
+            options::WriteOptions {
+                if_not_exists: true,
+                ..Default::default()
+            },
+        )
+        .expect("options must lower");
+
+        let req = core
+            .azblob_init_appendable_blob_request("a.txt", &args)
+            .expect("request must build");
+
+        assert_eq!(
+            req.headers().get(IF_NONE_MATCH),
+            Some(&HeaderValue::from_static("*"))
         );
     }
 
@@ -1240,10 +1279,7 @@ impl Debug for AzblobError {
 #[derive(Clone, Copy, Debug)]
 pub struct ErrorContext {
     service_operation: ServiceOperation,
-    if_match: bool,
-    if_none_match: bool,
-    if_modified_since: bool,
-    if_unmodified_since: bool,
+    caller_condition: bool,
     if_not_exists: bool,
     is_append_blob_initialization: bool,
 }
@@ -1252,36 +1288,19 @@ impl ErrorContext {
     pub const fn new(service_operation: ServiceOperation) -> Self {
         Self {
             service_operation,
-            if_match: false,
-            if_none_match: false,
-            if_modified_since: false,
-            if_unmodified_since: false,
+            caller_condition: false,
             if_not_exists: false,
             is_append_blob_initialization: false,
         }
     }
 
-    pub const fn with_if_match(mut self, if_match: bool) -> Self {
-        self.if_match = if_match;
-        self
-    }
-
-    pub const fn with_if_none_match(mut self, if_none_match: bool) -> Self {
-        self.if_none_match = if_none_match;
-        self
-    }
-
-    pub const fn with_if_modified_since(mut self, if_modified_since: bool) -> Self {
-        self.if_modified_since = if_modified_since;
-        self
-    }
-
-    pub const fn with_if_unmodified_since(mut self, if_unmodified_since: bool) -> Self {
-        self.if_unmodified_since = if_unmodified_since;
+    pub const fn with_caller_condition(mut self, caller_condition: bool) -> Self {
+        self.caller_condition = caller_condition;
         self
     }
 
     pub const fn with_if_not_exists(mut self, if_not_exists: bool) -> Self {
+        self.caller_condition = self.caller_condition || if_not_exists;
         self.if_not_exists = if_not_exists;
         self
     }
@@ -1292,14 +1311,6 @@ impl ErrorContext {
     ) -> Self {
         self.is_append_blob_initialization = is_append_blob_initialization;
         self
-    }
-
-    const fn has_condition(self) -> bool {
-        self.if_match
-            || self.if_none_match
-            || self.if_modified_since
-            || self.if_unmodified_since
-            || self.if_not_exists
     }
 }
 
@@ -1323,7 +1334,7 @@ pub fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
     let (mut kind, mut retryable) = match parts.status {
         StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
         StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, false),
-        StatusCode::NOT_MODIFIED | StatusCode::PRECONDITION_FAILED if ctx.has_condition() => {
+        StatusCode::NOT_MODIFIED | StatusCode::PRECONDITION_FAILED if ctx.caller_condition => {
             (ErrorKind::ConditionNotMatch, false)
         }
         StatusCode::TOO_MANY_REQUESTS => (ErrorKind::RateLimited, true),
@@ -1373,18 +1384,24 @@ fn parse_azblob_error_code(
     status: StatusCode,
 ) -> Option<(ErrorKind, bool)> {
     match code {
-        "ConditionNotMet" | "SourceConditionNotMet" | "TargetConditionNotMet" => {
+        "ConditionNotMet" | "SourceConditionNotMet" | "TargetConditionNotMet"
+            if ctx.caller_condition
+                && matches!(
+                    status,
+                    StatusCode::NOT_MODIFIED | StatusCode::PRECONDITION_FAILED
+                ) =>
+        {
             Some((ErrorKind::ConditionNotMatch, false))
         }
         "BlobAlreadyExists" | "ContainerAlreadyExists" | "ResourceAlreadyExists" => {
-            let kind = if ctx.if_not_exists {
-                ErrorKind::ConditionNotMatch
+            let classification = if ctx.if_not_exists {
+                (ErrorKind::ConditionNotMatch, false)
             } else if ctx.is_append_blob_initialization {
-                ErrorKind::Conflict
+                (ErrorKind::Conflict, true)
             } else {
-                ErrorKind::AlreadyExists
+                (ErrorKind::AlreadyExists, false)
             };
-            Some((kind, false))
+            Some(classification)
         }
         "DirectorySasNotSupportedVersion"
         | "FeatureVersionMismatch"
@@ -1447,5 +1464,28 @@ fn parse_azblob_error_code(
             Some((ErrorKind::Conflict, false))
         }
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod error_tests {
+    use super::*;
+
+    #[test]
+    fn append_blob_initialization_preserves_condition_and_retryability() {
+        let conditional = ErrorContext::new(ServiceOperation("PutBlob"))
+            .with_if_not_exists(true)
+            .with_append_blob_initialization(true);
+        assert_eq!(
+            parse_azblob_error_code(conditional, "BlobAlreadyExists", StatusCode::CONFLICT),
+            Some((ErrorKind::ConditionNotMatch, false))
+        );
+
+        let raced =
+            ErrorContext::new(ServiceOperation("PutBlob")).with_append_blob_initialization(true);
+        assert_eq!(
+            parse_azblob_error_code(raced, "BlobAlreadyExists", StatusCode::CONFLICT),
+            Some((ErrorKind::Conflict, true))
+        );
     }
 }

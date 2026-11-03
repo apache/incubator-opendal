@@ -57,6 +57,7 @@ services-all = [
   # FIXME this requires a preinstalled fdb library
   # "services-foundationdb",
   # "services-ftp",
+  "services-gcs-grpc",
   "services-gdrive",
   "services-goosefs",
   # FIXME how to support HDFS services in bindings?
@@ -98,6 +99,7 @@ services-azdls = ["opendal/services-azdls"]
 services-cos = ["opendal/services-cos"]
 services-fs = ["opendal/services-fs"]
 services-gcs = ["opendal/services-gcs"]
+services-gcs-grpc = ["opendal/services-gcs-grpc"]
 services-ghac = ["opendal/services-ghac"]
 services-http = ["opendal/services-http"]
 services-ipmfs = ["opendal/services-ipmfs"]

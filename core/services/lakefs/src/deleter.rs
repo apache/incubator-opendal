@@ -49,7 +49,10 @@ impl oio::OneShotDelete for LakefsDeleter {
         match status {
             StatusCode::NO_CONTENT => Ok(()),
             StatusCode::NOT_FOUND => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("DeleteObject")),
+                resp,
+            )),
         }
     }
 }

@@ -39,29 +39,20 @@ impl GcsDeleter {
 impl oio::BatchDelete for GcsDeleter {
     async fn delete_once(&self, path: String, args: OpDelete) -> Result<()> {
         let resp = self.core.gcs_delete_object(&self.ctx, &path, &args).await?;
+        let error_ctx = ErrorContext::new(ServiceOperation("DeleteObject"))
+            .with_caller_condition(args.is_conditional())
+            .with_delete_match_condition(
+                args.if_match().is_some() || args.if_version_match().is_some(),
+            );
 
-        if resp.status().is_success() {
-            Ok(())
-        } else if resp.status() == StatusCode::NOT_FOUND
-            && (args.if_match().is_some()
-                || args.if_version_match().is_some()
-                || args.if_version_not_match().is_some())
+        if resp.status().is_success()
+            || (resp.status() == StatusCode::NOT_FOUND
+                && args.if_match().is_none()
+                && args.if_version_match().is_none())
         {
-            Err(Error::new(
-                ErrorKind::ConditionNotMatch,
-                "delete precondition requires a live target",
-            ))
-        } else if resp.status() == StatusCode::NOT_FOUND {
             Ok(())
         } else {
-            Err(parse_error(
-                ErrorContext::new(ServiceOperation("DeleteObject"))
-                    .with_if_match(args.if_match().is_some())
-                    .with_if_none_match(args.if_none_match().is_some())
-                    .with_if_version_match(args.if_version_match().is_some())
-                    .with_if_version_not_match(args.if_version_not_match().is_some()),
-                resp,
-            ))
+            Err(parse_error(error_ctx, resp))
         }
     }
 
@@ -96,30 +87,19 @@ impl oio::BatchDelete for GcsDeleter {
             let resp = part.into_response();
             // TODO: maybe we can take it directly?
             let (path, op) = batch[i].clone();
+            let error_ctx = ErrorContext::new(ServiceOperation("BatchDeleteObjects"))
+                .with_caller_condition(op.is_conditional())
+                .with_delete_match_condition(
+                    op.if_match().is_some() || op.if_version_match().is_some(),
+                );
 
-            if resp.status().is_success() {
-                batched_result.succeeded.push((path, op));
-            } else if resp.status() == StatusCode::NOT_FOUND
-                && (op.if_match().is_some()
-                    || op.if_version_match().is_some()
-                    || op.if_version_not_match().is_some())
+            if resp.status().is_success()
+                || (resp.status() == StatusCode::NOT_FOUND
+                    && op.if_match().is_none()
+                    && op.if_version_match().is_none())
             {
-                batched_result.failed.push((
-                    path,
-                    op,
-                    Error::new(
-                        ErrorKind::ConditionNotMatch,
-                        "delete precondition requires a live target",
-                    ),
-                ));
-            } else if resp.status() == StatusCode::NOT_FOUND {
                 batched_result.succeeded.push((path, op));
             } else {
-                let error_ctx = ErrorContext::new(ServiceOperation("BatchDeleteObjects"))
-                    .with_if_match(op.if_match().is_some())
-                    .with_if_none_match(op.if_none_match().is_some())
-                    .with_if_version_match(op.if_version_match().is_some())
-                    .with_if_version_not_match(op.if_version_not_match().is_some());
                 batched_result
                     .failed
                     .push((path, op, parse_error(error_ctx, resp)));

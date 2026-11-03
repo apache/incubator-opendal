@@ -46,7 +46,10 @@ impl oio::StreamRead for MiniMokaReader {
                 let sliced_content = value
                     .content
                     .slice(range.to_content_range(value.content.len())?);
-                let metadata = Metadata::new(EntryMode::FILE).with_content_length(total_size);
+                let metadata = {
+                    let metadata = MetadataBuilder::file(total_size);
+                    metadata.build()
+                };
 
                 Ok((
                     RpRead::new(metadata),

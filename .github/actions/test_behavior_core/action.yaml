@@ -71,7 +71,8 @@ runs:
             if: always() && steps.setup_$index.outcome == 'success'
             shell: bash
             working-directory: core
-            run: cargo test behavior --features tests,$TEST_FEATURE
+            # libtest-mimic requires an argument for the configured thread limit.
+            run: cargo test behavior --features tests,$TEST_FEATURE -- \${RUST_TEST_THREADS:+--test-threads="\$RUST_TEST_THREADS"}
             env:
               OPENDAL_TEST: $TEST_SERVICE
           - name: Cleanup Test Core - $setup
@@ -101,7 +102,7 @@ runs:
               service_prefix=\$(printf '%s' "$TEST_SERVICE" | tr '[:lower:]-' '[:upper:]_')
               while IFS='=' read -r name _; do
                 case "\$name" in
-                  "OPENDAL_\${service_prefix}_"* | OPENDAL_DISABLE_RANDOM_ROOT | OPENDAL_TEST_CAPABILITY_OVERRIDES)
+                  "OPENDAL_\${service_prefix}_"* | OPENDAL_DISABLE_RANDOM_ROOT | OPENDAL_TEST_CAPABILITY_OVERRIDES | OPENDAL_TEST_IO_TIMEOUT)
                     echo "\$name=__OPENDAL_TEST_UNSET__" >>"\$GITHUB_ENV"
                     ;;
                 esac

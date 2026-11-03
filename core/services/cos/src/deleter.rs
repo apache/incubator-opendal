@@ -44,7 +44,10 @@ impl oio::OneShotDelete for CosDeleter {
 
         match status {
             StatusCode::NO_CONTENT | StatusCode::ACCEPTED | StatusCode::NOT_FOUND => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("DeleteObject")),
+                resp,
+            )),
         }
     }
 }

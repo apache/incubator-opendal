@@ -11,7 +11,8 @@ A D language binding for OpenDAL, wrapping the [C binding](../c) to give D progr
 access to the same unified storage API as every other OpenDAL binding.
 
 New to the model behind the API? Read [Concepts](../../03-concepts.mdx) first —
-service, operator, layer, and operation are the same four ideas in every language.
+the shared storage semantics and path and operation concepts every binding
+expresses through its own native API.
 
 :::warning
 This binding is **early-stage and experimental**. It is not yet released or

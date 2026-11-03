@@ -40,7 +40,8 @@ pub fn tests(op: &Operator, tests: &mut Vec<Trial>) {
             op,
             test_rename_with_if_not_exists,
             test_rename_with_if_not_exists_nested,
-            test_rename_with_if_not_exists_returns_condition_not_match
+            test_rename_with_if_not_exists_returns_condition_not_match,
+            test_rename_with_if_not_exists_race
         ))
     }
 }
@@ -325,5 +326,53 @@ pub async fn test_rename_with_if_not_exists_returns_condition_not_match(
 
     op.delete(&source_path).await.expect("delete must succeed");
     op.delete(&target_path).await.expect("delete must succeed");
+    Ok(())
+}
+
+/// Concurrent conditional renames preserve the winner and the losing source.
+pub async fn test_rename_with_if_not_exists_race(op: Operator) -> Result<()> {
+    for _ in 0..8 {
+        let first_path = uuid::Uuid::new_v4().to_string();
+        let second_path = uuid::Uuid::new_v4().to_string();
+        let target_path = uuid::Uuid::new_v4().to_string();
+        let first_content = first_path.as_bytes().to_vec();
+        let second_content = second_path.as_bytes().to_vec();
+        op.write(&first_path, first_content.clone()).await?;
+        op.write(&second_path, second_content.clone()).await?;
+
+        let barrier = tokio::sync::Barrier::new(2);
+        let (first_result, second_result) = tokio::join!(
+            async {
+                barrier.wait().await;
+                op.rename_with(&first_path, &target_path)
+                    .if_not_exists(true)
+                    .await
+            },
+            async {
+                barrier.wait().await;
+                op.rename_with(&second_path, &target_path)
+                    .if_not_exists(true)
+                    .await
+            }
+        );
+        let (winner, loser, winner_content, loser_content) = match (first_result, second_result) {
+            (Ok(()), Err(err)) => {
+                assert_eq!(err.kind(), ErrorKind::ConditionNotMatch);
+                (&first_path, &second_path, &first_content, &second_content)
+            }
+            (Err(err), Ok(())) => {
+                assert_eq!(err.kind(), ErrorKind::ConditionNotMatch);
+                (&second_path, &first_path, &second_content, &first_content)
+            }
+            results => panic!("expected one conditional rename to succeed: {results:?}"),
+        };
+        assert!(!op.exists(winner).await?);
+        assert_eq!(&op.read(loser).await?.to_vec(), loser_content);
+        assert_eq!(&op.read(&target_path).await?.to_vec(), winner_content);
+
+        op.delete(&first_path).await?;
+        op.delete(&second_path).await?;
+        op.delete(&target_path).await?;
+    }
     Ok(())
 }

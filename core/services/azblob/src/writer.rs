@@ -52,27 +52,26 @@ impl AzblobWriter {
     // skip extracting `content-md5` here, as it pertains to the content of the request rather than
     // the content of the block itself for the `append` and `complete put block list` operations.
     pub(crate) fn parse_metadata(headers: &http::HeaderMap) -> Result<Metadata> {
-        let mut metadata = Metadata::default();
+        let mut metadata = MetadataBuilder::unknown();
 
         if let Some(last_modified) = parse_last_modified(headers)? {
-            metadata.set_last_modified(last_modified);
+            metadata.last_modified(last_modified);
         }
         let etag = parse_etag(headers)?;
         if let Some(etag) = etag {
-            metadata.set_etag(etag);
+            metadata.etag(etag);
         }
         let version_id = parse_header_to_str(headers, X_MS_VERSION_ID)?;
         if let Some(version_id) = version_id {
-            metadata.set_version(version_id);
+            metadata.version(version_id);
         }
 
-        Ok(metadata)
+        Ok(metadata.build())
     }
 
     fn error_context(&self, service_operation: ServiceOperation) -> ErrorContext {
         ErrorContext::new(service_operation)
-            .with_if_match(self.op.if_match().is_some())
-            .with_if_none_match(self.op.if_none_match().is_some())
+            .with_caller_condition(self.op.is_conditional())
             .with_if_not_exists(self.op.if_not_exists())
     }
 }
@@ -88,6 +87,12 @@ impl oio::AppendWrite for AzblobWriter {
 
         match status {
             StatusCode::OK => {
+                if self.op.if_not_exists() {
+                    return Err(Error::new(
+                        ErrorKind::ConditionNotMatch,
+                        "the blob already exists",
+                    ));
+                }
                 let headers = resp.headers();
                 let blob_type = headers.get(X_MS_BLOB_TYPE).and_then(|v| v.to_str().ok());
                 if blob_type != Some("AppendBlob") {
@@ -113,6 +118,7 @@ impl oio::AppendWrite for AzblobWriter {
                     _ => {
                         return Err(parse_error(
                             ErrorContext::new(ServiceOperation("PutBlob"))
+                                .with_if_not_exists(self.op.if_not_exists())
                                 .with_append_blob_initialization(true),
                             resp,
                         ));
@@ -154,13 +160,13 @@ impl oio::BlockWrite for AzblobWriter {
 
         let status = resp.status();
 
-        let mut meta = AzblobWriter::parse_metadata(resp.headers())?;
+        let mut meta = AzblobWriter::parse_metadata(resp.headers())?.into_builder();
         let md5 = parse_content_md5(resp.headers())?;
         if let Some(md5) = md5 {
-            meta.set_content_md5(md5);
+            meta.content_md5(md5);
         }
         match status {
-            StatusCode::CREATED | StatusCode::OK => Ok(meta),
+            StatusCode::CREATED | StatusCode::OK => Ok(meta.build()),
             _ => Err(parse_error(
                 self.error_context(ServiceOperation("PutBlob")),
                 resp,

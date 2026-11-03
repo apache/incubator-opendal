@@ -63,7 +63,10 @@ impl<T: Send> MaybeSend for T {}
 #[cfg(target_arch = "wasm32")]
 impl<T> MaybeSend for T {}
 
-/// ConcurrentTasks is used to execute tasks concurrently.
+/// ConcurrentTasks executes tasks concurrently and collects outputs in submission order.
+///
+/// Submit inputs with [`Self::execute`] and collect outputs with [`Self::next`].
+/// The queue owns the task handles and tracks their completion for concurrency control.
 ///
 /// ConcurrentTasks has two generic types:
 ///
@@ -75,20 +78,20 @@ impl<T> MaybeSend for T {}
 /// The code patterns below are intentional; please do not modify them unless you fully understand these notes.
 ///
 /// ```skip
-///  let (i, o) = self
+///  let result = self
 ///     .tasks
 ///     .front_mut()                                        // Use `front_mut` instead of `pop_front`
 ///     .expect("tasks must be available")
 ///     .await;
 /// ...
-/// match o {
+/// match result {
 ///     Ok(o) => {
 ///         let _ = self.tasks.pop_front();                 // `pop_front` after got `Ok(o)`
 ///         self.results.push_back(o)
 ///     }
-///     Err(err) => {
+///     Err((i, err)) => {
 ///         if err.is_temporary() {
-///             let task = self.create_task(i);
+///             let task = self.spawn_task(i);
 ///             self.tasks
 ///                 .front_mut()
 ///                 .expect("tasks must be available")
@@ -128,7 +131,7 @@ pub struct ConcurrentTasks<I, O> {
     /// to poll the tasks to see if they are ready.
     ///
     /// Dropping task without `await` it will cancel the task.
-    tasks: VecDeque<Task<(I, Result<O>)>>,
+    tasks: VecDeque<Task<Result<O, (I, Error)>>>,
     /// `results` stores the successful results.
     results: VecDeque<O>,
 
@@ -153,6 +156,11 @@ pub struct ConcurrentTasks<I, O> {
 
 impl<I: Send + 'static, O: Send + 'static> ConcurrentTasks<I, O> {
     /// Create a new concurrent tasks with given executor, concurrent, prefetch and factory.
+    ///
+    /// `prefetch` is extra completed tasks allowed in the queue before
+    /// [`Self::execute`] waits to collect the head. Pass `0` when the caller
+    /// does not collect results while still submitting work; otherwise failed
+    /// tasks keep their inputs until collection.
     ///
     /// The factory is a function pointer that shouldn't capture any context.
     pub fn new(
@@ -202,13 +210,15 @@ impl<I: Send + 'static, O: Send + 'static> ConcurrentTasks<I, O> {
         !self.results.is_empty()
     }
 
-    /// Create a task with given input.
-    pub fn create_task(&self, input: I) -> Task<(I, Result<O>)> {
+    fn spawn_task(&self, input: I) -> Task<Result<O, (I, Error)>> {
         let completed = self.completed_but_unretrieved.clone();
-
-        let fut = (self.factory)(input).inspect(move |_| {
-            completed.fetch_add(1, Ordering::Relaxed);
-        });
+        let fut = (self.factory)(input)
+            // Completed tasks can remain queued while the caller produces more work.
+            // Only failures need to retain their input for a retry.
+            .map(|(input, result)| result.map_err(|err| (input, err)))
+            .inspect(move |_| {
+                completed.fetch_add(1, Ordering::Relaxed);
+            });
 
         self.executor.execute(fut)
     }
@@ -240,22 +250,22 @@ impl<I: Send + 'static, O: Send + 'static> ConcurrentTasks<I, O> {
         }
 
         if !self.has_remaining() {
-            let (i, o) = self
+            let result = self
                 .tasks
                 .front_mut()
                 .expect("tasks must be available")
                 .await;
             self.completed_but_unretrieved
                 .fetch_sub(1, Ordering::Relaxed);
-            match o {
+            match result {
                 Ok(o) => {
                     let _ = self.tasks.pop_front();
                     self.results.push_back(o)
                 }
-                Err(err) => {
+                Err((i, err)) => {
                     // Retry this task if the error is temporary
                     if err.is_temporary() {
-                        let task = self.create_task(i);
+                        let task = self.spawn_task(i);
                         self.tasks
                             .front_mut()
                             .expect("tasks must be available")
@@ -269,7 +279,7 @@ impl<I: Send + 'static, O: Send + 'static> ConcurrentTasks<I, O> {
             }
         }
 
-        self.tasks.push_back(self.create_task(input));
+        self.tasks.push_back(self.spawn_task(input));
         Ok(())
     }
 
@@ -287,18 +297,18 @@ impl<I: Send + 'static, O: Send + 'static> ConcurrentTasks<I, O> {
         }
 
         if let Some(task) = self.tasks.front_mut() {
-            let (i, o) = task.await;
+            let result = task.await;
             self.completed_but_unretrieved
                 .fetch_sub(1, Ordering::Relaxed);
-            return match o {
+            return match result {
                 Ok(o) => {
                     let _ = self.tasks.pop_front();
                     Some(Ok(o))
                 }
-                Err(err) => {
+                Err((i, err)) => {
                     // Retry this task if the error is temporary
                     if err.is_temporary() {
-                        let task = self.create_task(i);
+                        let task = self.spawn_task(i);
                         self.tasks
                             .front_mut()
                             .expect("tasks must be available")

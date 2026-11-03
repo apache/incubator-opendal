@@ -25,13 +25,13 @@ homepage = "https://opendal.apache.org/"
 license = "Apache-2.0"
 repository = "https://github.com/apache/opendal"
 rust-version = "1.91"
-version = "0.9.1"
+version = "0.10.5"
 
 [dependencies]
 async-trait = "0.1"
 bytes = "1"
 futures = "0.3"
-opendal = { version = "0.58.2", path = "../../core" }
+opendal = { version = "0.59.5", path = "../../core" }
 parquet = { version = "59.0", default-features = false, features = [
   "async",
   "arrow",
@@ -39,7 +39,7 @@ parquet = { version = "59.0", default-features = false, features = [
 
 [dev-dependencies]
 arrow = { version = "59.0" }
-opendal = { version = "0.58.2", path = "../../core", features = [
+opendal = { version = "0.59.5", path = "../../core", features = [
   "services-memory",
   "services-s3",
 ] }

@@ -75,19 +75,11 @@ pub struct WebdavConfig {
     ///
     /// Default: `https://opendal.apache.org/ns`
     pub user_metadata_uri: Option<String>,
-    /// Enable conditional read support.
-    ///
-    /// When enabled (the default), OpenDAL forwards the RFC 7232 headers
-    /// `If-Match`, `If-None-Match`, `If-Modified-Since` and
-    /// `If-Unmodified-Since` to the server when callers provide them.
-    ///
-    /// Some WebDAV-compatible servers (e.g., nginx-dav) don't return ETags
-    /// in PROPFIND or don't honor these headers on GET. Setting this to
-    /// `false` drops the four `read_with_if_*` capabilities, so calls like
-    /// `reader_with(path).if_match(...)` return `ErrorKind::Unsupported`
-    /// locally instead of being silently ignored by the server.
-    ///
-    /// Default: true
+    /// Deprecated: WebDAV conditional read capabilities are enabled by default.
+    #[deprecated(
+        since = "0.60.0",
+        note = "WebDAV conditional read capabilities are enabled by default. Use CapabilityOverrideLayer to override read_with_if_match, read_with_if_none_match, read_with_if_modified_since and read_with_if_unmodified_since for endpoints without ETag support."
+    )]
     pub enable_conditional_read: bool,
 }
 
@@ -119,7 +111,6 @@ impl Debug for WebdavConfig {
             .field("disable_create_dir", &self.disable_create_dir)
             .field("user_metadata_prefix", &self.user_metadata_prefix)
             .field("user_metadata_uri", &self.user_metadata_uri)
-            .field("enable_conditional_read", &self.enable_conditional_read)
             .finish_non_exhaustive()
     }
 }

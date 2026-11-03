@@ -17,7 +17,7 @@
 
 module opendal_example_guide
 
-go 1.25.0
+go 1.26.0
 
 require (
 	github.com/apache/opendal-go-services/memory v0.1.16
@@ -28,7 +28,7 @@ require (
 	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/jupiterrider/ffi v0.7.0 // indirect
 	github.com/klauspost/compress v1.17.9 // indirect
-	golang.org/x/sys v0.46.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
 )
 
 // Build the example against the binding in this repository rather than a

@@ -851,72 +851,12 @@ mod tests {
         );
         assert!(TempUrlHashAlgorithm::from_str_opt("md5").is_err());
     }
-}
 
-mod error {
-    use bytes::Buf;
-    use bytes::Bytes;
-    use http::Response;
-    use http::StatusCode;
-    use quick_xml::de;
-    use serde::Deserialize;
-
-    use opendal_core::raw::*;
-    use opendal_core::*;
-
-    #[allow(dead_code)]
-    #[derive(Debug, Deserialize)]
-    struct ErrorResponse {
-        h1: String,
-        p: String,
-    }
-
-    pub(crate) fn parse_error(resp: Response<Buffer>) -> Error {
-        let (parts, body) = resp.into_parts();
-        let bs = body.to_bytes();
-
-        let (kind, retryable) = match parts.status {
-            StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
-            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-                (ErrorKind::PermissionDenied, false)
-            }
-            StatusCode::NOT_MODIFIED | StatusCode::PRECONDITION_FAILED => {
-                (ErrorKind::ConditionNotMatch, false)
-            }
-            StatusCode::INTERNAL_SERVER_ERROR
-            | StatusCode::BAD_GATEWAY
-            | StatusCode::SERVICE_UNAVAILABLE
-            | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
-            _ => (ErrorKind::Unexpected, false),
-        };
-
-        let message = parse_error_response(&bs);
-
-        let mut err = Error::new(kind, message);
-
-        err = with_error_response_context(err, parts);
-
-        if retryable {
-            err = err.set_temporary();
-        }
-
-        err
-    }
-
-    fn parse_error_response(resp: &Bytes) -> String {
-        match de::from_reader::<_, ErrorResponse>(resp.clone().reader()) {
-            Ok(swift_err) => swift_err.p,
-            Err(_) => String::from_utf8_lossy(resp).into_owned(),
-        }
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        #[test]
-        fn parse_error_response_test() -> Result<()> {
-            let resp = Bytes::from(
+    #[test]
+    fn html_body_is_used_as_message() {
+        let resp = Response::builder()
+            .status(StatusCode::NOT_FOUND)
+            .body(Buffer::from(
                 r#"
 <html>
 <h1>Not Found</h1>
@@ -924,13 +864,69 @@ mod error {
 
 </html>
             "#,
-            );
+            ))
+            .unwrap();
 
-            let msg = parse_error_response(&resp);
-            assert_eq!(msg, "The resource could not be found.".to_string(),);
-            Ok(())
-        }
+        let err = parse_error(ErrorContext::new(ServiceOperation("Test")), resp);
+
+        assert_eq!(err.kind(), ErrorKind::NotFound);
+        assert!(err.to_string().contains("The resource could not be found."));
     }
 }
 
-pub(super) use error::*;
+use bytes::Buf;
+use http::StatusCode;
+use quick_xml::de;
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+struct ErrorResponse {
+    h1: String,
+    p: String,
+}
+
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+}
+
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self { service_operation }
+    }
+}
+
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
+    let (parts, body) = resp.into_parts();
+    let bs = body.to_bytes();
+
+    let (kind, retryable) = match parts.status {
+        StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, false),
+        StatusCode::NOT_MODIFIED | StatusCode::PRECONDITION_FAILED => {
+            (ErrorKind::ConditionNotMatch, false)
+        }
+        StatusCode::INTERNAL_SERVER_ERROR
+        | StatusCode::BAD_GATEWAY
+        | StatusCode::SERVICE_UNAVAILABLE
+        | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
+        _ => (ErrorKind::Unexpected, false),
+    };
+
+    let message = de::from_reader::<_, ErrorResponse>(bs.clone().reader())
+        .map(|swift_err| swift_err.p)
+        .unwrap_or_else(|_| String::from_utf8_lossy(&bs).into_owned());
+
+    let mut err = Error::new(kind, message);
+
+    err = err.with_context("service_operation", ctx.service_operation.0);
+    err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
+
+    err
+}

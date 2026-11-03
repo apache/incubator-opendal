@@ -29,21 +29,25 @@ namespace OpenDAL.ServiceConfig
     public sealed class EtcdServiceConfig : IServiceConfig
     {
         /// <summary>
-        /// certificate authority file path default is None
+        /// PEM certificate authority file used to verify the server. Enables TLS independently of `cert_path` and `key_path`. default is None
         /// </summary>
         public string? CaPath { get; init; }
         /// <summary>
-        /// cert path default is None
+        /// PEM client certificate file used for mutual TLS. Must be configured together with `key_path`. default is None
         /// </summary>
         public string? CertPath { get; init; }
         /// <summary>
-        /// network address of the Etcd services. If use https, must set TLS options: `ca_path`, `cert_path`, `key_path`. e.g. "127.0.0.1:23790,127.0.0.1:23791,127.0.0.1:23792" or "http://127.0.0.1:23790,http://127.0.0.1:23791,http://127.0.0.1:23792" or "https://127.0.0.1:23790,https://127.0.0.1:23791,https://127.0.0.1:23792" default is "http://127.0.0.1:2379"
+        /// network address of the Etcd services. Use HTTPS endpoints for TLS. Set `ca_path` to trust a custom certificate authority. Client authentication additionally requires both `cert_path` and `key_path`. e.g. "127.0.0.1:23790,127.0.0.1:23791,127.0.0.1:23792" or "http://127.0.0.1:23790,http://127.0.0.1:23791,http://127.0.0.1:23792" or "https://127.0.0.1:23790,https://127.0.0.1:23791,https://127.0.0.1:23792" default is "http://127.0.0.1:2379"
         /// </summary>
         public string? Endpoints { get; init; }
         /// <summary>
-        /// key path default is None
+        /// PEM client private key file used for mutual TLS. Must be configured together with `cert_path`. default is None
         /// </summary>
         public string? KeyPath { get; init; }
+        /// <summary>
+        /// the maximum size in bytes of a gRPC response that the etcd client decodes. Set this to read values larger than the etcd client's own limit. The etcd server must also allow responses of that size. Refer to [`etcd_client::KvClient::max_decoding_message_size`](https://docs.rs/etcd-client/latest/etcd_client/struct.KvClient.html#method.max_decoding_message_size) default is None, which keeps the etcd client default of 4 MiB
+        /// </summary>
+        public long? MaxDecodingMessageSize { get; init; }
         /// <summary>
         /// the password for authentication default is None
         /// </summary>
@@ -77,6 +81,10 @@ namespace OpenDAL.ServiceConfig
             if (KeyPath is not null)
             {
                 map["key_path"] = Utilities.ToOptionString(KeyPath);
+            }
+            if (MaxDecodingMessageSize is not null)
+            {
+                map["max_decoding_message_size"] = Utilities.ToOptionString(MaxDecodingMessageSize);
             }
             if (Password is not null)
             {

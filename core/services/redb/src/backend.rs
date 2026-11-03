@@ -22,6 +22,7 @@ use super::REDB_SCHEME;
 use super::config::RedbConfig;
 use super::core::*;
 use super::deleter::RedbDeleter;
+use super::lister::RedbLister;
 use super::reader::*;
 use super::writer::RedbWriter;
 use opendal_core::raw::*;
@@ -148,6 +149,8 @@ impl RedbBackend {
             write: true,
             write_can_empty: true,
             delete: true,
+            list: true,
+            list_with_recursive: true,
             ..Default::default()
         };
 
@@ -169,9 +172,10 @@ impl RedbBackend {
 impl Service for RedbBackend {
     type Reader = oio::StreamReader<RedbReader>;
     type Writer = RedbWriter;
-    type Lister = ();
+    type Lister = oio::HierarchyLister<RedbLister>;
     type Deleter = oio::OneShotDeleter<RedbDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.info.clone()
@@ -197,13 +201,14 @@ impl Service for RedbBackend {
         let p = build_abs_path(&self.root, path);
 
         if p == build_abs_path(&self.root, "") {
-            Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+            Ok(RpStat::new(MetadataBuilder::dir().build()))
         } else {
             let bs = self.core.get(&p)?;
             match bs {
-                Some(bs) => Ok(RpStat::new(
-                    Metadata::new(EntryMode::FILE).with_content_length(bs.len() as u64),
-                )),
+                Some(bs) => Ok(RpStat::new({
+                    let metadata = MetadataBuilder::file(bs.len() as u64);
+                    metadata.build()
+                })),
                 None => Err(Error::new(ErrorKind::NotFound, "kv not found in redb")),
             }
         }
@@ -240,11 +245,11 @@ impl Service for RedbBackend {
         Ok(output)
     }
 
-    fn list(&self, _ctx: &OperationContext, _path: &str, _args: OpList) -> Result<Self::Lister> {
-        Err(Error::new(
-            ErrorKind::Unsupported,
-            "operation is not supported",
-        ))
+    fn list(&self, _ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
+        let prefix = build_abs_path(&self.root, path);
+        let range = self.core.scan(&prefix)?;
+        let lister = RedbLister::new(self.root.clone(), prefix, range);
+        Ok(oio::HierarchyLister::new(lister, path, args.recursive()))
     }
 
     fn copy(
@@ -253,7 +258,6 @@ impl Service for RedbBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,

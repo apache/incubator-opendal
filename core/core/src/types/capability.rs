@@ -45,6 +45,8 @@ use serde::Serialize;
 /// - Blocking operations are provided through the BlockingLayer
 ///
 /// Developers should use `capability` to determine available operations.
+/// Conditional capability fields follow the
+/// [conditional operation specification][crate::docs::specs::conditional_operations].
 ///
 /// # Field Naming Conventions
 ///
@@ -190,6 +192,33 @@ pub struct Capability {
     pub copy_multi_max_size: Option<usize>,
     /// Minimum size required for segmented copy tasks.
     pub copy_multi_min_size: Option<usize>,
+
+    /// Indicates if the operator supports composing complete source objects.
+    pub compose: bool,
+    /// Indicates if Content-Type can be specified during composition.
+    pub compose_with_content_type: bool,
+    /// Indicates if Content-Disposition can be specified during composition.
+    pub compose_with_content_disposition: bool,
+    /// Indicates if Content-Encoding can be specified during composition.
+    pub compose_with_content_encoding: bool,
+    /// Indicates if Cache-Control can be specified during composition.
+    pub compose_with_cache_control: bool,
+    /// Indicates if custom user metadata can be attached during composition.
+    pub compose_with_user_metadata: bool,
+    /// Indicates if composition supports a destination ETag match condition.
+    pub compose_with_if_match: bool,
+    /// Indicates if composition supports a destination ETag non-match condition.
+    pub compose_with_if_none_match: bool,
+    /// Indicates if composition supports a destination version match condition.
+    pub compose_with_if_version_match: bool,
+    /// Indicates if composition supports a destination version non-match condition.
+    pub compose_with_if_version_not_match: bool,
+    /// Indicates if composition can require a missing destination.
+    pub compose_with_if_not_exists: bool,
+    /// Indicates if composition can select a specific source version.
+    pub compose_with_source_version: bool,
+    /// Indicates if composition supports a source ETag match condition.
+    pub compose_with_source_if_match: bool,
 
     /// Indicates if restore operations are supported.
     pub restore: bool,

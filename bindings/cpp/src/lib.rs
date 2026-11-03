@@ -266,11 +266,11 @@ mod ffi {
 
         fn read(self: &Operator, path: &str) -> Result<Vec<u8>>;
         fn read_options(self: &Operator, path: &str, opts: FfiReadOptions) -> Result<Vec<u8>>;
-        fn write(self: &Operator, path: &str, bs: Vec<u8>) -> Result<()>;
+        fn write(self: &Operator, path: &str, bs: &[u8]) -> Result<()>;
         fn write_options(
             self: &Operator,
             path: &str,
-            bs: Vec<u8>,
+            bs: &[u8],
             opts: FfiWriteOptions,
         ) -> Result<()>;
         fn exists(self: &Operator, path: &str) -> Result<bool>;
@@ -314,7 +314,7 @@ mod ffi {
         fn seek(self: &mut Reader, offset: i64, dir: SeekFrom) -> Result<u64>;
 
         unsafe fn delete_writer(writer: *mut Writer);
-        fn write(self: &mut Writer, bs: Vec<u8>) -> Result<()>;
+        fn write(self: &mut Writer, bs: &[u8]) -> Result<()>;
         fn flush(self: &mut Writer) -> Result<()>;
         fn close(self: &mut Writer) -> Result<()>;
 
@@ -564,14 +564,14 @@ impl Operator {
         Ok(self.0.read_options(path, read_options(opts)?)?.to_vec())
     }
 
-    fn write(&self, path: &str, bs: Vec<u8>) -> Result<()> {
-        Ok(self.0.write(path, bs).map(|_| ())?)
+    fn write(&self, path: &str, bs: &[u8]) -> Result<()> {
+        Ok(self.0.write(path, bs.to_vec()).map(|_| ())?)
     }
 
-    fn write_options(&self, path: &str, bs: Vec<u8>, opts: ffi::FfiWriteOptions) -> Result<()> {
+    fn write_options(&self, path: &str, bs: &[u8], opts: ffi::FfiWriteOptions) -> Result<()> {
         Ok(self
             .0
-            .write_options(path, bs, write_options(opts))
+            .write_options(path, bs.to_vec(), write_options(opts))
             .map(|_| ())?)
     }
 

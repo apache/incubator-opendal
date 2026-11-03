@@ -23,8 +23,7 @@ use log::debug;
 
 use super::HTTP_SCHEME;
 use super::config::HttpConfig;
-use super::core::HttpCore;
-use super::core::parse_error;
+use super::core::{ErrorContext, HttpCore, parse_error};
 use super::reader::*;
 use opendal_core::raw::*;
 use opendal_core::*;
@@ -179,6 +178,7 @@ impl Service for HttpBackend {
     type Lister = ();
     type Deleter = ();
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -203,7 +203,7 @@ impl Service for HttpBackend {
     async fn stat(&self, ctx: &OperationContext, path: &str, args: OpStat) -> Result<RpStat> {
         // Stat root always returns a DIR.
         if path == "/" {
-            return Ok(RpStat::new(Metadata::new(EntryMode::DIR)));
+            return Ok(RpStat::new(MetadataBuilder::dir().build()));
         }
 
         let resp = self.core.http_head(ctx, path, &args).await?;
@@ -215,9 +215,12 @@ impl Service for HttpBackend {
             // HTTP Server like nginx could return FORBIDDEN if auto-index
             // is not enabled, we should ignore them.
             StatusCode::NOT_FOUND | StatusCode::FORBIDDEN if path.ends_with('/') => {
-                Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+                Ok(RpStat::new(MetadataBuilder::dir().build()))
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Head")),
+                resp,
+            )),
         }
     }
     fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
@@ -260,7 +263,6 @@ impl Service for HttpBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,

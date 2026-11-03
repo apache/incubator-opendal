@@ -17,8 +17,7 @@
 
 use hdfs_native::client::ListStatusIterator;
 
-use opendal_core::EntryMode;
-use opendal_core::Metadata;
+use opendal_core::MetadataBuilder;
 use opendal_core::Result;
 use opendal_core::raw::*;
 
@@ -54,7 +53,7 @@ impl oio::List for HdfsNativeLister {
         }
 
         if let Some(path) = self.current_path.take() {
-            return Ok(Some(oio::Entry::new(&path, Metadata::new(EntryMode::DIR))));
+            return Ok(Some(oio::Entry::new(&path, MetadataBuilder::dir().build())));
         }
 
         match self.iter.next().await {
@@ -62,14 +61,13 @@ impl oio::List for HdfsNativeLister {
                 let path = build_rel_path(&self.root, &status.path);
 
                 let entry = if status.isdir {
-                    oio::Entry::new(&format!("{path}/"), Metadata::new(EntryMode::DIR))
+                    oio::Entry::new(&format!("{path}/"), MetadataBuilder::dir().build())
                 } else {
-                    let meta = Metadata::new(EntryMode::FILE)
-                        .with_content_length(status.length as u64)
-                        .with_last_modified(Timestamp::from_millisecond(
-                            status.modification_time as i64,
-                        )?);
-                    oio::Entry::new(&path, meta)
+                    let mut meta = MetadataBuilder::file(status.length as u64);
+                    meta.last_modified(Timestamp::from_millisecond(
+                        status.modification_time as i64,
+                    )?);
+                    oio::Entry::new(&path, meta.build())
                 };
 
                 Ok(Some(entry))

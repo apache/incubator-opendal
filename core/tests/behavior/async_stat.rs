@@ -201,6 +201,14 @@ pub async fn test_stat_with_if_match(op: Operator) -> Result<()> {
         .await;
     assert!(result.is_ok());
 
+    let missing = TEST_FIXTURE.new_file_path();
+    let err = op
+        .stat_with(&missing)
+        .if_match(meta.etag().expect("etag must exist"))
+        .await
+        .expect_err("missing target must fail");
+    assert_eq!(err.kind(), ErrorKind::NotFound);
+
     Ok(())
 }
 
@@ -233,6 +241,14 @@ pub async fn test_stat_with_if_none_match(op: Operator) -> Result<()> {
         .await?;
     assert_eq!(res.mode(), meta.mode());
     assert_eq!(res.content_length(), meta.content_length());
+
+    let missing = TEST_FIXTURE.new_file_path();
+    let err = op
+        .stat_with(&missing)
+        .if_none_match(meta.etag().expect("etag must exist"))
+        .await
+        .expect_err("missing target must fail");
+    assert_eq!(err.kind(), ErrorKind::NotFound);
 
     Ok(())
 }
@@ -287,7 +303,7 @@ pub async fn test_stat_with_version_conditions(op: Operator) -> Result<()> {
     ] {
         assert_eq!(
             result.expect_err("missing target must fail").kind(),
-            ErrorKind::ConditionNotMatch
+            ErrorKind::NotFound
         );
     }
 
@@ -321,6 +337,14 @@ pub async fn test_stat_with_if_modified_since(op: Operator) -> Result<()> {
     assert!(res.is_err());
     assert_eq!(res.err().unwrap().kind(), ErrorKind::ConditionNotMatch);
 
+    let missing = TEST_FIXTURE.new_file_path();
+    let err = op
+        .stat_with(&missing)
+        .if_modified_since(since)
+        .await
+        .expect_err("missing target must fail");
+    assert_eq!(err.kind(), ErrorKind::NotFound);
+
     Ok(())
 }
 
@@ -350,6 +374,14 @@ pub async fn test_stat_with_if_unmodified_since(op: Operator) -> Result<()> {
     let since = meta.last_modified().unwrap() + Duration::from_secs(1);
     let res = op.stat_with(&path).if_unmodified_since(since).await?;
     assert_eq!(res.last_modified(), meta.last_modified());
+
+    let missing = TEST_FIXTURE.new_file_path();
+    let err = op
+        .stat_with(&missing)
+        .if_unmodified_since(since)
+        .await
+        .expect_err("missing target must fail");
+    assert_eq!(err.kind(), ErrorKind::NotFound);
 
     Ok(())
 }

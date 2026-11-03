@@ -15,101 +15,104 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! The core concepts of OpenDAL's public API.
+//! The core concepts of OpenDAL's Rust API.
 //!
-//! OpenDAL provides a unified abstraction for accessing storage services.
+//! OpenDAL gives applications one storage API across services. Rust
+//! applications use four concepts: a service describes the storage backend, a
+//! builder configures it, an operator exposes operations, and layers add
+//! behavior around those operations.
 //!
-//! Public users mostly work with three concepts:
+//! For the language-independent model shared by every OpenDAL binding, see the
+//! [OpenDAL concepts guide](https://opendal.apache.org/docs/concepts/).
 //!
-//! - [`Builder`]: configures and builds a storage service.
-//! - [`Operator`]: owns a service stack and exposes storage operations such as
-//!   `read`, `write`, and `list`.
-//! - [`Layer`][crate::raw::Layer]: wraps an operator's service stack or runtime
-//!   resources to add behavior such as retry, timeout, tracing, and metrics.
+//! # Service and builder
 //!
-//! If you are interested in internal implementation details, please have a look at [`internals`][super::internals].
+//! A **service** is a storage backend such as S3, Google Cloud Storage, a
+//! local filesystem, or an in-memory store. Each service supports a different
+//! set of operations and optional features.
 //!
-//! # Builder
-//!
-//! A [`Builder`] configures and creates the underlying storage service. Service
-//! crates expose builders through [`services`][crate::services], for example
-//! [`services::Memory`][crate::services::Memory].
-//!
-//! ```text
-//! ┌─────────┐   build()   ┌─────────┐
-//! │ Builder ├────────────►│ Service │
-//! └─────────┘             └─────────┘
-//! ```
-//!
-//! ```no_run
-//! use opendal_core::services::Memory;
-//!
-//! let builder = Memory::default();
-//! ```
-//!
-//! # Operator
-//!
-//! An [`Operator`] is the public handle for a storage service stack. It stores:
-//!
-//! - a base service created from the builder.
-//! - a base [`OperationContext`] with runtime resources such as HTTP transport
-//!   and executor.
-//! - an ordered list of layers.
-//! - the composed service and context used by storage operations.
+//! A [`Builder`] collects one service's configuration and constructs its
+//! implementation. The [`services`][crate::services] module exposes concrete
+//! builders, while [`Operator::new`] turns a builder into a ready-to-use
+//! operator.
 //!
 //! ```text
-//! ┌─────────┐   Operator::new   ┌────────────────────────────┐
-//! │ Builder ├──────────────────►│ Operator                   │
-//! └─────────┘                   │ - base service             │
-//!                               │ - base OperationContext    │
-//!                               │ - layers                   │
-//!                               │ - composed service/context │
-//!                               └────────────────────────────┘
+//! configuration -> builder -> service -> operator
 //! ```
-//!
-//! `Operator::new` returns a ready-to-use operator. There is no separate
-//! `finish` step.
 //!
 //! ```no_run
 //! # use opendal_core::Result;
-//! use opendal_core::services::Memory;
 //! use opendal_core::Operator;
+//! use opendal_core::services::Memory;
 //!
 //! # fn test() -> Result<()> {
 //! let builder = Memory::default();
-//!
 //! let op = Operator::new(builder)?;
+//! # let _ = op;
 //! # Ok(())
 //! # }
 //! ```
 //!
-//! - `Operator` is cheap to clone because it stores shared handles internally.
-//! - `Operator` has no generic parameters or lifetimes, so it is easy to pass
-//!   through application code.
-//! - `Operator` is `Send` and `Sync`, so it can be shared across threads.
-//! - Methods that change layers or runtime resources return a new operator;
-//!   existing clones and in-flight operations keep using their current composed
-//!   service and context.
+//! OpenDAL does not make every service support every operation. Applications
+//! can inspect the operator's effective [`Capability`] before using an
+//! optional operation or option.
 //!
-//! # Runtime resources and layers
+//! # Operator
 //!
-//! [`OperationContext`] carries runtime resources from the operator to services,
-//! such as [`HttpTransporter`][crate::HttpTransporter] and [`Executor`][crate::Executor].
-//! Operation arguments such as ranges, versions, and concurrency limits stay in
-//! the `Op*` argument structs used by each operation.
+//! An [`Operator`] is the public handle for one configured service and root.
+//! It normalizes paths, validates options against effective capabilities, runs
+//! the configured layers, and dispatches each operation to the service.
 //!
-//! Use [`Operator::with_context`] to replace the base context. Use
-//! [`Operator::layer`] to append a layer. In both cases, OpenDAL replays the full
-//! layer list from the base service and base context to produce a fresh composed
-//! service and context.
+//! Operators are cheap to clone, contain no caller-visible lifetime or service
+//! type parameter, and can be shared across threads. A clone refers to the
+//! same composed service stack. Methods that add a layer or replace runtime
+//! resources return a new operator; existing clones and in-flight operations
+//! keep their current stack.
+//!
+//! # Operation
+//!
+//! Operations are storage actions such as `read`, `write`, `stat`, `list`,
+//! `delete`, `copy`, and `rename`. Convenience methods use default options,
+//! while the corresponding `_with` methods expose operation-specific options.
+//!
+//! ```no_run
+//! # use opendal_core::Result;
+//! use opendal_core::Operator;
+//! use opendal_core::services::Memory;
+//!
+//! # async fn test() -> Result<()> {
+//! let op = Operator::new(Memory::default())?;
+//! let bs = op.read("abc").await?;
+//! # let _ = bs;
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! OpenDAL normalizes every path relative to the operator's root. `/`
+//! represents the root, a trailing `/` represents a directory, and any other
+//! normalized path represents a file. Operation documentation defines the
+//! observable behavior and errors. [Specifications][super::specs] define
+//! portable contracts that span multiple operations and services.
+//!
+//! # Layer and operation context
+//!
+//! A [`Layer`][crate::raw::Layer] adds cross-cutting behavior such as retry,
+//! timeout, tracing, or metrics. Layers form an ordered stack around a
+//! service.
+//!
+//! An [`OperationContext`] carries runtime resources such as the HTTP
+//! transport and executor from the operator to the service.
+//! Operation-specific values such as ranges, versions, conditions, and
+//! concurrency remain in that operation's options.
+//!
+//! Adding a layer with [`Operator::layer`] or replacing the base context with
+//! [`Operator::with_context`] rebuilds both the service stack and the composed
+//! context from the same ordered layer list:
 //!
 //! ```text
-//! base service ─┐
-//!               ├─ layer replay ─► composed service ─┐
-//! base context ─┘                                     ├─► operation dispatch
-//!                                                     │    srv.read(&ctx, ...)
-//!                                                     ▼
-//!                                             composed context
+//! base service -----+                    +-> composed service --+
+//!                   +-> ordered layers --+                      +-> operation
+//! base context -----+                    +-> composed context --+
 //! ```
 //!
 //! ```no_run
@@ -129,40 +132,13 @@
 //! # }
 //! ```
 //!
-//! # Operations
-//!
-//! After creating an operator, use it to run operations on normalized paths.
-//!
-//! ```text
-//!                            ┌──────────────┐
-//!                  ┌────────►│ read("abc")  │
-//!                  │         └──────────────┘
-//! ┌───────────┐    │
-//! │ Operator  │    │         ┌──────────────┐
-//! │ ┌───────┐ ├────┼────────►│ write("def") │
-//! │ │Service│ │    │         └──────────────┘
-//! └─┴───────┴─┘    │
-//!                  │         ┌──────────────┐
-//!                  └────────►│ list("ghi/") │
-//!                            └──────────────┘
-//! ```
-//!
-//! We can read data with given path in this way:
-//!
-//! ```no_run
-//! # use opendal_core::Result;
-//! use opendal_core::services::Memory;
-//! use opendal_core::Operator;
-//!
-//! # async fn test() -> Result<()> {
-//! let builder = Memory::default();
-//!
-//! let op = Operator::new(builder)?;
-//! let bs: Vec<u8> = op.read("abc").await?;
-//! # Ok(())
-//! # }
-//! ```
+//! Most applications only need the public [`Operator`] API. Service and layer
+//! authors should continue with the [internals][super::internals] guide.
 //!
 //! [`Builder`]: crate::Builder
 //! [`Operator`]: crate::Operator
+//! [`Operator::new`]: crate::Operator::new
+//! [`Operator::layer`]: crate::Operator::layer
+//! [`Operator::with_context`]: crate::Operator::with_context
+//! [`Capability`]: crate::Capability
 //! [`OperationContext`]: crate::OperationContext

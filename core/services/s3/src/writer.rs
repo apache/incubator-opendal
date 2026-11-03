@@ -49,26 +49,28 @@ impl S3Writer {
     }
 
     fn parse_header_into_meta(path: &str, headers: &http::HeaderMap) -> Result<Metadata> {
-        let mut meta = Metadata::new(EntryMode::from_path(path));
+        let mut meta = if path.ends_with('/') {
+            MetadataBuilder::dir()
+        } else {
+            MetadataBuilder::unknown()
+        };
         if let Some(etag) = parse_etag(headers)? {
-            meta.set_etag(etag);
+            meta.etag(etag);
         }
         if let Some(version) = parse_header_to_str(headers, X_AMZ_VERSION_ID)? {
-            meta.set_version(version);
+            meta.version(version);
         }
-        if let Some(value) =
-            parse_header_to_str(headers, X_AMZ_OBJECT_SIZE)?.and_then(|size| size.parse().ok())
+        if !path.ends_with('/')
+            && let Some(value) =
+                parse_header_to_str(headers, X_AMZ_OBJECT_SIZE)?.and_then(|size| size.parse().ok())
         {
-            meta.set_content_length(value);
+            meta.set_file(value);
         }
-        Ok(meta)
+        Ok(meta.build())
     }
 
     fn error_context(&self, service_operation: ServiceOperation) -> ErrorContext {
-        ErrorContext::new(service_operation)
-            .with_if_match(self.op.if_match().is_some())
-            .with_if_none_match(self.op.if_none_match().is_some())
-            .with_if_not_exists(self.op.if_not_exists())
+        ErrorContext::new(service_operation).with_caller_condition(self.op.is_conditional())
     }
 }
 
@@ -193,10 +195,7 @@ impl oio::MultipartWrite for S3Writer {
             .expect("multipart writer copy range must be bounded");
         let part_number = part_number + 1;
         let error_context = ErrorContext::new(ServiceOperation("UploadPartCopy"))
-            .with_if_match(args.if_match().is_some())
-            .with_if_none_match(args.if_none_match().is_some())
-            .with_if_modified_since(args.if_modified_since().is_some())
-            .with_if_unmodified_since(args.if_unmodified_since().is_some());
+            .with_caller_condition(args.is_conditional());
         let req = self
             .core
             .s3_upload_part_copy_request(S3UploadPartCopyRequest {
@@ -278,7 +277,7 @@ impl oio::MultipartWrite for S3Writer {
 
         let status = resp.status();
 
-        let mut meta = S3Writer::parse_header_into_meta(&self.path, resp.headers())?;
+        let meta = S3Writer::parse_header_into_meta(&self.path, resp.headers())?;
 
         match status {
             StatusCode::OK => {
@@ -303,9 +302,10 @@ impl oio::MultipartWrite for S3Writer {
                         Err(err)
                     };
                 }
-                meta.set_etag(&ret.etag);
+                let mut meta = meta.into_builder();
+                meta.etag(&ret.etag);
 
-                Ok(meta)
+                Ok(meta.build())
             }
             _ => {
                 let err = parse_error(

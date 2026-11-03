@@ -226,6 +226,7 @@ impl Service for MokaBackend {
     type Lister = oio::HierarchyLister<MokaLister>;
     type Deleter = oio::OneShotDeleter<MokaDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.info.clone()
@@ -251,19 +252,19 @@ impl Service for MokaBackend {
         let p = build_abs_path(&self.root, path);
 
         if p == build_abs_path(&self.root, "") {
-            Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+            Ok(RpStat::new(MetadataBuilder::dir().build()))
         } else {
             // Check the exact path first
             match self.core.get(&p).await? {
                 Some(value) => {
                     // Use the stored metadata but override mode if necessary
-                    let mut metadata = value.metadata.clone();
+                    let mut metadata = value.metadata.clone().into_builder();
                     // If path ends with '/' but we found a file, return DIR
                     // This is because CompleteLayer's create_dir creates empty files with '/' suffix
-                    if p.ends_with('/') && metadata.mode() != EntryMode::DIR {
-                        metadata.set_mode(EntryMode::DIR);
+                    if p.ends_with('/') && value.metadata.mode() != EntryMode::DIR {
+                        metadata.set_dir();
                     }
-                    Ok(RpStat::new(metadata))
+                    Ok(RpStat::new(metadata.build()))
                 }
                 None => {
                     // If path ends with '/', check if there are any children
@@ -275,7 +276,7 @@ impl Service for MokaBackend {
                             .any(|kv| kv.0.starts_with(&p) && kv.0.len() > p.len());
 
                         if has_children {
-                            Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+                            Ok(RpStat::new(MetadataBuilder::dir().build()))
                         } else {
                             Err(Error::new(ErrorKind::NotFound, "key not found in moka"))
                         }
@@ -336,7 +337,6 @@ impl Service for MokaBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,

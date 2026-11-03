@@ -21,8 +21,8 @@ use bytes::Buf;
 use http::StatusCode;
 use serde::Deserialize;
 
-use super::core::IpmfsCore;
 use super::core::parse_error;
+use super::core::{ErrorContext, IpmfsCore};
 use super::deleter::IpmfsDeleter;
 use super::lister::IpmfsLister;
 use super::reader::*;
@@ -166,6 +166,7 @@ impl Service for IpmfsBackend {
     type Lister = oio::PageLister<IpmfsLister>;
     type Deleter = oio::OneShotDeleter<IpmfsDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -187,14 +188,17 @@ impl Service for IpmfsBackend {
 
         match status {
             StatusCode::CREATED | StatusCode::OK => Ok(RpCreateDir::default()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("FilesMkdir")),
+                resp,
+            )),
         }
     }
 
     async fn stat(&self, ctx: &OperationContext, path: &str, _: OpStat) -> Result<RpStat> {
         // Stat root always returns a DIR.
         if path == "/" {
-            return Ok(RpStat::new(Metadata::new(EntryMode::DIR)));
+            return Ok(RpStat::new(MetadataBuilder::dir().build()));
         }
 
         let resp = self.core.ipmfs_stat(ctx, path).await?;
@@ -214,12 +218,18 @@ impl Service for IpmfsBackend {
                     _ => EntryMode::Unknown,
                 };
 
-                let mut meta = Metadata::new(mode);
-                meta.set_content_length(res.size);
+                let meta = match mode {
+                    EntryMode::FILE => MetadataBuilder::file(res.size),
+                    EntryMode::DIR => MetadataBuilder::dir(),
+                    EntryMode::Unknown => MetadataBuilder::unknown(),
+                };
 
-                Ok(RpStat::new(meta))
+                Ok(RpStat::new(meta.build()))
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("FilesStat")),
+                resp,
+            )),
         }
     }
     fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
@@ -273,7 +283,6 @@ impl Service for IpmfsBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,

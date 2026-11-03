@@ -23,7 +23,7 @@ use bytes::Bytes;
 use od::raw::oio;
 use od::raw::*;
 use od::{
-    Buffer, BytesRange, Capability, EntryMode, Error, ErrorKind, Metadata, OperationContext, Result,
+    Buffer, BytesRange, Capability, Error, ErrorKind, MetadataBuilder, OperationContext, Result,
 };
 use opendal as od;
 
@@ -74,6 +74,7 @@ impl Service for HangingService {
     type Lister = ();
     type Deleter = ();
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         ServiceInfo::with_scheme("mock-hanging")
@@ -100,9 +101,8 @@ impl Service for HangingService {
     }
 
     async fn stat(&self, _: &OperationContext, _: &str, _: OpStat) -> Result<RpStat> {
-        Ok(RpStat::new(
-            Metadata::new(EntryMode::FILE).with_content_length(13),
-        ))
+        let metadata = MetadataBuilder::file(13);
+        Ok(RpStat::new(metadata.build()))
     }
 
     fn read(&self, _: &OperationContext, _: &str, _: OpRead) -> Result<Self::Reader> {
@@ -130,14 +130,7 @@ impl Service for HangingService {
         ))
     }
 
-    fn copy(
-        &self,
-        _: &OperationContext,
-        _: &str,
-        _: &str,
-        _: OpCopy,
-        _: OpCopier,
-    ) -> Result<Self::Copier> {
+    fn copy(&self, _: &OperationContext, _: &str, _: &str, _: OpCopy) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,
             "operation is not supported",
@@ -186,6 +179,7 @@ impl Service for RetryableService {
     type Lister = ();
     type Deleter = ();
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         ServiceInfo::with_scheme("mock-retryable")
@@ -212,9 +206,8 @@ impl Service for RetryableService {
     }
 
     async fn stat(&self, _: &OperationContext, _: &str, _: OpStat) -> Result<RpStat> {
-        Ok(RpStat::new(
-            Metadata::new(EntryMode::FILE).with_content_length(13),
-        ))
+        let metadata = MetadataBuilder::file(13);
+        Ok(RpStat::new(metadata.build()))
     }
 
     fn read(&self, _: &OperationContext, _: &str, _: OpRead) -> Result<Self::Reader> {
@@ -244,14 +237,7 @@ impl Service for RetryableService {
         ))
     }
 
-    fn copy(
-        &self,
-        _: &OperationContext,
-        _: &str,
-        _: &str,
-        _: OpCopy,
-        _: OpCopier,
-    ) -> Result<Self::Copier> {
+    fn copy(&self, _: &OperationContext, _: &str, _: &str, _: OpCopy) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,
             "operation is not supported",
@@ -286,7 +272,8 @@ struct RetryableReader {
 
 impl oio::StreamRead for RetryableReader {
     async fn open(&self, range: BytesRange) -> Result<(RpRead, Box<dyn oio::ReadStreamDyn>)> {
-        let rp = RpRead::new(Metadata::new(EntryMode::FILE).with_content_length(0));
+        let metadata = MetadataBuilder::file(13);
+        let rp = RpRead::new(metadata.build());
         Ok((
             rp,
             Box::new(RetryableReadStream {

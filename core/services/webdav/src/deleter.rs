@@ -43,7 +43,10 @@ impl oio::OneShotDelete for WebdavDeleter {
         let status = resp.status();
         match status {
             StatusCode::NO_CONTENT | StatusCode::NOT_FOUND => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Delete")),
+                resp,
+            )),
         }
     }
 }

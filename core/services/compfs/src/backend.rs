@@ -121,6 +121,7 @@ impl Service for CompfsBackend {
     type Lister = CompfsLazyLister;
     type Deleter = oio::OneShotDeleter<CompfsDeleter>;
     type Copier = oio::OneShotCopier;
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -160,10 +161,13 @@ impl Service for CompfsBackend {
             EntryMode::Unknown
         };
         let last_mod = Timestamp::try_from(meta.modified().map_err(new_std_io_error)?)?;
-        let ret = Metadata::new(mode)
-            .with_last_modified(last_mod)
-            .with_content_length(meta.len());
-        Ok(RpStat::new(ret))
+        let mut ret = match mode {
+            EntryMode::FILE => MetadataBuilder::file(meta.len()),
+            EntryMode::DIR => MetadataBuilder::dir(),
+            EntryMode::Unknown => MetadataBuilder::unknown(),
+        };
+        ret.last_modified(last_mod);
+        Ok(RpStat::new(ret.build()))
     }
 
     fn delete(&self, _ctx: &OperationContext) -> Result<Self::Deleter> {
@@ -182,7 +186,6 @@ impl Service for CompfsBackend {
         from: &str,
         to: &str,
         _: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         let core = self.core.clone();
         let from = self.core.prepare_path(from)?;
@@ -202,9 +205,10 @@ impl Service for CompfsBackend {
                     .await?;
 
                 let (mut from, mut to) = (Cursor::new(from), Cursor::new(to));
-                compio::io::copy(&mut from, &mut to).await?;
+                let size = compio::io::copy(&mut from, &mut to).await?;
 
-                Ok(Metadata::default())
+                let metadata = MetadataBuilder::file(size);
+                Ok(metadata.build())
             })
             .await
         }))

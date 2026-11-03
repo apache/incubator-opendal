@@ -16,17 +16,19 @@
 // under the License.
 
 use asyncband::mutex::Mutex;
-use asyncband::once::OnceCell;
 use bytes::Buf;
 use bytes::Bytes;
 use http::Request;
 use http::Response;
+use http::StatusCode;
 use http::header;
 use log::debug;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::Mutex as StdMutex;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use xet::xet_session::{XetDownloadStreamGroup, XetSession, XetSessionBuilder, XetUploadCommit};
 
@@ -165,11 +167,6 @@ pub(super) struct XetFileResponse {
     pub size: u64,
 }
 
-#[derive(Deserialize)]
-pub(super) struct RepoInfoResponse {
-    pub id: String,
-}
-
 /// Response shape of HF's `xet-{read,write}-token` endpoint. Matches
 /// `CasJWTInfo` in the vendored `xet` crate (`xet_client::hub_client::types`)
 /// — the same three fields regardless of read or write token.
@@ -215,10 +212,9 @@ impl XetTokenScope {
         }
     }
 
-    /// The `Operation` a fetch for this scope's token should be tagged
-    /// with, so a token-less writer hits `request()`'s local
-    /// `PermissionDenied` fast-path instead of an unauthenticated network
-    /// call.
+    /// `Operation` to tag this scope's token fetch with, so a token-less
+    /// writer is rejected locally by `request()` instead of hitting the
+    /// network.
     fn operation(self) -> Operation {
         match self {
             Self::Read => Operation::Read,
@@ -267,23 +263,26 @@ impl PathInfo {
 
     pub fn metadata(&self) -> Result<Metadata> {
         let mode = self.entry_mode();
-        let mut meta = Metadata::new(mode);
+        let mut meta = match mode {
+            EntryMode::FILE => MetadataBuilder::file(self.size),
+            EntryMode::DIR => MetadataBuilder::dir(),
+            EntryMode::Unknown => MetadataBuilder::unknown(),
+        };
 
         if let Some(commit_info) = self.last_commit.as_ref() {
-            meta.set_last_modified(commit_info.date.parse::<Timestamp>()?);
+            meta.last_modified(commit_info.date.parse::<Timestamp>()?);
         }
 
         if mode == EntryMode::FILE {
-            meta.set_content_length(self.size);
             // For buckets, oid may be None; for regular repos, prefer lfs.oid then oid
             if let Some(lfs) = &self.lfs {
-                meta.set_etag(&lfs.oid);
+                meta.etag(&lfs.oid);
             } else if let Some(oid) = &self.oid {
-                meta.set_etag(oid);
+                meta.etag(oid);
             }
         }
 
-        Ok(meta)
+        Ok(meta.build())
     }
 }
 
@@ -296,6 +295,123 @@ pub(super) struct LfsInfo {
 pub(super) struct LastCommit {
     pub id: String,
     pub date: String,
+}
+
+pub(super) enum HfReadResponse {
+    Http(Response<HttpBody>),
+    Xet(XetFileResponse),
+}
+
+impl HfReadResponse {
+    async fn from_response(resp: Response<HttpBody>, mode: HfDownloadMode) -> Result<Self> {
+        if mode != HfDownloadMode::Xet || !resp.headers().contains_key("x-xet-hash") {
+            return Ok(Self::Http(resp));
+        }
+        let (_, mut body) = resp.into_parts();
+        let buf = body.to_buffer().await?;
+        let info = serde_json::from_reader(buf.reader()).map_err(new_json_deserialize_error)?;
+        Ok(Self::Xet(info))
+    }
+}
+
+// Bound entries, paths, and HTTP URIs. Busy entries are never evicted:
+// recreating their slots would allow two concurrent resolutions for one path.
+const RESOLVED_FILE_MAX_ENTRIES: usize = 512;
+const RESOLVED_FILE_MAX_PATH_BYTES: usize = 4096;
+const HTTP_DOWNLOAD_MAX_URI_BYTES: usize = 8192;
+const HTTP_DOWNLOAD_EXPIRY_MARGIN: Duration = Duration::from_secs(30);
+
+#[derive(Default)]
+struct ResolvedFiles {
+    entries: StdMutex<HashMap<String, ResolvedFileEntry>>,
+}
+
+struct ResolvedFileEntry {
+    accessed: Instant,
+    state: Arc<Mutex<ResolvedFile>>,
+}
+
+#[derive(Default)]
+enum ResolvedFile {
+    #[default]
+    Empty,
+    Http(Arc<HttpDownload>),
+    Xet(XetFileResponse),
+    // The path is not XET-backed and has no reusable HTTP destination.
+    NotXet,
+    // Wake existing waiters onto the uncached path when a response cannot be
+    // admitted. Its slot leaves the table so later reads can try again.
+    Bypass,
+}
+
+struct HttpDownload {
+    redirect: HttpRedirect,
+    valid_until: Instant,
+}
+
+impl ResolvedFiles {
+    fn entry(&self, path: &str) -> Option<Arc<Mutex<ResolvedFile>>> {
+        if path.len() > RESOLVED_FILE_MAX_PATH_BYTES {
+            return None;
+        }
+
+        let mut entries = self
+            .entries
+            .lock()
+            .expect("resolved file cache lock poisoned");
+        if entries.len() == RESOLVED_FILE_MAX_ENTRIES && !entries.contains_key(path) {
+            let oldest = entries
+                .iter()
+                .filter(|(_, entry)| Arc::strong_count(&entry.state) == 1)
+                .min_by_key(|(_, entry)| entry.accessed)
+                .map(|(path, _)| path.clone())?;
+            entries.remove(&oldest);
+        }
+        let entry = entries
+            .entry(path.to_string())
+            .or_insert_with(|| ResolvedFileEntry {
+                accessed: Instant::now(),
+                state: Arc::default(),
+            });
+        entry.accessed = Instant::now();
+        Some(entry.state.clone())
+    }
+}
+
+impl HttpDownload {
+    fn from_response(resp: &Response<HttpBody>) -> Option<Self> {
+        let redirect = resp.extensions().get::<HttpRedirect>()?;
+        let uri = redirect.uri().original_uri().parse::<http::Uri>().ok()?;
+        if uri.scheme_str() != Some("https")
+            || uri.authority()?.as_str().contains('@')
+            || redirect.uri().original_uri().len() > HTTP_DOWNLOAD_MAX_URI_BYTES
+        {
+            return None;
+        }
+
+        // HF's signed CDN destinations advertise their authorization deadline
+        // as Expires. Unknown signature formats fall back to fresh resolution.
+        let mut expirations = uri.query()?.split('&').filter_map(|pair| {
+            let (key, value) = pair.split_once('=')?;
+            (key == "Expires").then_some(value)
+        });
+        let expires = expirations.next()?.parse::<u64>().ok()?;
+        if expirations.next().is_some() {
+            return None;
+        }
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
+        let lifetime = Duration::from_secs(expires)
+            .checked_sub(now)?
+            .checked_sub(HTTP_DOWNLOAD_EXPIRY_MARGIN)?;
+        if lifetime.is_zero() {
+            return None;
+        }
+
+        Some(Self {
+            redirect: redirect.clone(),
+            valid_until: Instant::now().checked_add(lifetime)?,
+        })
+    }
 }
 
 // Core HuggingFace client that manages API interactions, authentication
@@ -311,7 +427,9 @@ pub struct HfCore {
     pub endpoint: String,
     pub xet_session: XetSession,
     pub download_mode: HfDownloadMode,
-    canonical_repo: OnceCell<HfRepo>,
+    pub enable_resolve_cache: bool,
+    /// Shared file resolutions, keyed by paths relative to this core's root.
+    resolved_files: Arc<ResolvedFiles>,
     /// Cached CAS read token, shared by every `XetDownloadStreamGroup` this
     /// core creates, so at most one `xet-read-token` request happens per
     /// token lifetime instead of one per group (one per file read).
@@ -352,7 +470,8 @@ impl HfCore {
             endpoint,
             xet_session,
             download_mode,
-            canonical_repo: OnceCell::new(),
+            enable_resolve_cache: false,
+            resolved_files: Arc::default(),
             xet_read_token: Arc::new(Mutex::new(None)),
             xet_write_token: Arc::new(Mutex::new(None)),
         }
@@ -401,8 +520,7 @@ impl HfCore {
         &self,
         ctx: &OperationContext,
     ) -> Result<XetUploadCommit> {
-        let (token, refresh_url, refresh_headers) =
-            self.xet_auth(ctx, XetTokenScope::Write).await?;
+        let token = self.cached_xet_token(ctx, XetTokenScope::Write).await?;
         self.xet_session
             .new_upload_commit()
             .map_err(|err| {
@@ -411,7 +529,11 @@ impl HfCore {
             })?
             .with_endpoint(token.cas_url)
             .with_token_info(token.access_token, token.expires_at)
-            .with_token_refresh_url(refresh_url, refresh_headers)
+            .with_token_refresh_url(
+                self.repo
+                    .xet_token_url(&self.endpoint, XetTokenScope::Write),
+                self.xet_token_refresh_headers(),
+            )
             .build()
             .await
             .map_err(|err| {
@@ -420,32 +542,9 @@ impl HfCore {
             })
     }
 
-    /// A cached token for `scope`, plus the URL/headers to configure
-    /// automatic refresh on a builder that outlives this call. Shared by
-    /// [`Self::xet_upload_commit`] and [`Self::xet_download_group`], which
-    /// otherwise differ only in which builder they seed with it. Uses the
-    /// canonical repo id so the refresh URL doesn't depend on redirect
-    /// behavior (see [`Self::canonical_repo`]). Resolves the repo once and
-    /// hands it to [`Self::cached_xet_token`] so the token lookup doesn't
-    /// resolve it again.
-    async fn xet_auth(
-        &self,
-        ctx: &OperationContext,
-        scope: XetTokenScope,
-    ) -> Result<(XetToken, String, http::HeaderMap)> {
-        let repo = self.canonical_repo(ctx).await?;
-        let token = self.cached_xet_token(ctx, &repo, scope).await?;
-        let refresh_url = repo.xet_token_url(&self.endpoint, scope);
-        let refresh_headers = self.xet_token_refresh_headers();
-        Ok((token, refresh_url, refresh_headers))
-    }
-
-    /// Get a still-valid cached token for `scope` against the already
-    /// resolved `repo`, fetching and caching a fresh one if missing or
-    /// close to expiry. The lock is held across the refresh request so
-    /// concurrent callers single-flight onto one fetch; `repo` is resolved
-    /// by the caller beforehand so that lookup doesn't extend this
-    /// critical section.
+    /// Get a still-valid cached token for `scope`, fetching and caching a
+    /// fresh one if missing or close to expiry. The lock is held across the
+    /// refresh request so concurrent callers single-flight onto one fetch.
     ///
     /// On a clock failure, `now` falls back to `u64::MAX` so the token is
     /// treated as stale (extra `/api` traffic) rather than `0`, which would
@@ -453,7 +552,6 @@ impl HfCore {
     async fn cached_xet_token(
         &self,
         ctx: &OperationContext,
-        repo: &HfRepo,
         scope: XetTokenScope,
     ) -> Result<XetToken> {
         let cache = match scope {
@@ -472,12 +570,23 @@ impl HfCore {
             return Ok(token.clone());
         }
 
-        let url = repo.xet_token_url(&self.endpoint, scope);
+        let url = self.repo.xet_token_url(&self.endpoint, scope);
         let req = self
             .request(http::Method::GET, &url, scope.operation(), "XetToken")?
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
-        let (_, info): (_, XetTokenResponse) = self.send_parse(ctx, req).await?;
+        let resp = self.send(ctx, req).await?;
+        if !resp.status().is_success() {
+            let (parts, _) = resp.into_parts();
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("XetToken")),
+                parts,
+            ));
+        }
+        let (_, mut body) = resp.into_parts();
+        let buffer = body.to_buffer().await?;
+        let info: XetTokenResponse =
+            serde_json::from_reader(buffer.reader()).map_err(new_json_deserialize_error)?;
         let fresh = XetToken {
             cas_url: info.cas_url,
             access_token: info.access_token,
@@ -499,7 +608,7 @@ impl HfCore {
         &self,
         ctx: &OperationContext,
     ) -> Result<XetDownloadStreamGroup> {
-        let (token, refresh_url, refresh_headers) = self.xet_auth(ctx, XetTokenScope::Read).await?;
+        let token = self.cached_xet_token(ctx, XetTokenScope::Read).await?;
         self.xet_session
             .new_download_stream_group()
             .map_err(|err| {
@@ -511,7 +620,10 @@ impl HfCore {
             })?
             .with_endpoint(token.cas_url)
             .with_token_info(token.access_token, token.expires_at)
-            .with_token_refresh_url(refresh_url, refresh_headers)
+            .with_token_refresh_url(
+                self.repo.xet_token_url(&self.endpoint, XetTokenScope::Read),
+                self.xet_token_refresh_headers(),
+            )
             .build()
             .await
             .map_err(|err| {
@@ -534,15 +646,14 @@ impl HfCore {
         op: Operation,
         service_operation: &'static str,
     ) -> Result<http::request::Builder> {
-        // Every outbound HF/CAS request is built here, so this is the one
-        // place that can show what's actually being queried -- enable with
-        // `RUST_LOG=opendal_service_hf::core=debug`.
+        let url = HttpUri::new(url);
         debug!(
-            "hf request: service_operation={service_operation} operation={op} method={method} url={url}"
+            "hf request: service_operation={service_operation} operation={op} method={method} url={}",
+            url.redacted_uri()
         );
         let mut req = Request::builder()
             .method(method)
-            .uri(url)
+            .uri(url.original_uri())
             .extension(op)
             .extension(ServiceOperation(service_operation));
         match &self.token {
@@ -562,47 +673,63 @@ impl HfCore {
         Ok(req)
     }
 
-    /// Return the repo handle with the server's canonical repo id, resolving
-    /// and caching it on first use.
+    /// Send `req`, following one same-endpoint `307`/`308` redirect.
     ///
-    /// HF resolves repo ids case-insensitively but replies 307 to any request
-    /// for a non-canonically-cased id (e.g. `user/repo` for `user/Repo`).
-    /// The transport cannot replay bodied requests (commit, paths-info)
-    /// through a redirect. Building every URL from the canonical id avoids
-    /// depending on redirect behavior entirely, removing the inconsistency across
-    /// operations.
-    pub(super) async fn canonical_repo(&self, ctx: &OperationContext) -> Result<HfRepo> {
-        // Buckets are addressed by opaque ids
-        if self.repo.is_bucket() {
-            return Ok(self.repo.clone());
-        }
+    /// HF resolves repo ids case-insensitively but answers any request for
+    /// a non-canonically cased id (`user/repo` for `user/Repo`) with a 307
+    /// to the canonical URL. Transports follow that for `GET`s but hand a
+    /// bodied `POST` (commit, paths-info) back as the bare 307, which would
+    /// otherwise surface as an error while reads silently succeed.
+    /// Re-issuing the request here makes the outcome independent of the
+    /// transport's redirect policy. `send` returns a redirect to any other
+    /// host as-is, so it never sends the bearer token off the configured
+    /// endpoint itself; the caller then reports it via [`parse_error`].
+    pub(super) async fn send(
+        &self,
+        ctx: &OperationContext,
+        req: Request<Buffer>,
+    ) -> Result<Response<HttpBody>> {
+        let retry = req.clone();
 
-        self.canonical_repo
-            .get_or_try_init(|| async {
-                let url = format!(
-                    "{}/api/{}/{}",
-                    self.endpoint,
-                    self.repo.repo_type.as_plural_str(),
-                    self.repo.repo_id,
-                );
-                let req = self
-                    .request(http::Method::GET, &url, Operation::Stat, "RepoInfo")?
-                    .body(Buffer::new())
-                    .map_err(new_request_build_error)?;
-                let (_, info) = self.send_parse::<RepoInfoResponse>(ctx, req).await?;
+        // The response is confined to this block so it is gone before the
+        // retry runs: its body is never read, so the connection cannot be
+        // pooled and is better closed than held across another round trip.
+        let target = {
+            let resp = ctx.http_transport().fetch(req).await?;
+            if !matches!(
+                resp.status(),
+                StatusCode::TEMPORARY_REDIRECT | StatusCode::PERMANENT_REDIRECT
+            ) {
+                return Ok(resp);
+            }
 
-                let mut repo = self.repo.clone();
-                repo.repo_id = info.id;
-                Ok(repo)
-            })
+            // Accept a path-only `Location`, which is what HF sends, or one
+            // already on the endpoint (a bare origin, normalized by
+            // `HfBuilder`). What remains after dropping the endpoint must be
+            // a single-slash path, which also refuses a protocol-relative
+            // `//host/...` naming another host.
+            let Some(location) = parse_location(resp.headers())? else {
+                return Ok(resp);
+            };
+            let path = location
+                .strip_prefix(self.endpoint.as_str())
+                .unwrap_or(location);
+            if !path.starts_with('/') || path.starts_with("//") {
+                return Ok(resp);
+            }
+            format!("{}{path}", self.endpoint)
+        };
+
+        let target = HttpUri::new(target);
+        debug!("hf request redirected: url={}", target.redacted_uri());
+        let (mut parts, body) = retry.into_parts();
+        parts.uri = target
+            .original_uri()
+            .parse()
+            .map_err(new_http_uri_invalid_error)?;
+        ctx.http_transport()
+            .fetch(Request::from_parts(parts, body))
             .await
-            .cloned()
-    }
-
-    /// Build an [`HfUri`] for the given operator-relative path, using the
-    /// canonical repo id.
-    pub(super) async fn canonical_uri(&self, ctx: &OperationContext, path: &str) -> Result<HfUri> {
-        Ok(self.canonical_repo(ctx).await?.uri(&self.root, path))
     }
 
     /// Convert an operator-relative path to a repo-absolute path
@@ -613,43 +740,8 @@ impl HfCore {
             .to_string()
     }
 
-    /// Send a request and return the successful streaming response or a parsed error.
-    ///
-    /// Uses `fetch` so error response bodies are never read into memory —
-    /// `parse_error` reads only response headers.
-    async fn send(
-        &self,
-        ctx: &OperationContext,
-        req: Request<Buffer>,
-    ) -> Result<Response<HttpBody>> {
-        let resp = ctx.http_transport().fetch(req).await?;
-        let (parts, body) = resp.into_parts();
-        if parts.status.is_success() {
-            Ok(Response::from_parts(parts, body))
-        } else {
-            // Drop the streaming body without reading it.
-            Err(parse_error(parts))
-        }
-    }
-
-    /// Send a request, check for success, and deserialize the JSON response.
-    ///
-    /// Returns the response parts (status, headers, etc.) alongside the
-    /// deserialized body so callers can inspect headers when needed.
-    pub(super) async fn send_parse<T: serde::de::DeserializeOwned>(
-        &self,
-        ctx: &OperationContext,
-        req: Request<Buffer>,
-    ) -> Result<(http::response::Parts, T)> {
-        let (parts, mut body) = self.send(ctx, req).await?.into_parts();
-        let buffer = body.to_buffer().await?;
-        let parsed =
-            serde_json::from_reader(buffer.reader()).map_err(new_json_deserialize_error)?;
-        Ok((parts, parsed))
-    }
-
     pub(super) async fn path_info(&self, ctx: &OperationContext, path: &str) -> Result<PathInfo> {
-        let uri = self.canonical_uri(ctx, path).await?;
+        let uri = self.repo.uri(&self.root, path);
         let url = uri.paths_info_url(&self.endpoint);
         let form_body = format!("paths={}&expand=True", percent_encode_path(&uri.path));
 
@@ -658,7 +750,18 @@ impl HfCore {
             .header(header::CONTENT_TYPE, "application/x-www-form-urlencoded")
             .body(Buffer::from(Bytes::from(form_body)))
             .map_err(new_request_build_error)?;
-        let (_, mut files) = self.send_parse::<Vec<PathInfo>>(ctx, req).await?;
+        let resp = self.send(ctx, req).await?;
+        if !resp.status().is_success() {
+            let (parts, _) = resp.into_parts();
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("PathInfo")),
+                parts,
+            ));
+        }
+        let (_, mut body) = resp.into_parts();
+        let buffer = body.to_buffer().await?;
+        let mut files: Vec<PathInfo> =
+            serde_json::from_reader(buffer.reader()).map_err(new_json_deserialize_error)?;
 
         // NOTE: if the file is not found, the server will return 200 with an empty array
         if files.is_empty() {
@@ -666,6 +769,125 @@ impl HfCore {
         }
 
         Ok(files.remove(0))
+    }
+
+    pub(super) async fn read(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        range: BytesRange,
+    ) -> Result<HfReadResponse> {
+        let entry = if self.enable_resolve_cache {
+            self.resolved_files.entry(path)
+        } else {
+            None
+        };
+        let Some(entry) = entry else {
+            let resp = self.resolve(ctx, path, range, self.download_mode).await?;
+            return HfReadResponse::from_response(resp, self.download_mode).await;
+        };
+
+        let mut rejected: Option<Arc<HttpDownload>> = None;
+        loop {
+            let destination = {
+                let mut state = entry.lock().await;
+                match &*state {
+                    ResolvedFile::Xet(info) => return Ok(HfReadResponse::Xet(info.clone())),
+                    ResolvedFile::NotXet | ResolvedFile::Bypass => {
+                        drop(state);
+                        let resp = self.resolve(ctx, path, range, HfDownloadMode::Http).await?;
+                        return Ok(HfReadResponse::Http(resp));
+                    }
+                    ResolvedFile::Http(current)
+                        if current.valid_until > Instant::now()
+                            && !rejected
+                                .as_ref()
+                                .is_some_and(|old| Arc::ptr_eq(old, current)) =>
+                    {
+                        current.clone()
+                    }
+                    _ => {
+                        let mode = if matches!(&*state, ResolvedFile::Http(_)) {
+                            HfDownloadMode::Http
+                        } else {
+                            self.download_mode
+                        };
+                        // Serialize resolution and refresh. XET metadata is
+                        // independent of the range; a one-byte probe bounds the
+                        // body discarded when the file turns out to use HTTP.
+                        *state = ResolvedFile::Empty;
+                        let resolve_range = if mode == HfDownloadMode::Xet {
+                            BytesRange::new(0, Some(1))
+                        } else {
+                            range
+                        };
+                        let resp = self.resolve(ctx, path, resolve_range, mode).await?;
+                        let resp = match HfReadResponse::from_response(resp, mode).await? {
+                            HfReadResponse::Xet(info) => {
+                                *state = ResolvedFile::Xet(info.clone());
+                                return Ok(HfReadResponse::Xet(info));
+                            }
+                            HfReadResponse::Http(resp) => resp,
+                        };
+                        *state = match HttpDownload::from_response(&resp) {
+                            Some(download) => ResolvedFile::Http(Arc::new(download)),
+                            None if self.download_mode == HfDownloadMode::Xet => {
+                                ResolvedFile::NotXet
+                            }
+                            None => {
+                                // This live slot cannot have been evicted or
+                                // replaced while we hold an Arc to it.
+                                self.resolved_files
+                                    .entries
+                                    .lock()
+                                    .expect("resolved file cache lock poisoned")
+                                    .remove(path);
+                                ResolvedFile::Bypass
+                            }
+                        };
+                        if mode == HfDownloadMode::Http {
+                            // The response already contains the requested range.
+                            return Ok(HfReadResponse::Http(resp));
+                        }
+                        // The XET probe returned one byte of HTTP content.
+                        // Reuse its destination to fetch the caller's range.
+                        continue;
+                    }
+                }
+            };
+
+            let url = self
+                .repo
+                .uri(&self.root, path)
+                .resolve_url(&self.endpoint, self.repo.revision());
+            let mut req = self
+                .request(http::Method::GET, &url, Operation::Read, "Download")?
+                .extension(destination.redirect.clone());
+            if !range.is_full() {
+                req = req.header(header::RANGE, range.to_header());
+            }
+            let req = req.body(Buffer::new()).map_err(new_request_build_error)?;
+            let resp = ctx.http_transport().fetch(req).await?;
+            if resp.status().is_success() {
+                return Ok(HfReadResponse::Http(resp));
+            }
+            if rejected.is_none()
+                && matches!(
+                    resp.status(),
+                    StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN
+                )
+            {
+                // A late rejection must not discard another caller's refreshed
+                // destination. The next iteration compares the Arc generation.
+                rejected = Some(destination);
+                continue;
+            }
+            let (parts, _) = resp.into_parts();
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("Download")),
+                parts,
+            ));
+        }
     }
 
     /// Send `GET /resolve` and return the raw streaming response.
@@ -682,7 +904,7 @@ impl HfCore {
         range: BytesRange,
         mode: HfDownloadMode,
     ) -> Result<Response<HttpBody>> {
-        let uri = self.canonical_uri(ctx, path).await?;
+        let uri = self.repo.uri(&self.root, path);
         let url = uri.resolve_url(&self.endpoint, self.repo.revision());
 
         let mut req = self.request(http::Method::GET, &url, Operation::Read, "Resolve")?;
@@ -696,7 +918,7 @@ impl HfCore {
         }
 
         let req = req.body(Buffer::new()).map_err(new_request_build_error)?;
-        let resp = ctx.http_transport().fetch(req).await?;
+        let resp = self.send(ctx, req).await?;
 
         if !resp.status().is_success() {
             let status = resp.status();
@@ -704,7 +926,7 @@ impl HfCore {
             // only response headers, so there is no need to buffer the body
             // (which may be a large HTML error page).
             let (parts, _) = resp.into_parts();
-            let mut err = parse_error(parts);
+            let mut err = parse_error(ErrorContext::new(ServiceOperation("Resolve")), parts);
             if status == http::StatusCode::NOT_FOUND && self.path_info(ctx, path).await.is_ok() {
                 err = err.set_temporary();
             }
@@ -725,10 +947,7 @@ impl HfCore {
         deleted_files: Vec<DeletedFile>,
         deleted_folders: Vec<DeletedFolder>,
     ) -> Result<CommitResponse> {
-        let url = self
-            .canonical_repo(ctx)
-            .await?
-            .git_commit_url(&self.endpoint);
+        let url = self.repo.git_commit_url(&self.endpoint);
 
         let payload = MixedCommitPayload {
             summary: "Commit via OpenDAL".to_string(),
@@ -747,8 +966,17 @@ impl HfCore {
             .body(Buffer::from(json_body))
             .map_err(new_request_build_error)?;
 
-        let (_, resp) = self.send_parse::<CommitResponse>(ctx, req).await?;
-        Ok(resp)
+        let resp = self.send(ctx, req).await?;
+        if !resp.status().is_success() {
+            let (parts, _) = resp.into_parts();
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("CommitGit")),
+                parts,
+            ));
+        }
+        let (_, mut body) = resp.into_parts();
+        let buffer = body.to_buffer().await?;
+        serde_json::from_reader(buffer.reader()).map_err(new_json_deserialize_error)
     }
 
     /// Commit file changes to a bucket repo via the NDJSON batch API.
@@ -782,14 +1010,21 @@ impl HfCore {
             .body(Buffer::from(Bytes::from(body)))
             .map_err(new_request_build_error)?;
 
-        self.send(ctx, req).await?;
+        let resp = self.send(ctx, req).await?;
+        if !resp.status().is_success() {
+            let (parts, _) = resp.into_parts();
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("CommitBucket")),
+                parts,
+            ));
+        }
         Ok(())
     }
 }
 
 #[cfg(test)]
 pub(crate) mod test_utils {
-    use http::{Request, Response, StatusCode};
+    use http::{Request, Response};
     use std::sync::{Arc, Mutex};
 
     use super::super::core::HfRepoType;
@@ -809,10 +1044,8 @@ pub(crate) mod test_utils {
         /// mocked [`XetFileResponse`] body instead of plain bytes, so tests
         /// can exercise the XET classification path without real network.
         xet_file: Arc<Mutex<Option<XetFileResponse>>>,
-        /// `Range` header of the most recent XET-classifying `/resolve/`
-        /// request (one that hit the `xet_file` branch above), so tests can
-        /// tell which racing caller's range a single-flighted classification
-        /// actually sent.
+        /// `Range` header of the most recent XET metadata probe, so tests can
+        /// check it sends a fixed single byte rather than the caller's range.
         classify_range_header: Arc<Mutex<Option<String>>>,
     }
 
@@ -863,9 +1096,6 @@ pub(crate) mod test_utils {
             *self.request_count.lock().unwrap()
         }
 
-        /// `Range` header of the most recent XET-classifying `/resolve/`
-        /// request, or `None` if that range was full (no `Range` header) or
-        /// no such request has happened yet.
         pub(crate) fn get_captured_classify_range_header(&self) -> Option<String> {
             self.classify_range_header.lock().unwrap().clone()
         }
@@ -956,16 +1186,6 @@ pub(crate) mod test_utils {
                     HttpBody::new(futures::stream::iter(vec![Ok(buffer)]), Some(size)),
                     size,
                 )
-            } else if let Some(rest) = req.uri().path().strip_prefix("/api/") {
-                // Repo-info: echo the requested id back as the canonical id.
-                let id = rest.split_once('/').map(|(_, id)| id).unwrap_or(rest);
-                let data = Bytes::from(format!(r#"{{"id":"{id}"}}"#));
-                let size = data.len() as u64;
-                let buffer = Buffer::from(data);
-                (
-                    HttpBody::new(futures::stream::iter(vec![Ok(buffer)]), Some(size)),
-                    size,
-                )
             } else {
                 let data = Bytes::from_static(b"hello");
                 let size = data.len() as u64;
@@ -990,8 +1210,25 @@ pub(crate) mod test_utils {
         revision: &str,
         endpoint: &str,
     ) -> (HfCore, OperationContext, MockHttpTransport) {
-        let mock_client = MockHttpTransport::new();
-        let http_transport = HttpTransporter::new(mock_client.clone());
+        create_test_core_with(
+            MockHttpTransport::new(),
+            repo_type,
+            repo_id,
+            revision,
+            endpoint,
+        )
+    }
+
+    /// Like [`create_test_core`] but with a caller-supplied transport, for
+    /// tests that need to script responses the shared mock doesn't.
+    pub(crate) fn create_test_core_with<T: HttpTransport + Clone>(
+        transport: T,
+        repo_type: HfRepoType,
+        repo_id: &str,
+        revision: &str,
+        endpoint: &str,
+    ) -> (HfCore, OperationContext, T) {
+        let http_transport = HttpTransporter::new(transport.clone());
         let ctx = OperationContext::from_parts(http_transport, Executor::default());
 
         let info = ServiceInfo::new("hf", "", "");
@@ -1011,7 +1248,7 @@ pub(crate) mod test_utils {
             HfDownloadMode::Xet,
         );
 
-        (core, ctx, mock_client)
+        (core, ctx, transport)
     }
 }
 
@@ -1019,8 +1256,10 @@ pub(crate) mod test_utils {
 mod tests {
     use std::sync::{Arc, Mutex};
 
+    use http::Response;
+
     use super::super::core::HfRepoType;
-    use super::test_utils::create_test_core;
+    use super::test_utils::{create_test_core, create_test_core_with};
     use super::*;
 
     #[tokio::test]
@@ -1103,15 +1342,26 @@ mod tests {
         Ok(())
     }
 
-    /// A scripted transport mirroring how HF serves a repo whose configured id
-    /// is not canonically cased: repo-info returns the canonical id, and only
-    /// the canonical commit URL accepts the commit.
-    #[derive(Clone, Default)]
-    struct CanonicalCaseTransport {
-        requests: Arc<Mutex<Vec<(String, String, String)>>>,
+    struct SeenRequest {
+        method: String,
+        uri: String,
+        auth: String,
+        body: String,
     }
 
-    impl HttpTransport for CanonicalCaseTransport {
+    /// A scripted transport mirroring how HF serves a repo whose configured
+    /// id is not canonically cased: it answers that URL with `status` and a
+    /// `Location` of `location`, and only the canonically cased URL accepts
+    /// the commit. Tests set both, so one transport covers
+    /// a followed redirect, a refused one, and a non-307 status.
+    #[derive(Clone)]
+    struct RedirectingTransport {
+        status: StatusCode,
+        location: &'static str,
+        requests: Arc<Mutex<Vec<SeenRequest>>>,
+    }
+
+    impl HttpTransport for RedirectingTransport {
         async fn fetch(&self, req: Request<Buffer>) -> Result<Response<HttpBody>> {
             let uri = req.uri().to_string();
             let auth = req
@@ -1120,91 +1370,200 @@ mod tests {
                 .and_then(|v| v.to_str().ok())
                 .unwrap_or_default()
                 .to_string();
-            self.requests
-                .lock()
-                .unwrap()
-                .push((req.method().to_string(), uri.clone(), auth));
+            let body = String::from_utf8(req.body().to_bytes().to_vec()).unwrap();
+            self.requests.lock().unwrap().push(SeenRequest {
+                method: req.method().to_string(),
+                uri: uri.clone(),
+                auth,
+                body,
+            });
 
-            let body = match uri.as_str() {
-                "https://huggingface.co/api/models/test-user/uppercase-repo" => {
-                    Bytes::from_static(br#"{"id":"test-user/Uppercase-Repo"}"#)
+            let resp = match uri.as_str() {
+                "https://huggingface.co/api/models/test-user/uppercase-repo/commit/main" => {
+                    Response::builder()
+                        .status(self.status)
+                        .header(header::LOCATION, self.location)
+                        .header(header::CONTENT_LENGTH, 0)
+                        .body(HttpBody::new(futures::stream::empty(), Some(0)))
                 }
                 "https://huggingface.co/api/models/test-user/Uppercase-Repo/commit/main" => {
-                    Bytes::from_static(b"{}")
+                    Response::builder()
+                        .status(StatusCode::OK)
+                        .header(header::CONTENT_LENGTH, 2)
+                        .body(HttpBody::new(
+                            futures::stream::iter(vec![Ok(Buffer::from(Bytes::from_static(
+                                b"{}",
+                            )))]),
+                            Some(2),
+                        ))
                 }
                 other => panic!("unexpected request to {other}"),
             };
-            let len = body.len() as u64;
-            Ok(Response::builder()
-                .status(http::StatusCode::OK)
-                .header(header::CONTENT_LENGTH, len)
-                .body(HttpBody::new(
-                    futures::stream::iter(vec![Ok(Buffer::from(body))]),
-                    Some(len),
-                ))
-                .unwrap())
+            Ok(resp.unwrap())
         }
     }
 
-    #[tokio::test]
-    async fn test_commit_uses_canonical_repo_id() -> Result<()> {
-        let transport = CanonicalCaseTransport::default();
-        let ctx = OperationContext::from_parts(
-            HttpTransporter::new(transport.clone()),
-            Executor::default(),
+    fn redirecting_core(
+        status: StatusCode,
+        location: &'static str,
+    ) -> (HfCore, OperationContext, RedirectingTransport) {
+        let (mut core, ctx, transport) = create_test_core_with(
+            RedirectingTransport {
+                status,
+                location,
+                requests: Arc::default(),
+            },
+            HfRepoType::Model,
+            "test-user/uppercase-repo",
+            "main",
+            "https://huggingface.co",
         );
+        core.token = Some("hf_dummy".to_string());
+        (core, ctx, transport)
+    }
 
-        let xet_session = XetSessionBuilder::new()
-            .build()
-            .expect("failed to create xet session");
-        let core = HfCore::new(
-            ServiceInfo::new("hf", "", ""),
-            Capability::default(),
-            HfRepo::new(
-                HfRepoType::Model,
-                "test-user/uppercase-repo".to_string(),
-                Some("main".to_string()),
-            ),
-            "/".to_string(),
-            Some("hf_dummy".to_string()),
-            "https://huggingface.co".to_string(),
-            xet_session,
-            HfDownloadMode::Xet,
-        );
-
-        let lfs_file = |path: &str| LfsFile {
+    fn lfs_file(path: &str) -> LfsFile {
+        LfsFile {
             path: path.to_string(),
             oid: "deadbeef".to_string(),
             algo: "sha256".to_string(),
             size: 2812,
-        };
+        }
+    }
+
+    /// `send` re-issues a bodied `POST` answered with a 307 to the
+    /// canonically cased URL with the same method, headers and body,
+    /// regardless of whether the transport replays redirects itself. HF
+    /// sends the `Location` as an absolute path, as in the report for #8107.
+    #[tokio::test]
+    async fn test_commit_follows_case_redirect() -> Result<()> {
+        let (core, ctx, transport) = redirecting_core(
+            StatusCode::TEMPORARY_REDIRECT,
+            "/api/models/test-user/Uppercase-Repo/commit/main",
+        );
+
         core.commit_git(&ctx, vec![], vec![lfs_file("a.md")], vec![], vec![])
-            .await?;
-        core.commit_git(&ctx, vec![], vec![lfs_file("b.md")], vec![], vec![])
             .await?;
 
         let requests = transport.requests.lock().unwrap();
-        let expected = [
-            (
-                "GET",
-                "https://huggingface.co/api/models/test-user/uppercase-repo",
+        assert_eq!(requests.len(), 2);
+        let (first, redirected) = (&requests[0], &requests[1]);
+        assert_eq!(first.method, "POST");
+        assert_eq!(
+            first.uri,
+            "https://huggingface.co/api/models/test-user/uppercase-repo/commit/main"
+        );
+        assert_eq!(first.auth, "Bearer hf_dummy");
+        assert_eq!(redirected.method, "POST");
+        assert_eq!(
+            redirected.uri,
+            "https://huggingface.co/api/models/test-user/Uppercase-Repo/commit/main"
+        );
+        assert_eq!(redirected.auth, "Bearer hf_dummy");
+        assert_eq!(redirected.body, first.body);
+        assert!(first.body.contains("a.md"));
+
+        Ok(())
+    }
+
+    /// `send` also follows an absolute `Location` on the configured endpoint,
+    /// and a 308 like a 307.
+    #[tokio::test]
+    async fn test_commit_follows_absolute_same_endpoint_redirect() -> Result<()> {
+        let (core, ctx, transport) = redirecting_core(
+            StatusCode::PERMANENT_REDIRECT,
+            "https://huggingface.co/api/models/test-user/Uppercase-Repo/commit/main",
+        );
+
+        core.commit_git(&ctx, vec![], vec![lfs_file("a.md")], vec![], vec![])
+            .await?;
+
+        assert_eq!(transport.requests.lock().unwrap().len(), 2);
+        Ok(())
+    }
+
+    /// `send` must not follow a redirect off the configured endpoint: the
+    /// re-issued request would carry the bearer token to a foreign host.
+    /// The 307 surfaces as an error instead.
+    #[tokio::test]
+    async fn test_commit_does_not_follow_foreign_redirect() -> Result<()> {
+        let (core, ctx, transport) = redirecting_core(
+            StatusCode::TEMPORARY_REDIRECT,
+            "https://evil.example.com/api/models/test-user/Uppercase-Repo/commit/main",
+        );
+
+        let err = core
+            .commit_git(&ctx, vec![], vec![lfs_file("a.md")], vec![], vec![])
+            .await
+            .expect_err("a foreign redirect must not be followed");
+        assert_eq!(err.kind(), ErrorKind::Unexpected);
+        assert!(
+            err.to_string()
+                .contains("redirect to https://evil.example.com/api/models/test-user/Uppercase-Repo/commit/main not followed"),
+            "the refused redirect must be named in the error: {err}"
+        );
+        assert_eq!(transport.requests.lock().unwrap().len(), 1);
+
+        Ok(())
+    }
+
+    /// A protocol-relative `Location` names another host, so it is refused
+    /// rather than treated as a path on ours.
+    #[tokio::test]
+    async fn test_commit_does_not_follow_protocol_relative_redirect() -> Result<()> {
+        let (core, ctx, transport) =
+            redirecting_core(StatusCode::TEMPORARY_REDIRECT, "//evil.example.com/api/x");
+
+        let err = core
+            .commit_git(&ctx, vec![], vec![lfs_file("a.md")], vec![], vec![])
+            .await
+            .expect_err("a protocol-relative redirect must not be followed");
+        assert!(err.to_string().contains("not followed"), "{err}");
+        assert_eq!(transport.requests.lock().unwrap().len(), 1);
+
+        Ok(())
+    }
+
+    /// A `Location` without a leading slash is a relative reference this
+    /// service does not resolve; it is refused rather than guessed at.
+    #[tokio::test]
+    async fn test_commit_does_not_follow_relative_redirect() -> Result<()> {
+        let (core, ctx, transport) = redirecting_core(
+            StatusCode::TEMPORARY_REDIRECT,
+            "api/models/test-user/Uppercase-Repo/commit/main",
+        );
+
+        let err = core
+            .commit_git(&ctx, vec![], vec![lfs_file("a.md")], vec![], vec![])
+            .await
+            .expect_err("a relative redirect must not be followed");
+        assert!(err.to_string().contains("not followed"), "{err}");
+        assert_eq!(transport.requests.lock().unwrap().len(), 1);
+
+        Ok(())
+    }
+
+    /// `send` only replays 307/308. A 302 is passed through untouched: in
+    /// http download mode the transport follows the resolve 302 to the CDN
+    /// itself, and `send` must not re-issue it on the API host.
+    #[tokio::test]
+    async fn test_send_leaves_302_to_the_transport() -> Result<()> {
+        let (core, ctx, transport) = redirecting_core(
+            StatusCode::FOUND,
+            "/api/models/test-user/Uppercase-Repo/commit/main",
+        );
+
+        let err = core
+            .commit_git(&ctx, vec![], vec![lfs_file("a.md")], vec![], vec![])
+            .await
+            .expect_err("an unfollowed 302 must surface as an error");
+        assert!(
+            err.to_string().contains(
+                "redirect to /api/models/test-user/Uppercase-Repo/commit/main not followed"
             ),
-            (
-                "POST",
-                "https://huggingface.co/api/models/test-user/Uppercase-Repo/commit/main",
-            ),
-            // The canonical id is cached: no second repo-info request.
-            (
-                "POST",
-                "https://huggingface.co/api/models/test-user/Uppercase-Repo/commit/main",
-            ),
-        ];
-        assert_eq!(requests.len(), expected.len());
-        for ((method, uri, auth), (exp_method, exp_uri)) in requests.iter().zip(expected) {
-            assert_eq!(method, exp_method);
-            assert_eq!(uri, exp_uri);
-            assert_eq!(auth, "Bearer hf_dummy");
-        }
+            "{err}"
+        );
+        assert_eq!(transport.requests.lock().unwrap().len(), 1);
 
         Ok(())
     }
@@ -1219,22 +1578,15 @@ mod tests {
         );
         mock_client.set_xet_token_expires_at(u64::MAX);
 
-        // 2 requests: one to resolve the canonical repo id, one for the
-        // token itself.
-        let repo = core.canonical_repo(&ctx).await?;
-        let first = core
-            .cached_xet_token(&ctx, &repo, XetTokenScope::Read)
-            .await?;
-        assert_eq!(mock_client.request_count(), 2);
+        let first = core.cached_xet_token(&ctx, XetTokenScope::Read).await?;
+        assert_eq!(mock_client.request_count(), 1);
         assert_eq!(first.access_token, "mock-token");
         assert_eq!(first.cas_url, "https://cas.example.com");
 
         // A second call with the cached token nowhere near expiry must not
-        // hit the network again -- the canonical repo id is cached too.
-        let second = core
-            .cached_xet_token(&ctx, &repo, XetTokenScope::Read)
-            .await?;
-        assert_eq!(mock_client.request_count(), 2);
+        // hit the network again.
+        let second = core.cached_xet_token(&ctx, XetTokenScope::Read).await?;
+        assert_eq!(mock_client.request_count(), 1);
         assert_eq!(second.access_token, first.access_token);
 
         Ok(())
@@ -1251,19 +1603,13 @@ mod tests {
         // Already within the refresh buffer of "now" -- immediately stale.
         mock_client.set_xet_token_expires_at(0);
 
-        // 2 requests: one to resolve the canonical repo id, one for the
-        // token itself.
-        let repo = core.canonical_repo(&ctx).await?;
-        core.cached_xet_token(&ctx, &repo, XetTokenScope::Read)
-            .await?;
-        assert_eq!(mock_client.request_count(), 2);
+        core.cached_xet_token(&ctx, XetTokenScope::Read).await?;
+        assert_eq!(mock_client.request_count(), 1);
 
-        // The canonical repo id is cached, so only the token is re-fetched.
-        core.cached_xet_token(&ctx, &repo, XetTokenScope::Read)
-            .await?;
+        core.cached_xet_token(&ctx, XetTokenScope::Read).await?;
         assert_eq!(
             mock_client.request_count(),
-            3,
+            2,
             "a token that's always stale must be refreshed on every call, not cached"
         );
 
@@ -1284,21 +1630,15 @@ mod tests {
         mock_client.set_xet_token_expires_at(u64::MAX);
         mock_client.fail_next_requests(1);
 
-        // The injected failure hits the canonical repo id lookup, the first
-        // request resolving it makes.
-        match core.canonical_repo(&ctx).await {
+        match core.cached_xet_token(&ctx, XetTokenScope::Read).await {
             Err(err) => assert!(err.to_string().contains("mock injected failure")),
-            Ok(_) => panic!("a failed canonical repo lookup must surface as an error"),
+            Ok(_) => panic!("a failed token fetch must surface as an error"),
         }
         assert_eq!(mock_client.request_count(), 1);
 
-        // Retry: canonical repo id lookup succeeds, then the token itself.
-        let repo = core.canonical_repo(&ctx).await?;
-        let token = core
-            .cached_xet_token(&ctx, &repo, XetTokenScope::Read)
-            .await?;
+        let token = core.cached_xet_token(&ctx, XetTokenScope::Read).await?;
         assert_eq!(token.access_token, "mock-token");
-        assert_eq!(mock_client.request_count(), 3);
+        assert_eq!(mock_client.request_count(), 2);
 
         Ok(())
     }
@@ -1311,32 +1651,24 @@ mod tests {
             "main",
             "https://huggingface.co",
         );
-        // A write-scope token fetch now goes through `request()` tagged as
-        // `Operation::Write`, which requires a token to be configured.
+        // Write-scope token fetches are tagged `Operation::Write`, which
+        // requires a token.
         core.token = Some("hf_dummy".to_string());
         mock_client.set_xet_token_expires_at(u64::MAX);
 
-        // 2 requests: one to resolve the canonical repo id, one for the
-        // read token itself.
-        let repo = core.canonical_repo(&ctx).await?;
-        core.cached_xet_token(&ctx, &repo, XetTokenScope::Read)
-            .await?;
-        assert_eq!(mock_client.request_count(), 2);
+        core.cached_xet_token(&ctx, XetTokenScope::Read).await?;
+        assert_eq!(mock_client.request_count(), 1);
 
         // A write token request must not be satisfied by the read token's
-        // cache slot -- read and write are distinct HF API scopes. The
-        // canonical repo id is already cached, so only the token is fetched.
-        core.cached_xet_token(&ctx, &repo, XetTokenScope::Write)
-            .await?;
-        assert_eq!(mock_client.request_count(), 3);
+        // cache slot -- read and write are distinct HF API scopes.
+        core.cached_xet_token(&ctx, XetTokenScope::Write).await?;
+        assert_eq!(mock_client.request_count(), 2);
         assert!(mock_client.get_captured_url().contains("write"));
 
         // Both are now warm; neither call should hit the network again.
-        core.cached_xet_token(&ctx, &repo, XetTokenScope::Read)
-            .await?;
-        core.cached_xet_token(&ctx, &repo, XetTokenScope::Write)
-            .await?;
-        assert_eq!(mock_client.request_count(), 3);
+        core.cached_xet_token(&ctx, XetTokenScope::Read).await?;
+        core.cached_xet_token(&ctx, XetTokenScope::Write).await?;
+        assert_eq!(mock_client.request_count(), 2);
 
         Ok(())
     }
@@ -1355,15 +1687,13 @@ mod tests {
         );
         mock_client.set_xet_token_expires_at(u64::MAX);
 
-        // 2 requests: one to resolve the canonical repo id, one for the
-        // read token itself.
         core.xet_download_group(&ctx).await?;
-        assert_eq!(mock_client.request_count(), 2);
+        assert_eq!(mock_client.request_count(), 1);
 
-        // A second group build must reuse the cached read token (and
-        // canonical repo id) rather than fetching its own.
+        // A second group build must reuse the cached read token rather than
+        // fetching its own.
         core.xet_download_group(&ctx).await?;
-        assert_eq!(mock_client.request_count(), 2);
+        assert_eq!(mock_client.request_count(), 1);
 
         Ok(())
     }
@@ -1379,23 +1709,20 @@ mod tests {
         core.token = Some("hf_dummy".to_string());
         mock_client.set_xet_token_expires_at(u64::MAX);
 
-        // 2 requests: one to resolve the canonical repo id, one for the
-        // write token itself.
         core.xet_upload_commit(&ctx).await?;
-        assert_eq!(mock_client.request_count(), 2);
+        assert_eq!(mock_client.request_count(), 1);
         assert!(mock_client.get_captured_url().contains("write"));
 
-        // A second commit build must reuse the cached write token (and
-        // canonical repo id) rather than fetching its own.
+        // A second commit build must reuse the cached write token rather
+        // than fetching its own.
         core.xet_upload_commit(&ctx).await?;
-        assert_eq!(mock_client.request_count(), 2);
+        assert_eq!(mock_client.request_count(), 1);
 
         Ok(())
     }
 
-    /// A write-token fetch must be tagged `Operation::Write`, not `Read`, so
-    /// a token-less writer hits `request()`'s local `PermissionDenied`
-    /// fast-path instead of firing a real unauthenticated network call.
+    /// A write-token fetch must be tagged `Operation::Write` so a
+    /// token-less writer is rejected locally instead of hitting the network.
     #[tokio::test]
     async fn test_xet_upload_commit_without_token_fails_locally() -> Result<()> {
         let (core, ctx, mock_client) = create_test_core(
@@ -1410,10 +1737,7 @@ mod tests {
             Err(err) => assert_eq!(err.kind(), ErrorKind::PermissionDenied),
             Ok(_) => panic!("an upload commit without a token must fail locally"),
         }
-        // The canonical repo id lookup doesn't require a token, but the
-        // write-token fetch itself must be rejected before it reaches the
-        // network.
-        assert_eq!(mock_client.request_count(), 1);
+        assert_eq!(mock_client.request_count(), 0);
 
         Ok(())
     }
@@ -1436,31 +1760,25 @@ mod tests {
             .as_secs();
 
         // Exactly at the buffer boundary: `expires_at > now + BUFFER` is
-        // false, so this must be treated as stale. The first call also pays
-        // for the one-time canonical repo id lookup.
+        // false, so this must be treated as stale.
         mock_client.set_xet_token_expires_at(now + XET_TOKEN_REFRESH_BUFFER_SECS);
-        let repo = core.canonical_repo(&ctx).await?;
-        core.cached_xet_token(&ctx, &repo, XetTokenScope::Read)
-            .await?;
-        assert_eq!(mock_client.request_count(), 2);
-        core.cached_xet_token(&ctx, &repo, XetTokenScope::Read)
-            .await?;
+        core.cached_xet_token(&ctx, XetTokenScope::Read).await?;
+        assert_eq!(mock_client.request_count(), 1);
+        core.cached_xet_token(&ctx, XetTokenScope::Read).await?;
         assert_eq!(
             mock_client.request_count(),
-            3,
+            2,
             "a token expiring exactly at the refresh buffer must be refetched, not reused"
         );
 
         // One second past the boundary: now fresh, so cached and reused.
         mock_client.set_xet_token_expires_at(now + XET_TOKEN_REFRESH_BUFFER_SECS + 1);
-        core.cached_xet_token(&ctx, &repo, XetTokenScope::Read)
-            .await?;
-        assert_eq!(mock_client.request_count(), 4);
-        core.cached_xet_token(&ctx, &repo, XetTokenScope::Read)
-            .await?;
+        core.cached_xet_token(&ctx, XetTokenScope::Read).await?;
+        assert_eq!(mock_client.request_count(), 3);
+        core.cached_xet_token(&ctx, XetTokenScope::Read).await?;
         assert_eq!(
             mock_client.request_count(),
-            4,
+            3,
             "a token expiring past the refresh buffer must be cached and reused"
         );
 
@@ -1480,11 +1798,10 @@ mod tests {
         );
         mock_client.set_xet_token_expires_at(u64::MAX);
 
-        let repo = core.canonical_repo(&ctx).await?;
         let (r1, r2, r3) = futures::join!(
-            core.cached_xet_token(&ctx, &repo, XetTokenScope::Read),
-            core.cached_xet_token(&ctx, &repo, XetTokenScope::Read),
-            core.cached_xet_token(&ctx, &repo, XetTokenScope::Read),
+            core.cached_xet_token(&ctx, XetTokenScope::Read),
+            core.cached_xet_token(&ctx, XetTokenScope::Read),
+            core.cached_xet_token(&ctx, XetTokenScope::Read),
         );
         r1?;
         r2?;
@@ -1492,77 +1809,16 @@ mod tests {
 
         assert_eq!(
             mock_client.request_count(),
-            2,
-            "concurrent callers racing on a cold/stale token must share one refresh \
-             (plus the one-time canonical repo id lookup)"
+            1,
+            "concurrent callers racing on a cold/stale token must share one refresh"
         );
 
         Ok(())
     }
-}
 
-mod error {
-    use http::StatusCode;
-
-    use opendal_core::raw::*;
-    use opendal_core::*;
-
-    pub(crate) fn parse_error(parts: http::response::Parts) -> Error {
-        // HF sets x-error-message on every error response with a short human-readable
-        // description. Using the header avoids reading the response body, which can be
-        // a large HTML error page (e.g. 52 KB on 404s from the /resolve/ endpoint).
-        let message = parts
-            .headers
-            .get("x-error-message")
-            .and_then(|v| v.to_str().ok())
-            .unwrap_or("unknown error")
-            .to_string();
-
-        // HF git-style commit APIs reject stale branch snapshots with 412.
-        // Treat this specific conflict as temporary so RetryLayer can replay
-        // the whole write/delete close sequence on a fresh branch head.
-        let branch_updated_conflict = parts.status == StatusCode::PRECONDITION_FAILED
-            && message
-                .to_ascii_lowercase()
-                .contains("branch was updated since you opened this page");
-
-        let (kind, retryable) = match parts.status {
-            StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
-            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-                (ErrorKind::PermissionDenied, false)
-            }
-            StatusCode::PRECONDITION_FAILED => {
-                (ErrorKind::ConditionNotMatch, branch_updated_conflict)
-            }
-            StatusCode::TOO_MANY_REQUESTS => (ErrorKind::RateLimited, true),
-            StatusCode::INTERNAL_SERVER_ERROR
-            | StatusCode::BAD_GATEWAY
-            | StatusCode::SERVICE_UNAVAILABLE
-            | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
-            _ => (ErrorKind::Unexpected, false),
-        };
-
-        let mut err = Error::new(kind, message);
-
-        err = with_error_response_context(err, parts);
-
-        if retryable {
-            err = err.set_temporary();
-        }
-
-        err
-    }
-
-    #[cfg(test)]
-    mod test {
-        use http::Response;
-        use http::StatusCode;
-
-        use super::*;
-
-        #[test]
-        fn test_parse_error_branch_update_conflict_is_temporary() {
-            let (parts, _) = Response::builder()
+    #[test]
+    fn test_parse_error_branch_update_conflict_is_temporary() {
+        let (parts, _) = Response::builder()
             .status(StatusCode::PRECONDITION_FAILED)
             .header(
                 "x-error-message",
@@ -1572,30 +1828,91 @@ mod error {
             .unwrap()
             .into_parts();
 
-            let err = parse_error(parts);
+        let err = parse_error(ErrorContext::new(ServiceOperation("Test")), parts);
 
-            assert_eq!(err.kind(), ErrorKind::ConditionNotMatch);
-            assert!(err.is_temporary());
-        }
+        assert_eq!(err.kind(), ErrorKind::Conflict);
+        assert!(err.is_temporary());
+    }
 
-        #[test]
-        fn test_parse_error_other_precondition_failed_is_not_temporary() {
-            let (parts, _) = Response::builder()
-                .status(StatusCode::PRECONDITION_FAILED)
-                .header("x-error-message", "etag mismatch")
-                .body(())
-                .unwrap()
-                .into_parts();
+    #[test]
+    fn test_parse_error_other_precondition_failed_is_not_temporary() {
+        let (parts, _) = Response::builder()
+            .status(StatusCode::PRECONDITION_FAILED)
+            .header("x-error-message", "etag mismatch")
+            .body(())
+            .unwrap()
+            .into_parts();
 
-            let err = parse_error(parts);
+        let err = parse_error(ErrorContext::new(ServiceOperation("Test")), parts);
 
-            assert_eq!(err.kind(), ErrorKind::ConditionNotMatch);
-            assert!(!err.is_temporary());
-        }
+        assert_eq!(err.kind(), ErrorKind::Unexpected);
+        assert!(!err.is_temporary());
     }
 }
 
-pub(super) use error::*;
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+}
+
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self { service_operation }
+    }
+}
+
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, mut parts: http::response::Parts) -> Error {
+    let location = HttpUri::from_response_location(&mut parts).cloned();
+    // HF sets x-error-message on every error response with a short human-readable
+    // description. Using the header avoids reading the response body, which can be
+    // a large HTML error page (e.g. 52 KB on 404s from the /resolve/ endpoint).
+    let error_message = parts
+        .headers
+        .get("x-error-message")
+        .and_then(|v| v.to_str().ok());
+    let message = match (error_message, location) {
+        (Some(message), _) => message.to_string(),
+        (None, Some(location)) if parts.status.is_redirection() => {
+            let location = location.redacted_uri();
+            format!("redirect to {location} not followed")
+        }
+        _ => "unknown error".to_string(),
+    };
+
+    // HF git-style commit APIs reject stale branch snapshots with 412.
+    // Treat this specific conflict as temporary so RetryLayer can replay
+    // the whole write/delete close sequence on a fresh branch head.
+    let branch_updated_conflict = parts.status == StatusCode::PRECONDITION_FAILED
+        && message
+            .to_ascii_lowercase()
+            .contains("branch was updated since you opened this page");
+
+    let (kind, retryable) = match parts.status {
+        StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, false),
+        StatusCode::PRECONDITION_FAILED if branch_updated_conflict => (ErrorKind::Conflict, true),
+        StatusCode::PRECONDITION_FAILED => (ErrorKind::Unexpected, false),
+        StatusCode::TOO_MANY_REQUESTS => (ErrorKind::RateLimited, true),
+        StatusCode::INTERNAL_SERVER_ERROR
+        | StatusCode::BAD_GATEWAY
+        | StatusCode::SERVICE_UNAVAILABLE
+        | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
+        _ => (ErrorKind::Unexpected, false),
+    };
+
+    let mut err = Error::new(kind, message);
+
+    err = err.with_context("service_operation", ctx.service_operation.0);
+    err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
+
+    err
+}
 
 mod uri {
     use percent_encoding::{NON_ALPHANUMERIC, utf8_percent_encode};
@@ -1617,7 +1934,11 @@ mod uri {
             Self {
                 repo_type,
                 repo_id,
-                revision,
+                // An empty revision is no revision: `hf://datasets/user/repo@`
+                // and `revision=""` via options both reach here, and leaving
+                // `Some("")` in place would build URLs with an empty revision
+                // segment instead of falling back to `main`.
+                revision: revision.filter(|revision| !revision.is_empty()),
             }
         }
 
@@ -1763,11 +2084,7 @@ mod uri {
                 }
             } else if let Some((repo_id, rev)) = path.split_once('@') {
                 let rev = rev.replace("%2F", "/");
-                (
-                    repo_id.to_string(),
-                    if rev.is_empty() { None } else { Some(rev) },
-                    String::new(),
-                )
+                (repo_id.to_string(), Some(rev), String::new())
             } else {
                 (path, None, String::new())
             };
@@ -1856,21 +2173,27 @@ mod uri {
             recursive: bool,
             cursor: Option<&str>,
         ) -> String {
+            // HF answers a trailing slash with a 302 to the slash-less URL, so
+            // the separator lives in the segment rather than the template.
+            let path_segment = if self.path.is_empty() {
+                String::new()
+            } else {
+                format!("/{}", percent_encode_path(&self.path))
+            };
+
             let mut url = if self.repo.is_bucket() {
                 format!(
-                    "{}/api/buckets/{}/tree/{}?expand=True",
-                    endpoint,
-                    self.repo.repo_id,
-                    percent_encode_path(&self.path),
+                    "{}/api/buckets/{}/tree{}?expand=True",
+                    endpoint, self.repo.repo_id, path_segment,
                 )
             } else {
                 format!(
-                    "{}/api/{}/{}/tree/{}/{}?expand=True",
+                    "{}/api/{}/{}/tree/{}{}?expand=True",
                     endpoint,
                     self.repo.repo_type.as_plural_str(),
                     self.repo.repo_id,
                     percent_encode_revision(self.revision()),
-                    percent_encode_path(&self.path),
+                    path_segment,
                 )
             };
 
@@ -2139,6 +2462,76 @@ mod uri {
             let p = resolve("buckets/user/bucket");
             let url = p.repo.bucket_batch_url("https://huggingface.co");
             assert_eq!(url, "https://huggingface.co/api/buckets/user/bucket/batch");
+        }
+
+        #[test]
+        fn test_file_tree_url_root_has_no_trailing_slash() {
+            let p = resolve("datasets/user/repo");
+            assert_eq!(
+                p.file_tree_url("https://huggingface.co", false, None),
+                "https://huggingface.co/api/datasets/user/repo/tree/main?expand=True"
+            );
+        }
+
+        #[test]
+        fn test_file_tree_url_subdir_keeps_path_separator() {
+            let p = resolve("datasets/user/repo/data");
+            assert_eq!(
+                p.file_tree_url("https://huggingface.co", false, None),
+                "https://huggingface.co/api/datasets/user/repo/tree/main/data?expand=True"
+            );
+        }
+
+        #[test]
+        fn test_file_tree_url_encoded_revision_root() {
+            let p = resolve("datasets/user/repo@refs/convert/parquet");
+            assert_eq!(
+                p.file_tree_url("https://huggingface.co", false, None),
+                "https://huggingface.co/api/datasets/user/repo/tree/refs%2Fconvert%2Fparquet?expand=True"
+            );
+        }
+
+        /// Every construction site funnels through `HfRepo::new`, so an empty
+        /// revision from a URI or from `revision=""` in options is unset.
+        #[test]
+        fn test_empty_revision_is_unset() {
+            assert!(resolve("datasets/user/repo@").repo.revision.is_none());
+            assert!(
+                HfRepo::new(
+                    HfRepoType::Dataset,
+                    "user/repo".to_string(),
+                    Some(String::new()),
+                )
+                .revision
+                .is_none()
+            );
+        }
+
+        #[test]
+        fn test_file_tree_url_recursive_and_cursor() {
+            let p = resolve("datasets/user/repo");
+            assert_eq!(
+                p.file_tree_url("https://huggingface.co", true, Some("abc123")),
+                "https://huggingface.co/api/datasets/user/repo/tree/main?expand=True&recursive=True&cursor=abc123"
+            );
+        }
+
+        #[test]
+        fn test_bucket_file_tree_url_root_ends_at_tree() {
+            let p = resolve("buckets/user/bucket");
+            assert_eq!(
+                p.file_tree_url("https://huggingface.co", false, None),
+                "https://huggingface.co/api/buckets/user/bucket/tree?expand=True&recursive=false"
+            );
+        }
+
+        #[test]
+        fn test_bucket_file_tree_url_subdir_keeps_path_separator() {
+            let p = resolve("buckets/user/bucket/data");
+            assert_eq!(
+                p.file_tree_url("https://huggingface.co", false, None),
+                "https://huggingface.co/api/buckets/user/bucket/tree/data?expand=True&recursive=false"
+            );
         }
     }
 }

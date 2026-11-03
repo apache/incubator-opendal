@@ -18,13 +18,12 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
-use asyncband::rwlock::RwLock;
+use asyncband::once::OnceCell;
 use log::debug;
 
 use super::SEAFILE_SCHEME;
 use super::config::SeafileConfig;
 use super::core::SeafileCore;
-use super::core::SeafileSigner;
 use super::core::parse_dir_detail;
 use super::core::parse_file_detail;
 use super::deleter::SeafileDeleter;
@@ -178,7 +177,7 @@ impl Builder for SeafileBuilder {
                 username,
                 password,
                 repo_name: self.config.repo_name.clone(),
-                signer: Arc::new(RwLock::new(SeafileSigner::default())),
+                auth_info: Arc::new(OnceCell::new()),
             }),
         })
     }
@@ -196,6 +195,7 @@ impl Service for SeafileBackend {
     type Lister = oio::PageLister<SeafileLister>;
     type Deleter = oio::OneShotDeleter<SeafileDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -217,7 +217,7 @@ impl Service for SeafileBackend {
 
     async fn stat(&self, ctx: &OperationContext, path: &str, _args: OpStat) -> Result<RpStat> {
         if path == "/" {
-            return Ok(RpStat::new(Metadata::new(EntryMode::DIR)));
+            return Ok(RpStat::new(MetadataBuilder::dir().build()));
         }
 
         let metadata = if path.ends_with('/') {
@@ -281,7 +281,6 @@ impl Service for SeafileBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,

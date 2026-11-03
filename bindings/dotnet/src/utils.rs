@@ -126,3 +126,160 @@ pub fn into_string_ptr(message: impl Into<String>) -> *mut c_char {
             .into_raw(),
     }
 }
+
+/// Discriminant that carries `opendal::EntryMode` across the FFI boundary.
+pub fn entry_mode_code(mode: opendal::EntryMode) -> i32 {
+    match mode {
+        opendal::EntryMode::FILE => 0,
+        opendal::EntryMode::DIR => 1,
+        opendal::EntryMode::Unknown => 2,
+    }
+}
+
+/// Convert an optional string into an owned UTF-8 C string pointer, or null.
+pub fn optional_c_string(value: Option<&str>) -> *mut c_char {
+    value.map(into_string_ptr).unwrap_or(std::ptr::null_mut())
+}
+
+/// Release a C string produced by `into_string_ptr` and null the field.
+///
+/// # Safety
+///
+/// - `field` must be null or produced by `into_string_ptr`.
+/// - Must be called at most once for the same pointer.
+pub unsafe fn release_c_string(field: &mut *mut c_char) {
+    if field.is_null() {
+        return;
+    }
+
+    drop(unsafe { std::ffi::CString::from_raw(*field) });
+    *field = std::ptr::null_mut();
+}
+
+/// Flatten `Option<bool>` into a presence byte and a value byte.
+pub fn optional_bool(value: Option<bool>) -> (u8, u8) {
+    match value {
+        Some(value) => (1, u8::from(value)),
+        None => (0, 0),
+    }
+}
+
+/// Flatten `Option<Timestamp>` into a presence byte, Unix seconds and
+/// nanoseconds.
+pub fn optional_timestamp(value: Option<opendal::raw::Timestamp>) -> (u8, i64, i32) {
+    match value {
+        Some(value) => {
+            let value = value.into_inner();
+            (1, value.as_second(), value.subsec_nanosecond())
+        }
+        None => (0, 0, 0),
+    }
+}
+
+/// Flatten optional string pairs into a presence byte plus parallel key and
+/// value arrays of `len` owned C strings.
+///
+/// The presence byte is `1` when the source reported a value, even an empty
+/// one. The arrays are boxed slices of exactly `len` elements, or null when
+/// there are no pairs, so `release_string_pairs` can rebuild them from the
+/// raw parts alone.
+pub fn string_pairs<'a>(
+    pairs: Option<impl IntoIterator<Item = (&'a str, &'a str)>>,
+) -> (u8, *mut *mut c_char, *mut *mut c_char, usize) {
+    let Some(pairs) = pairs else {
+        return (0, std::ptr::null_mut(), std::ptr::null_mut(), 0);
+    };
+
+    let mut keys = Vec::new();
+    let mut values = Vec::new();
+    for (key, value) in pairs {
+        keys.push(into_string_ptr(key));
+        values.push(into_string_ptr(value));
+    }
+
+    let len = keys.len();
+    if len == 0 {
+        return (1, std::ptr::null_mut(), std::ptr::null_mut(), 0);
+    }
+
+    let keys = Box::into_raw(keys.into_boxed_slice()) as *mut *mut c_char;
+    let values = Box::into_raw(values.into_boxed_slice()) as *mut *mut c_char;
+    (1, keys, values, len)
+}
+
+/// Release both arrays produced by `string_pairs` and their strings, leaving
+/// the arrays null and the length zero.
+///
+/// # Safety
+///
+/// - `keys` and `values` must be null or produced by `string_pairs` together
+///   with the same `len`.
+/// - Must be called at most once for the same arrays.
+pub unsafe fn release_string_pairs(
+    keys: &mut *mut *mut c_char,
+    values: &mut *mut *mut c_char,
+    len: &mut usize,
+) {
+    for array in [keys, values] {
+        if array.is_null() {
+            continue;
+        }
+
+        let items = unsafe { Box::from_raw(std::ptr::slice_from_raw_parts_mut(*array, *len)) };
+        for item in items.iter() {
+            if !item.is_null() {
+                drop(unsafe { std::ffi::CString::from_raw(*item) });
+            }
+        }
+        *array = std::ptr::null_mut();
+    }
+    *len = 0;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn optional_bool_flattens_presence_and_value() {
+        assert_eq!(optional_bool(Some(true)), (1, 1));
+        assert_eq!(optional_bool(Some(false)), (1, 0));
+        assert_eq!(optional_bool(None), (0, 0));
+    }
+
+    #[test]
+    fn optional_timestamp_without_value_is_zeroed() {
+        assert_eq!(optional_timestamp(None), (0, 0, 0));
+    }
+
+    #[test]
+    fn string_pairs_round_trip_and_release() {
+        let (has_value, mut keys, mut values, mut len) =
+            string_pairs(Some([("a", "1"), ("b", "2")]));
+        assert_eq!((has_value, len), (1, 2));
+
+        let read = |array: *mut *mut c_char| -> Vec<&str> {
+            (0..len)
+                .map(|i| cstr_to_str(unsafe { *array.add(i) }).unwrap())
+                .collect()
+        };
+        assert_eq!(read(keys), ["a", "b"]);
+        assert_eq!(read(values), ["1", "2"]);
+
+        unsafe { release_string_pairs(&mut keys, &mut values, &mut len) };
+        assert!(keys.is_null());
+        assert!(values.is_null());
+        assert_eq!(len, 0);
+    }
+
+    #[test]
+    fn string_pairs_distinguish_absent_from_empty() {
+        let (has_value, keys, _, len) = string_pairs(None::<Vec<(&str, &str)>>);
+        assert_eq!((has_value, len), (0, 0));
+        assert!(keys.is_null());
+
+        let (has_value, keys, _, len) = string_pairs(Some(Vec::<(&str, &str)>::new()));
+        assert_eq!((has_value, len), (1, 0));
+        assert!(keys.is_null());
+    }
+}

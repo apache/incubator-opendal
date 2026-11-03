@@ -52,11 +52,11 @@ impl PostgresqlCore {
         // We use:
         // - formatted, quoted identifiers for trusted table and field configuration
         // - bind parameters for values to avoid malformed SQL and SQL injection
-        // to ensure correctness.
-        let value: Option<Vec<u8>> = sqlx::query_scalar(&format!(
+        // to ensure correctness. `AssertSqlSafe` records this audit for sqlx.
+        let value: Option<Vec<u8>> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             r#"SELECT "{}" FROM "{}" WHERE "{}" = $1 LIMIT 1"#,
             self.value_field, self.table, self.key_field
-        ))
+        )))
         .bind(path)
         .fetch_optional(pool)
         .await
@@ -68,10 +68,10 @@ impl PostgresqlCore {
     pub async fn get_length(&self, path: &str) -> Result<Option<usize>> {
         let pool = self.get_client().await?;
 
-        let value: Option<i64> = sqlx::query_scalar(&format!(
+        let value: Option<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             r#"SELECT OCTET_LENGTH("{}")::BIGINT FROM "{}" WHERE "{}" = $1 LIMIT 1"#,
             self.value_field, self.table, self.key_field
-        ))
+        )))
         .bind(path)
         .fetch_optional(pool)
         .await
@@ -93,12 +93,12 @@ impl PostgresqlCore {
         let table = &self.table;
         let key_field = &self.key_field;
         let value_field = &self.value_field;
-        sqlx::query(&format!(
+        sqlx::query(sqlx::AssertSqlSafe(format!(
             r#"INSERT INTO "{table}" ("{key_field}", "{value_field}")
                 VALUES ($1, $2)
                 ON CONFLICT ("{key_field}")
                     DO UPDATE SET "{value_field}" = EXCLUDED."{value_field}""#,
-        ))
+        )))
         .bind(path)
         .bind(value.to_vec())
         .execute(pool)
@@ -111,10 +111,10 @@ impl PostgresqlCore {
     pub async fn delete(&self, path: &str) -> Result<()> {
         let pool = self.get_client().await?;
 
-        sqlx::query(&format!(
+        sqlx::query(sqlx::AssertSqlSafe(format!(
             r#"DELETE FROM "{}" WHERE "{}" = $1"#,
             self.table, self.key_field
-        ))
+        )))
         .bind(path)
         .execute(pool)
         .await

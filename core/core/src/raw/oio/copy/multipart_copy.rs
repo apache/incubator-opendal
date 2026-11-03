@@ -159,7 +159,7 @@ impl<C: MultipartCopy> MultipartCopier<C> {
             completed: false,
             metadata: None,
 
-            tasks: ConcurrentTasks::new(executor, concurrent, 8192, |input| {
+            tasks: ConcurrentTasks::new(executor, concurrent, 0, |input| {
                 Box::pin(async move {
                     let size = input
                         .range
@@ -226,7 +226,7 @@ impl<C: MultipartCopy> MultipartCopier<C> {
         if part_count > max_parts {
             return Err(Error::new(
                 ErrorKind::Unsupported,
-                "multipart copy part count exceeds service limit, please increase `OpCopier::chunk`"
+                "multipart copy part count exceeds service limit, please increase `OpCopy::chunk`",
             )
             .with_context("source_size", source_size)
             .with_context("part_size", self.part_size)
@@ -353,7 +353,28 @@ where
             self.next().await?;
         }
 
-        Ok(self.metadata.clone().unwrap_or_default())
+        let metadata = self
+            .metadata
+            .clone()
+            .unwrap_or_else(|| MetadataBuilder::unknown().build());
+        let Some(source_size) = self.source_size else {
+            return Ok(metadata);
+        };
+        if metadata.is_file() {
+            if metadata.content_length() != source_size {
+                return Err(Error::new(
+                    ErrorKind::Unexpected,
+                    "multipart copy result content length does not match source",
+                )
+                .with_context("expected", source_size)
+                .with_context("actual", metadata.content_length()));
+            }
+            return Ok(metadata);
+        }
+
+        let mut builder = metadata.into_builder();
+        builder.set_file(source_size);
+        Ok(builder.build())
     }
 
     async fn abort(&mut self) -> Result<()> {
@@ -398,12 +419,16 @@ mod tests {
     impl MultipartCopy for Arc<TestCopy> {
         async fn source_metadata(&self) -> Result<Metadata> {
             self.source_metadata_calls.fetch_add(1, Ordering::Relaxed);
-            Ok(Metadata::default().with_content_length(self.source_size))
+            Ok({
+                let mut metadata = MetadataBuilder::unknown();
+                metadata.set_file(self.source_size);
+                metadata.build()
+            })
         }
 
         async fn copy_once(&self) -> Result<Metadata> {
             self.copy_once_calls.fetch_add(1, Ordering::Relaxed);
-            Ok(Metadata::default())
+            Ok(MetadataBuilder::unknown().build())
         }
 
         async fn initiate_copy(&self) -> Result<String> {
@@ -426,7 +451,7 @@ mod tests {
         }
 
         async fn complete_copy(&self, _: &str, _: &[MultipartPart]) -> Result<Metadata> {
-            Ok(Metadata::default())
+            Ok(MetadataBuilder::unknown().build())
         }
 
         async fn abort_copy(&self, _: &str) -> Result<()> {
@@ -439,9 +464,11 @@ mod tests {
         let inner = TestCopy::new(8);
         let mut copier = MultipartCopier::new(Executor::default(), inner.clone(), Some(8), 8, 8, 1);
 
-        assert_eq!(copier.next().await?, None);
+        let metadata = copier.close().await?;
         assert_eq!(inner.source_metadata_calls.load(Ordering::Relaxed), 0);
         assert_eq!(inner.copy_once_calls.load(Ordering::Relaxed), 1);
+        assert!(metadata.is_file());
+        assert_eq!(metadata.content_length(), 8);
         Ok(())
     }
 
@@ -450,9 +477,11 @@ mod tests {
         let inner = TestCopy::new(8);
         let mut copier = MultipartCopier::new(Executor::default(), inner.clone(), None, 8, 8, 1);
 
-        assert_eq!(copier.next().await?, None);
+        let metadata = copier.close().await?;
         assert_eq!(inner.source_metadata_calls.load(Ordering::Relaxed), 1);
         assert_eq!(inner.copy_once_calls.load(Ordering::Relaxed), 1);
+        assert!(metadata.is_file());
+        assert_eq!(metadata.content_length(), 8);
         Ok(())
     }
 

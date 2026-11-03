@@ -196,6 +196,7 @@ impl Service for RouteAccessor {
     type Lister = oio::Lister;
     type Deleter = oio::Deleter;
     type Copier = oio::Copier;
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.inner.info()
@@ -204,6 +205,19 @@ impl Service for RouteAccessor {
     fn capability(&self) -> Capability {
         let mut capability = self.inner.capability();
         capability.write_can_copy_from = false;
+        capability.compose = false;
+        capability.compose_with_content_type = false;
+        capability.compose_with_content_disposition = false;
+        capability.compose_with_content_encoding = false;
+        capability.compose_with_cache_control = false;
+        capability.compose_with_user_metadata = false;
+        capability.compose_with_if_match = false;
+        capability.compose_with_if_none_match = false;
+        capability.compose_with_if_version_match = false;
+        capability.compose_with_if_version_not_match = false;
+        capability.compose_with_if_not_exists = false;
+        capability.compose_with_source_version = false;
+        capability.compose_with_source_if_match = false;
         capability
     }
 
@@ -239,11 +253,10 @@ impl Service for RouteAccessor {
         from: &str,
         to: &str,
         args: OpCopy,
-        opts: OpCopier,
     ) -> Result<oio::Copier> {
         match self.select(from) {
-            RouteSelected::Default(srv) => srv.copy(ctx, from, to, args, opts),
-            RouteSelected::Target(target) => target.srv.copy(&target.ctx, from, to, args, opts),
+            RouteSelected::Default(srv) => srv.copy(ctx, from, to, args),
+            RouteSelected::Target(target) => target.srv.copy(&target.ctx, from, to, args),
         }
     }
 
@@ -481,6 +494,7 @@ mod tests {
         type Lister = ();
         type Deleter = ();
         type Copier = ();
+        type Composer = ();
 
         fn info(&self) -> ServiceInfo {
             self.info.clone()
@@ -510,7 +524,7 @@ mod tests {
 
         async fn stat(&self, _: &OperationContext, path: &str, _: OpStat) -> Result<RpStat> {
             if self.paths.lock().unwrap().contains(path) {
-                Ok(RpStat::new(Metadata::new(EntryMode::FILE)))
+                Ok(RpStat::new(MetadataBuilder::file(0).build()))
             } else {
                 Err(Error::new(ErrorKind::NotFound, "path not found"))
             }
@@ -550,7 +564,6 @@ mod tests {
             from: &str,
             to: &str,
             _: OpCopy,
-            _: OpCopier,
         ) -> Result<Self::Copier> {
             if !self.paths.lock().unwrap().contains(from) {
                 return Err(Error::new(ErrorKind::NotFound, "source not found"));
@@ -594,7 +607,7 @@ mod tests {
 
         async fn close(&mut self) -> Result<Metadata> {
             self.paths.lock().unwrap().insert(self.path.clone());
-            Ok(Metadata::new(EntryMode::FILE))
+            Ok(MetadataBuilder::unknown().build())
         }
 
         async fn abort(&mut self) -> Result<()> {

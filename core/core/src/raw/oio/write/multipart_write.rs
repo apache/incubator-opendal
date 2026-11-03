@@ -186,7 +186,7 @@ impl<W: MultipartWrite> MultipartWriter<W> {
             cache: None,
             next_part_number: 0,
 
-            tasks: ConcurrentTasks::new(executor, concurrent, 8192, |input| {
+            tasks: ConcurrentTasks::new(executor, concurrent, 0, |input| {
                 Box::pin({
                     async move {
                         let fut = async {
@@ -429,7 +429,11 @@ mod tests {
             let mut this = self.lock().await;
             this.length = size;
             this.content = Some(body);
-            Ok(Metadata::default().with_content_length(size))
+            Ok({
+                let mut metadata = MetadataBuilder::unknown();
+                metadata.set_file(size);
+                metadata.build()
+            })
         }
 
         async fn initiate_part(&self) -> Result<String> {
@@ -503,7 +507,11 @@ mod tests {
             assert_eq!(upload_id, test.upload_id);
             assert_eq!(parts.len(), test.part_numbers.len());
 
-            Ok(Metadata::default().with_content_length(test.length))
+            Ok({
+                let mut metadata = MetadataBuilder::unknown();
+                metadata.set_file(test.length);
+                metadata.build()
+            })
         }
 
         async fn abort_part(&self, upload_id: &str) -> Result<()> {

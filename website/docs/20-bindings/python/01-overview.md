@@ -12,7 +12,8 @@ filesystem, and [50+ more services](/services) through one API, with the
 performance of the Rust core underneath.
 
 New to the model behind the API? Read [Concepts](../../03-concepts.mdx) first —
-service, operator, layer, operation are the same four ideas in every language.
+the shared storage semantics and path and operation concepts every binding
+expresses through its own native API.
 
 :::note
 This binding has its own version number, independent of the Rust core. Check
@@ -21,7 +22,9 @@ compatibility against the binding's version, not the core's.
 
 ## Status
 
-Released and stable, published to [PyPI](https://pypi.org/project/opendal/).
+Released and stable, published to [PyPI](https://pypi.org/project/opendal/),
+[Anaconda main](https://anaconda.org/main/opendal), and
+[conda-forge](https://anaconda.org/conda-forge/opendal).
 
 ## Capabilities
 
@@ -34,8 +37,22 @@ Released and stable, published to [PyPI](https://pypi.org/project/opendal/).
 
 ## Installation
 
+Install from PyPI:
+
 ```shell
 pip install opendal
+```
+
+Or install from Anaconda main:
+
+```shell
+conda install opendal
+```
+
+Or install from conda-forge:
+
+```shell
+conda install conda-forge::opendal
 ```
 
 ## Useful Links

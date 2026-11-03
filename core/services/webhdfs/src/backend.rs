@@ -25,8 +25,8 @@ use log::debug;
 
 use super::WEBHDFS_SCHEME;
 use super::config::WebhdfsConfig;
-use super::core::WebhdfsCore;
 use super::core::parse_error;
+use super::core::{ErrorContext, WebhdfsCore};
 use super::deleter::WebhdfsDeleter;
 use super::lister::WebhdfsLister;
 use super::message::BooleanResp;
@@ -229,7 +229,12 @@ impl WebhdfsBackend {
             StatusCode::NOT_FOUND => {
                 self.create_dir(ctx, "/", OpCreateDir::new()).await?;
             }
-            _ => return Err(parse_error(resp)),
+            _ => {
+                return Err(parse_error(
+                    ErrorContext::new(ServiceOperation("GetFileStatus")),
+                    resp,
+                ));
+            }
         }
         Ok(())
     }
@@ -241,6 +246,7 @@ impl Service for WebhdfsBackend {
     type Lister = oio::PageLister<WebhdfsLister>;
     type Deleter = oio::OneShotDeleter<WebhdfsDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -280,7 +286,10 @@ impl Service for WebhdfsBackend {
                     ))
                 }
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Mkdirs")),
+                resp,
+            )),
         }
     }
 
@@ -302,18 +311,23 @@ impl Service for WebhdfsBackend {
                     .file_status;
 
                 let meta = match file_status.ty {
-                    FileStatusType::Directory => Metadata::new(EntryMode::DIR),
-                    FileStatusType::File => Metadata::new(EntryMode::FILE)
-                        .with_content_length(file_status.length)
-                        .with_last_modified(Timestamp::from_millisecond(
+                    FileStatusType::Directory => MetadataBuilder::dir().build(),
+                    FileStatusType::File => {
+                        let mut metadata = MetadataBuilder::file(file_status.length);
+                        metadata.last_modified(Timestamp::from_millisecond(
                             file_status.modification_time,
-                        )?),
+                        )?);
+                        metadata.build()
+                    }
                 };
 
                 Ok(RpStat::new(meta))
             }
 
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetFileStatus")),
+                resp,
+            )),
         }
     }
     fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
@@ -388,7 +402,6 @@ impl Service for WebhdfsBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,

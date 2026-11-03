@@ -16,7 +16,7 @@
 // under the License.
 
 use super::backend::*;
-use super::core::parse_error;
+use super::core::{ErrorContext, parse_error};
 use http::Response;
 use opendal_core::raw::*;
 use opendal_core::*;
@@ -47,16 +47,20 @@ impl oio::StreamRead for AlluxioReader {
     async fn open(&self, range: BytesRange) -> Result<(RpRead, Box<dyn oio::ReadStreamDyn>)> {
         let backend = &self.backend;
         let path = self.path.as_str();
+        let metadata = backend.core.get_status(&self.ctx, path).await?.try_into()?;
         let stream_id = backend.core.open_file(&self.ctx, path).await?;
 
         let resp = backend.core.read(&self.ctx, stream_id, range).await?;
         if !resp.status().is_success() {
             let (part, mut body) = resp.into_parts();
             let buf = body.to_buffer().await?;
-            return Err(parse_error(Response::from_parts(part, buf)));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ReadStream")),
+                Response::from_parts(part, buf),
+            ));
         }
 
-        let rp = RpRead::new(parse_into_metadata(path, resp.headers())?);
+        let rp = RpRead::new(metadata);
         let stream = resp.into_body();
 
         Ok((rp, Box::new(stream) as Box<dyn oio::ReadStreamDyn>))

@@ -38,8 +38,9 @@ namespace OpenDAL.ServiceConfig
         /// </summary>
         public bool? DisableCreateDir { get; init; }
         /// <summary>
-        /// Enable conditional read support. When enabled (the default), OpenDAL forwards the RFC 7232 headers `If-Match`, `If-None-Match`, `If-Modified-Since` and `If-Unmodified-Since` to the server when callers provide them. Some WebDAV-compatible servers (e.g., nginx-dav) don't return ETags in PROPFIND or don't honor these headers on GET. Setting this to `false` drops the four `read_with_if_*` capabilities, so calls like `reader_with(path).if_match(...)` return `ErrorKind::Unsupported` locally instead of being silently ignored by the server. Default: true
+        /// Deprecated: WebDAV conditional read capabilities are enabled by default.
         /// </summary>
+        [System.Obsolete("WebDAV conditional read capabilities are enabled by default. Use CapabilityOverrideLayer to override read_with_if_match, read_with_if_none_match, read_with_if_modified_since and read_with_if_unmodified_since for endpoints without ETag support.")]
         public bool? EnableConditionalRead { get; init; }
         /// <summary>
         /// Deprecated: WebDAV user metadata capability is enabled by default.
@@ -90,10 +91,12 @@ namespace OpenDAL.ServiceConfig
             {
                 map["disable_create_dir"] = Utilities.ToOptionString(DisableCreateDir);
             }
+#pragma warning disable CS0618
             if (EnableConditionalRead is not null)
             {
                 map["enable_conditional_read"] = Utilities.ToOptionString(EnableConditionalRead);
             }
+#pragma warning restore CS0618
 #pragma warning disable CS0618
             if (EnableUserMetadata is not null)
             {

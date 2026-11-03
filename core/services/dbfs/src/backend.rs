@@ -24,8 +24,8 @@ use serde::Deserialize;
 
 use super::DBFS_SCHEME;
 use super::config::DbfsConfig;
-use super::core::DbfsCore;
 use super::core::parse_error;
+use super::core::{DbfsCore, ErrorContext};
 use super::deleter::DbfsDeleter;
 use super::lister::DbfsLister;
 use super::writer::DbfsWriter;
@@ -144,6 +144,7 @@ impl Service for DbfsBackend {
     type Lister = oio::PageLister<DbfsLister>;
     type Deleter = oio::OneShotDeleter<DbfsDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         ServiceInfo::new(DBFS_SCHEME, &self.core.root, "")
@@ -165,14 +166,17 @@ impl Service for DbfsBackend {
 
         match status {
             StatusCode::CREATED | StatusCode::OK => Ok(RpCreateDir::default()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Mkdirs")),
+                resp,
+            )),
         }
     }
 
     async fn stat(&self, ctx: &OperationContext, path: &str, _: OpStat) -> Result<RpStat> {
         // Stat root always returns a DIR.
         if path == "/" {
-            return Ok(RpStat::new(Metadata::new(EntryMode::DIR)));
+            return Ok(RpStat::new(MetadataBuilder::dir().build()));
         }
 
         let resp = self.core.dbfs_get_status(ctx, path).await?;
@@ -181,26 +185,26 @@ impl Service for DbfsBackend {
 
         match status {
             StatusCode::OK => {
-                let mut meta = parse_into_metadata(path, resp.headers())?;
+                let mut meta = MetadataBuilder::unknown();
                 let bs = resp.into_body();
                 let decoded_response: DbfsStatus =
                     serde_json::from_reader(bs.reader()).map_err(new_json_deserialize_error)?;
-                meta.set_last_modified(Timestamp::from_millisecond(
+                meta.last_modified(Timestamp::from_millisecond(
                     decoded_response.modification_time,
                 )?);
                 match decoded_response.is_dir {
-                    true => meta.set_mode(EntryMode::DIR),
-                    false => {
-                        meta.set_mode(EntryMode::FILE);
-                        meta.set_content_length(decoded_response.file_size as u64)
-                    }
+                    true => meta.set_dir(),
+                    false => meta.set_file(decoded_response.file_size as u64),
                 };
-                Ok(RpStat::new(meta))
+                Ok(RpStat::new(meta.build()))
             }
             StatusCode::NOT_FOUND if path.ends_with('/') => {
-                Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+                Ok(RpStat::new(MetadataBuilder::dir().build()))
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetStatus")),
+                resp,
+            )),
         }
     }
 
@@ -260,7 +264,10 @@ impl Service for DbfsBackend {
 
         match status {
             StatusCode::OK => Ok(RpRename::default()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Move")),
+                resp,
+            )),
         }
     }
 
@@ -270,7 +277,6 @@ impl Service for DbfsBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,

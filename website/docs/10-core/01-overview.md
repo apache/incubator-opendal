@@ -12,7 +12,8 @@ most complete and most mature surface of the project: every service, every
 layer, and the full async API live here first.
 
 New to the model behind the API? Read [Concepts](../03-concepts.mdx) first —
-service, operator, layer, operation are the same four ideas in every language.
+the shared storage semantics and path and operation concepts every binding
+expresses through its own native API.
 
 ## Status
 
@@ -47,9 +48,11 @@ opendal = { version = "0.57", features = ["services-s3"] }
 ## Useful Links
 
 - **API reference**: [docs.rs/opendal][docs.rs] (release) · [dev build][dev-docs]
+- **Specifications**: [current portable contracts][Specifications]
+- **Rust core guides**: [concepts, internals, and performance][Rust core guides] (rustdoc)
 - **Services & configuration**: [/services](/services)
-- **Upgrade guide**: [docs.rs][Upgrade Guide]
-- **Changelog**: [docs.rs][Changelog]
+- **Upgrade guide**: [dev documentation][Upgrade Guide]
+- **Changelog**: [dev documentation][Changelog]
 - **Source & examples**: [`core/`][source] · [`core/examples/`][examples]
 
 ## Next steps
@@ -61,7 +64,9 @@ opendal = { version = "0.57", features = ["services-s3"] }
 
 [docs.rs]: https://docs.rs/opendal/
 [dev-docs]: https://opendal.apache.org/docs/rust/opendal/
-[Upgrade Guide]: https://docs.rs/opendal/latest/opendal/docs/upgrade/index.html
-[Changelog]: https://docs.rs/opendal/latest/opendal/docs/changelog/index.html
+[Specifications]: /docs/specifications/
+[Rust core guides]: https://opendal.apache.org/docs/rust/opendal/docs/
+[Upgrade Guide]: https://opendal.apache.org/docs/rust/opendal/docs/upgrade/
+[Changelog]: https://opendal.apache.org/docs/rust/opendal/docs/changelog/
 [source]: https://github.com/apache/opendal/tree/main/core
 [examples]: https://github.com/apache/opendal/tree/main/core/examples

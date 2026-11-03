@@ -19,8 +19,8 @@
 # ---------------------------------------------------------------------------
 # Default GooseFS launcher for OpenDAL CI / local dev.
 #
-# The stock `goosefs.tencentcloudcr.com/goosefs/repo:v2.1.0` entrypoint
-# (`goosefs-start.sh local`) starts *five* JVMs: master, worker,
+# The stock GooseFS image entrypoint (`goosefs-start.sh local`) starts
+# *five* JVMs: master, worker,
 # job_master, job_worker and table_master. On the GitHub Actions
 # ubuntu-latest runner, the three processes OpenDAL does NOT use
 # (job_master + job_worker + table_master) still consume ~1.1 GiB RSS
@@ -49,10 +49,10 @@
 #   2. Create the runtime directories the image expects to exist.
 #   3. Format the journal on first boot (journal dir empty) -- exactly
 #      what `docker-entrypoint.sh format_if_needed` does.
-#   4. Launch `goosefs-start.sh -a master` and
-#      `goosefs-start.sh -a worker NoMount` (the `-a` flag tells the
-#      launcher to return asynchronously; each component is started as
-#      a detached daemon writing to /opt/goosefs/logs/).
+#   4. Launch `goosefs-start.sh -aN master` and
+#      `goosefs-start.sh -aN worker NoMount` (`-a` returns asynchronously;
+#      `-N` skips kill-before-start. Each component is a detached daemon
+#      writing to /opt/goosefs/logs/).
 #   5. `exec tail -F` on the two log files so the container stays alive
 #      and `docker logs` shows the running state. When either JVM dies,
 #      its log tail surfaces in `docker logs` and the compose healthcheck
@@ -166,22 +166,46 @@ format_if_needed() {
   fi
 }
 
+# Some GooseFS images (Alpine + musl) ship a glibc jemalloc and
+# goosefs-config.sh LD_PRELOADs it. That makes musl tools (`ps`,
+# `hostname`, `nohup`) abort with "Error relocating ... symbol not
+# found", so `goosefs-start.sh` dies at the pre-start stop step.
+# Java (glibc) does not need the preload. Probe with a musl binary
+# and only disable the .so when the preload is actually incompatible,
+# so glibc-based images keep jemalloc.
+disable_incompatible_jemalloc() {
+  local jemalloc="${GOOSEFS_HOME}/lib/native/libjemalloc.so"
+  [[ -f "${jemalloc}" ]] || return 0
+  if LD_PRELOAD="${jemalloc}" /bin/true >/dev/null 2>&1; then
+    return 0
+  fi
+  if mv "${jemalloc}" "${jemalloc}.disabled" 2>/dev/null; then
+    echo "[start-default] disabled libjemalloc.so (LD_PRELOAD incompatible with this libc)"
+  else
+    echo "[start-default] WARN: libjemalloc.so is incompatible with this libc but could not be renamed" >&2
+  fi
+  unset LD_PRELOAD || true
+}
+
 main() {
   echo "[start-default] applying runtime config ..."
   apply_runtime_config
   ensure_dirs
+  disable_incompatible_jemalloc
   format_if_needed
 
   # goosefs-start.sh parses flags with getopts *before* the ACTION
-  # positional arg, so `-a master` is the correct order. `-a master`
-  # with no trailing keyword means "start a single local master and
-  # return asynchronously". `worker NoMount` tells the worker not to
-  # try to mount a RamFS (the image doesn't ship with `sudo`); the
-  # worker uses /dev/shm directly instead.
+  # positional arg, so `-aN master` is the correct order. `-a` starts
+  # the daemon and returns; `-N` skips kill-before-start (Alpine
+  # BusyBox `ps` does not support the GNU `ps -Aww` that `killAll`
+  # uses, so the pre-start stop is a no-op or a hard failure).
+  # `worker NoMount` tells the worker not to try to mount a RamFS
+  # (the image doesn't ship with `sudo`); the worker uses /dev/shm
+  # directly instead.
   echo "[start-default] launching master ..."
-  "${GOOSEFS_HOME}/bin/goosefs-start.sh" -a master
+  "${GOOSEFS_HOME}/bin/goosefs-start.sh" -aN master
   echo "[start-default] launching worker ..."
-  "${GOOSEFS_HOME}/bin/goosefs-start.sh" -a worker NoMount
+  "${GOOSEFS_HOME}/bin/goosefs-start.sh" -aN worker NoMount
 
   # Give both JVMs a moment to create their log files so `tail -F`
   # doesn't print a confusing "No such file" warning. `tail -F`

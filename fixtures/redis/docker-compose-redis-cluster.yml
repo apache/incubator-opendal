@@ -71,3 +71,8 @@ services:
       - 'REDIS_CLUSTER_REPLICAS=1'
       - 'REDIS_NODES=redis-node-0 redis-node-1 redis-node-2 redis-node-3 redis-node-4 redis-node-5'
       - 'REDIS_CLUSTER_CREATOR=yes'
+    healthcheck:
+      test: ['CMD-SHELL', "redis-cli cluster info | grep -q 'cluster_state:ok'"]
+      interval: 1s
+      timeout: 3s
+      retries: 30

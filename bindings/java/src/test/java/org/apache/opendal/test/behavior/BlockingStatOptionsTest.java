@@ -87,6 +87,66 @@ public class BlockingStatOptionsTest extends BehaviorTestBase {
     }
 
     @Test
+    void testStatWithIfVersionMatch() {
+        assumeTrue(op().info.capability.statWithIfVersionMatch);
+
+        String path = UUID.randomUUID().toString();
+        op().write(path, generateBytes());
+        String staleVersion = op().stat(path).getVersion();
+        op().write(path, generateBytes());
+        String currentVersion = op().stat(path).getVersion();
+
+        assertThat(staleVersion).isNotNull();
+        assertThat(currentVersion).isNotNull().isNotEqualTo(staleVersion);
+
+        StatOptions currentOptions =
+                StatOptions.builder().ifVersionMatch(currentVersion).build();
+        Metadata result = op().stat(path, currentOptions);
+        assertThat(result.getVersion()).isEqualTo(currentVersion);
+
+        StatOptions staleOptions =
+                StatOptions.builder().ifVersionMatch(staleVersion).build();
+        assertThatThrownBy(() -> op().stat(path, staleOptions))
+                .is(OpenDALExceptionCondition.ofSync(OpenDALException.Code.ConditionNotMatch));
+
+        String missingPath = UUID.randomUUID().toString();
+        assertThatThrownBy(() -> op().stat(missingPath, currentOptions))
+                .is(OpenDALExceptionCondition.ofSync(OpenDALException.Code.NotFound));
+
+        op().delete(path);
+    }
+
+    @Test
+    void testStatWithIfVersionNotMatch() {
+        assumeTrue(op().info.capability.statWithIfVersionNotMatch);
+
+        String path = UUID.randomUUID().toString();
+        op().write(path, generateBytes());
+        String staleVersion = op().stat(path).getVersion();
+        op().write(path, generateBytes());
+        String currentVersion = op().stat(path).getVersion();
+
+        assertThat(staleVersion).isNotNull();
+        assertThat(currentVersion).isNotNull().isNotEqualTo(staleVersion);
+
+        StatOptions staleOptions =
+                StatOptions.builder().ifVersionNotMatch(staleVersion).build();
+        Metadata result = op().stat(path, staleOptions);
+        assertThat(result.getVersion()).isEqualTo(currentVersion);
+
+        StatOptions currentOptions =
+                StatOptions.builder().ifVersionNotMatch(currentVersion).build();
+        assertThatThrownBy(() -> op().stat(path, currentOptions))
+                .is(OpenDALExceptionCondition.ofSync(OpenDALException.Code.ConditionNotMatch));
+
+        String missingPath = UUID.randomUUID().toString();
+        assertThatThrownBy(() -> op().stat(missingPath, currentOptions))
+                .is(OpenDALExceptionCondition.ofSync(OpenDALException.Code.NotFound));
+
+        op().delete(path);
+    }
+
+    @Test
     void testStatWithIfModifiedSince() {
         assumeTrue(op().info.capability.statWithIfModifiedSince);
 

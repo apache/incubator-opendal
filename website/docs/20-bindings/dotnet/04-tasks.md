@@ -61,6 +61,9 @@ using System.Text;
 op.Write("path/to/file", Encoding.UTF8.GetBytes("Hello, World!"));
 ```
 
+`Write` returns the metadata of the new object, so its size or ETag is
+available without a follow-up `Stat`.
+
 When you are producing the payload rather than holding it, the fill callback
 serializes straight into native memory with no intermediate `byte[]` — the
 callback receives a native-backed `IBufferWriter<byte>`:
@@ -125,10 +128,25 @@ buffered before flushing to the backend.
 
 ## Check existence and metadata
 
+`Exists` returns `false` instead of throwing when the path is missing:
+
+```csharp
+if (op.Exists("path/to/file"))
+{
+    Console.WriteLine("found");
+}
+```
+
+`Stat` returns the metadata:
+
 ```csharp
 var meta = op.Stat("path/to/file");
 Console.WriteLine($"{meta.ContentLength} bytes, dir = {meta.IsDir}");
 ```
+
+`UserMetadata` holds the pairs written through `WriteOptions.UserMetadata`
+on services that support it. `IsDeleted` and `IsCurrent` describe entries
+returned by listings that include deleted objects or old versions.
 
 A missing path throws `OpenDALException` with `ErrorCode.NotFound`; see
 [error handling](./05-production.md#error-handling).
@@ -172,6 +190,7 @@ op.Copy("from.txt", "to.txt");
 op.Rename("old.txt", "new.txt");
 ```
 
+`Copy` returns the metadata of the new object.
 Both operate within a single operator and require a service that supports them;
 see [capability checks](./05-production.md#capability-checks).
 

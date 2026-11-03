@@ -58,8 +58,8 @@ public sealed class StatBehaviorTest : BehaviorTestBase
         var path = NewPath("stat-file-async");
         var content = RandomBytes(333);
 
-        await Op.WriteAsync(path, content, CT);
-        var meta = await Op.StatAsync(path, null, CT);
+        await Op.WriteAsync(path, content, cancellationToken: CT);
+        var meta = await Op.StatAsync(path, null, cancellationToken: CT);
 
         Assert.True(meta.IsFile);
         Assert.Equal((ulong)content.Length, meta.ContentLength);
@@ -86,9 +86,43 @@ public sealed class StatBehaviorTest : BehaviorTestBase
             return;
         }
 
-        var ex = await Assert.ThrowsAsync<OpenDALException>(() => Op.StatAsync(NewPath("stat-missing-async"), null, CT));
+        var ex = await Assert.ThrowsAsync<OpenDALException>(() => Op.StatAsync(NewPath("stat-missing-async"), null, cancellationToken: CT));
 
         Assert.True(IsMissingError(ex));
+    }
+
+    [Fact]
+    public void StatBehavior_Exists_ReportsPresence()
+    {
+        if (!Supports(c => c.Stat && c.Write))
+        {
+            return;
+        }
+
+        var path = NewPath("exists");
+
+        Assert.False(Op.Exists(path));
+
+        Op.Write(path, RandomBytes(16));
+
+        Assert.True(Op.Exists(path));
+    }
+
+    [Fact]
+    public async Task StatBehavior_Exists_ReportsPresenceAsync()
+    {
+        if (!Supports(c => c.Stat && c.Write))
+        {
+            return;
+        }
+
+        var path = NewPath("exists-async");
+
+        Assert.False(await Op.ExistsAsync(path, CT));
+
+        await Op.WriteAsync(path, RandomBytes(16), cancellationToken: CT);
+
+        Assert.True(await Op.ExistsAsync(path, CT));
     }
 
     [Fact]

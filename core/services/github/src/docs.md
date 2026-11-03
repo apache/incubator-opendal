@@ -20,6 +20,9 @@ Conditional delete with `if_match` sends the blob SHA from
 `ErrorKind::ConditionNotMatch` and leaves the file in place. Unconditional
 delete still looks up the current SHA first.
 
+For a directory path, `if_match` refers to the directory's `.gitkeep` blob SHA.
+Directory metadata does not expose that SHA.
+
 ## Configuration
 
 Use [`crate::GithubConfig`] for serializable configuration and this builder's

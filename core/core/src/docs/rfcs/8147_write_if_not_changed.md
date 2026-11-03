@@ -61,9 +61,9 @@ Callers may also construct expected metadata from identities obtained through
 another trusted channel:
 
 ```rust,ignore
-let expected = Metadata::default()
-    .with_etag(saved_etag)
-    .with_version(saved_version);
+let mut expected = Metadata::builder(EntryMode::Unknown);
+expected.etag(saved_etag).version(saved_version);
+let expected = expected.build();
 ```
 
 Preserving both fields keeps externally stored metadata portable across
@@ -77,16 +77,21 @@ historical version.
 
 | Condition | Successful when |
 | --- | --- |
-| `if_match(e)` | The current ETag equals `e`. |
-| `if_none_match(e)` | The current ETag does not equal `e`. |
-| `if_version_match(v)` | The current version equals `v`. |
-| `if_version_not_match(v)` | A live target exists and its current version differs from `v`. |
+| `if_match(e)` | A live target exists and its current ETag equals `e`. |
+| `if_none_match(e)` | No live target exists or its current ETag differs from `e`. |
+| `if_version_match(v)` | A live target exists and its current version equals `v`. |
+| `if_version_not_match(v)` | No live target exists or its current version differs from `v`. |
 | `if_not_exists` | No live target exists. |
 | `if_not_changed(meta)` | One supported identity in `meta` still matches the target. |
 
+Only concrete ETag values have portable delete semantics. Wildcard values such
+as `"*"` are outside the portable delete contract. Multiple supplied conditions
+are combined with logical AND.
+
 `if_not_changed` is a derived condition. At the shared write, delete, or copy
-entry point, OpenDAL uses the effective capabilities after all layers and
-lowers it before raw service dispatch:
+entry point, OpenDAL first freezes the public options into raw arguments. It
+then uses the effective capabilities after all layers and selects the primitive
+condition before raw service dispatch:
 
 1. If the operation supports `if_version_match` and `meta.version()` exists,
    use `if_version_match(version)`.
@@ -96,14 +101,16 @@ lowers it before raw service dispatch:
 4. If a primitive is supported but metadata contains no usable identity for
    any supported primitive, return `ConfigInvalid`.
 
-Raw operations and services never receive `if_not_changed`; they only receive
-the selected primitive. Version match takes precedence because a version is
-intended to identify an object revision and avoids ETag ABA where the service
-can enforce it. Adding version-match support may therefore make a call carrying
-both fields stricter, but never weaker. Other metadata fields do not
-participate. OpenDAL does not validate provenance, path, or storage namespace,
-so the caller must associate externally constructed metadata with the correct
-target.
+Raw arguments preserve the complete owned `if_not_changed` metadata together
+with the selected primitive. Services enforce the selected primitive; retaining
+the logical condition lets future shared dispatch logic use another identity
+without changing the public option or losing caller intent during structural
+conversion. Version match takes precedence because a version is intended to
+identify an object revision and avoids ETag ABA where the service can enforce
+it. Adding version-match support may therefore make a call carrying both fields
+stricter, but never weaker. Other metadata fields do not participate today.
+OpenDAL does not validate provenance, path, or storage namespace, so the caller
+must associate externally constructed metadata with the correct target.
 
 OpenDAL preserves explicit target conditions and version selectors while
 lowering `if_not_changed`. If the selected primitive match field already
@@ -119,7 +126,8 @@ Missing-target results are part of the portable contract:
 | --- | --- | --- |
 | `if_match` | `NotFound` | `ConditionNotMatch` |
 | `if_none_match` | `NotFound` | The condition succeeds. Delete is an idempotent no-op. |
-| `if_version_match` or `if_version_not_match` | `ConditionNotMatch` | `ConditionNotMatch` |
+| `if_version_match` | `NotFound` | `ConditionNotMatch` |
+| `if_version_not_match` | `NotFound` | The condition succeeds. Delete is an idempotent no-op. |
 | `if_not_exists` | N/A | The condition succeeds. |
 | `if_not_changed` | N/A | `ConditionNotMatch`, inherited from the selected primitive. |
 
@@ -174,11 +182,12 @@ GCS maps version conditions to JSON API generation parameters:
 | `if_not_changed(meta)` | Lower to `if_version_match(meta.version())`. |
 
 GCS applies these parameters to JSON API get, insert, delete, and destination
-rewrite requests. `ifGenerationNotMatch` fails when no live object exists, and
-OpenDAL maps that failure to `ConditionNotMatch`. Multi-request rewrite keeps
-the destination condition across requests. Because GCS advertises version
-match rather than ETag match for mutations, the shared lowering rule selects
-the object generation for `if_not_changed`.
+rewrite requests. Stat and read preserve missing-object responses as
+`NotFound`. Mutations apply the portable condition predicate to missing targets
+and map native precondition failures to `ConditionNotMatch`. Multi-request
+rewrite keeps the destination condition across requests. Because GCS advertises
+version match rather than ETag match for mutations, the shared lowering rule
+selects the object generation for `if_not_changed`.
 
 GCS must use a write path that can preserve generation conditions, such as
 JSON resumable upload, before advertising a conditional write capability. It
@@ -189,16 +198,19 @@ through `if_not_changed`.
 # Compatibility and migration
 
 The new options and primitive capabilities are additive and default to
-disabled. Existing version selectors, ETag conditions, and `if_not_exists`
-retain their behavior except for conditional delete when its required live
-target is absent. Lowering `if_not_changed` in core produces the same native
-conditions and errors as choosing the identity separately in each service.
+disabled. Version conditions on stat and read follow the existing ETag
+condition contract for missing targets. Existing version selectors, ETag
+conditions, and `if_not_exists` retain their behavior except for conditional
+delete when its required live target is absent. Lowering `if_not_changed` in
+core produces the same native conditions and errors as choosing the identity
+separately in each service.
 
 Conditional delete currently inherits unconditional delete's idempotent 404
-handling on some services. After this RFC, a delete guarded by `if_match`, a
-version condition, or `if_not_changed` returns `ConditionNotMatch` when the
-target disappears before commit. This user-visible correction applies to every
-binding that exposes the condition.
+handling on some services. After this RFC, a delete guarded by `if_match`,
+`if_version_match`, or `if_not_changed` returns `ConditionNotMatch` when the
+target disappears before commit. A delete guarded by `if_none_match` or
+`if_version_not_match` succeeds as a no-op in the same case. This user-visible
+correction applies to every binding that exposes the condition.
 
 GCS currently advertises `write_with_if_not_exists` while one multipart path
 cannot preserve the condition. The implementation must route that case through

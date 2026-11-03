@@ -82,6 +82,7 @@ impl Service for AwaitTreeAccessor {
     type Lister = AwaitTreeWrapper<oio::Lister>;
     type Deleter = AwaitTreeWrapper<oio::Deleter>;
     type Copier = AwaitTreeWrapper<oio::Copier>;
+    type Composer = oio::Composer;
 
     fn info(&self) -> ServiceInfo {
         self.inner.info()
@@ -89,6 +90,10 @@ impl Service for AwaitTreeAccessor {
 
     fn capability(&self) -> Capability {
         self.inner.capability()
+    }
+
+    fn compose(&self, ctx: &OperationContext, to: &str, args: OpCompose) -> Result<Self::Composer> {
+        self.inner.compose(ctx, to, args)
     }
 
     async fn create_dir(
@@ -117,10 +122,9 @@ impl Service for AwaitTreeAccessor {
         from: &str,
         to: &str,
         args: OpCopy,
-        opts: OpCopier,
     ) -> Result<Self::Copier> {
         self.inner
-            .copy(ctx, from, to, args, opts)
+            .copy(ctx, from, to, args)
             .map(AwaitTreeWrapper::new)
     }
 

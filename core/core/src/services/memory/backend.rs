@@ -103,6 +103,7 @@ impl Service for MemoryBackend {
     type Lister = oio::HierarchyLister<MemoryLister>;
     type Deleter = oio::OneShotDeleter<MemoryDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.info.clone()
@@ -128,7 +129,7 @@ impl Service for MemoryBackend {
         let p = build_abs_path(&self.root, path);
 
         if p == build_abs_path(&self.root, "") {
-            Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+            Ok(RpStat::new(MetadataBuilder::dir().build()))
         } else {
             match self.core.get(&p)? {
                 Some(value) => Ok(RpStat::new(value.metadata)),
@@ -169,14 +170,7 @@ impl Service for MemoryBackend {
         Ok(lister)
     }
 
-    fn copy(
-        &self,
-        _: &OperationContext,
-        _: &str,
-        _: &str,
-        _: OpCopy,
-        _: OpCopier,
-    ) -> Result<Self::Copier> {
+    fn copy(&self, _: &OperationContext, _: &str, _: &str, _: OpCopy) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,
             "operation is not supported",
@@ -239,7 +233,8 @@ impl oio::StreamRead for MemoryReader {
         let content = value
             .content
             .slice(range.to_content_range(value.content.len())?);
-        let metadata = Metadata::new(EntryMode::FILE).with_content_length(total_size);
+        let metadata = MetadataBuilder::file(total_size);
+        let metadata = metadata.build();
         Ok((
             RpRead::new(metadata),
             Box::new(content) as Box<dyn oio::ReadStreamDyn>,

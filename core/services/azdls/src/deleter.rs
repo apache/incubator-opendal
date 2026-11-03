@@ -46,10 +46,17 @@ impl oio::OneShotDelete for AzdlsDeleter {
         };
 
         let status = resp.status();
+        let error_ctx = ErrorContext::new(if args.recursive() {
+            ServiceOperation("RecursiveDeletePath")
+        } else {
+            ServiceOperation("DeletePath")
+        })
+        .with_delete_match_condition(args.if_match().is_some());
 
         match status {
-            StatusCode::OK | StatusCode::NOT_FOUND => Ok(()),
-            _ => Err(parse_error(resp)),
+            StatusCode::OK => Ok(()),
+            StatusCode::NOT_FOUND if args.if_match().is_none() => Ok(()),
+            _ => Err(parse_error(error_ctx, resp)),
         }
     }
 }

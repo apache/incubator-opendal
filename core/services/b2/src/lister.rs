@@ -19,10 +19,10 @@ use std::sync::Arc;
 
 use bytes::Buf;
 
-use super::core::B2Core;
 use super::core::ListFileNamesResponse;
 use super::core::parse_error;
 use super::core::parse_file_info;
+use super::core::{B2Core, ErrorContext};
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -80,7 +80,10 @@ impl oio::PageList for B2Lister {
             .await?;
 
         if resp.status() != http::StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListFileNames")),
+                resp,
+            ));
         }
 
         let bs = resp.into_body();

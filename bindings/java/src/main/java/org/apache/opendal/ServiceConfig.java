@@ -187,7 +187,9 @@ public interface ServiceConfig {
          */
         public final String encryptionAlgorithm;
         /**
-         * <p>The encryption key of Azblob service backend.</p>
+         * <p>The Base64-encoded AES-256 customer-provided encryption key.</p>
+         * <p>The key must decode to exactly 32 bytes. Building an operator returns
+         * <code>ConfigInvalid</code> for invalid Base64 or a different decoded length.</p>
          */
         public final String encryptionKey;
         /**
@@ -902,27 +904,39 @@ public interface ServiceConfig {
     @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
     class Etcd implements ServiceConfig {
         /**
-         * <p>certificate authority file path</p>
+         * <p>PEM certificate authority file used to verify the server.
+         * Enables TLS independently of <code>cert_path</code> and <code>key_path</code>.</p>
          * <p>default is None</p>
          */
         public final String caPath;
         /**
-         * <p>cert path</p>
+         * <p>PEM client certificate file used for mutual TLS.
+         * Must be configured together with <code>key_path</code>.</p>
          * <p>default is None</p>
          */
         public final String certPath;
         /**
          * <p>network address of the Etcd services.
-         * If use https, must set TLS options: <code>ca_path</code>, <code>cert_path</code>, <code>key_path</code>.
+         * Use HTTPS endpoints for TLS. Set <code>ca_path</code> to trust a custom certificate authority.
+         * Client authentication additionally requires both <code>cert_path</code> and <code>key_path</code>.
          * e.g. &quot;127.0.0.1:23790,127.0.0.1:23791,127.0.0.1:23792&quot; or &quot;http://127.0.0.1:23790,http://127.0.0.1:23791,http://127.0.0.1:23792&quot; or &quot;https://127.0.0.1:23790,https://127.0.0.1:23791,https://127.0.0.1:23792&quot;</p>
          * <p>default is &quot;http://127.0.0.1:2379&quot;</p>
          */
         public final String endpoints;
         /**
-         * <p>key path</p>
+         * <p>PEM client private key file used for mutual TLS.
+         * Must be configured together with <code>cert_path</code>.</p>
          * <p>default is None</p>
          */
         public final String keyPath;
+        /**
+         * <p>the maximum size in bytes of a gRPC response that the etcd client decodes.</p>
+         * <p>Set this to read values larger than the etcd client's own limit. The etcd
+         * server must also allow responses of that size.</p>
+         * <p>Refer to <a href="https://docs.rs/etcd-client/latest/etcd_client/struct.KvClient.html#method.max_decoding_message_size"><code>etcd_client::KvClient::max_decoding_message_size</code></a></p>
+         * <p>default is None, which keeps the etcd client default of 4 MiB</p>
+         */
+        public final Long maxDecodingMessageSize;
         /**
          * <p>the password for authentication</p>
          * <p>default is None</p>
@@ -958,6 +972,9 @@ public interface ServiceConfig {
             }
             if (keyPath != null) {
                 map.put("key_path", keyPath);
+            }
+            if (maxDecodingMessageSize != null) {
+                map.put("max_decoding_message_size", String.valueOf(maxDecodingMessageSize));
             }
             if (password != null) {
                 map.put("password", password);
@@ -1217,6 +1234,101 @@ public interface ServiceConfig {
     }
 
     /**
+     * Configuration for service gcs-grpc.
+     */
+    @Builder
+    @Data
+    @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
+    class GcsGrpc implements ServiceConfig {
+        /**
+         * <p>Bucket name.</p>
+         */
+        public final @NonNull String bucket;
+        /**
+         * <p>Base64-encoded service account credential.</p>
+         */
+        public final String credential;
+        /**
+         * <p>Path to a service account credential file.</p>
+         */
+        public final String credentialPath;
+        /**
+         * <p>Disable environment and well-known credential loading.</p>
+         */
+        public final Boolean disableConfigLoad;
+        /**
+         * <p>Disable the GCE metadata credential provider.</p>
+         */
+        public final Boolean disableVmMetadata;
+        /**
+         * <p>gRPC endpoint.</p>
+         */
+        public final String endpoint;
+        /**
+         * <p>Root path for all operations.</p>
+         */
+        public final String root;
+        /**
+         * <p>OAuth 2.0 scope.</p>
+         */
+        public final String scope;
+        /**
+         * <p>Service account used by the GCE metadata server.</p>
+         */
+        public final String serviceAccount;
+        /**
+         * <p>Send requests without authentication.</p>
+         */
+        public final Boolean skipSignature;
+        /**
+         * <p>OAuth 2.0 access token.</p>
+         */
+        public final String token;
+
+        @Override
+        public String scheme() {
+            return "gcs-grpc";
+        }
+
+        @Override
+        public Map<String, String> configMap() {
+            final HashMap<String, String> map = new HashMap<>();
+            map.put("bucket", bucket);
+            if (credential != null) {
+                map.put("credential", credential);
+            }
+            if (credentialPath != null) {
+                map.put("credential_path", credentialPath);
+            }
+            if (disableConfigLoad != null) {
+                map.put("disable_config_load", String.valueOf(disableConfigLoad));
+            }
+            if (disableVmMetadata != null) {
+                map.put("disable_vm_metadata", String.valueOf(disableVmMetadata));
+            }
+            if (endpoint != null) {
+                map.put("endpoint", endpoint);
+            }
+            if (root != null) {
+                map.put("root", root);
+            }
+            if (scope != null) {
+                map.put("scope", scope);
+            }
+            if (serviceAccount != null) {
+                map.put("service_account", serviceAccount);
+            }
+            if (skipSignature != null) {
+                map.put("skip_signature", String.valueOf(skipSignature));
+            }
+            if (token != null) {
+                map.put("token", token);
+            }
+            return map;
+        }
+    }
+
+    /**
      * Configuration for service gdrive.
      */
     @Builder
@@ -1235,6 +1347,12 @@ public interface ServiceConfig {
          * <p>Client secret for gdrive.</p>
          */
         public final String clientSecret;
+        /**
+         * <p>Shared drive (formerly Team Drive) id for gdrive.</p>
+         * <p>When set, gdrive resolves <code>root</code> inside this shared drive instead of
+         * the user's My Drive.</p>
+         */
+        public final String driveId;
         /**
          * <p>Refresh token for gdrive.</p>
          */
@@ -1260,6 +1378,9 @@ public interface ServiceConfig {
             }
             if (clientSecret != null) {
                 map.put("client_secret", clientSecret);
+            }
+            if (driveId != null) {
+                map.put("drive_id", driveId);
             }
             if (refreshToken != null) {
                 map.put("refresh_token", refreshToken);
@@ -1406,12 +1527,17 @@ public interface ServiceConfig {
          * <p>Resolution precedence at <code>build()</code> time (highest → lowest), following
          * <a href="https://github.com/Tencent/tencent-goosefs-rust-sdk/blob/main/docs/CLIENT_CONFIGURATION.md">goosefs-sdk <code>docs/CLIENT_CONFIGURATION.md</code></a> §1:</p>
          * <ol>
-         * <li>This field (when set on the builder / OpenDAL config map)</li>
          * <li><code>GOOSEFS_MASTER_ADDR</code> environment variable</li>
          * <li><code>goosefs.master.rpc.addresses</code> / <code>goosefs.master.hostname</code> in
          * <code>goosefs-site.properties</code></li>
+         * <li>This field (from the builder, the OpenDAL config map, or the URI
+         * authority of <code>goosefs://host:port/path</code>)</li>
          * </ol>
-         * <p><code>build()</code> fails with <code>ConfigInvalid</code> only when <strong>none</strong> of the above
+         * <p>A site file that declares masters therefore outranks this field: the
+         * file carries the deployment's whole HA master list, which a single URI
+         * authority cannot express. Set <code>GOOSEFS_MASTER_ADDR</code> to override a
+         * deployed site file for one process.</p>
+         * <p><code>build()</code> fails with <code>ConfigInvalid</code> when <strong>none</strong> of the above
          * supplies a master address.</p>
          */
         public final String masterAddr;
@@ -1423,7 +1549,10 @@ public interface ServiceConfig {
         public final String root;
         /**
          * <p>Default write type for new files.</p>
-         * <p>Supported values: <code>&quot;must_cache&quot;</code>, <code>&quot;cache_through&quot;</code>, <code>&quot;through&quot;</code>, <code>&quot;async_through&quot;</code>.
+         * <p>Supported values: <code>&quot;must_cache&quot;</code>, <code>&quot;try_cache&quot;</code>, <code>&quot;cache_through&quot;</code>,
+         * <code>&quot;through&quot;</code>, <code>&quot;async_through&quot;</code>. Matching is case-insensitive.
+         * <code>build()</code> fails with <code>ConfigInvalid</code> when the value is not one of
+         * these.
          * Default: <code>&quot;must_cache&quot;</code>.</p>
          */
         public final String writeType;
@@ -1574,6 +1703,13 @@ public interface ServiceConfig {
     @RequiredArgsConstructor(access = AccessLevel.PRIVATE)
     class Hf implements ServiceConfig {
         /**
+         * <p>Disable loading config from the environment.</p>
+         * <p>When set, the service ignores <code>HF_ENDPOINT</code>, <code>HF_HUB_DISABLE_XET</code>,
+         * <code>HF_TOKEN</code>, <code>HF_TOKEN_PATH</code>, and the <code>token</code> file under <code>HF_HOME</code>,
+         * <code>$XDG_CACHE_HOME/huggingface</code> or <code>~/.cache/huggingface</code>.</p>
+         */
+        public final Boolean disableConfigLoad;
+        /**
          * <p>Download mode. Either <code>xet</code> (default) or <code>http</code>.</p>
          * <p>When unset, the mode is resolved from the <code>HF_HUB_DISABLE_XET</code>
          * environment variable: a non-empty value forces <code>http</code>, otherwise it
@@ -1581,6 +1717,16 @@ public interface ServiceConfig {
          * <p>See <a href="https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfhubdisablexet">https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfhubdisablexet</a>.</p>
          */
         public final String downloadMode;
+        /**
+         * <p>Enable caching of resolved HTTP download addresses and XET file metadata.</p>
+         * <p>Defaults to <code>false</code>. Set to <code>true</code> to share resolve results across readers
+         * on the same backend. Changed files may remain invisible while cached
+         * results are reused. A reader retains XET metadata from its first read for
+         * its lifetime. Create a new reader to resolve the path again when this
+         * option is disabled.
+         * See [<code>HfBuilder::enable_resolve_cache</code>] for freshness semantics.</p>
+         */
+        public final Boolean enableResolveCache;
         /**
          * <p>Endpoint of the Hugging Face Hub.</p>
          * <p>The default is <code>https://huggingface.co</code>.</p>
@@ -1619,8 +1765,14 @@ public interface ServiceConfig {
         @Override
         public Map<String, String> configMap() {
             final HashMap<String, String> map = new HashMap<>();
+            if (disableConfigLoad != null) {
+                map.put("disable_config_load", String.valueOf(disableConfigLoad));
+            }
             if (downloadMode != null) {
                 map.put("download_mode", downloadMode);
+            }
+            if (enableResolveCache != null) {
+                map.put("enable_resolve_cache", String.valueOf(enableResolveCache));
             }
             if (endpoint != null) {
                 map.put("endpoint", endpoint);
@@ -1897,6 +2049,11 @@ public interface ServiceConfig {
          */
         public final Duration defaultTtl;
         /**
+         * <p>Enable TLS for TCP connections. Defaults to false.</p>
+         * <p>The server certificate must match the endpoint host and a native trust root.</p>
+         */
+        public final Boolean enableTls;
+        /**
          * <p>network address of the memcached service.</p>
          * <p>For example: &quot;tcp://localhost:11211&quot;</p>
          */
@@ -1928,6 +2085,9 @@ public interface ServiceConfig {
             }
             if (defaultTtl != null) {
                 map.put("default_ttl", defaultTtl.toString());
+            }
+            if (enableTls != null) {
+                map.put("enable_tls", String.valueOf(enableTls));
             }
             if (endpoint != null) {
                 map.put("endpoint", endpoint);
@@ -2926,10 +3086,52 @@ public interface ServiceConfig {
          */
         public final String checksumAlgorithm;
         /**
+         * <p>Authorization token sent to the AWS container credential endpoint.</p>
+         * <p>This token takes precedence over the configured token file and the
+         * ambient direct and file token forms.</p>
+         */
+        public final String containerAuthorizationToken;
+        /**
+         * <p>File containing the authorization token sent to the AWS container
+         * credential endpoint.</p>
+         * <p>This file takes precedence over both ambient token forms. The credential
+         * provider trims surrounding whitespace after reading the file.</p>
+         */
+        public final String containerAuthorizationTokenFile;
+        /**
+         * <p>Full URI for AWS container credential metadata.</p>
+         * <p>This endpoint takes precedence over the relative container credential
+         * URI and both ambient container credential URI forms. It does not change
+         * the position or priority of the default ECS credential provider.</p>
+         */
+        public final String containerCredentialsEndpoint;
+        /**
+         * <p>Relative URI for AWS container credential metadata.</p>
+         * <p>An explicit full endpoint takes precedence over this value. This value
+         * takes precedence over the ambient full and relative container credential
+         * URIs. OpenDAL joins it to <code>container_metadata_uri_override</code> when set,
+         * otherwise to <code>http://169.254.170.2</code>.</p>
+         * <p>Setting any container credential field replaces the ECS slot in the
+         * default credential chain. It does not move that slot ahead of earlier
+         * default providers.</p>
+         */
+        public final String containerCredentialsRelativeUri;
+        /**
+         * <p>Base URI used to resolve a relative AWS container credential URI.</p>
+         * <p>This override affects relative URIs only. It does not alter a configured
+         * or ambient full URI. The override alone does not select an endpoint.</p>
+         */
+        public final String containerMetadataUriOverride;
+        /**
          * <p>Default ACL for new objects.
          * Note that some s3 services like minio do not support this option.</p>
          */
         public final String defaultAcl;
+        /**
+         * <p>Fallback signing region when neither <code>region</code>, <code>AWS_REGION</code>, nor
+         * <code>AWS_DEFAULT_REGION</code> supplies one.</p>
+         */
+        public final String defaultRegion;
         /**
          * <p>default storage_class for this backend.</p>
          * <p>Available values:</p>
@@ -2955,13 +3157,12 @@ public interface ServiceConfig {
          */
         public final Long deleteMaxSize;
         /**
-         * <p>Disable config load so that opendal will not load config from
-         * environment.</p>
-         * <p>For examples:</p>
-         * <ul>
-         * <li>envs like <code>AWS_ACCESS_KEY_ID</code></li>
-         * <li>files like <code>~/.aws/config</code></li>
-         * </ul>
+         * <p>Disable automatic endpoint loading and the environment/profile
+         * credential providers.</p>
+         * <p>This skips endpoint environment variables and removes the static
+         * environment and shared-profile credential slots. Region environment
+         * lookup and other credential providers, including AWS container
+         * credentials and EC2 instance metadata, remain enabled.</p>
          */
         public final Boolean disableConfigLoad;
         /**
@@ -3101,6 +3302,12 @@ public interface ServiceConfig {
          */
         public final String serverSideEncryptionAwsKmsKeyId;
         /**
+         * <p>Control S3 Bucket Keys for SSE-KMS writes and copies.</p>
+         * <p>Omit this option to inherit the bucket setting. <code>false</code> disables Bucket
+         * Keys for destination objects, and <code>true</code> enables them.</p>
+         */
+        public final Boolean serverSideEncryptionBucketKeyEnabled;
+        /**
          * <p>server_side_encryption_customer_algorithm for this backend.</p>
          * <p>Available values: <code>AES256</code>.</p>
          */
@@ -3154,8 +3361,26 @@ public interface ServiceConfig {
             if (checksumAlgorithm != null) {
                 map.put("checksum_algorithm", checksumAlgorithm);
             }
+            if (containerAuthorizationToken != null) {
+                map.put("container_authorization_token", containerAuthorizationToken);
+            }
+            if (containerAuthorizationTokenFile != null) {
+                map.put("container_authorization_token_file", containerAuthorizationTokenFile);
+            }
+            if (containerCredentialsEndpoint != null) {
+                map.put("container_credentials_endpoint", containerCredentialsEndpoint);
+            }
+            if (containerCredentialsRelativeUri != null) {
+                map.put("container_credentials_relative_uri", containerCredentialsRelativeUri);
+            }
+            if (containerMetadataUriOverride != null) {
+                map.put("container_metadata_uri_override", containerMetadataUriOverride);
+            }
             if (defaultAcl != null) {
                 map.put("default_acl", defaultAcl);
+            }
+            if (defaultRegion != null) {
+                map.put("default_region", defaultRegion);
             }
             if (defaultStorageClass != null) {
                 map.put("default_storage_class", defaultStorageClass);
@@ -3219,6 +3444,11 @@ public interface ServiceConfig {
             }
             if (serverSideEncryptionAwsKmsKeyId != null) {
                 map.put("server_side_encryption_aws_kms_key_id", serverSideEncryptionAwsKmsKeyId);
+            }
+            if (serverSideEncryptionBucketKeyEnabled != null) {
+                map.put(
+                        "server_side_encryption_bucket_key_enabled",
+                        String.valueOf(serverSideEncryptionBucketKeyEnabled));
             }
             if (serverSideEncryptionCustomerAlgorithm != null) {
                 map.put("server_side_encryption_customer_algorithm", serverSideEncryptionCustomerAlgorithm);
@@ -3885,16 +4115,9 @@ public interface ServiceConfig {
          */
         public final Boolean disableCreateDir;
         /**
-         * <p>Enable conditional read support.</p>
-         * <p>When enabled (the default), OpenDAL forwards the RFC 7232 headers
-         * <code>If-Match</code>, <code>If-None-Match</code>, <code>If-Modified-Since</code> and
-         * <code>If-Unmodified-Since</code> to the server when callers provide them.</p>
-         * <p>Some WebDAV-compatible servers (e.g., nginx-dav) don't return ETags
-         * in PROPFIND or don't honor these headers on GET. Setting this to
-         * <code>false</code> drops the four <code>read_with_if_*</code> capabilities, so calls like
-         * <code>reader_with(path).if_match(...)</code> return <code>ErrorKind::Unsupported</code>
-         * locally instead of being silently ignored by the server.</p>
-         * <p>Default: true</p>
+         * <p>Deprecated: WebDAV conditional read capabilities are enabled by default.</p>
+         *
+         * @deprecated WebDAV conditional read capabilities are enabled by default. Use CapabilityOverrideLayer to override read_with_if_match, read_with_if_none_match, read_with_if_modified_since and read_with_if_unmodified_since for endpoints without ETag support.
          */
         public final Boolean enableConditionalRead;
         /**

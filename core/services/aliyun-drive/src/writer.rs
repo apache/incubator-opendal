@@ -104,7 +104,7 @@ impl oio::Write for AliyunDriveLazyWriter {
     async fn close(&mut self) -> Result<Metadata> {
         match &mut self.inner {
             Some(w) => w.close().await,
-            None => Ok(Metadata::default()),
+            None => Ok(MetadataBuilder::unknown().build()),
         }
     }
 
@@ -183,11 +183,11 @@ impl oio::Write for AliyunDriveWriter {
     async fn close(&mut self) -> Result<Metadata> {
         let (Some(upload_id), Some(file_id)) = (self.upload_id.as_ref(), self.file_id.as_ref())
         else {
-            return Ok(Metadata::default());
+            return Ok(MetadataBuilder::unknown().build());
         };
 
         self.core.complete(&self.ctx, file_id, upload_id).await?;
-        Ok(Metadata::default())
+        Ok(MetadataBuilder::unknown().build())
     }
 
     async fn abort(&mut self) -> Result<()> {

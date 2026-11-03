@@ -1,5 +1,5 @@
-github.com/apache/opendal-go-services/fs v0.1.14 h1:/kALgGDRzfXdecLXG7q+DJz8iG0hEEosw+COKGctKAY=
-github.com/apache/opendal-go-services/fs v0.1.14/go.mod h1:7EnuyeXRuQh+L47rZ7y2OrhYJLlUYvgvFPItM98XJ5s=
+github.com/apache/opendal-go-services/fs v0.1.16 h1:ABG6lfT52p8D/qrOkCC4T/2FvBj6qRp2tMXR/7qZFNY=
+github.com/apache/opendal-go-services/fs v0.1.16/go.mod h1:7EnuyeXRuQh+L47rZ7y2OrhYJLlUYvgvFPItM98XJ5s=
 github.com/apache/opendal/bindings/go v0.1.16 h1:W80lrbhmXrcCwvEcrydYhjMFUTyOPue9wgfrD4lhBKE=
 github.com/apache/opendal/bindings/go v0.1.16/go.mod h1:qwqj3zMxKnwvMsu368eoowMK+tG4NgSqToIeMHWT4qk=
 github.com/aws/aws-sdk-go v1.55.8 h1:JRmEUbU52aJQZ2AjX4q4Wu7t4uZjOu71uyNmaWlUkJQ=

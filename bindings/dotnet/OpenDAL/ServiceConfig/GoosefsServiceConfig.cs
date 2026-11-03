@@ -45,7 +45,7 @@ namespace OpenDAL.ServiceConfig
         /// </summary>
         public long? ChunkSize { get; init; }
         /// <summary>
-        /// Master address(es) in `host:port` format. For single master: `"10.0.0.1:9200"` For HA (comma-separated): `"10.0.0.1:9200,10.0.0.2:9200,10.0.0.3:9200"` When multiple addresses are provided, the client uses `PollingMasterInquireClient` to discover the Primary Master automatically. Resolution precedence at `build()` time (highest → lowest), following [goosefs-sdk `docs/CLIENT_CONFIGURATION.md`](https://github.com/Tencent/tencent-goosefs-rust-sdk/blob/main/docs/CLIENT_CONFIGURATION.md) §1: 1. This field (when set on the builder / OpenDAL config map) 2. `GOOSEFS_MASTER_ADDR` environment variable 3. `goosefs.master.rpc.addresses` / `goosefs.master.hostname` in `goosefs-site.properties` `build()` fails with `ConfigInvalid` only when **none** of the above supplies a master address.
+        /// Master address(es) in `host:port` format. For single master: `"10.0.0.1:9200"` For HA (comma-separated): `"10.0.0.1:9200,10.0.0.2:9200,10.0.0.3:9200"` When multiple addresses are provided, the client uses `PollingMasterInquireClient` to discover the Primary Master automatically. Resolution precedence at `build()` time (highest → lowest), following [goosefs-sdk `docs/CLIENT_CONFIGURATION.md`](https://github.com/Tencent/tencent-goosefs-rust-sdk/blob/main/docs/CLIENT_CONFIGURATION.md) §1: 1. `GOOSEFS_MASTER_ADDR` environment variable 2. `goosefs.master.rpc.addresses` / `goosefs.master.hostname` in `goosefs-site.properties` 3. This field (from the builder, the OpenDAL config map, or the URI authority of `goosefs://host:port/path`) A site file that declares masters therefore outranks this field: the file carries the deployment's whole HA master list, which a single URI authority cannot express. Set `GOOSEFS_MASTER_ADDR` to override a deployed site file for one process. `build()` fails with `ConfigInvalid` when **none** of the above supplies a master address.
         /// </summary>
         public string? MasterAddr { get; init; }
         /// <summary>
@@ -53,7 +53,7 @@ namespace OpenDAL.ServiceConfig
         /// </summary>
         public string? Root { get; init; }
         /// <summary>
-        /// Default write type for new files. Supported values: `"must_cache"`, `"cache_through"`, `"through"`, `"async_through"`. Default: `"must_cache"`.
+        /// Default write type for new files. Supported values: `"must_cache"`, `"try_cache"`, `"cache_through"`, `"through"`, `"async_through"`. Matching is case-insensitive. `build()` fails with `ConfigInvalid` when the value is not one of these. Default: `"must_cache"`.
         /// </summary>
         public string? WriteType { get; init; }
 

@@ -15,80 +15,64 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! The internal implementation details of [`Layer`].
+//! Implementing a layer.
 //!
-//! OpenDAL has one layer composition surface:
+//! A [`Layer`] intercepts an operator's composed service, operation context,
+//! or both. Use a layer for behavior that applies across services, such as
+//! retry, timeout, tracing, metrics, or runtime resource replacement.
 //!
-//! - [`Layer`] receives an already erased [`ServiceDyn`] stack and can wrap the
-//!   service or its [`OperationContext`].
-//! - Layer wrappers still implement typed [`Service`], so their own reader,
-//!   writer, lister, deleter, and copier bodies stay concrete.
-//! - The composition boundary is [`Servicer`]. Boxing operation
-//!   bodies remains centralized in the blanket [`ServiceDyn`] implementation
-//!   for typed [`Service`] values.
+//! # Two composition hooks
 //!
-//! [`Layer`] itself is the runtime hook surface. Every hook returns `inner` by
-//! default, so a layer only implements the plane it needs:
+//! [`Layer`] exposes two hooks:
 //!
-//! ```ignore
-//! pub trait Layer: Send + Sync + Debug + Unpin + 'static {
-//!     fn apply_service(&self, srv: Servicer) -> Servicer;
-//!     fn apply_context(&self, srv: Servicer, inner: OperationContext) -> OperationContext;
-//! }
+//! ```text
+//! fn apply_service(&self, service: Servicer) -> Servicer;
+//! fn apply_context(
+//!     &self,
+//!     service: Servicer,
+//!     context: OperationContext,
+//! ) -> OperationContext;
 //! ```
 //!
-//! [`Operator`] replays the same ordered layer list over the base service and
-//! base [`OperationContext`]. It first composes the operation service stack.
-//! Then context hooks receive the final [`Servicer`] and compose runtime
-//! resources such as HTTP transport and executor. The composed context is passed
-//! to service operations.
+//! `apply_service` wraps storage operations. `apply_context` wraps or replaces
+//! runtime resources such as the HTTP transport and executor. Each hook
+//! returns its input unchanged by default, so a layer implements only the
+//! plane it owns.
 //!
-//! An operation layer normally has two parts:
+//! The operator first applies every service hook in insertion order. It then
+//! applies every context hook in the same order, passing the final service
+//! stack to each context hook. Adding a layer or replacing the base context
+//! replays the complete layer list, producing a service stack and context from
+//! the same ordering.
 //!
-//! - `XxxLayer` implements [`Layer`] and returns a typed service wrapper from
-//!   `apply_service`.
-//! - `XxxService` stores the inner [`Servicer`] and implements [`Service`].
+//! # Operation layers
 //!
-//! ```ignore
-//! pub struct XxxLayer;
+//! An operation layer normally contains:
 //!
-//! impl Layer for XxxLayer {
-//!     fn apply_service(&self, inner: Servicer) -> Servicer {
-//!         Arc::new(XxxService { inner })
-//!     }
-//! }
-//! ```
+//! - An `XxxLayer` that implements [`Layer::apply_service`].
+//! - An `XxxService` that stores the inner [`Servicer`] and implements
+//!   [`Service`].
 //!
-//! Most operation layers only override the operations they need and forward the
-//! rest to `inner`. This works because [`Servicer`] implements [`Service`] by
-//! forwarding calls to [`ServiceDyn`], while the wrapper keeps concrete
-//! operation body types until it is returned as a [`Servicer`].
+//! The wrapper overrides only the operations it owns and forwards the rest to
+//! the inner service. It must also return capabilities that describe the
+//! behavior of the wrapped stack. The wrapper keeps its own operation body
+//! types concrete until OpenDAL erases it back into a [`Servicer`].
 //!
-//! Resource-only layers can implement only `apply_context`. If they do not need
-//! the final service stack, they should name that parameter `_srv`.
+//! # Resource layers
 //!
-//! ```ignore
-//! pub struct TransportLayer {
-//!     transport: HttpTransporter,
-//! }
+//! A resource-only layer implements [`Layer::apply_context`]. It should
+//! preserve the previous resource when lower layers must remain effective. A
+//! layer that wraps an HTTP transport or executor must decide explicitly
+//! whether requests continue through the previous value or replace it
+//! entirely.
 //!
-//! impl Layer for TransportLayer {
-//!     fn apply_context(&self, _srv: Servicer, inner: OperationContext) -> OperationContext {
-//!         inner.with_http_transport(self.transport.clone())
-//!     }
-//! }
-//! ```
-//!
-//! Layers that need consistent policy across planes can implement both hooks,
-//! for example operation and I/O timeout handling. Resource wrappers that
-//! replace HTTP transport or executor must forward to the previous value when
-//! they want lower layers to remain effective.
+//! Layers that coordinate policy across operation and I/O phases can implement
+//! both hooks. Shared mutable state requires interior mutability and must
+//! remain `Send` and `Sync`, because cloned operators can run operations
+//! concurrently.
 //!
 //! [`Layer`]: crate::raw::Layer
+//! [`Layer::apply_service`]: crate::raw::Layer::apply_service
+//! [`Layer::apply_context`]: crate::raw::Layer::apply_context
 //! [`Service`]: crate::raw::Service
-//! [`ServiceDyn`]: crate::raw::ServiceDyn
 //! [`Servicer`]: crate::raw::Servicer
-//! [`HttpTransporter`]: crate::HttpTransporter
-//! [`Executor`]: crate::Executor
-//! [`OperationContext`]: crate::raw::OperationContext
-//! [`Operator`]: crate::Operator

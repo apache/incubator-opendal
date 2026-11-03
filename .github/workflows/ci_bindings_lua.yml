@@ -43,7 +43,8 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    # Ubuntu 26.04's lua-busted installs Lua 5.1, which opendal-lua doesn't support.
+    runs-on: ubuntu-24.04
 
     steps:
       - uses: actions/checkout@v7

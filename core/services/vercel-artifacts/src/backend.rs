@@ -19,8 +19,8 @@ use std::sync::Arc;
 
 use http::StatusCode;
 
-use super::core::VercelArtifactsCore;
 use super::core::parse_error;
+use super::core::{ErrorContext, VercelArtifactsCore};
 use super::reader::*;
 use super::writer::VercelArtifactsWriter;
 use opendal_core::raw::*;
@@ -151,6 +151,7 @@ impl Service for VercelArtifactsBackend {
     type Lister = ();
     type Deleter = ();
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -183,7 +184,10 @@ impl Service for VercelArtifactsBackend {
                 Ok(RpStat::new(meta))
             }
 
-            _ => Err(parse_error(response)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("HeadArtifact")),
+                response,
+            )),
         }
     }
     fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
@@ -232,7 +236,6 @@ impl Service for VercelArtifactsBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,

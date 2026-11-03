@@ -1,6 +1,6 @@
 {
   "name": "@opendal/lib-linux-x64-musl",
-  "version": "0.49.7",
+  "version": "0.49.13",
   "cpu": [
     "x64"
   ],

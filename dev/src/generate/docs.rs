@@ -203,7 +203,7 @@ pub fn generate(workspace_dir: PathBuf, services: Services) -> Result<()> {
         let mut examples = Vec::new();
         for (binding, support) in BINDINGS.iter().zip(support.iter()) {
             let enabled = match support {
-                None => true,
+                None => binding.id != "go" || scheme != "smb",
                 Some(set) => set.contains(&scheme),
             };
             if !enabled {

@@ -33,6 +33,7 @@ class Scheme:
     Fs: Final[Scheme]
     Ftp: Final[Scheme]
     Gcs: Final[Scheme]
+    GcsGrpc: Final[Scheme]
     Gdrive: Final[Scheme]
     Ghac: Final[Scheme]
     Gridfs: Final[Scheme]

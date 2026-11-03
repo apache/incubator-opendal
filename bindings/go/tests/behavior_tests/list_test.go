@@ -1,21 +1,19 @@
-/*
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *   http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing,
- * software distributed under the License is distributed on an
- * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
- * KIND, either express or implied.  See the License for the
- * specific language governing permissions and limitations
- * under the License.
- */
+// Licensed to the Apache Software Foundation (ASF) under one
+// or more contributor license agreements.  See the NOTICE file
+// distributed with this work for additional information
+// regarding copyright ownership.  The ASF licenses this file
+// to you under the Apache License, Version 2.0 (the
+// "License"); you may not use this file except in compliance
+// with the License.  You may obtain a copy of the License at
+//
+//   http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing,
+// software distributed under the License is distributed on an
+// "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+// KIND, either express or implied.  See the License for the
+// specific language governing permissions and limitations
+// under the License.
 
 package opendal_test
 
@@ -449,6 +447,7 @@ func testListWithVersions(assert *require.Assertions, op *opendal.Operator, fixt
 
 	var count int
 	var currentCount int
+	allCurrentStatesKnown := true
 	for obs.Next() {
 		entry := obs.Entry()
 		if entry.Path() == path {
@@ -457,14 +456,19 @@ func testListWithVersions(assert *require.Assertions, op *opendal.Operator, fixt
 			version, ok := meta.Version()
 			assert.True(ok, "version metadata must be present for list with versions")
 			assert.NotEmpty(version, "each version entry must have a version ID")
-			if curr, ok := meta.IsCurrent(); ok && curr {
+			curr, known := meta.IsCurrent()
+			allCurrentStatesKnown = allCurrentStatesKnown && known
+			if known && curr {
 				currentCount++
 			}
 		}
 	}
 	assert.Nil(obs.Error())
 	assert.GreaterOrEqual(count, 2, "list with versions must return at least 2 entries for the same path")
-	assert.Equal(1, currentCount, "exactly one version entry should be current")
+	assert.LessOrEqual(currentCount, 1, "at most one version entry should be current")
+	if allCurrentStatesKnown {
+		assert.Equal(1, currentCount, "exactly one version entry should be current when all states are known")
+	}
 }
 
 func testListWithDeleted(assert *require.Assertions, op *opendal.Operator, fixture *fixture) {

@@ -54,7 +54,7 @@ impl Package {
     pub(super) fn release_dependency_version(&self, crate_name: &str) -> Option<&Version> {
         self.dependencies
             .iter()
-            .find(|dependency| dependency.crate_name() == Some(crate_name))
+            .find(|dependency| dependency.crate_names().contains(&crate_name))
             .map(|dependency| &dependency.version)
     }
 
@@ -87,26 +87,27 @@ fn make_package(path: &str, version: &str, dependencies: Vec<Package>) -> Packag
 
 /// List all packages that are ready for release.
 pub fn all_packages() -> Vec<Package> {
-    let core = make_package("core", "0.58.2", vec![]);
+    let core = make_package("core", "0.59.5", vec![]);
 
     // Integrations
-    let dav_server = make_package("integrations/dav-server", "0.7.5", vec![core.clone()]);
-    let object_store = make_package("integrations/object_store", "0.59.0", vec![core.clone()])
+    let dav_server = make_package("integrations/dav-server", "0.7.11", vec![core.clone()])
+        .with_public_compat_dependencies(&["opendal-core"]);
+    let object_store = make_package("integrations/object_store", "0.60.5", vec![core.clone()])
         .with_public_compat_dependencies(&["opendal", "object_store"]);
-    let parquet = make_package("integrations/parquet", "0.9.1", vec![core.clone()])
+    let parquet = make_package("integrations/parquet", "0.10.5", vec![core.clone()])
         .with_public_compat_dependencies(&["opendal", "parquet"]);
-    let unftp_sbe = make_package("integrations/unftp-sbe", "0.4.5", vec![core.clone()]);
+    let unftp_sbe = make_package("integrations/unftp-sbe", "0.4.11", vec![core.clone()]);
 
     // Binaries moved to separate repositories; no longer released from this repo
 
     // Bindings
-    let c = make_package("bindings/c", "0.47.2", vec![core.clone()]);
-    let cpp = make_package("bindings/cpp", "0.45.29", vec![core.clone()]);
-    let java = make_package("bindings/java", "0.50.2", vec![core.clone()]);
-    let nodejs = make_package("bindings/nodejs", "0.49.7", vec![core.clone()]);
-    let python = make_package("bindings/python", "0.47.6", vec![core.clone()]);
-    let ruby = make_package("bindings/ruby", "0.1.10", vec![core.clone()]);
-    let dotnet = make_package("bindings/dotnet", "0.1.2", vec![core.clone()]);
+    let c = make_package("bindings/c", "0.47.8", vec![core.clone()]);
+    let cpp = make_package("bindings/cpp", "0.45.35", vec![core.clone()]);
+    let java = make_package("bindings/java", "0.50.8", vec![core.clone()]);
+    let nodejs = make_package("bindings/nodejs", "0.49.13", vec![core.clone()]);
+    let python = make_package("bindings/python", "0.47.12", vec![core.clone()]);
+    let ruby = make_package("bindings/ruby", "0.1.16", vec![core.clone()]);
+    let dotnet = make_package("bindings/dotnet", "0.3.1", vec![core.clone()]);
 
     vec![
         core,
@@ -122,6 +123,83 @@ pub fn all_packages() -> Vec<Package> {
         ruby,
         dotnet,
     ]
+}
+
+pub(super) fn inventory_versions(
+    inventory: &str,
+) -> anyhow::Result<std::collections::BTreeMap<String, Version>> {
+    let matcher = regex::Regex::new(r#"make_package\("([^"]+)", "([^"]+)""#)?;
+    matcher
+        .captures_iter(inventory)
+        .map(|c| Ok((c[1].to_string(), Version::parse(&c[2])?)))
+        .collect()
+}
+
+/// Prepare inventory and dependency versions together before compatibility validation.
+pub(super) fn prepare_versions(
+    packages: &mut [Package],
+    baseline: &str,
+    patch: bool,
+    breaking: &[String],
+) -> anyhow::Result<()> {
+    let baseline = inventory_versions(baseline)?;
+    for name in breaking {
+        anyhow::ensure!(
+            packages.iter().any(|p| p.name() == name),
+            "unknown breaking package: {name}"
+        );
+    }
+    let mut targets = std::collections::BTreeMap::new();
+    for package in packages.iter() {
+        let target = match baseline.get(package.name()) {
+            Some(previous) => {
+                anyhow::ensure!(
+                    previous.pre.is_empty() && previous.build.is_empty(),
+                    "baseline package must be a final version"
+                );
+                let mut next = previous.clone();
+                if breaking.iter().any(|name| name == package.name()) {
+                    next = super::bump::next_incompatible_version(previous);
+                } else if patch {
+                    next.patch = next
+                        .patch
+                        .checked_add(1)
+                        .ok_or_else(|| anyhow::anyhow!("patch version overflow"))?;
+                }
+                std::cmp::max(next, package.version.clone())
+            }
+            None => package.version.clone(),
+        };
+        targets.insert(package.name.clone(), target);
+    }
+    apply_versions(packages, &targets);
+    Ok(())
+}
+
+pub(super) fn apply_versions(
+    packages: &mut [Package],
+    targets: &std::collections::BTreeMap<String, Version>,
+) {
+    for package in packages {
+        if let Some(version) = targets.get(package.name()) {
+            package.version = version.clone();
+        }
+        apply_versions(&mut package.dependencies, targets);
+    }
+}
+
+pub(super) fn render_inventory(packages: &[Package]) -> anyhow::Result<String> {
+    let matcher = regex::Regex::new(r#"make_package\("([^"]+)", "([^"]+)""#)?;
+    let targets = packages
+        .iter()
+        .map(|p| (p.name(), p.version()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let inventory = std::fs::read_to_string(workspace_dir().join("dev/src/release/package.rs"))?;
+    Ok(matcher
+        .replace_all(&inventory, |c: &regex::Captures<'_>| {
+            format!("make_package(\"{}\", \"{}\"", &c[1], targets[&c[1]])
+        })
+        .into_owned())
 }
 
 pub fn update_package_version(package: &Package) -> bool {
@@ -226,22 +304,12 @@ fn update_dependency_version(
     manifest_dir: &Path,
     dependency: &Package,
 ) -> bool {
-    let Some(crate_name) = dependency.crate_name() else {
-        return false;
-    };
-
-    update_dependency_version_in_table(
-        manifest.as_table_mut(),
-        manifest_dir,
-        crate_name,
-        dependency,
-    )
+    update_dependency_version_in_table(manifest.as_table_mut(), manifest_dir, dependency)
 }
 
 fn update_dependency_version_in_table(
     table: &mut dyn TableLike,
     manifest_dir: &Path,
-    crate_name: &str,
     dependency: &Package,
 ) -> bool {
     let mut updated = false;
@@ -251,12 +319,8 @@ fn update_dependency_version_in_table(
             continue;
         };
 
-        updated |= update_dependency_version_in_dependencies(
-            dependencies,
-            manifest_dir,
-            crate_name,
-            dependency,
-        );
+        updated |=
+            update_dependency_version_in_dependencies(dependencies, manifest_dir, dependency);
     }
 
     let Some(targets) = table.get_mut("target").and_then(Item::as_table_like_mut) else {
@@ -267,7 +331,7 @@ fn update_dependency_version_in_table(
         let Some(target) = target.as_table_like_mut() else {
             continue;
         };
-        updated |= update_dependency_version_in_table(target, manifest_dir, crate_name, dependency);
+        updated |= update_dependency_version_in_table(target, manifest_dir, dependency);
     }
 
     updated
@@ -276,43 +340,42 @@ fn update_dependency_version_in_table(
 fn update_dependency_version_in_dependencies(
     dependencies: &mut dyn TableLike,
     manifest_dir: &Path,
-    crate_name: &str,
     dependency: &Package,
 ) -> bool {
-    let Some(entry) = dependencies.get_mut(crate_name) else {
-        return false;
-    };
-    let Some(entry) = entry.as_table_like_mut() else {
-        return false;
-    };
-    let Some(path) = entry.get("path").and_then(Item::as_str) else {
-        return false;
-    };
-    if !path_points_to(manifest_dir, path, &dependency.path) {
-        return false;
+    let mut updated = false;
+
+    for (crate_name, entry) in dependencies.iter_mut() {
+        let Some(entry) = entry.as_table_like_mut() else {
+            continue;
+        };
+        let Some(path) = entry.get("path").and_then(Item::as_str) else {
+            continue;
+        };
+        if !path_points_into(manifest_dir, path, &dependency.path) {
+            continue;
+        }
+        let Some(value) = entry.get_mut("version") else {
+            continue;
+        };
+
+        let old_version = match value.as_str().map(Version::parse) {
+            Some(Ok(version)) => version,
+            _ => continue,
+        };
+
+        if old_version == dependency.version {
+            continue;
+        }
+
+        *value = toml_edit::value(dependency.version.to_string());
+        println!(
+            "updating dependency version for crate: {} from {} to {}",
+            crate_name, old_version, dependency.version
+        );
+        updated = true;
     }
-    let Some(value) = entry.get_mut("version") else {
-        return false;
-    };
 
-    let old_version = match value.as_str() {
-        Some(version) => match Version::parse(version) {
-            Ok(version) => version,
-            Err(_) => return false,
-        },
-        None => panic!("missing dependency version for crate: {crate_name}"),
-    };
-
-    if old_version == dependency.version {
-        return false;
-    }
-
-    *value = toml_edit::value(dependency.version.to_string());
-    println!(
-        "updating dependency version for crate: {} from {} to {}",
-        crate_name, old_version, dependency.version
-    );
-    true
+    updated
 }
 
 fn is_core_workspace_root(path: &Path) -> bool {
@@ -457,12 +520,8 @@ fn sync_workspace_internal_dependency_versions_in_dependencies(
     updated
 }
 
-fn path_points_to(manifest_dir: &Path, raw_path: &str, expected: &Path) -> bool {
-    normalize_path(&manifest_dir.join(raw_path)) == normalize_path(expected)
-}
-
 fn path_points_into(manifest_dir: &Path, raw_path: &str, workspace_root: &Path) -> bool {
-    normalize_path(&manifest_dir.join(raw_path)).starts_with(workspace_root)
+    normalize_path(&manifest_dir.join(raw_path)).starts_with(normalize_path(workspace_root))
 }
 
 fn normalize_path(path: &Path) -> PathBuf {
@@ -486,10 +545,10 @@ fn lexical_normalize(path: &Path) -> PathBuf {
 }
 
 impl Package {
-    fn crate_name(&self) -> Option<&'static str> {
+    fn crate_names(&self) -> &'static [&'static str] {
         match self.name.as_str() {
-            "core" => Some("opendal"),
-            _ => None,
+            "core" => &["opendal", "opendal-core"],
+            _ => &[],
         }
     }
 }
@@ -518,7 +577,16 @@ fn update_maven_version(path: &Path, version: &Version) -> bool {
 }
 
 fn update_nodejs_version(path: &Path, version: &Version) -> bool {
-    let mut updated = false;
+    let manifest: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path.join("package.json")).unwrap()).unwrap();
+    let previous = manifest["version"].as_str().unwrap();
+    let loader = path.join("generated.js");
+    let source = std::fs::read_to_string(&loader).unwrap();
+    let updated_source = source.replace(previous, &version.to_string());
+    let mut updated = source != updated_source;
+    if updated {
+        std::fs::write(loader, updated_source).unwrap();
+    }
 
     for entry in ignore::Walk::new(path) {
         let entry = entry.unwrap();
@@ -583,6 +651,113 @@ fn update_dotnet_version(path: &Path, version: &Version) -> bool {
 mod tests {
     use super::*;
 
+    #[test]
+    fn patch_versions_preserve_reviewed_versions_and_update_dependencies() {
+        let mut packages = all_packages();
+        let old = packages[0].version.clone();
+        packages[1].version.major += 1;
+        let reviewed = packages[1].version.clone();
+        let baseline = include_str!("package.rs");
+        prepare_versions(&mut packages, baseline, true, &[]).unwrap();
+        let inventory = render_inventory(&packages).unwrap();
+        assert_eq!(packages[0].version.patch, old.patch + 1);
+        assert_eq!(packages[1].version, reviewed);
+        assert_eq!(packages[1].dependencies[0].version, packages[0].version);
+        assert!(inventory.contains(&format!("\"core\", \"{}\"", packages[0].version)));
+        // Retrying from the same published baseline must not consume another patch.
+        prepare_versions(&mut packages, baseline, true, &[]).unwrap();
+        assert_eq!(packages[0].version.patch, old.patch + 1);
+        let mut new_packages = all_packages();
+        prepare_versions(&mut new_packages, "", true, &[]).unwrap();
+        assert_eq!(new_packages[0].version, old);
+    }
+
+    #[test]
+    fn breaking_versions_are_scoped_idempotent_and_preserve_higher_targets() {
+        let mut packages = all_packages();
+        let baseline = include_str!("package.rs");
+        let breaking = vec![
+            "core".to_string(),
+            "bindings/java".to_string(),
+            "core".to_string(),
+        ];
+        let old = inventory_versions(baseline).unwrap();
+        let reviewed = Version::new(packages[1].version.major + 1, 0, 0);
+        packages[1].version = reviewed.clone();
+        for _ in 0..2 {
+            prepare_versions(&mut packages, baseline, true, &breaking).unwrap();
+            assert_eq!(
+                packages[1].release_dependency_version("opendal-core"),
+                Some(packages[0].version())
+            );
+            for package in &packages {
+                let previous = &old[package.name()];
+                let expected = if breaking.iter().any(|name| name == package.name()) {
+                    if previous.major == 0 {
+                        Version::new(0, previous.minor + 1, 0)
+                    } else {
+                        Version::new(previous.major + 1, 0, 0)
+                    }
+                } else if package.name() == "integrations/dav-server" {
+                    reviewed.clone()
+                } else {
+                    Version::new(previous.major, previous.minor, previous.patch + 1)
+                };
+                assert_eq!(package.version, expected, "{}", package.name());
+                for dependency in &package.dependencies {
+                    assert_eq!(dependency.version, packages[0].version);
+                }
+            }
+        }
+        assert!(
+            prepare_versions(&mut packages, baseline, true, &["bindings/go".to_string()]).is_err()
+        );
+    }
+
+    #[test]
+    fn stable_breaking_release_increments_major() {
+        let mut packages = all_packages();
+        let baseline = include_str!("package.rs").replace(
+            &format!("\"core\", \"{}\"", packages[0].version),
+            "\"core\", \"1.2.3\"",
+        );
+        packages[0].version = Version::new(1, 2, 3);
+        prepare_versions(&mut packages, &baseline, true, &["core".to_string()]).unwrap();
+        assert_eq!(packages[0].version, Version::new(2, 0, 0));
+    }
+
+    #[test]
+    fn sync_versions_preserve_main_and_use_released_dependency_versions() {
+        let mut packages = all_packages();
+        let released = packages[0].version.clone();
+        packages[0].version = Version::new(0, 0, 0);
+        packages[1].version.major += 1;
+        let main_version = packages[1].version.clone();
+        prepare_versions(&mut packages, include_str!("package.rs"), false, &[]).unwrap();
+        assert_eq!(packages[0].version, released);
+        assert_eq!(packages[1].version, main_version);
+        assert_eq!(packages[1].dependencies[0].version, released);
+        prepare_versions(&mut packages, include_str!("package.rs"), false, &[]).unwrap();
+        assert_eq!(packages[0].version, released);
+        let mut new_packages = all_packages();
+        prepare_versions(&mut new_packages, "", false, &[]).unwrap();
+        assert_eq!(new_packages[0].version, released);
+    }
+
+    #[test]
+    fn node_loaders_follow_package_version() {
+        let root = temp_test_dir("node-loaders");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("package.json"), r#"{"version":"1.2.3"}"#).unwrap();
+        std::fs::write(root.join("generated.js"), "expectedVersion = '1.2.3'").unwrap();
+        assert!(update_nodejs_version(&root, &Version::new(1, 2, 4)));
+        assert_eq!(
+            std::fs::read_to_string(root.join("generated.js")).unwrap(),
+            "expectedVersion = '1.2.4'"
+        );
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
     fn temp_test_dir(name: &str) -> PathBuf {
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -632,9 +807,11 @@ mod tests {
     #[test]
     fn integrations_track_public_compatibility_dependencies() {
         let core = release_package("core");
+        let dav = release_package("integrations/dav-server");
         let object_store = release_package("integrations/object_store");
         let parquet = release_package("integrations/parquet");
 
+        assert_eq!(dav.public_compat_dependencies(), ["opendal-core"]);
         assert_eq!(
             object_store.public_compat_dependencies(),
             ["opendal", "object_store"]
@@ -706,6 +883,7 @@ version = "0.8.0"
 
 [dependencies]
 opendal = { version = "0.55.0", path = "../../core" }
+opendal-core = { version = "0.55.0", path = "../../core/core" }
 serde = "1"
 
 [dev-dependencies]
@@ -730,6 +908,11 @@ opendal = { version = "0.55.0", path = "../core" }
             dependencies: vec![],
             public_compat_dependencies: &[],
         };
+        assert!(path_points_into(
+            dir.as_path(),
+            "../../core",
+            &dependency.path
+        ));
 
         let updated = update_cargo_version(
             dir.as_path(),
@@ -743,6 +926,10 @@ opendal = { version = "0.55.0", path = "../core" }
 
         assert_eq!(
             manifest["dependencies"]["opendal"]["version"].as_str(),
+            Some("0.56.0")
+        );
+        assert_eq!(
+            manifest["dependencies"]["opendal-core"]["version"].as_str(),
             Some("0.56.0")
         );
         assert_eq!(

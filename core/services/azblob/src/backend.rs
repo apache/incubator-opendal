@@ -22,11 +22,13 @@ use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use http::StatusCode;
 use log::debug;
+use reqsign_azure_storage::Credential;
 use reqsign_azure_storage::DefaultCredentialProvider;
 use reqsign_azure_storage::RequestSigner;
 use reqsign_azure_storage::StaticCredentialProvider;
 use reqsign_core::Context;
 use reqsign_core::OsEnv;
+use reqsign_core::ProvideCredentialChain;
 use reqsign_core::Signer;
 use reqsign_file_read_tokio::TokioFileRead;
 use sha2::Digest;
@@ -73,6 +75,7 @@ impl From<AzureConnectionConfig> for AzblobConfig {
 #[derive(Default)]
 pub struct AzblobBuilder {
     pub(super) config: AzblobConfig,
+    pub(super) credential_providers: Option<ProvideCredentialChain<Credential>>,
 }
 
 impl Debug for AzblobBuilder {
@@ -147,7 +150,9 @@ impl AzblobBuilder {
     ///
     /// # Args
     ///
-    /// `v`: Base64-encoded key that matches algorithm specified in `encryption_algorithm`.
+    /// `v`: Base64-encoded AES-256 key that decodes to exactly 32 bytes.
+    /// Building an operator returns [`ErrorKind::ConfigInvalid`] if the key
+    /// is not valid Base64 or has a different decoded length.
     ///
     /// # Note
     ///
@@ -209,7 +214,9 @@ impl AzblobBuilder {
     ///
     /// # Args
     ///
-    /// `key`: Base64-encoded SHA256 digest of the key specified in encryption_key.
+    /// `key`: Raw AES-256 key containing exactly 32 bytes.
+    /// Building an operator returns [`ErrorKind::ConfigInvalid`] if the key
+    /// has a different length.
     ///
     /// # Note
     ///
@@ -237,6 +244,16 @@ impl AzblobBuilder {
             self.config.sas_token = Some(sas_token.to_string());
         }
 
+        self
+    }
+
+    /// Replace the credential providers with a custom chain.
+    ///
+    /// Build the chain from [`opendal_core::reqsign_core`] and
+    /// [`crate::reqsign_azure_storage`] so that its types match the ones this
+    /// service is built with.
+    pub fn credential_provider_chain(mut self, chain: ProvideCredentialChain<Credential>) -> Self {
+        self.credential_providers = Some(chain);
         self
     }
 
@@ -334,13 +351,32 @@ impl Builder for AzblobBuilder {
             }
         }
 
-        let encryption_key =
-            match &self.config.encryption_key {
-                None => None,
-                Some(v) => Some(build_header_value(v).map_err(|err| {
+        let encryption_key = match &self.config.encryption_key {
+            None => None,
+            Some(v) => {
+                let key = BASE64_STANDARD.decode(v).map_err(|_| {
+                    Error::new(
+                        ErrorKind::ConfigInvalid,
+                        "encryption_key must be valid Base64",
+                    )
+                    .with_operation("Builder::build")
+                    .with_context("service", AZBLOB_SCHEME)
+                    .with_context("key", "encryption_key")
+                })?;
+                if key.len() != 32 {
+                    return Err(Error::new(
+                        ErrorKind::ConfigInvalid,
+                        "encryption_key must decode to exactly 32 bytes",
+                    )
+                    .with_operation("Builder::build")
+                    .with_context("service", AZBLOB_SCHEME)
+                    .with_context("key", "encryption_key"));
+                }
+                Some(build_header_value(v).map_err(|err| {
                     err.with_context("key", "server_side_encryption_customer_key")
-                })?),
-            };
+                })?)
+            }
+        };
 
         let encryption_key_sha256 = match &self.config.encryption_key_sha256 {
             None => None,
@@ -367,24 +403,29 @@ impl Builder for AzblobBuilder {
 
         let ctx = Context::new().with_file_read(TokioFileRead).with_env(OsEnv);
 
-        let mut credential = DefaultCredentialProvider::new();
+        let mut credential_providers =
+            ProvideCredentialChain::new().push(DefaultCredentialProvider::new());
 
         if let (Some(account_name), Some(account_key)) =
             (account_name.as_deref(), self.config.account_key.as_deref())
         {
-            credential = credential.push_front(StaticCredentialProvider::new_shared_key(
-                account_name,
-                account_key,
-            ));
+            credential_providers = credential_providers.push_front(
+                StaticCredentialProvider::new_shared_key(account_name, account_key),
+            );
         }
 
         if let Some(sas_token) = self.config.sas_token.as_deref() {
-            credential = credential.push_front(StaticCredentialProvider::new_sas_token(sas_token));
+            credential_providers =
+                credential_providers.push_front(StaticCredentialProvider::new_sas_token(sas_token));
+        }
+
+        if let Some(customized_credential_chain) = self.credential_providers {
+            credential_providers = customized_credential_chain;
         }
 
         let signer = Signer::new(
             ctx,
-            credential,
+            credential_providers,
             RequestSigner::new().with_service_sas_permissions("racwd"),
         );
 
@@ -468,6 +509,7 @@ impl Service for AzblobBackend {
     type Lister = oio::PageLister<AzblobLister>;
     type Deleter = oio::BatchDeleter<AzblobDeleter>;
     type Copier = AzblobCopiers;
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -491,8 +533,7 @@ impl Service for AzblobBackend {
 
     async fn stat(&self, ctx: &OperationContext, path: &str, args: OpStat) -> Result<RpStat> {
         let error_ctx = ErrorContext::new(ServiceOperation("GetBlobProperties"))
-            .with_if_match(args.if_match().is_some())
-            .with_if_none_match(args.if_none_match().is_some());
+            .with_caller_condition(args.is_conditional());
         let resp = self
             .core
             .azblob_get_blob_properties(ctx, path, &args)
@@ -503,17 +544,17 @@ impl Service for AzblobBackend {
         match status {
             StatusCode::OK => {
                 let headers = resp.headers();
-                let mut meta = parse_into_metadata(path, headers)?;
+                let mut meta = parse_into_metadata(path, headers)?.into_builder();
                 if let Some(version_id) = parse_header_to_str(headers, X_MS_VERSION_ID)? {
-                    meta.set_version(version_id);
+                    meta.version(version_id);
                 }
 
                 let user_meta = parse_prefixed_headers(headers, X_MS_META_PREFIX);
                 if !user_meta.is_empty() {
-                    meta = meta.with_user_metadata(user_meta);
+                    meta.user_metadata(user_meta);
                 }
 
-                Ok(RpStat::new(meta))
+                Ok(RpStat::new(meta.build()))
             }
             _ => Err(parse_error(error_ctx, resp)),
         }
@@ -588,10 +629,9 @@ impl Service for AzblobBackend {
         from: &str,
         to: &str,
         args: OpCopy,
-        opts: OpCopier,
     ) -> Result<Self::Copier> {
         let output: AzblobCopiers = {
-            let copier = new_azblob_copier(self.core.clone(), ctx, from, to, args, opts)?;
+            let copier = new_azblob_copier(self.core.clone(), ctx, from, to, args)?;
             Ok(copier)
         }?;
 
@@ -644,5 +684,68 @@ impl Service for AzblobBackend {
             parts.uri,
             parts.headers,
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn invalid_encoded_customer_keys_are_rejected() {
+        for key in [
+            String::new(),
+            "not-base64!".to_string(),
+            BASE64_STANDARD.encode([42; 16]),
+            BASE64_STANDARD.encode([42; 31]),
+            BASE64_STANDARD.encode([42; 33]),
+            BASE64_STANDARD.encode([42; 64]),
+        ] {
+            let config = AzblobConfig {
+                container: "test".to_string(),
+                endpoint: Some("https://test.blob.core.windows.net".to_string()),
+                encryption_key: Some(key.clone()),
+                ..Default::default()
+            };
+            let err = Operator::from_config(config).expect_err("invalid key must fail to build");
+            assert_eq!(err.kind(), ErrorKind::ConfigInvalid);
+            let message = format!("{err:?}");
+            assert!(message.contains("encryption_key"));
+            if !key.is_empty() {
+                assert!(!message.contains(&key));
+            }
+        }
+    }
+
+    #[test]
+    fn invalid_raw_customer_keys_are_rejected() {
+        for len in [0, 16, 31, 33, 64] {
+            let builder = AzblobBuilder::default()
+                .container("test")
+                .endpoint("https://test.blob.core.windows.net")
+                .server_side_encryption_with_customer_key(&vec![42; len]);
+            let err = Operator::new(builder).expect_err("invalid key must fail to build");
+            assert_eq!(err.kind(), ErrorKind::ConfigInvalid);
+        }
+    }
+
+    #[test]
+    fn valid_customer_keys_build() {
+        let key = [42; 32];
+        let builder = AzblobBuilder::default()
+            .container("test")
+            .endpoint("https://test.blob.core.windows.net")
+            .server_side_encryption_with_customer_key(&key);
+        Operator::new(builder).expect("32-byte raw key must build");
+
+        let config = AzblobConfig {
+            container: "test".to_string(),
+            endpoint: Some("https://test.blob.core.windows.net".to_string()),
+            encryption_key: Some(BASE64_STANDARD.encode(key)),
+            encryption_key_sha256: Some(BASE64_STANDARD.encode(Sha256::digest(key))),
+            encryption_algorithm: Some("AES256".to_string()),
+            ..Default::default()
+        };
+        Operator::from_config(config).expect("Base64-encoded 32-byte key must build");
     }
 }

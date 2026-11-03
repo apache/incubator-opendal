@@ -19,7 +19,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from plan import group_cases_by_service, plan
+from plan import LANGUAGE_BINDING, group_cases_by_service, plan
 
 
 class BehaviorTestPlan(unittest.TestCase):
@@ -44,6 +44,40 @@ class BehaviorTestPlan(unittest.TestCase):
         self.assertTrue("fs" in cases)
         # Should not contain s3
         self.assertFalse("s3" in cases)
+
+    def test_github_fixture_is_core_only(self):
+        result = plan([
+            ".github/services/github/read_only/action.yml",
+            "core/services/fs/src/lib.rs",
+        ])
+        core = [case["service"] for target in result["core"] for case in target["cases"]]
+        self.assertIn("github", core)
+        for language in LANGUAGE_BINDING:
+            with self.subTest(language=language):
+                cases = [
+                    case["service"]
+                    for target in result[f"binding_{language}"]
+                    for case in target["cases"]
+                ]
+                self.assertIn("fs", cases)
+                self.assertNotIn("github", cases)
+
+    def test_smb_fixture_is_core_only(self):
+        result = plan([
+            ".github/services/smb/samba/action.yml",
+            "core/services/fs/src/lib.rs",
+        ])
+        core = [case["service"] for target in result["core"] for case in target["cases"]]
+        self.assertIn("smb", core)
+        for language in LANGUAGE_BINDING:
+            with self.subTest(language=language):
+                cases = [
+                    case["service"]
+                    for target in result[f"binding_{language}"]
+                    for case in target["cases"]
+                ]
+                self.assertIn("fs", cases)
+                self.assertNotIn("smb", cases)
 
     def test_core_services_hdfs_native_mapping(self):
         result = plan(["core/services/hdfs-native/src/lib.rs"])

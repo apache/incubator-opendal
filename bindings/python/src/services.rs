@@ -57,6 +57,8 @@ pub enum Scheme {
     Ftp,
     #[cfg(feature = "services-gcs")]
     Gcs,
+    #[cfg(feature = "services-gcs-grpc")]
+    GcsGrpc,
     #[cfg(feature = "services-gdrive")]
     Gdrive,
     #[cfg(feature = "services-ghac")]
@@ -197,6 +199,8 @@ impl_enum_to_str!(
         Ftp => "ftp",
         #[cfg(feature = "services-gcs")]
         Gcs => "gcs",
+        #[cfg(feature = "services-gcs-grpc")]
+        GcsGrpc => "gcs-grpc",
         #[cfg(feature = "services-gdrive")]
         Gdrive => "gdrive",
         #[cfg(feature = "services-ghac")]

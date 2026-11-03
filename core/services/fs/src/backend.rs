@@ -180,6 +180,7 @@ impl Service for FsBackend {
     type Lister = FsLazyLister;
     type Deleter = oio::OneShotDeleter<FsDeleter>;
     type Copier = oio::OneShotCopier;
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -234,14 +235,14 @@ impl Service for FsBackend {
         from: &str,
         to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         let core = self.core.clone();
         let from = from.to_string();
         let to = to.to_string();
         Ok(oio::OneShotCopier::new(async move {
-            core.fs_copy(&from, &to).await?;
-            Ok(Metadata::default())
+            let size = core.fs_copy(&from, &to).await?;
+            let metadata = MetadataBuilder::file(size);
+            Ok(metadata.build())
         }))
     }
 

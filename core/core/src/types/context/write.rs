@@ -403,7 +403,7 @@ mod tests {
         }
 
         async fn close(&mut self) -> Result<Metadata> {
-            Ok(Metadata::default())
+            Ok(MetadataBuilder::unknown().build())
         }
 
         async fn abort(&mut self) -> Result<()> {

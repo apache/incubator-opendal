@@ -17,8 +17,9 @@
  * under the License.
  */
 
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using OpenDAL.Interop.Marshalling;
+using OpenDAL.Interop.NativeObject;
 using OpenDAL.Interop.Result.Abstractions;
 
 namespace OpenDAL.Interop.Result;
@@ -43,8 +44,19 @@ internal struct OpenDALOperatorInfoResult : INativeValueResult<OperatorInfo>
         return Error;
     }
 
-    public readonly OperatorInfo ToValue()
+    public readonly unsafe OperatorInfo ToValue()
     {
-        return OperatorInfoMarshaller.ToOperatorInfo(Ptr);
+        if (Ptr == IntPtr.Zero)
+        {
+            throw new InvalidOperationException("operator_info_get returned null pointer");
+        }
+
+        var payload = Unsafe.Read<OpenDALOperatorInfo>((void*)Ptr);
+        return new OperatorInfo(
+            Utilities.ReadUtf8(payload.Scheme),
+            Utilities.ReadUtf8(payload.Root),
+            Utilities.ReadUtf8(payload.Name),
+            new Capability(payload.Capability)
+        );
     }
 }

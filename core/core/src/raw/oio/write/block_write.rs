@@ -125,7 +125,7 @@ impl<W: BlockWrite> BlockWriter<W> {
             block_ids: Vec::new(),
             cache: None,
 
-            tasks: ConcurrentTasks::new(executor, concurrent, 8192, |input| {
+            tasks: ConcurrentTasks::new(executor, concurrent, 0, |input| {
                 Box::pin(async move {
                     let fut = input
                         .w
@@ -285,7 +285,7 @@ mod tests {
             let mut this = self.lock().unwrap();
             this.length = size;
             this.content = Some(body);
-            Ok(Metadata::default())
+            Ok(MetadataBuilder::unknown().build())
         }
 
         async fn write_block(&self, block_id: Uuid, size: u64, body: Buffer) -> Result<()> {
@@ -314,7 +314,7 @@ mod tests {
             }
             this.content = Some(bs.into_iter().flatten().collect());
 
-            Ok(Metadata::default())
+            Ok(MetadataBuilder::unknown().build())
         }
 
         async fn abort_block(&self, _: Vec<Uuid>) -> Result<()> {

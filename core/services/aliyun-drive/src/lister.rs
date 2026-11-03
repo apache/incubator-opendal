@@ -22,10 +22,9 @@ use super::core::AliyunDriveCore;
 use super::core::AliyunDriveFile;
 use super::core::AliyunDriveFileList;
 use bytes::Buf;
-use opendal_core::EntryMode;
 use opendal_core::Error;
 use opendal_core::ErrorKind;
-use opendal_core::Metadata;
+use opendal_core::MetadataBuilder;
 use opendal_core::OperationContext;
 use opendal_core::Result;
 use opendal_core::raw::*;
@@ -96,14 +95,13 @@ impl oio::PageList for AliyunDriveLister {
 
         let offset = if ctx.token.is_empty() {
             // Push self into the list result.
-            ctx.entries.push_back(Entry::new(
-                &parent.path,
-                Metadata::new(EntryMode::DIR).with_last_modified(
-                    parent.updated_at.parse::<Timestamp>().map_err(|e| {
-                        Error::new(ErrorKind::Unexpected, "parse last modified time").set_source(e)
-                    })?,
-                ),
-            ));
+            ctx.entries.push_back(Entry::new(&parent.path, {
+                let mut metadata = MetadataBuilder::dir();
+                metadata.last_modified(parent.updated_at.parse::<Timestamp>().map_err(|e| {
+                    Error::new(ErrorKind::Unexpected, "parse last modified time").set_source(e)
+                })?);
+                metadata.build()
+            }));
             None
         } else {
             Some(ctx.token.clone())
@@ -132,23 +130,26 @@ impl oio::PageList for AliyunDriveLister {
         for item in result.items {
             let (path, mut md) = if item.path_type == "folder" {
                 let path = format!("{}{}/", parent.path.trim_start_matches('/'), item.name);
-                (path, Metadata::new(EntryMode::DIR))
+                (path, MetadataBuilder::dir())
             } else {
                 let path = format!("{}{}", parent.path.trim_start_matches('/'), item.name);
-                (path, Metadata::new(EntryMode::FILE))
+                let size = item.size.ok_or_else(|| {
+                    Error::new(
+                        ErrorKind::Unexpected,
+                        "aliyun drive list response does not contain file size",
+                    )
+                })?;
+                (path, MetadataBuilder::file(size))
             };
 
-            md = md.with_last_modified(item.updated_at.parse::<Timestamp>().map_err(|e| {
+            md.last_modified(item.updated_at.parse::<Timestamp>().map_err(|e| {
                 Error::new(ErrorKind::Unexpected, "parse last modified time").set_source(e)
             })?);
-            if let Some(v) = item.size {
-                md = md.with_content_length(v);
-            }
             if let Some(v) = item.content_type {
-                md = md.with_content_type(v);
+                md.content_type(v);
             }
 
-            ctx.entries.push_back(Entry::new(&path, md));
+            ctx.entries.push_back(Entry::new(&path, md.build()));
         }
 
         let next_marker = result.next_marker.unwrap_or_default();

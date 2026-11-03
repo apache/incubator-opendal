@@ -22,6 +22,8 @@ package org.apache.opendal.test.behavior;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.assertj.core.api.AssertionsForClassTypes.assertThatThrownBy;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
+import java.util.Collections;
+import java.util.Map;
 import java.util.UUID;
 import org.apache.opendal.OpenDALException.Code;
 import org.apache.opendal.WriteOptions;
@@ -86,6 +88,21 @@ public class AsyncWriteOptionsTest extends BehaviorTestBase {
 
         String actualCacheControl = asyncOp().stat(path).join().getCacheControl();
         assertThat(actualCacheControl).isEqualTo(cacheControl);
+    }
+
+    @Test
+    void testWriteWithUserMetadata() {
+        assumeTrue(asyncOp().info.capability.writeWithUserMetadata);
+        final String path = UUID.randomUUID().toString();
+        final byte[] content = generateBytes();
+        final Map<String, String> userMetadata = Collections.singletonMap("location", "everywhere");
+
+        WriteOptions options = WriteOptions.builder().userMetadata(userMetadata).build();
+
+        asyncOp().write(path, content, options).join();
+
+        Map<String, String> actualUserMetadata = asyncOp().stat(path).join().getUserMetadata();
+        assertThat(actualUserMetadata).isEqualTo(userMetadata);
     }
 
     @Test

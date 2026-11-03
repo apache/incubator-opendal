@@ -122,6 +122,7 @@ impl Service for RocksdbBackend {
     type Lister = oio::HierarchyLister<RocksdbLister>;
     type Deleter = oio::OneShotDeleter<RocksdbDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.info.clone()
@@ -147,13 +148,14 @@ impl Service for RocksdbBackend {
         let p = build_abs_path(&self.root, path);
 
         if p == build_abs_path(&self.root, "") {
-            Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+            Ok(RpStat::new(MetadataBuilder::dir().build()))
         } else {
             let bs = self.core.get(&p)?;
             match bs {
-                Some(bs) => Ok(RpStat::new(
-                    Metadata::new(EntryMode::FILE).with_content_length(bs.len() as u64),
-                )),
+                Some(bs) => Ok(RpStat::new({
+                    let metadata = MetadataBuilder::file(bs.len() as u64);
+                    metadata.build()
+                })),
                 None => Err(Error::new(ErrorKind::NotFound, "kv not found in rocksdb")),
             }
         }
@@ -205,7 +207,6 @@ impl Service for RocksdbBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,

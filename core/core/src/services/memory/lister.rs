@@ -39,16 +39,16 @@ impl oio::List for MemoryLister {
     async fn next(&mut self) -> Result<Option<oio::Entry>> {
         match self.keys.next() {
             Some(key) => {
-                let mode = if key.ends_with('/') {
-                    EntryMode::DIR
+                let metadata = if key.ends_with('/') {
+                    MetadataBuilder::dir()
                 } else {
-                    EntryMode::FILE
+                    MetadataBuilder::unknown()
                 };
                 let mut path = build_rel_path(&self.root, &key);
                 if path.is_empty() {
                     path = "/".to_string();
                 }
-                Ok(Some(oio::Entry::new(&path, Metadata::new(mode))))
+                Ok(Some(oio::Entry::new(&path, metadata.build())))
             }
             None => Ok(None),
         }

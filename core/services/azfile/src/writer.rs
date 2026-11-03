@@ -19,8 +19,8 @@ use std::sync::Arc;
 
 use http::StatusCode;
 
-use super::core::AzfileCore;
 use super::core::parse_error;
+use super::core::{AzfileCore, ErrorContext};
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -50,17 +50,17 @@ impl AzfileWriter {
     }
 
     fn parse_metadata(headers: &http::HeaderMap) -> Result<Metadata> {
-        let mut metadata = Metadata::default();
+        let mut metadata = MetadataBuilder::unknown();
 
         if let Some(last_modified) = parse_last_modified(headers)? {
-            metadata.set_last_modified(last_modified);
+            metadata.last_modified(last_modified);
         }
         let etag = parse_etag(headers)?;
         if let Some(etag) = etag {
-            metadata.set_etag(etag);
+            metadata.etag(etag);
         }
 
-        Ok(metadata)
+        Ok(metadata.build())
     }
 }
 
@@ -78,7 +78,10 @@ impl oio::OneShotWrite for AzfileWriter {
         match status {
             StatusCode::OK | StatusCode::CREATED => {}
             _ => {
-                return Err(parse_error(resp).with_operation("Backend::azfile_create_file"));
+                return Err(
+                    parse_error(ErrorContext::new(ServiceOperation("CreateFile")), resp)
+                        .with_operation("Backend::azfile_create_file"),
+                );
             }
         }
 
@@ -87,11 +90,14 @@ impl oio::OneShotWrite for AzfileWriter {
             .azfile_update(&self.ctx, &self.path, size as u64, 0, bs)
             .await?;
         let status = resp.status();
-        let mut meta = AzfileWriter::parse_metadata(resp.headers())?;
-        meta.set_content_length(size as u64);
+        let mut meta = AzfileWriter::parse_metadata(resp.headers())?.into_builder();
+        meta.set_file(size as u64);
         match status {
-            StatusCode::OK | StatusCode::CREATED => Ok(meta),
-            _ => Err(parse_error(resp).with_operation("Backend::azfile_update")),
+            StatusCode::OK | StatusCode::CREATED => Ok(meta.build()),
+            _ => Err(
+                parse_error(ErrorContext::new(ServiceOperation("PutRange")), resp)
+                    .with_operation("Backend::azfile_update"),
+            ),
         }
     }
 }
@@ -109,7 +115,10 @@ impl oio::AppendWrite for AzfileWriter {
 
         match status {
             StatusCode::OK => Ok(parse_content_length(resp.headers())?.unwrap_or_default()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetFileProperties")),
+                resp,
+            )),
         }
     }
 
@@ -120,11 +129,14 @@ impl oio::AppendWrite for AzfileWriter {
             .await?;
 
         let status = resp.status();
-        let mut meta = AzfileWriter::parse_metadata(resp.headers())?;
-        meta.set_content_length(offset + size);
+        let mut meta = AzfileWriter::parse_metadata(resp.headers())?.into_builder();
+        meta.set_file(offset + size);
         match status {
-            StatusCode::OK | StatusCode::CREATED => Ok(meta),
-            _ => Err(parse_error(resp).with_operation("Backend::azfile_update")),
+            StatusCode::OK | StatusCode::CREATED => Ok(meta.build()),
+            _ => Err(
+                parse_error(ErrorContext::new(ServiceOperation("PutRange")), resp)
+                    .with_operation("Backend::azfile_update"),
+            ),
         }
     }
 }

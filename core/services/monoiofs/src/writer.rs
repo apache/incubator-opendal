@@ -160,12 +160,15 @@ impl oio::Write for MonoiofsWriter {
         } else {
             EntryMode::Unknown
         };
-        let meta = Metadata::new(mode)
-            .with_content_length(file_meta.len())
-            .with_last_modified(Timestamp::try_from(
-                file_meta.modified().map_err(new_std_io_error)?,
-            )?);
-        Ok(meta)
+        let mut meta = match mode {
+            EntryMode::FILE => MetadataBuilder::file(file_meta.len()),
+            EntryMode::DIR => MetadataBuilder::dir(),
+            EntryMode::Unknown => MetadataBuilder::unknown(),
+        };
+        meta.last_modified(Timestamp::try_from(
+            file_meta.modified().map_err(new_std_io_error)?,
+        )?);
+        Ok(meta.build())
     }
 
     async fn abort(&mut self) -> Result<()> {

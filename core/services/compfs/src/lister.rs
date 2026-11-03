@@ -71,14 +71,14 @@ fn next_entry(read_dir: &mut ReadDir, root: &Path) -> std::io::Result<Option<oio
                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
                 Err(err) => return Err(err),
             };
-            oio::Entry::new(
-                &rel_path,
-                Metadata::new(EntryMode::FILE).with_content_length(de_metadata.len()),
-            )
+            oio::Entry::new(&rel_path, {
+                let metadata = MetadataBuilder::file(de_metadata.len());
+                metadata.build()
+            })
         } else if file_type.is_dir() {
-            oio::Entry::new(&format!("{rel_path}/"), Metadata::new(EntryMode::DIR))
+            oio::Entry::new(&format!("{rel_path}/"), MetadataBuilder::dir().build())
         } else {
-            oio::Entry::new(&rel_path, Metadata::new(EntryMode::Unknown))
+            oio::Entry::new(&rel_path, MetadataBuilder::unknown().build())
         };
 
         return Ok(Some(entry));
@@ -90,7 +90,7 @@ impl oio::List for CompfsLister {
         if let Some(root) = self.root.take() {
             return Ok(Some(oio::Entry::new(
                 &format!("{root}/"),
-                Metadata::new(EntryMode::DIR),
+                MetadataBuilder::dir().build(),
             )));
         }
         let Some(mut read_dir) = self.read_dir.take() else {

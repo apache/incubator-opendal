@@ -15,29 +15,33 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! This module holds documentation for OpenDAL.
+//! OpenDAL contracts, Rust core guides, and historical project documents.
 //!
-//! It's highly recommended that you start by reading [`concepts`] first.
+//! Start with [`concepts`] for the Rust core API model. [`specs`] defines the
+//! current portable contracts implemented by OpenDAL. Service and layer authors
+//! can continue with [`internals`], while [`performance`] covers application
+//! tuning. Accepted RFCs in [`rfcs`] preserve the decisions and context that
+//! led to current designs.
 
 #![allow(rustdoc::bare_urls)]
 
-pub mod comparisons;
-
 pub mod concepts;
-
 pub mod internals;
-
 pub mod performance;
+pub mod specs;
 
 /// Changes log for all OpenDAL released versions.
-#[doc = include_str!("../../../CHANGELOG.md")]
+#[doc = include_str!("../../CHANGELOG.md")]
 #[cfg(not(doctest))]
+#[allow(rustdoc::broken_intra_doc_links, rustdoc::invalid_rust_codeblocks)]
 pub mod changelog {}
 
 #[cfg(not(doctest))]
+#[allow(rustdoc::broken_intra_doc_links, rustdoc::invalid_rust_codeblocks)]
 pub mod rfcs;
 
 /// Upgrade and migrate procedures while OpenDAL meets breaking changes.
 #[doc = include_str!("upgrade.md")]
 #[cfg(not(doctest))]
+#[allow(rustdoc::broken_intra_doc_links, rustdoc::invalid_rust_codeblocks)]
 pub mod upgrade {}

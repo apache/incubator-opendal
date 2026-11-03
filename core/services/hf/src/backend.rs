@@ -133,6 +133,27 @@ impl HfBuilder {
         self
     }
 
+    /// Enable caching of resolved HTTP download addresses and XET file metadata.
+    ///
+    /// Defaults to `false`: each new reader resolves through the Hub. An XET-mode
+    /// reader retains the XET metadata returned by its first read for its lifetime,
+    /// even when this option is disabled. Its subsequent ranges use that file
+    /// version. Create a new reader to resolve the path again. HTTP reads resolve
+    /// each range.
+    ///
+    /// Set to `true` to share resolve results across readers on the same backend.
+    /// HTTP addresses refresh near expiry.
+    ///
+    /// Enable this only when previously written files are not modified. Changed
+    /// files can remain invisible while cached results are reused, including
+    /// changes from other clients or a floating repository revision. Issued
+    /// download URLs can remain usable until expiry after Hub permissions change.
+    /// Separate authorization identities must use separately constructed backends.
+    pub fn enable_resolve_cache(mut self, enabled: bool) -> Self {
+        self.config.enable_resolve_cache = enabled;
+        self
+    }
+
     /// Set the Hub base URL.
     ///
     /// Configure this when your organization uses a
@@ -146,21 +167,43 @@ impl HfBuilder {
         self
     }
 
+    /// Disable loading config from the environment.
+    ///
+    /// See [`HfConfig::disable_config_load`] for details.
+    pub fn disable_config_load(mut self) -> Self {
+        self.config.disable_config_load = true;
+        self
+    }
+
+    /// Resolve the Hub base URL: an explicit config value wins, then
+    /// `HF_ENDPOINT` unless disable_config_load is set, then the public Hub.
+    /// A trailing slash is trimmed because every URL is built by appending
+    /// `/api/...` to this, and HF answers the resulting `//api/...` with a 404.
     fn hf_endpoint(&self) -> String {
         self.config
             .endpoint
             .clone()
-            .or_else(|| std::env::var("HF_ENDPOINT").ok())
+            .or_else(|| {
+                if self.config.disable_config_load {
+                    None
+                } else {
+                    std::env::var("HF_ENDPOINT").ok()
+                }
+            })
             .unwrap_or_else(|| "https://huggingface.co".to_string())
+            .trim_end_matches('/')
+            .to_string()
     }
 
-    /// Resolve the download mode: an explicit config value wins; otherwise a set,
-    /// non-empty HF_HUB_DISABLE_XET (a huggingface_hub env var) forces http; default Xet.
+    /// Resolve the download mode: an explicit config value wins; otherwise, unless
+    /// disable_config_load is set, a set, non-empty HF_HUB_DISABLE_XET (a
+    /// huggingface_hub env var) forces http; default Xet.
     fn hf_download_mode(&self) -> HfDownloadMode {
         if let Some(mode) = self.config.download_mode {
             return mode;
         }
-        if let Ok(val) = std::env::var("HF_HUB_DISABLE_XET")
+        if !self.config.disable_config_load
+            && let Ok(val) = std::env::var("HF_HUB_DISABLE_XET")
             && !val.is_empty()
         {
             return HfDownloadMode::Http;
@@ -180,10 +223,14 @@ impl HfBuilder {
     }
 
     /// Resolve the authentication token using the same priority order as hf-hub:
-    /// explicit config → HF_HUB_DISABLE_IMPLICIT_TOKEN check → HF_TOKEN env → token file.
+    /// explicit config → disable_config_load → HF_HUB_DISABLE_IMPLICIT_TOKEN check →
+    /// HF_TOKEN env → token file.
     fn hf_token(&self) -> Option<String> {
         if let Some(t) = self.config.token.clone() {
             return Some(t);
+        }
+        if self.config.disable_config_load {
+            return None;
         }
         if let Ok(val) = std::env::var("HF_HUB_DISABLE_IMPLICIT_TOKEN")
             && !val.is_empty()
@@ -260,16 +307,10 @@ impl Builder for HfBuilder {
         let repo = HfRepo::new(repo_type, repo_id, Some(revision.clone()));
         debug!("backend repo uri: {:?}", repo.uri(&root, ""));
 
+        let mut core = HfCore::build(info, capability, repo, root, token, endpoint, download_mode)?;
+        core.enable_resolve_cache = self.config.enable_resolve_cache;
         Ok(HfBackend {
-            core: Arc::new(HfCore::build(
-                info,
-                capability,
-                repo,
-                root,
-                token,
-                endpoint,
-                download_mode,
-            )?),
+            core: Arc::new(core),
         })
     }
 }
@@ -286,6 +327,7 @@ impl Service for HfBackend {
     type Lister = oio::PageLister<HfLister>;
     type Deleter = oio::BatchDeleter<HfDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -310,12 +352,12 @@ impl Service for HfBackend {
     async fn stat(&self, ctx: &OperationContext, path: &str, _: OpStat) -> Result<RpStat> {
         // Stat root always returns a DIR.
         if path == "/" {
-            return Ok(RpStat::new(Metadata::new(EntryMode::DIR)));
+            return Ok(RpStat::new(MetadataBuilder::dir().build()));
         }
 
         // Buckets have no git directory entries; treat any trailing-slash path as a virtual dir.
         if self.core.repo.is_bucket() && path.ends_with('/') {
-            return Ok(RpStat::new(Metadata::new(EntryMode::DIR)));
+            return Ok(RpStat::new(MetadataBuilder::dir().build()));
         }
 
         let info = self.core.path_info(ctx, path).await?;
@@ -372,7 +414,6 @@ impl Service for HfBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,
@@ -430,6 +471,19 @@ pub(super) mod test_utils {
             HfBuilder::default()
                 .repo_type("dataset")
                 .repo_id("google-research-datasets/mbpp"),
+        )
+        .unwrap();
+        finish_operator(op)
+    }
+
+    /// Same public dataset as [`mbpp_operator`], but with the repo id cased
+    /// differently from the canonical `google-research-datasets/mbpp`. HF
+    /// answers every request for it with a `307` to the canonical URL.
+    pub fn miscased_mbpp_operator() -> Operator {
+        let op = Operator::new(
+            HfBuilder::default()
+                .repo_type("dataset")
+                .repo_id("Google-Research-Datasets/MBPP"),
         )
         .unwrap();
         finish_operator(op)
@@ -525,6 +579,54 @@ mod tests {
     }
 
     #[test]
+    fn hf_token_disable_config_load_ignores_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let dir = std::env::temp_dir().join("opendal-hf-disable-config-load");
+        std::fs::create_dir_all(dir.join("huggingface")).unwrap();
+        std::fs::write(dir.join("token"), "file-token").unwrap();
+        std::fs::write(dir.join("huggingface/token"), "xdg-token").unwrap();
+
+        // Each source alone yields a token, unless config loading is disabled.
+        let keys = ["HF_TOKEN", "HF_TOKEN_PATH", "HF_HOME", "XDG_CACHE_HOME"];
+        let values = [
+            std::ffi::OsString::from("env-token"),
+            dir.join("token").into(),
+            dir.clone().into(),
+            dir.clone().into(),
+        ];
+        let saved = keys.map(std::env::var_os);
+        unsafe { std::env::remove_var("HF_HUB_DISABLE_IMPLICIT_TOKEN") };
+        let mut results = Vec::new();
+        for (key, value) in keys.iter().zip(&values) {
+            for key in keys {
+                unsafe { std::env::remove_var(key) };
+            }
+            unsafe { std::env::set_var(key, value) };
+            results.push((
+                *key,
+                builder_no_token().hf_token(),
+                builder_no_token().disable_config_load().hf_token(),
+            ));
+        }
+        let explicit = builder_with_token("config-token")
+            .disable_config_load()
+            .hf_token();
+        for (key, value) in keys.iter().zip(saved) {
+            match value {
+                Some(value) => unsafe { std::env::set_var(key, value) },
+                None => unsafe { std::env::remove_var(key) },
+            }
+        }
+        std::fs::remove_dir_all(&dir).ok();
+
+        for (key, loaded, disabled) in results {
+            assert!(loaded.is_some(), "{key} should provide a token");
+            assert_eq!(disabled, None, "{key} should be ignored");
+        }
+        assert_eq!(explicit.as_deref(), Some("config-token"));
+    }
+
+    #[test]
     fn hf_token_reads_from_file_via_hf_token_path() {
         let _guard = ENV_LOCK.lock().unwrap();
         let token_file = std::env::temp_dir().join("opendal-hf-token-test");
@@ -536,6 +638,18 @@ mod tests {
         unsafe { std::env::remove_var("HF_TOKEN_PATH") };
         std::fs::remove_file(&token_file).ok();
         assert_eq!(result.as_deref(), Some("file-token"));
+    }
+
+    #[test]
+    fn hf_endpoint_trims_trailing_slash() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::remove_var("HF_ENDPOINT") };
+        assert_eq!(
+            HfBuilder::default()
+                .endpoint("https://hub.example.com/")
+                .hf_endpoint(),
+            "https://hub.example.com"
+        );
     }
 
     #[test]
@@ -598,6 +712,47 @@ mod tests {
         let mode = HfBuilder::default().hf_download_mode();
         unsafe { std::env::remove_var("HF_HUB_DISABLE_XET") };
         assert_eq!(mode, HfDownloadMode::Xet);
+    }
+
+    #[test]
+    fn disable_config_load_ignores_endpoint_and_download_mode_env() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        unsafe { std::env::set_var("HF_ENDPOINT", "https://env.example.com") };
+        unsafe { std::env::set_var("HF_HUB_DISABLE_XET", "1") };
+        let builder = HfBuilder::default().disable_config_load();
+        let endpoint = builder.hf_endpoint();
+        let mode = builder.hf_download_mode();
+        unsafe { std::env::remove_var("HF_ENDPOINT") };
+        unsafe { std::env::remove_var("HF_HUB_DISABLE_XET") };
+        assert_eq!(endpoint, "https://huggingface.co");
+        assert_eq!(mode, HfDownloadMode::Xet);
+    }
+
+    #[tokio::test]
+    async fn build_resolve_cache_requires_opt_in() -> Result<()> {
+        use super::super::core::test_utils::MockHttpTransport;
+
+        for enabled in [None, Some(false), Some(true)] {
+            let mut builder = HfBuilder::default()
+                .repo_type("model")
+                .repo_id("org/repo")
+                .download_mode("xet");
+            if let Some(enabled) = enabled {
+                builder = builder.enable_resolve_cache(enabled);
+            }
+            let transport = MockHttpTransport::new();
+            let ctx = OperationContext::new()
+                .with_http_transport(HttpTransporter::new(transport.clone()));
+            let op = Operator::new(builder)?.with_context(ctx);
+            for reads in 1..=2 {
+                assert_eq!(op.read("plain.txt").await?.to_vec(), b"hello");
+                assert_eq!(
+                    transport.request_count(),
+                    reads + usize::from(enabled == Some(true))
+                );
+            }
+        }
+        Ok(())
     }
 
     #[test]

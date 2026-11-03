@@ -21,7 +21,7 @@ use bytes::Buf;
 use http::StatusCode;
 
 use super::core::parse_error;
-use super::core::{DropboxCore, DropboxMetadataResponse};
+use super::core::{DropboxCore, DropboxMetadataResponse, ErrorContext};
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -42,30 +42,30 @@ impl DropboxWriter {
         }
     }
 
-    fn parse_metadata(decoded_response: DropboxMetadataResponse) -> Result<Metadata> {
-        let mut metadata = Metadata::default();
+    pub(crate) fn parse_metadata(decoded_response: DropboxMetadataResponse) -> Result<Metadata> {
+        let mut metadata = MetadataBuilder::unknown();
 
         if let Some(size) = decoded_response.size {
-            metadata.set_content_length(size);
+            metadata.set_file(size);
         }
 
         if let Some(content_hash) = decoded_response.content_hash {
-            metadata.set_etag(&content_hash);
+            metadata.etag(&content_hash);
         }
 
         if let Some(rev) = decoded_response.rev {
-            metadata.set_version(&rev);
+            metadata.version(&rev);
         }
 
         if let Some(server_modified) = decoded_response.server_modified {
             let date_utc = server_modified.parse::<Timestamp>()?;
-            metadata.set_last_modified(date_utc);
+            metadata.last_modified(date_utc);
         } else {
             let date_utc = decoded_response.client_modified.parse::<Timestamp>()?;
-            metadata.set_last_modified(date_utc);
+            metadata.last_modified(date_utc);
         }
 
-        Ok(metadata)
+        Ok(metadata.build())
     }
 }
 
@@ -84,7 +84,10 @@ impl oio::OneShotWrite for DropboxWriter {
                 let metadata = DropboxWriter::parse_metadata(decoded_response)?;
                 Ok(metadata)
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("UploadFile")),
+                resp,
+            )),
         }
     }
 }

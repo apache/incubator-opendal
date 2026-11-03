@@ -21,8 +21,8 @@ use bytes::Buf;
 use http::StatusCode;
 
 use super::core::File;
-use super::core::KoofrCore;
 use super::core::parse_error;
+use super::core::{ErrorContext, KoofrCore};
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -46,12 +46,15 @@ impl KoofrWriter {
             EntryMode::FILE
         };
 
-        let mut meta = Metadata::new(mode);
-        meta.set_content_length(file.size);
-        meta.set_content_type(&file.content_type);
-        meta.set_last_modified(Timestamp::from_millisecond(file.modified)?);
+        let mut meta = if mode == EntryMode::FILE {
+            MetadataBuilder::file(file.size)
+        } else {
+            MetadataBuilder::dir()
+        };
+        meta.content_type(&file.content_type);
+        meta.last_modified(Timestamp::from_millisecond(file.modified)?);
 
-        Ok(meta)
+        Ok(meta.build())
     }
 }
 
@@ -71,7 +74,10 @@ impl oio::OneShotWrite for KoofrWriter {
                 let metadata = Self::parse_metadata(&file)?;
                 Ok(metadata)
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("FilesPut")),
+                resp,
+            )),
         }
     }
 }

@@ -21,8 +21,8 @@ use bytes::Buf;
 use http::StatusCode;
 use serde::Deserialize;
 
-use super::core::DbfsCore;
 use super::core::parse_error;
+use super::core::{DbfsCore, ErrorContext};
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -48,7 +48,7 @@ impl oio::PageList for DbfsLister {
                 ctx.done = true;
                 return Ok(());
             }
-            let error = parse_error(response);
+            let error = parse_error(ErrorContext::new(ServiceOperation("List")), response);
             return Err(error);
         }
 
@@ -63,15 +63,14 @@ impl oio::PageList for DbfsLister {
             let entry: oio::Entry = match status.is_dir {
                 true => {
                     let normalized_path = format!("{path}/");
-                    let mut meta = Metadata::new(EntryMode::DIR);
-                    meta.set_last_modified(Timestamp::from_millisecond(status.modification_time)?);
-                    oio::Entry::new(&normalized_path, meta)
+                    let mut meta = MetadataBuilder::dir();
+                    meta.last_modified(Timestamp::from_millisecond(status.modification_time)?);
+                    oio::Entry::new(&normalized_path, meta.build())
                 }
                 false => {
-                    let mut meta = Metadata::new(EntryMode::FILE);
-                    meta.set_last_modified(Timestamp::from_millisecond(status.modification_time)?);
-                    meta.set_content_length(status.file_size as u64);
-                    oio::Entry::new(&path, meta)
+                    let mut meta = MetadataBuilder::file(status.file_size as u64);
+                    meta.last_modified(Timestamp::from_millisecond(status.modification_time)?);
+                    oio::Entry::new(&path, meta.build())
                 }
             };
             ctx.entries.push_back(entry);

@@ -21,6 +21,18 @@ Use [`crate::OssConfig`] for serializable configuration and this builder's
 methods for direct construction. The field and method documentation defines
 accepted values, defaults, and environment interaction.
 
+### Credential resolution
+
+OSS tries explicit access keys, environment credentials, OIDC assume-role
+credentials, and ECS instance RAM role credentials, in that order. The first
+provider that returns credentials is used. In ACK RRSA deployments, OIDC
+credentials therefore take precedence over the node's ECS metadata credentials.
+If a provider returns no credentials or fails, the chain tries the next provider.
+An OSS permission error does not trigger a switch to another credential provider.
+
+When `role_arn` is set in the service configuration, these providers supply the
+base credentials for the additional AK-based AssumeRole request.
+
 ## Example
 
 ### Via Builder

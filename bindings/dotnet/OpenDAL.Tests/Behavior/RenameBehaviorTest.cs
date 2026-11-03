@@ -61,11 +61,11 @@ public sealed class RenameBehaviorTest : BehaviorTestBase
         var targetPath = NewPath("rename-target-async");
         var content = RandomBytes(111);
 
-        await Op.WriteAsync(sourcePath, content, CT);
+        await Op.WriteAsync(sourcePath, content, cancellationToken: CT);
         await Op.RenameAsync(sourcePath, targetPath, CT);
 
-        Assert.Equal(content, await Op.ReadAsync(targetPath, CT));
-        var ex = await Assert.ThrowsAsync<OpenDALException>(() => Op.ReadAsync(sourcePath, CT));
+        Assert.Equal(content, await Op.ReadAsync(targetPath, cancellationToken: CT));
+        var ex = await Assert.ThrowsAsync<OpenDALException>(() => Op.ReadAsync(sourcePath, cancellationToken: CT));
         Assert.True(IsMissingError(ex));
     }
 }

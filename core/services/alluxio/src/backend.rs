@@ -133,6 +133,7 @@ impl Service for AlluxioBackend {
     type Lister = oio::PageLister<AlluxioLister>;
     type Deleter = oio::OneShotDeleter<AlluxioDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -211,7 +212,6 @@ impl Service for AlluxioBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,

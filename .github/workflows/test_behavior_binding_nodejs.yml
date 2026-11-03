@@ -28,7 +28,7 @@ on:
         type: string
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  group: binding_nodejs-${{ inputs.os }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:

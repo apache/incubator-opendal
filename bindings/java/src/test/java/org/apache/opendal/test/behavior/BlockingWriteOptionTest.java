@@ -21,6 +21,8 @@ package org.apache.opendal.test.behavior;
 
 import static org.assertj.core.api.AssertionsForClassTypes.assertThat;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
+import java.util.Collections;
+import java.util.Map;
 import java.util.UUID;
 import org.apache.opendal.WriteOptions;
 import org.junit.jupiter.api.Test;
@@ -71,6 +73,21 @@ public class BlockingWriteOptionTest extends BehaviorTestBase {
 
         String actualDisposition = op().stat(path).getContentDisposition();
         assertThat(actualDisposition).isEqualTo(disposition);
+    }
+
+    @Test
+    void testWriteWithUserMetadata() {
+        assumeTrue(op().info.capability.writeWithUserMetadata);
+
+        final String path = UUID.randomUUID().toString();
+        final byte[] content = generateBytes();
+        final Map<String, String> userMetadata = Collections.singletonMap("location", "everywhere");
+
+        WriteOptions options = WriteOptions.builder().userMetadata(userMetadata).build();
+        op().write(path, content, options);
+
+        Map<String, String> actualUserMetadata = op().stat(path).getUserMetadata();
+        assertThat(actualUserMetadata).isEqualTo(userMetadata);
     }
 
     @Test

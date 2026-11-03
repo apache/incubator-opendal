@@ -32,19 +32,17 @@ version = { workspace = true }
 all-features = true
 
 [dependencies]
+asyncband = { workspace = true, features = ["pool"] }
 bytes = { workspace = true }
-fastpool = "1.0.2"
-futures = { workspace = true, features = ["std", "async-await"] }
-futures-rustls = "0.26.0"
 http = { workspace = true }
 log = { workspace = true }
-opendal-core = { path = "../../core", version = "0.58.2", default-features = false }
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false }
 rustls-native-certs = "0.8"
 serde = { workspace = true, features = ["derive"] }
-suppaftp = { version = "8.0.3", default-features = false, features = [
-  "async-std-rustls-ring",
+suppaftp = { version = "10.0.2", default-features = false, features = [
+  "tokio-rustls-ring",
 ] }
-tokio = { workspace = true, features = ["macros", "time"] }
+tokio = { workspace = true, features = ["io-util", "macros", "time"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

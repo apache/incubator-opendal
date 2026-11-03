@@ -79,7 +79,10 @@ impl oio::StreamRead for SqliteReader {
             (buffer, content_length as u64)
         };
 
-        let metadata = Metadata::new(EntryMode::FILE).with_content_length(content_length);
+        let metadata = {
+            let metadata = MetadataBuilder::file(content_length);
+            metadata.build()
+        };
         Ok((
             RpRead::new(metadata),
             Box::new(buffer) as Box<dyn oio::ReadStreamDyn>,

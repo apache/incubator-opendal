@@ -118,7 +118,10 @@ impl WebhdfsCore {
         let status = resp.status();
 
         if status != StatusCode::CREATED && status != StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("Create")),
+                resp,
+            ));
         }
 
         let bs = resp.into_body();
@@ -205,7 +208,10 @@ impl WebhdfsCore {
 
                 Ok(resp.location)
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Append")),
+                resp,
+            )),
         }
     }
 
@@ -430,82 +436,80 @@ pub(super) struct LocationResponse {
     pub location: String,
 }
 
-mod error {
-    use http::Response;
-    use http::StatusCode;
-    use http::response::Parts;
-    use serde::Deserialize;
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct WebHdfsErrorWrapper {
+    pub remote_exception: WebHdfsError,
+}
 
-    use opendal_core::raw::*;
-    use opendal_core::*;
+/// WebHdfsError is the error message returned by WebHdfs service
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+struct WebHdfsError {
+    exception: String,
+    message: String,
+    java_class_name: String,
+}
 
-    #[derive(Debug, Deserialize)]
-    #[serde(rename_all = "PascalCase")]
-    struct WebHdfsErrorWrapper {
-        pub remote_exception: WebHdfsError,
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+}
+
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self { service_operation }
+    }
+}
+
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
+    let (parts, body) = resp.into_parts();
+    let bs = body.to_bytes();
+    let (kind, retryable) = match parts.status {
+        StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, false),
+        // passing invalid arguments will return BAD_REQUEST
+        // should be un-retryable
+        StatusCode::BAD_REQUEST => (ErrorKind::Unexpected, false),
+        StatusCode::INTERNAL_SERVER_ERROR
+        | StatusCode::BAD_GATEWAY
+        | StatusCode::SERVICE_UNAVAILABLE
+        | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
+        _ => (ErrorKind::Unexpected, false),
+    };
+
+    let message = match serde_json::from_slice::<WebHdfsErrorWrapper>(&bs) {
+        Ok(wh_error) => format!("{:?}", wh_error.remote_exception),
+        Err(_) => String::from_utf8_lossy(&bs).into_owned(),
+    };
+
+    let mut err = Error::new(kind, message);
+
+    err = err.with_context("service_operation", ctx.service_operation.0);
+    err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
     }
 
-    /// WebHdfsError is the error message returned by WebHdfs service
-    #[derive(Debug, Deserialize)]
-    #[serde(rename_all = "camelCase")]
-    #[allow(dead_code)]
-    struct WebHdfsError {
-        exception: String,
-        message: String,
-        java_class_name: String,
-    }
+    err
+}
 
-    pub(crate) fn parse_error(resp: Response<Buffer>) -> Error {
-        let (parts, body) = resp.into_parts();
-        let bs = body.to_bytes();
-        let s = String::from_utf8_lossy(&bs);
-        parse_error_msg(parts, &s)
-    }
+#[cfg(test)]
+mod tests {
+    use bytes::Buf;
+    use serde_json::from_reader;
 
-    pub(crate) fn parse_error_msg(parts: Parts, body: &str) -> Error {
-        let (kind, retryable) = match parts.status {
-            StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
-            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-                (ErrorKind::PermissionDenied, false)
-            }
-            // passing invalid arguments will return BAD_REQUEST
-            // should be un-retryable
-            StatusCode::BAD_REQUEST => (ErrorKind::Unexpected, false),
-            StatusCode::INTERNAL_SERVER_ERROR
-            | StatusCode::BAD_GATEWAY
-            | StatusCode::SERVICE_UNAVAILABLE
-            | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
-            _ => (ErrorKind::Unexpected, false),
-        };
+    use super::*;
 
-        let message = match serde_json::from_str::<WebHdfsErrorWrapper>(body) {
-            Ok(wh_error) => format!("{:?}", wh_error.remote_exception),
-            Err(_) => body.to_owned(),
-        };
-
-        let mut err = Error::new(kind, message);
-
-        err = with_error_response_context(err, parts);
-
-        if retryable {
-            err = err.set_temporary();
-        }
-
-        err
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use bytes::Buf;
-        use serde_json::from_reader;
-
-        use super::*;
-
-        /// Error response example from https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-hdfs/WebHDFS.html#Error%20Responses
-        #[tokio::test]
-        async fn test_parse_error() -> Result<()> {
-            let ill_args = bytes::Bytes::from(
-                r#"
+    /// Error response example from https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-hdfs/WebHDFS.html#Error%20Responses
+    #[tokio::test]
+    async fn test_parse_error() -> Result<()> {
+        let ill_args = bytes::Bytes::from(
+            r#"
 {
   "RemoteException":
   {
@@ -515,33 +519,30 @@ mod error {
   }
 }
     "#,
-            );
-            let body = Buffer::from(ill_args.clone());
-            let resp = Response::builder()
-                .status(StatusCode::BAD_REQUEST)
-                .body(body)
-                .unwrap();
+        );
+        let body = Buffer::from(ill_args.clone());
+        let resp = Response::builder()
+            .status(StatusCode::BAD_REQUEST)
+            .body(body)
+            .unwrap();
 
-            let err = parse_error(resp);
-            assert_eq!(err.kind(), ErrorKind::Unexpected);
-            assert!(!err.is_temporary());
+        let err = parse_error(ErrorContext::new(ServiceOperation("Test")), resp);
+        assert_eq!(err.kind(), ErrorKind::Unexpected);
+        assert!(!err.is_temporary());
 
-            let err_msg: WebHdfsError = from_reader::<_, WebHdfsErrorWrapper>(ill_args.reader())
-                .expect("must success")
-                .remote_exception;
-            assert_eq!(err_msg.exception, "IllegalArgumentException");
-            assert_eq!(
-                err_msg.java_class_name,
-                "java.lang.IllegalArgumentException"
-            );
-            assert_eq!(
-                err_msg.message,
-                "Invalid value for webhdfs parameter \"permission\": ..."
-            );
+        let err_msg: WebHdfsError = from_reader::<_, WebHdfsErrorWrapper>(ill_args.reader())
+            .expect("must success")
+            .remote_exception;
+        assert_eq!(err_msg.exception, "IllegalArgumentException");
+        assert_eq!(
+            err_msg.java_class_name,
+            "java.lang.IllegalArgumentException"
+        );
+        assert_eq!(
+            err_msg.message,
+            "Invalid value for webhdfs parameter \"permission\": ..."
+        );
 
-            Ok(())
-        }
+        Ok(())
     }
 }
-
-pub(super) use error::*;

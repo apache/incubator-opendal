@@ -22,8 +22,7 @@ use quick_xml::de;
 
 use super::core::parse_error;
 use super::core::*;
-use opendal_core::EntryMode;
-use opendal_core::Metadata;
+use opendal_core::MetadataBuilder;
 use opendal_core::OperationContext;
 use opendal_core::Result;
 use opendal_core::raw::*;
@@ -70,7 +69,10 @@ impl oio::PageList for ObsLister {
             .await?;
 
         if resp.status() != http::StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListObjects")),
+                resp,
+            ));
         }
 
         let bs = resp.into_body();
@@ -92,7 +94,7 @@ impl oio::PageList for ObsLister {
         for prefix in common_prefixes {
             let de = oio::Entry::new(
                 &build_rel_path(&self.core.root, &prefix.prefix),
-                Metadata::new(EntryMode::DIR),
+                MetadataBuilder::dir().build(),
             );
 
             ctx.entries.push_back(de);
@@ -104,7 +106,12 @@ impl oio::PageList for ObsLister {
                 path = "/".to_string();
             }
 
-            let meta = Metadata::new(EntryMode::from_path(&path)).with_content_length(object.size);
+            let metadata = if path.ends_with('/') {
+                MetadataBuilder::dir()
+            } else {
+                MetadataBuilder::file(object.size)
+            };
+            let meta = metadata.build();
 
             let de = oio::Entry::with(path, meta);
 

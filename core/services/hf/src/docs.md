@@ -32,6 +32,39 @@ Use [`crate::HfConfig`] for serializable configuration and this builder's
 methods for direct construction. The field and method documentation defines
 accepted values, defaults, and environment interaction.
 
+### Caching resolve results
+
+By default, each new reader resolves through the Hugging Face Hub. An XET-mode
+reader retains the XET metadata returned by its first read for its lifetime.
+Subsequent ranges, including concurrent reads, use that file version. Create a
+new reader to resolve an updated path. HTTP reads resolve each range.
+
+Enable
+[`enable_resolve_cache`](crate::Hf::enable_resolve_cache) to share resolved HTTP
+download addresses and XET file metadata across readers and batches on the same
+backend:
+
+```rust,no_run
+let builder = opendal_service_hf::Hf::default()
+    .repo_type("dataset")
+    .repo_id("username/my-dataset")
+    .enable_resolve_cache(true);
+```
+
+Enable the cache only when previously written files are not modified. Changed
+files can remain invisible while a resolved address or XET file metadata is
+reused, including changes from other clients or a floating repository revision.
+Issued signed URLs can also remain usable after Hub permissions change.
+
+The shared cache retains bounded in-memory metadata. HTTP addresses refresh
+30 seconds before their signed expiry, on the next read, or once after a cached
+request returns 401 or 403. In HTTP mode, the first resolve returns its body
+directly. Responses without supported redirect metadata or expiry continue to
+resolve normally.
+The reqwest transport supports the optional
+[`HttpRedirect`](opendal_core::HttpRedirect) extension; custom transports may omit it.
+Separate authorization identities require separately constructed backends.
+
 ## Examples
 
 ### Via Builder (Git-based dataset)

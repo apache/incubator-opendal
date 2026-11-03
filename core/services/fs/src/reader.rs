@@ -135,7 +135,10 @@ impl oio::Write for FsLazyWriter {
     }
 
     async fn abort(&mut self) -> Result<()> {
-        self.inner().await?.abort().await
+        match self.inner.as_mut() {
+            Some(inner) => inner.abort().await,
+            None => Ok(()),
+        }
     }
 }
 

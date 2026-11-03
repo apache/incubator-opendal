@@ -149,30 +149,29 @@ pub fn format_put_multipart_options(opts: PutOptions) -> object_store::PutMultip
 
 /// Format PutResult to OpenDAL Metadata
 pub fn format_put_result(result: PutResult) -> Metadata {
-    let mut metadata = Metadata::new(EntryMode::FILE);
+    let mut metadata = MetadataBuilder::unknown();
     if let Some(etag) = &result.e_tag {
-        metadata.set_etag(etag);
+        metadata.etag(etag);
     }
     if let Some(version) = &result.version {
-        metadata.set_version(version);
+        metadata.version(version);
     }
-    metadata
+    metadata.build()
 }
 
 /// Format `object_store::ObjectMeta` to `opendal::Metadata`.
 pub fn format_metadata(meta: &ObjectMeta) -> Metadata {
-    let mut metadata = Metadata::new(EntryMode::FILE);
-    metadata.set_content_length(meta.size);
+    let mut metadata = MetadataBuilder::file(meta.size);
     if let Some(last_modified) = datetime_to_timestamp(meta.last_modified) {
-        metadata.set_last_modified(last_modified);
+        metadata.last_modified(last_modified);
     }
     if let Some(etag) = &meta.e_tag {
-        metadata.set_etag(etag);
+        metadata.etag(etag);
     }
     if let Some(version) = &meta.version {
-        metadata.set_version(version);
+        metadata.version(version);
     }
-    metadata
+    metadata.build()
 }
 
 #[cfg(test)]

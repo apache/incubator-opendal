@@ -116,6 +116,7 @@ impl Service for DashmapBackend {
     type Lister = oio::HierarchyLister<DashmapLister>;
     type Deleter = oio::OneShotDeleter<DashmapDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.info.clone()
@@ -149,7 +150,7 @@ impl Service for DashmapBackend {
                 if p.ends_with('/') {
                     let has_children = self.core.cache.iter().any(|kv| kv.key().starts_with(&p));
                     if has_children {
-                        return Ok(RpStat::new(Metadata::new(EntryMode::DIR)));
+                        return Ok(RpStat::new(MetadataBuilder::dir().build()));
                     }
                 }
                 Err(Error::new(ErrorKind::NotFound, "key not found in dashmap"))
@@ -204,7 +205,6 @@ impl Service for DashmapBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,

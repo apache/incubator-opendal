@@ -11,7 +11,8 @@ A Lua binding for OpenDAL: access the local filesystem, in-memory storage, S3,
 and [50+ more services](/services) through one API, backed by the Rust core.
 
 New to the model behind the API? Read [Concepts](../../03-concepts.mdx) first —
-service, operator, layer, operation are the same four ideas in every language.
+the shared storage semantics and path and operation concepts every binding
+expresses through its own native API.
 
 :::warning Experimental / WIP
 This binding is **unreleased and experimental**. APIs may change without notice.

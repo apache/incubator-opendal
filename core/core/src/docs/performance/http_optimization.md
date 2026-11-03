@@ -1,138 +1,154 @@
 # HTTP Optimization
 
-All OpenDAL HTTP-based storage services use the same
-[HttpTransporter][crate::HttpTransporter] abstraction. This design offers users
-a unified interface for configuring HTTP transports. The `opendal` facade
-installs [reqwest](https://crates.io/crates/reqwest) as the default HTTP transport
-when `opendal::install_default()` is called with the `http-transport-reqwest`
-feature enabled. The default `auto-register-services` feature calls
-`install_default()` before `main`. Applications that need to install their own
-process-wide transport should disable `auto-register-services`; transports
-configured directly on an operator are unaffected.
+Most OpenDAL services use HTTP, so transport configuration can dominate
+throughput and tail latency. This guide uses reqwest because the `opendal`
+facade installs it as the default transport when an HTTP transport feature is
+enabled.
 
-Many of the services supported by OpenDAL are HTTP-based. This guide aims to provide optimization tips for using HTTP-based storage services. While these tips are also applicable to other HTTP clients, the configuration methods may vary.
+The default `auto-register-services` feature calls `opendal::install_default()`
+before `main`. Applications that need a different process-wide default must
+disable `auto-register-services`, initialize the service registry when needed,
+and install their transport before another default is installed.
 
-Please note that the following optimizations are based on experience and may not be suitable for all scenarios. The most effective way to determine the optimal configuration is to test it in your specific environment.
+A simpler option is to replace the transport for one operator. Add
+`opendal-http-transport-reqwest` and `reqwest` as direct dependencies, build one
+client, and reuse the resulting operator:
 
-## HTTP/1.1
+```rust,ignore
+use opendal::{HttpTransporter, Operator};
+use opendal_http_transport_reqwest::ReqwestTransport;
 
-According to benchmarks from OpenDAL users, `HTTP/1.1` is generally faster than `HTTP/2` for large-scale download and upload operations.
-
-`reqwest` tends to maintain only a single TCP connection for `HTTP/2`, relying on its built-in multiplexing capabilities. There is a [known issue](https://github.com/hyperium/hyper/issues/3623) in the underlying `hyper-util` HTTP util library: an HTTP/2 connection will remain in the pool and continue to be reused unless it is poisoned or closed after an idle timeout, even when the connection's max concurrent streams limit has been reached, or the TCP connection is exhausted (i.e., close to the bandwidth limit). In practice, this means all requests funnel through a single TCP connection, creating a bottleneck under heavy workloads.
-
-For HTTP/1.1, new connections will be created whenever there's no idle ones in the pool. While it solves the connection reuse issue, it also brings up possibility of excessive TCP connection. It's suggested to set a max concurrent request limit to avoid server overload and host bandwidth exhaustion.
-
-When `HTTP/2` is disabled, `reqwest` falls back to `HTTP/1.1` and utilizes its default connection pool. This approach is better suited for large files, as it allows multiple TCP connections to be opened and used concurrently, significantly improving performance for large file downloads and uploads.
-
-If your workloads involve large files or require high throughput, and are not sensitive to latency, consider disabling `HTTP/2` in your configuration.
-
-```rust
-let client = reqwest::ClientBuilder::new()
-  // Disable http2 for better performance.
-  .http1_only()
-  .build()
-  .expect("http client must be created");
-
-// Replace the operator's base HTTP transport.
-let transport = HttpTransporter::new(ReqwestTransport::new(client));
-let op = op.with_context(OperationContext::new().with_http_transport(transport));
+fn with_reqwest_client(op: Operator, client: reqwest::Client) -> Operator {
+    let transport = HttpTransporter::new(ReqwestTransport::new(client));
+    let ctx = op.base_context().with_http_transport(transport);
+    op.with_context(ctx)
+}
 ```
 
-## DNS Caching
+Creating a client or operator per request discards DNS and connection-pool
+state and repeatedly pays connection setup costs.
 
-`reqwest` uses the DNS resolver provided by Rust's standard library by default, which is backed by the `getaddrinfo` system call under the hood. This system call does not cache results by default, meaning that each time you make a request to a new domain, a DNS lookup will be performed.
+## Prefer HTTP/1.1 for large transfers
 
-Under high-throughput workloads, this can cause a significant performance degradation, as each request incurs the overhead of a DNS lookup. It can also negatively affect the resolver, potentially overwhelming it with the volume of requests. In extreme cases, this may result in a DoS attack on the resolver, rendering it unresponsive.
+For high-throughput uploads and downloads of large objects, benchmark HTTP/1.1
+first. OpenDAL users often see higher aggregate throughput with HTTP/1.1 because
+reqwest can open several pooled connections, while HTTP/2 normally multiplexes
+requests over one connection.
 
-To mitigate this issue, you can enable DNS caching in `reqwest` by using the `hickory-dns` feature. This feature provides a more efficient DNS resolver that caches results.
+One HTTP/2 connection can become the bottleneck when it reaches its stream
+limit or the bandwidth available to one TCP connection. The hyper client does
+not currently open another pooled HTTP/2 connection when the existing one
+reaches its maximum concurrent streams; see [hyper issue #3623]. This matters
+most for long-lived streams and highly concurrent large transfers.
 
-```rust
-let client = reqwest::ClientBuilder::new()
-  // Enable hickory dns for dns caching and async dns resolve.
-  .hickory_dns(true)
-  .build()
-  .expect("http client must be created");
+Force HTTP/1.1 with `ClientBuilder::http1_only`:
 
-// Replace the operator's base HTTP transport.
-let transport = HttpTransporter::new(ReqwestTransport::new(client));
-let op = op.with_context(OperationContext::new().with_http_transport(transport));
+```rust,ignore
+let client = reqwest::Client::builder()
+    .http1_only()
+    .build()?;
+let op = with_reqwest_client(op, client);
 ```
 
-The default DNS cache settings from `hickory_dns` are generally sufficient for most workloads. However, if you have specific requirements—such as sharing the same DNS cache across multiple HTTP clients or configuring the DNS cache size—you can use the `Xuanwo/reqwest-hickory-resolver` crate to set up a custom DNS resolver.
+HTTP/1.1 can open many TCP connections when no idle connection is available.
+Bound OpenDAL request concurrency so the client cannot exhaust host resources
+or overload the service. HTTP/2 can still be better for many small requests or
+when connection count matters, so measure both protocols against the real
+endpoint and object-size distribution.
 
-```rust
-/// Global shared hickory resolver.
-static GLOBAL_HICKORY_RESOLVER: LazyLock<Arc<HickoryResolver>> = LazyLock::new(|| {
-    let mut opts = ResolverOpts::default();
-    // Only query for the ipv4 address.
-    opts.ip_strategy = LookupIpStrategy::Ipv4Only;
-    // Use larger cache size for better performance.
-    opts.cache_size = 1024;
-    // Positive TTL is set to 5 minutes.
-    opts.positive_min_ttl = Some(Duration::from_secs(300));
-    // Negative TTL is set to 1 minute.
-    opts.negative_min_ttl = Some(Duration::from_secs(60));
+## Enable DNS caching
 
-    Arc::new(
-        HickoryResolver::default()
-            // Always shuffle the DNS results for better performance.
-            .with_shuffle(true)
-            .with_options(opts),
-    )
-});
+Without the optional Hickory resolver, reqwest uses a `getaddrinfo`-based
+resolver and does not maintain a reqwest-level DNS cache. Repeated resolution
+can become visible at high request rates and can overload a constrained local
+resolver.
 
-let client = reqwest::ClientBuilder::new()
-  // Use our global hickory resolver instead.
-  .dns_resolver(GLOBAL_HICKORY_RESOLVER.clone())
-  .build()
-  .expect("http client must be created");
+Enable reqwest's `hickory-dns` feature in the application and select it on the
+client:
 
-// Replace the operator's base HTTP transport.
-let transport = HttpTransporter::new(ReqwestTransport::new(client));
-let op = op.with_context(OperationContext::new().with_http_transport(transport));
+```toml
+[dependencies]
+reqwest = { version = "0.13", features = ["hickory-dns"] }
 ```
 
-The `ResolverOpts` has many options that can be configured. For a complete list of options, please refer to the [hickory_resolver documentation](https://docs.rs/hickory-resolver/latest/hickory_resolver/config/struct.ResolverOpts.html).
-
-Here is a summary of the most commonly used options:
-
-- `ip_strategy`: `hickory_resolver` default to use `Ipv4thenIpv6` strategy, which means it will first query for the IPv4 address and then the IPv6 address. This is generally a good strategy for most workloads. However, if you only need IPv4 addresses, you can set this option to `Ipv4Only` to avoid unnecessary DNS lookups.
-- `cache_size`: This option controls the size of the DNS cache. A larger cache size can improve performance, but it may also increase memory usage. The default value is `32`.
-- `positive_min_ttl` and `negative_min_ttl`: This option controls the minimum TTL for positive and negative DNS responses. A longer TTL can improve performance, but it may also increase the risk of stale DNS records. The default value is `None`. Some bad DNS servers may return a TTL of `0` even when the record is valid. In this case, you can set a longer TTL to avoid unnecessary DNS lookups.
-
-In addition to the options mentioned above, `Xuanwo/reqwest-hickory-resolver` also offers a `shuffle` option. This setting determines whether the DNS results are shuffled before being returned. Shuffling can enhance performance by distributing the load more evenly across multiple IP addresses.
-
-## Timeout
-
-`reqwest` didn't set a default timeout for HTTP requests. This means that if a request hangs or takes too long to complete, it can block the entire process, leading to performance degradation or even application crashes.
-
-It's recommended to set a connect timeout for HTTP requests to prevent this issue.
-
-```rust
-let client = reqwest::ClientBuilder::new()
-  // Set a connect timeout of 5 seconds.
-  .connect_timeout(Duration::from_secs(5))
-  .build()
-  .expect("http client must be created");
-
-// Replace the operator's base HTTP transport.
-let transport = HttpTransporter::new(ReqwestTransport::new(client));
-let op = op.with_context(OperationContext::new().with_http_transport(transport));
+```rust,ignore
+let client = reqwest::Client::builder()
+    .hickory_dns(true)
+    .build()?;
+let op = with_reqwest_client(op, client);
 ```
 
-It's also recommended to use opendal's [`TimeoutLayer`][crate::layers::TimeoutLayer] to prevent slow requests hangs forever. This layer will automatically cancel the request if it takes too long to complete.
+The built-in Hickory settings are a good starting point. Use
+`ClientBuilder::dns_resolver` when the application needs to share a custom
+resolver or control cache size, positive and negative TTLs, IP selection, or
+address shuffling. Longer TTLs reduce resolver traffic but retain stale records
+longer, so test failover behavior before increasing them.
 
-```rust
-let op = op.layer(TimeoutLayer::new());
+## Set timeouts deliberately
+
+Reqwest 0.13 has no request, read, or connect timeout by default. At minimum,
+set a connect timeout so an unreachable endpoint cannot leave connection setup
+unbounded:
+
+```rust,ignore
+use std::time::Duration;
+
+let client = reqwest::Client::builder()
+    .connect_timeout(Duration::from_secs(5))
+    .read_timeout(Duration::from_secs(30))
+    .build()?;
+let op = with_reqwest_client(op, client);
 ```
 
-## Connection Pool
+`read_timeout` limits inactivity between successful reads. A total request
+timeout created with `ClientBuilder::timeout` covers the complete transfer, so
+do not set it below the expected duration of a healthy large upload or
+download.
 
-`reqwest` uses a connection pool to manage HTTP connections. This allows multiple requests to share the same connection, reducing the overhead of establishing new connections for each request.
+The facade's optional `layers-timeout` feature also provides `TimeoutLayer` for
+OpenDAL operation and I/O timeouts:
 
-By default, the connection pool is unlimited, allowing `reqwest` to open as many connections as needed. The default keep-alive timeout is 90 seconds, meaning any connection idle for longer than that will be closed.
+```rust,ignore
+use std::time::Duration;
 
-You can tune those settings via:
+use opendal::layers::TimeoutLayer;
 
-- [pool_idle_timeout](https://docs.rs/reqwest/0.13.2/reqwest/struct.ClientBuilder.html#method.pool_idle_timeout): Set an optional timeout for idle sockets being kept-alive.
-- [pool_max_idle_per_host](https://docs.rs/reqwest/0.13.2/reqwest/struct.ClientBuilder.html#method.pool_max_idle_per_host): Sets the maximum idle connection per host allowed in the pool.
+let op = op.layer(
+    TimeoutLayer::new()
+        .with_timeout(Duration::from_secs(30))
+        .with_io_timeout(Duration::from_secs(60)),
+);
+```
+
+Transport timeouts bound HTTP phases. `TimeoutLayer` applies at OpenDAL's
+operation and I/O boundaries. Configure both when the application needs bounds
+at both levels.
+
+## Size the connection pool
+
+Reqwest reuses idle connections. In reqwest 0.13, the default idle timeout is
+90 seconds and the default maximum number of idle connections per host is
+unlimited. Tune both values for the traffic pattern; neither setting limits
+active connections:
+
+```rust,ignore
+use std::time::Duration;
+
+let client = reqwest::Client::builder()
+    .pool_idle_timeout(Duration::from_secs(60))
+    .pool_max_idle_per_host(32)
+    .build()?;
+let op = with_reqwest_client(op, client);
+```
+
+- Keep enough idle connections for expected HTTP/1.1 concurrency so bursts do
+  not repeat DNS, TCP, and TLS setup.
+- Set a finite idle per-host limit for applications that contact many
+  endpoints. Bound active connections with OpenDAL request concurrency.
+- Shorten the idle timeout when traffic is sparse and connection reuse is rare.
+
+Measure connection reuse, open sockets, handshake rate, request concurrency,
+throughput, and tail latency together. A pool setting that improves a steady
+single-endpoint workload can waste resources in a bursty multi-endpoint one.
+
+[hyper issue #3623]: https://github.com/hyperium/hyper/issues/3623

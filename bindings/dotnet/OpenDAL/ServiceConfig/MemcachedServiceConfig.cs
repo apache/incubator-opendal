@@ -37,6 +37,10 @@ namespace OpenDAL.ServiceConfig
         /// </summary>
         public string? DefaultTtl { get; init; }
         /// <summary>
+        /// Enable TLS for TCP connections. Defaults to false. The server certificate must match the endpoint host and a native trust root.
+        /// </summary>
+        public bool? EnableTls { get; init; }
+        /// <summary>
         /// network address of the memcached service. For example: "tcp://localhost:11211"
         /// </summary>
         public string? Endpoint { get; init; }
@@ -65,6 +69,10 @@ namespace OpenDAL.ServiceConfig
             if (DefaultTtl is not null)
             {
                 map["default_ttl"] = Utilities.ToOptionString(DefaultTtl);
+            }
+            if (EnableTls is not null)
+            {
+                map["enable_tls"] = Utilities.ToOptionString(EnableTls);
             }
             if (Endpoint is not null)
             {

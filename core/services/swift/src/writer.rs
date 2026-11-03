@@ -20,8 +20,8 @@ use std::sync::Arc;
 use http::StatusCode;
 
 use super::core::SloManifestEntry;
-use super::core::SwiftCore;
 use super::core::parse_error;
+use super::core::{ErrorContext, SwiftCore};
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -43,17 +43,17 @@ impl SwiftWriter {
     }
 
     fn parse_metadata(headers: &http::HeaderMap) -> Result<Metadata> {
-        let mut metadata = Metadata::default();
+        let mut metadata = MetadataBuilder::unknown();
 
         if let Some(etag) = parse_etag(headers)? {
-            metadata.set_etag(etag);
+            metadata.etag(etag);
         }
 
         if let Some(last_modified) = parse_last_modified(headers)? {
-            metadata.set_last_modified(last_modified);
+            metadata.last_modified(last_modified);
         }
 
-        Ok(metadata)
+        Ok(metadata.build())
     }
 }
 
@@ -71,7 +71,10 @@ impl oio::MultipartWrite for SwiftWriter {
                 let metadata = SwiftWriter::parse_metadata(resp.headers())?;
                 Ok(metadata)
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("CreateObject")),
+                resp,
+            )),
         }
     }
 
@@ -113,7 +116,10 @@ impl oio::MultipartWrite for SwiftWriter {
                     size: Some(size),
                 })
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("UploadSegment")),
+                resp,
+            )),
         }
     }
 
@@ -148,7 +154,10 @@ impl oio::MultipartWrite for SwiftWriter {
                 let metadata = SwiftWriter::parse_metadata(resp.headers())?;
                 Ok(metadata)
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("UploadManifest")),
+                resp,
+            )),
         }
     }
 

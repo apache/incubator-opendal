@@ -34,13 +34,14 @@ impl EtcdLister {
         let abs_path = build_abs_path(&root, &path);
 
         // Get all keys with the specified prefix
-        let mut client = core.conn().await?;
+        let client = core.conn().await?;
         let get_options = Some(
             etcd_client::GetOptions::new()
                 .with_prefix()
                 .with_keys_only(),
         );
-        let resp = client
+        let resp = core
+            .kv_client(&client)
             .get(abs_path.as_str(), get_options)
             .await
             .map_err(super::core::format_etcd_error)?;
@@ -69,7 +70,12 @@ impl oio::List for EtcdLister {
             if key.starts_with(&self.path) {
                 let path = build_rel_path(&self.root, &key);
 
-                let entry = Entry::new(&path, Metadata::new(EntryMode::from_path(&key)));
+                let metadata = if key.ends_with('/') {
+                    MetadataBuilder::dir()
+                } else {
+                    MetadataBuilder::unknown()
+                };
+                let entry = Entry::new(&path, metadata.build());
                 return Ok(Some(entry));
             }
         }

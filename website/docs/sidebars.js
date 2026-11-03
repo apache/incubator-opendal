@@ -45,6 +45,16 @@ const sidebars = {
     'overview',
     'vision',
     'concepts',
+    {
+      type: 'category',
+      label: 'Specifications',
+      link: { type: 'doc', id: 'specifications/overview' },
+      collapsed: true,
+      items: [
+        'specifications/conditional-operations',
+        'specifications/metadata',
+      ],
+    },
     // Divider between the concept docs and the per-language guides.
     {
       type: 'html',

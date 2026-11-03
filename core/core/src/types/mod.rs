@@ -20,17 +20,25 @@ pub use mode::EntryMode;
 
 mod buffer;
 pub use buffer::Buffer;
+pub use buffer::BufferCursor;
+
+pub(crate) mod compact;
 
 mod http_transport;
 pub use http_transport::HttpBody;
+pub use http_transport::HttpRedirect;
 pub use http_transport::HttpTransport;
 pub use http_transport::HttpTransporter;
+pub use http_transport::HttpUri;
 
 mod entry;
 pub use entry::Entry;
 
-mod metadata;
+pub(crate) mod metadata;
 pub use metadata::Metadata;
+pub use metadata::MetadataBuilder;
+pub use metadata::UserMetadata;
+pub use metadata::UserMetadataIntoIter;
 
 mod read;
 pub use read::*;
@@ -43,6 +51,9 @@ pub use list::Lister;
 
 mod copy;
 pub use copy::Copier;
+
+mod compose;
+pub use compose::*;
 
 mod delete;
 pub use delete::*;

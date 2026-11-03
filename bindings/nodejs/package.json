@@ -1,7 +1,7 @@
 {
   "name": "opendal",
   "author": "Apache OpenDAL <dev@opendal.apache.org>",
-  "version": "0.49.7",
+  "version": "0.49.13",
   "license": "Apache-2.0",
   "main": "index.cjs",
   "module": "index.mjs",
@@ -91,7 +91,6 @@
     "format": "prettier --write .",
     "test": "vitest",
     "bench": "node -r dotenv/config ./benchmark/node.js dotenv_config_path=./.env",
-    "bench:deno": "deno bench --unstable-detect-cjs ./benchmark/deno.ts --allow-read --allow-ffi --allow-net --allow-env",
     "prepublishOnly": "napi prepublish -t npm --no-gh-release"
   },
   "prettier": {

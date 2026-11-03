@@ -17,7 +17,20 @@
 
 use std::fmt::Debug;
 
+use opendal_core::raw::ServiceOperation;
 use opendal_core::*;
+
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+struct ErrorContext {
+    service_operation: ServiceOperation,
+}
+
+impl ErrorContext {
+    const fn new(service_operation: ServiceOperation) -> Self {
+        Self { service_operation }
+    }
+}
 
 #[derive(Clone)]
 pub struct PersyCore {
@@ -42,9 +55,11 @@ impl PersyCore {
         let mut read_id = self
             .persy
             .get::<String, persy::PersyId>(&self.index, &path.to_string())
-            .map_err(parse_error)?;
+            .map_err(|err| parse_error(ErrorContext::new(ServiceOperation("GetIndex")), err))?;
         if let Some(id) = read_id.next() {
-            let value = self.persy.read(&self.segment, &id).map_err(parse_error)?;
+            let value = self.persy.read(&self.segment, &id).map_err(|err| {
+                parse_error(ErrorContext::new(ServiceOperation("ReadRecord")), err)
+            })?;
             return Ok(value.map(Buffer::from));
         }
 
@@ -52,15 +67,27 @@ impl PersyCore {
     }
 
     pub fn set(&self, path: &str, value: Buffer) -> Result<()> {
-        let mut tx = self.persy.begin().map_err(parse_error)?;
+        let mut tx = self.persy.begin().map_err(|err| {
+            parse_error(ErrorContext::new(ServiceOperation("BeginTransaction")), err)
+        })?;
         let id = tx
             .insert(&self.segment, &value.to_vec())
-            .map_err(parse_error)?;
+            .map_err(|err| parse_error(ErrorContext::new(ServiceOperation("InsertRecord")), err))?;
 
         tx.put::<String, persy::PersyId>(&self.index, path.to_string(), id)
-            .map_err(parse_error)?;
-        let prepared = tx.prepare().map_err(parse_error)?;
-        prepared.commit().map_err(parse_error)?;
+            .map_err(|err| parse_error(ErrorContext::new(ServiceOperation("PutIndex")), err))?;
+        let prepared = tx.prepare().map_err(|err| {
+            parse_error(
+                ErrorContext::new(ServiceOperation("PrepareTransaction")),
+                err,
+            )
+        })?;
+        prepared.commit().map_err(|err| {
+            parse_error(
+                ErrorContext::new(ServiceOperation("CommitTransaction")),
+                err,
+            )
+        })?;
 
         Ok(())
     }
@@ -69,30 +96,48 @@ impl PersyCore {
         let mut delete_id = self
             .persy
             .get::<String, persy::PersyId>(&self.index, &path.to_string())
-            .map_err(parse_error)?;
+            .map_err(|err| parse_error(ErrorContext::new(ServiceOperation("GetIndex")), err))?;
         if let Some(id) = delete_id.next() {
             // Begin a transaction.
-            let mut tx = self.persy.begin().map_err(parse_error)?;
+            let mut tx = self.persy.begin().map_err(|err| {
+                parse_error(ErrorContext::new(ServiceOperation("BeginTransaction")), err)
+            })?;
             // Delete the record.
-            tx.delete(&self.segment, &id).map_err(parse_error)?;
+            tx.delete(&self.segment, &id).map_err(|err| {
+                parse_error(ErrorContext::new(ServiceOperation("DeleteRecord")), err)
+            })?;
             // Remove the index.
             tx.remove::<String, persy::PersyId>(&self.index, path.to_string(), Some(id))
-                .map_err(parse_error)?;
+                .map_err(|err| {
+                    parse_error(ErrorContext::new(ServiceOperation("RemoveIndex")), err)
+                })?;
             // Commit the tx.
-            let prepared = tx.prepare().map_err(parse_error)?;
-            prepared.commit().map_err(parse_error)?;
+            let prepared = tx.prepare().map_err(|err| {
+                parse_error(
+                    ErrorContext::new(ServiceOperation("PrepareTransaction")),
+                    err,
+                )
+            })?;
+            prepared.commit().map_err(|err| {
+                parse_error(
+                    ErrorContext::new(ServiceOperation("CommitTransaction")),
+                    err,
+                )
+            })?;
         }
 
         Ok(())
     }
 }
 
-fn parse_error<T: Into<persy::PersyError>>(err: persy::PE<T>) -> Error {
+fn parse_error<T: Into<persy::PersyError>>(ctx: ErrorContext, err: persy::PE<T>) -> Error {
     let err: persy::PersyError = err.persy_error();
     let kind = match err {
         persy::PersyError::RecordNotFound(_) => ErrorKind::NotFound,
         _ => ErrorKind::Unexpected,
     };
 
-    Error::new(kind, "error from persy").set_source(err)
+    Error::new(kind, "error from persy")
+        .with_context("service_operation", ctx.service_operation.0)
+        .set_source(err)
 }

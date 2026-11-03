@@ -36,6 +36,7 @@ use reqsign_google::TokenCredentialProvider;
 use reqsign_google::VmMetadataCredentialProvider;
 
 use super::GCS_SCHEME;
+use super::composer::GcsComposer;
 use super::config::GcsConfig;
 use super::copier::GcsCopier;
 use super::core::constants::GCS_REWRITE_MAX_CHUNK_SIZE;
@@ -155,6 +156,10 @@ impl GcsBuilder {
     /// Specify a customized credential provider used by this service.
     ///
     /// This provider will be pushed to the front of credential chain.
+    ///
+    /// Implement the provider against [`opendal_core::reqsign_core`] and
+    /// [`crate::reqsign_google`] so that its types match the ones this service is
+    /// built with.
     pub fn credential_provider(
         mut self,
         provider: impl ProvideCredential<Credential = Credential> + 'static,
@@ -167,6 +172,10 @@ impl GcsBuilder {
     /// Specify a customized credential provider chain used by this service.
     ///
     /// This chain will be pushed to the front of default chain.
+    ///
+    /// Build the chain from [`opendal_core::reqsign_core`] and
+    /// [`crate::reqsign_google`] so that its types match the ones this service is
+    /// built with.
     pub fn credential_provider_chain(mut self, chain: ProvideCredentialChain<Credential>) -> Self {
         self.credential_provider_chain = Some(chain);
         self
@@ -342,12 +351,14 @@ impl Builder for GcsBuilder {
         let info = ServiceInfo::new(GCS_SCHEME, &root, bucket);
         let capability = Capability {
             stat: true,
+            stat_with_version: true,
             stat_with_if_match: true,
             stat_with_if_none_match: true,
             stat_with_if_version_match: true,
             stat_with_if_version_not_match: true,
 
             read: true,
+            read_with_version: true,
             read_with_suffix: true,
 
             read_with_if_match: true,
@@ -380,11 +391,13 @@ impl Builder for GcsBuilder {
             },
 
             delete: true,
+            delete_with_version: true,
             delete_with_if_version_match: true,
             delete_with_if_version_not_match: true,
             delete_max_size: Some(100),
 
             copy: true,
+            copy_with_source_version: true,
             copy_with_if_version_match: true,
             copy_with_if_version_not_match: true,
             copy_can_multi: true,
@@ -395,10 +408,21 @@ impl Builder for GcsBuilder {
             copy_multi_min_size: Some(GCS_REWRITE_MIN_CHUNK_SIZE),
             copy_multi_max_size: Some(GCS_REWRITE_MAX_CHUNK_SIZE),
 
+            compose: true,
+            compose_with_content_type: true,
+            compose_with_content_disposition: true,
+            compose_with_content_encoding: true,
+            compose_with_cache_control: true,
+            compose_with_user_metadata: true,
+            compose_with_if_not_exists: true,
+            compose_with_if_version_match: true,
+            compose_with_source_version: true,
+
             list: true,
             list_with_limit: true,
             list_with_start_after: true,
             list_with_recursive: true,
+            list_with_versions: true,
 
             presign: true,
             presign_stat: true,
@@ -441,6 +465,7 @@ impl Service for GcsBackend {
     type Lister = oio::PageLister<GcsLister>;
     type Deleter = oio::BatchDeleter<GcsDeleter>;
     type Copier = GcsCopier;
+    type Composer = GcsComposer;
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -464,10 +489,7 @@ impl Service for GcsBackend {
 
     async fn stat(&self, ctx: &OperationContext, path: &str, args: OpStat) -> Result<RpStat> {
         let error_ctx = ErrorContext::new(ServiceOperation("GetObject"))
-            .with_if_match(args.if_match().is_some())
-            .with_if_none_match(args.if_none_match().is_some())
-            .with_if_version_match(args.if_version_match().is_some())
-            .with_if_version_not_match(args.if_version_not_match().is_some());
+            .with_caller_condition(args.is_conditional());
         let resp = self.core.gcs_get_object_metadata(ctx, path, &args).await?;
 
         if !resp.status().is_success() {
@@ -528,14 +550,7 @@ impl Service for GcsBackend {
 
     fn list(&self, ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
         let output: oio::PageLister<GcsLister> = {
-            let l = GcsLister::new(
-                self.core.clone(),
-                ctx.clone(),
-                path,
-                args.recursive(),
-                args.limit(),
-                args.start_after(),
-            );
+            let l = GcsLister::new(self.core.clone(), ctx.clone(), path, args);
 
             Ok(oio::PageLister::new(l))
         }?;
@@ -549,14 +564,26 @@ impl Service for GcsBackend {
         from: &str,
         to: &str,
         args: OpCopy,
-        opts: OpCopier,
     ) -> Result<Self::Copier> {
         let output: GcsCopier = {
-            let copier = GcsCopier::new(self.core.clone(), ctx.clone(), from, to, args, opts);
+            let copier = GcsCopier::new(self.core.clone(), ctx.clone(), from, to, args);
             Ok(copier)
         }?;
 
         Ok(output)
+    }
+
+    fn compose(&self, ctx: &OperationContext, to: &str, args: OpCompose) -> Result<Self::Composer> {
+        if args.if_match().is_some()
+            || args.if_none_match().is_some()
+            || args.if_version_not_match().is_some()
+        {
+            return Err(Error::new(
+                ErrorKind::Unsupported,
+                "GCS compose does not support the requested destination option",
+            ));
+        }
+        Ok(GcsComposer::new(self.core.clone(), ctx.clone(), to, args))
     }
 
     async fn rename(
@@ -608,5 +635,27 @@ impl Service for GcsBackend {
             parts.uri,
             parts.headers,
         )))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_capability_supports_versioned_operations() {
+        let backend = GcsBuilder::default()
+            .bucket("test-bucket")
+            .token("test-token".to_string())
+            .disable_config_load()
+            .disable_vm_metadata()
+            .build()
+            .expect("GCS backend must build");
+
+        let capability = backend.capability();
+        assert!(capability.stat_with_version);
+        assert!(capability.read_with_version);
+        assert!(capability.copy_with_source_version);
+        assert!(capability.delete_with_version);
     }
 }

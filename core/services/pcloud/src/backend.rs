@@ -179,6 +179,7 @@ impl Service for PcloudBackend {
     type Lister = oio::PageLister<PcloudLister>;
     type Deleter = oio::OneShotDeleter<PcloudDeleter>;
     type Copier = oio::OneShotCopier;
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -223,7 +224,10 @@ impl Service for PcloudBackend {
 
                 Err(Error::new(ErrorKind::Unexpected, format!("{resp:?}")))
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Stat")),
+                resp,
+            )),
         }
     }
     fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
@@ -276,15 +280,29 @@ impl Service for PcloudBackend {
         ctx: &OperationContext,
         from: &str,
         to: &str,
-        _args: OpCopy,
-        _opts: OpCopier,
+        args: OpCopy,
     ) -> Result<Self::Copier> {
+        let backend = self.clone();
         let core = self.core.clone();
         let ctx = ctx.clone();
         let from = from.to_string();
         let to = to.to_string();
+        let source_content_length_hint = args.source_content_length_hint();
 
         Ok(oio::OneShotCopier::new(async move {
+            let source_size = if from.ends_with('/') {
+                None
+            } else {
+                Some(match source_content_length_hint {
+                    Some(size) => size,
+                    None => backend
+                        .stat(&ctx, &from, OpStat::default())
+                        .await?
+                        .into_metadata()
+                        .content_length(),
+                })
+            };
+
             core.ensure_dir_exists(&ctx, &to).await?;
 
             let resp = if from.ends_with('/') {
@@ -306,10 +324,19 @@ impl Service for PcloudBackend {
                     } else if result != 0 {
                         Err(Error::new(ErrorKind::Unexpected, format!("{resp:?}")))
                     } else {
-                        Ok(Metadata::default())
+                        let metadata =
+                            source_size.map_or_else(MetadataBuilder::dir, MetadataBuilder::file);
+                        Ok(metadata.build())
                     }
                 }
-                _ => Err(parse_error(resp)),
+                _ => Err(parse_error(
+                    ErrorContext::new(if from.ends_with('/') {
+                        ServiceOperation("CopyFolder")
+                    } else {
+                        ServiceOperation("CopyFile")
+                    }),
+                    resp,
+                )),
             }
         }))
     }
@@ -346,7 +373,14 @@ impl Service for PcloudBackend {
 
                 Ok(RpRename::default())
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(if from.ends_with('/') {
+                    ServiceOperation("RenameFolder")
+                } else {
+                    ServiceOperation("RenameFile")
+                }),
+                resp,
+            )),
         }
     }
 

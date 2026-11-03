@@ -212,6 +212,7 @@ impl Service for SqliteBackend {
     type Lister = ();
     type Deleter = oio::OneShotDeleter<SqliteDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.info.clone()
@@ -225,13 +226,18 @@ impl Service for SqliteBackend {
         let p = build_abs_path(&self.root, path);
 
         if p == build_abs_path(&self.root, "") {
-            Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+            Ok(RpStat::new(MetadataBuilder::dir().build()))
         } else {
             let length = self.core.get_length(&p).await?;
             match length {
-                Some(length) => Ok(RpStat::new(
-                    Metadata::new(EntryMode::from_path(&p)).with_content_length(length as u64),
-                )),
+                Some(length) => {
+                    let metadata = if p.ends_with('/') {
+                        MetadataBuilder::dir()
+                    } else {
+                        MetadataBuilder::file(length as u64)
+                    };
+                    Ok(RpStat::new(metadata.build()))
+                }
                 None => {
                     // Check if this might be a directory by looking for keys with this prefix
                     let dir_path = if p.ends_with('/') {
@@ -243,7 +249,7 @@ impl Service for SqliteBackend {
 
                     if count > 0 {
                         // Directory exists (has children)
-                        Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+                        Ok(RpStat::new(MetadataBuilder::dir().build()))
                     } else {
                         Err(Error::new(ErrorKind::NotFound, "key not found in sqlite"))
                     }
@@ -317,7 +323,6 @@ impl Service for SqliteBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,

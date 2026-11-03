@@ -21,9 +21,9 @@ use bytes::Buf;
 use opendal_core::raw::*;
 use opendal_core::*;
 
-use super::core::LakefsCore;
 use super::core::LakefsListResponse;
 use super::core::parse_error;
+use super::core::{ErrorContext, LakefsCore};
 
 pub struct LakefsLister {
     core: Arc<LakefsCore>,
@@ -76,7 +76,7 @@ impl oio::PageList for LakefsLister {
 
         let status_code = response.status();
         if !status_code.is_success() {
-            let error = parse_error(response);
+            let error = parse_error(ErrorContext::new(ServiceOperation("ListObjects")), response);
             return Err(error);
         }
 
@@ -96,16 +96,16 @@ impl oio::PageList for LakefsLister {
                 _ => EntryMode::Unknown,
             };
 
-            let mut meta = Metadata::new(entry_type);
+            let mut meta = match entry_type {
+                EntryMode::FILE => status
+                    .size_bytes
+                    .map_or_else(MetadataBuilder::unknown, MetadataBuilder::file),
+                EntryMode::DIR => MetadataBuilder::dir(),
+                EntryMode::Unknown => MetadataBuilder::unknown(),
+            };
 
             if status.mtime != 0 {
-                meta.set_last_modified(Timestamp::from_second(status.mtime).unwrap());
-            }
-
-            if entry_type == EntryMode::FILE
-                && let Some(size_bytes) = status.size_bytes
-            {
-                meta.set_content_length(size_bytes);
+                meta.last_modified(Timestamp::from_second(status.mtime).unwrap());
             }
 
             let path = if entry_type == EntryMode::DIR {
@@ -116,7 +116,7 @@ impl oio::PageList for LakefsLister {
 
             ctx.entries.push_back(oio::Entry::new(
                 &build_rel_path(&self.core.root, &path),
-                meta,
+                meta.build(),
             ));
         }
 

@@ -17,8 +17,9 @@
  * under the License.
  */
 
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using OpenDAL.Interop.Marshalling;
+using OpenDAL.Interop.NativeObject;
 using OpenDAL.Interop.Result.Abstractions;
 
 namespace OpenDAL.Interop.Result;
@@ -43,8 +44,13 @@ internal struct OpenDALMetadataResult : INativeValueResult<Metadata>
         return Error;
     }
 
-    public readonly Metadata ToValue()
+    public readonly unsafe Metadata ToValue()
     {
-        return MetadataMarshaller.ToMetadata(Ptr);
+        if (Ptr == IntPtr.Zero)
+        {
+            throw new InvalidOperationException("native call returned null metadata pointer");
+        }
+
+        return Unsafe.Read<OpenDALMetadata>((void*)Ptr).ToMetadata();
     }
 }

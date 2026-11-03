@@ -60,9 +60,31 @@ enum Commands {
         language: String,
     },
     /// Update the version of all packages.
-    UpdateVersion,
+    UpdateVersion {
+        /// Compare versions against the last successful release.
+        #[arg(long)]
+        baseline: Option<String>,
+        /// Prepare at least a patch increment from the baseline for every package.
+        #[arg(long, conflicts_with = "sync")]
+        patch: bool,
+        /// Raise package versions to the baseline without adding another patch.
+        #[arg(long)]
+        sync: bool,
+        /// Packages with declared breaking changes; repeat for each package.
+        #[arg(long, requires = "patch")]
+        breaking: Vec<String>,
+        /// Write the version decisions as JSON for the candidate release plan.
+        #[arg(long, requires = "patch")]
+        report: Option<PathBuf>,
+    },
     /// Create all the release artifacts.
-    Release,
+    Release {
+        /// Build source archives without invoking GPG.
+        #[arg(long)]
+        unsigned: bool,
+    },
+    /// Print the source package inventory as JSON.
+    ReleasePackages,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -70,7 +92,20 @@ fn main() -> anyhow::Result<()> {
 
     match Cmd::parse().command {
         Commands::Generate { language } => generate::run(&language),
-        Commands::UpdateVersion => release::update_version(),
-        Commands::Release => release::archive_package(),
+        Commands::UpdateVersion {
+            baseline,
+            patch,
+            sync,
+            breaking,
+            report,
+        } => release::update_version(
+            baseline.as_deref(),
+            patch,
+            sync,
+            &breaking,
+            report.as_deref(),
+        ),
+        Commands::Release { unsigned } => release::archive_package(!unsigned),
+        Commands::ReleasePackages => release::print_packages(),
     }
 }

@@ -21,6 +21,8 @@ Use [`crate::EtcdConfig`] for serializable configuration and this builder's
 methods for direct construction. The field and method documentation defines
 accepted values, defaults, and environment interaction.
 
+For server-authenticated TLS, configure an HTTPS endpoint and `ca_path`. The server certificate must be trusted by the supplied CA. For mutual TLS, also configure `cert_path` and `key_path`; these two paths must always be supplied together.
+
 ## Example
 
 ### Via Builder

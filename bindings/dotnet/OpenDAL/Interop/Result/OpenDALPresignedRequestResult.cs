@@ -17,8 +17,9 @@
  * under the License.
  */
 
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using OpenDAL.Interop.Marshalling;
+using OpenDAL.Interop.NativeObject;
 using OpenDAL.Interop.Result.Abstractions;
 
 namespace OpenDAL.Interop.Result;
@@ -40,8 +41,22 @@ internal struct OpenDALPresignedRequestResult : INativeValueResult<PresignedRequ
         return Error;
     }
 
-    public readonly PresignedRequest ToValue()
+    public readonly unsafe PresignedRequest ToValue()
     {
-        return PresignedRequestMarshaller.ToPresignedRequest(Ptr);
+        if (Ptr == IntPtr.Zero)
+        {
+            throw new InvalidOperationException("presign returned null request pointer");
+        }
+
+        var payload = Unsafe.Read<OpenDALPresignedRequest>((void*)Ptr);
+        var method = Utilities.ReadUtf8(payload.Method);
+        var uri = Utilities.ReadUtf8(payload.Uri);
+        var headers = Utilities.ReadStringPairs(
+            payload.HeadersKeys,
+            payload.HeadersValues,
+            payload.HeadersLen,
+            StringComparer.OrdinalIgnoreCase
+        );
+        return new PresignedRequest(method, uri, headers);
     }
 }

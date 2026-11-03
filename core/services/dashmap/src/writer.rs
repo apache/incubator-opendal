@@ -50,24 +50,27 @@ impl oio::Write for DashmapWriter {
     async fn close(&mut self) -> Result<Metadata> {
         let content = self.buf.clone().collect();
 
-        let entry_mode = EntryMode::from_path(&self.path);
-        let mut meta = Metadata::new(entry_mode);
-        meta.set_content_length(content.len() as u64);
-        meta.set_last_modified(Timestamp::now());
+        let mut meta = if self.path.ends_with('/') {
+            MetadataBuilder::dir()
+        } else {
+            MetadataBuilder::file(content.len() as u64)
+        };
+        meta.last_modified(Timestamp::now());
 
         if let Some(v) = self.op.content_type() {
-            meta.set_content_type(v);
+            meta.content_type(v);
         }
         if let Some(v) = self.op.content_disposition() {
-            meta.set_content_disposition(v);
+            meta.content_disposition(v);
         }
         if let Some(v) = self.op.cache_control() {
-            meta.set_cache_control(v);
+            meta.cache_control(v);
         }
         if let Some(v) = self.op.content_encoding() {
-            meta.set_content_encoding(v);
+            meta.content_encoding(v);
         }
 
+        let meta = meta.build();
         self.core.set(
             &self.path,
             DashmapValue {

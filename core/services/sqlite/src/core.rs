@@ -56,11 +56,11 @@ impl SqliteCore {
         // We use:
         // - formatted, quoted identifiers for trusted table and field configuration
         // - bind parameters for values to avoid malformed SQL and SQL injection
-        // to ensure correctness.
-        let value: Option<Vec<u8>> = sqlx::query_scalar(&format!(
+        // to ensure correctness. `AssertSqlSafe` records this audit for sqlx.
+        let value: Option<Vec<u8>> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             r#"SELECT "{}" FROM "{}" WHERE "{}" = $1 LIMIT 1"#,
             self.value_field, self.table, self.key_field
-        ))
+        )))
         .bind(path)
         .fetch_optional(pool)
         .await
@@ -72,10 +72,10 @@ impl SqliteCore {
     pub async fn get_length(&self, path: &str) -> Result<Option<usize>> {
         let pool = self.get_client().await?;
 
-        let value: Option<i64> = sqlx::query_scalar(&format!(
+        let value: Option<i64> = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             r#"SELECT LENGTH(CAST("{}" AS BLOB)) FROM "{}" WHERE "{}" = $1 LIMIT 1"#,
             self.value_field, self.table, self.key_field
-        ))
+        )))
         .bind(path)
         .fetch_optional(pool)
         .await
@@ -94,10 +94,10 @@ impl SqliteCore {
     pub async fn count_under(&self, path: &str) -> Result<i64> {
         let pool = self.get_client().await?;
 
-        sqlx::query_scalar(&format!(
+        sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
             r#"SELECT COUNT(*) FROM "{}" WHERE instr("{}", $1) = 1 LIMIT 1"#,
             self.table, self.key_field
-        ))
+        )))
         .bind(path.to_string())
         .fetch_one(pool)
         .await
@@ -140,10 +140,10 @@ impl SqliteCore {
                     )
                     .set_source(err)
                 })?;
-                sqlx::query_as(&format!(
+                sqlx::query_as(sqlx::AssertSqlSafe(format!(
                     r#"SELECT SUBSTR(CAST("{}" AS BLOB), $1, $2), LENGTH(CAST("{}" AS BLOB)) FROM "{}" WHERE "{}" = $3 LIMIT 1"#,
                     self.value_field, self.value_field, self.table, self.key_field
-                ))
+                )))
                 .bind(start)
                 .bind(limit)
                 .bind(path)
@@ -151,10 +151,10 @@ impl SqliteCore {
                 .await
             }
             None => {
-                sqlx::query_as(&format!(
+                sqlx::query_as(sqlx::AssertSqlSafe(format!(
                     r#"SELECT SUBSTR(CAST("{}" AS BLOB), $1), LENGTH(CAST("{}" AS BLOB)) FROM "{}" WHERE "{}" = $2 LIMIT 1"#,
                     self.value_field, self.value_field, self.table, self.key_field
-                ))
+                )))
                 .bind(start)
                 .bind(path)
                 .fetch_optional(pool)
@@ -169,10 +169,10 @@ impl SqliteCore {
     pub async fn set(&self, path: &str, value: Buffer) -> Result<()> {
         let pool = self.get_client().await?;
 
-        sqlx::query(&format!(
+        sqlx::query(sqlx::AssertSqlSafe(format!(
             r#"INSERT OR REPLACE INTO "{}" ("{}", "{}") VALUES ($1, $2)"#,
             self.table, self.key_field, self.value_field,
-        ))
+        )))
         .bind(path)
         .bind(value.to_vec())
         .execute(pool)
@@ -185,10 +185,10 @@ impl SqliteCore {
     pub async fn delete(&self, path: &str) -> Result<()> {
         let pool = self.get_client().await?;
 
-        sqlx::query(&format!(
+        sqlx::query(sqlx::AssertSqlSafe(format!(
             r#"DELETE FROM "{}" WHERE "{}" = $1"#,
             self.table, self.key_field
-        ))
+        )))
         .bind(path)
         .execute(pool)
         .await

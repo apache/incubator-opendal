@@ -241,6 +241,7 @@ impl Service for SurrealdbBackend {
     type Lister = ();
     type Deleter = oio::OneShotDeleter<SurrealdbDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.info.clone()
@@ -266,12 +267,13 @@ impl Service for SurrealdbBackend {
         let p = build_abs_path(&self.root, path);
 
         if p == build_abs_path(&self.root, "") {
-            Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+            Ok(RpStat::new(MetadataBuilder::dir().build()))
         } else {
             match self.core.get_length(&p).await? {
-                Some(length) => Ok(RpStat::new(
-                    Metadata::new(EntryMode::FILE).with_content_length(length as u64),
-                )),
+                Some(length) => Ok(RpStat::new({
+                    let metadata = MetadataBuilder::file(length as u64);
+                    metadata.build()
+                })),
                 None => Err(Error::new(ErrorKind::NotFound, "kv not found in surrealdb")),
             }
         }
@@ -321,7 +323,6 @@ impl Service for SurrealdbBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,

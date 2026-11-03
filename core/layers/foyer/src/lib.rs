@@ -152,12 +152,27 @@ impl Code for FoyerValue {
 /// # Operation Behavior
 /// - `write`: [`FoyerLayer`] caches data after the service completes the write.
 /// - `read`: [`FoyerLayer`] checks the cache first. On a cache miss, it reads
-///   from the service and caches the result.
+///   and caches the entire object if its size is within the configured
+///   [`FoyerLayer::with_size_limit`] range, even when only a byte range is requested.
 /// - `delete`: [`FoyerLayer`] removes cached data after a successful delete when the deleter
 ///   closes. A failed delete is not invalidated. Cache invalidation happens before the underlying
 ///   deleter is closed, so the data remains invalidated if closing the deleter fails.
 /// - Other operations: [`FoyerLayer`] passes operations such as `list`, `copy`,
 ///   and `rename` to the service without caching their results.
+///
+/// # Range Reads
+///
+/// [`FoyerLayer`] caches entire objects, not individual byte ranges. For example,
+/// `operator.read_with("some/path").range(0..1024)` returns only the first 1024
+/// bytes, but on a cache miss the layer fetches and buffers the entire object
+/// before returning that range if the object is eligible for caching. On a cache
+/// hit, the layer returns the requested range from the cached object.
+///
+/// Reading a small range from a large object can therefore transfer and buffer
+/// much more data than requested, increasing read latency and memory usage.
+/// Use [`FoyerLayer::with_size_limit`] to exclude large objects from caching.
+/// On a cache miss, objects outside the configured size range are read directly
+/// from the service using the requested byte range.
 ///
 /// # Examples
 ///
@@ -273,6 +288,7 @@ impl Service for FoyerService {
     type Lister = oio::Lister;
     type Deleter = Deleter<oio::Deleter>;
     type Copier = oio::Copier;
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.inner.info()
@@ -281,6 +297,19 @@ impl Service for FoyerService {
     fn capability(&self) -> Capability {
         let mut capability = self.inner.capability();
         capability.write_can_copy_from = false;
+        capability.compose = false;
+        capability.compose_with_content_type = false;
+        capability.compose_with_content_disposition = false;
+        capability.compose_with_content_encoding = false;
+        capability.compose_with_cache_control = false;
+        capability.compose_with_user_metadata = false;
+        capability.compose_with_if_match = false;
+        capability.compose_with_if_none_match = false;
+        capability.compose_with_if_version_match = false;
+        capability.compose_with_if_version_not_match = false;
+        capability.compose_with_if_not_exists = false;
+        capability.compose_with_source_version = false;
+        capability.compose_with_source_if_match = false;
         capability.restore = false;
         capability.restore_with_version = false;
         capability.restore_with_if_not_exists = false;
@@ -316,9 +345,8 @@ impl Service for FoyerService {
         from: &str,
         to: &str,
         args: OpCopy,
-        opts: OpCopier,
     ) -> Result<Self::Copier> {
-        self.inner.copy(ctx, from, to, args, opts)
+        self.inner.copy(ctx, from, to, args)
     }
 
     fn list(&self, ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
@@ -432,7 +460,10 @@ mod tests {
         }
 
         fn metadata(&self) -> Metadata {
-            Metadata::new(EntryMode::FILE).with_content_length(self.data.len() as _)
+            {
+                let metadata = MetadataBuilder::file(self.data.len() as _);
+                metadata.build()
+            }
         }
 
         fn rp_read(&self) -> RpRead {
@@ -491,6 +522,7 @@ mod tests {
         type Lister = ();
         type Deleter = ();
         type Copier = ();
+        type Composer = ();
 
         fn info(&self) -> ServiceInfo {
             ServiceInfo::with_scheme("mock")
@@ -553,14 +585,7 @@ mod tests {
             ))
         }
 
-        fn copy(
-            &self,
-            _: &OperationContext,
-            _: &str,
-            _: &str,
-            _: OpCopy,
-            _: OpCopier,
-        ) -> Result<Self::Copier> {
+        fn copy(&self, _: &OperationContext, _: &str, _: &str, _: OpCopy) -> Result<Self::Copier> {
             Err(Error::new(
                 ErrorKind::Unsupported,
                 "operation is not supported",
@@ -670,7 +695,12 @@ mod tests {
             .apply_service(source);
         let ctx = service_context(&service);
 
-        let args = OpRead::default().with_version("v1").with_if_match("etag-1");
+        let (_, args, _) = options::ReadOptions {
+            version: Some("v1".to_owned()),
+            if_match: Some("etag-1".to_owned()),
+            ..Default::default()
+        }
+        .into();
         let reader = service.read(&ctx, "test", args).unwrap();
         let (_, mut stream) = reader.open(BytesRange::new(0, None)).await.unwrap();
         stream.read_all().await.unwrap();

@@ -493,6 +493,14 @@ pub async fn test_read_with_if_match(op: Operator) -> anyhow::Result<()> {
         .to_bytes();
     assert_eq!(bs, content);
 
+    let missing = TEST_FIXTURE.new_file_path();
+    let err = op
+        .read_with(&missing)
+        .if_match(meta.etag().expect("etag must exist"))
+        .await
+        .expect_err("missing target must fail");
+    assert_eq!(err.kind(), ErrorKind::NotFound);
+
     Ok(())
 }
 
@@ -555,6 +563,11 @@ pub async fn test_reader_with_if_modified_since(op: Operator) -> anyhow::Result<
     assert!(res.is_err());
     assert_eq!(res.unwrap_err().kind(), ErrorKind::ConditionNotMatch);
 
+    let missing = TEST_FIXTURE.new_file_path();
+    let reader = op.reader_with(&missing).if_modified_since(since).await?;
+    let err = reader.read(..).await.expect_err("missing target must fail");
+    assert_eq!(err.kind(), ErrorKind::NotFound);
+
     Ok(())
 }
 
@@ -583,6 +596,11 @@ pub async fn test_reader_with_if_unmodified_since(op: Operator) -> anyhow::Resul
     let reader = op.reader_with(&path).if_unmodified_since(since).await?;
     let bs = reader.read(..).await?.to_bytes();
     assert_eq!(bs, content);
+
+    let missing = TEST_FIXTURE.new_file_path();
+    let reader = op.reader_with(&missing).if_unmodified_since(since).await?;
+    let err = reader.read(..).await.expect_err("missing target must fail");
+    assert_eq!(err.kind(), ErrorKind::NotFound);
 
     Ok(())
 }
@@ -615,6 +633,14 @@ pub async fn test_read_with_if_none_match(op: Operator) -> anyhow::Result<()> {
         .expect("read must succeed")
         .to_bytes();
     assert_eq!(bs, content);
+
+    let missing = TEST_FIXTURE.new_file_path();
+    let err = op
+        .read_with(&missing)
+        .if_none_match(meta.etag().expect("etag must exist"))
+        .await
+        .expect_err("missing target must fail");
+    assert_eq!(err.kind(), ErrorKind::NotFound);
 
     Ok(())
 }
@@ -671,7 +697,7 @@ pub async fn test_read_with_version_conditions(op: Operator) -> anyhow::Result<(
     ] {
         assert_eq!(
             result.expect_err("missing target must fail").kind(),
-            ErrorKind::ConditionNotMatch
+            ErrorKind::NotFound
         );
     }
 

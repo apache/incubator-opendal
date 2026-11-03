@@ -58,10 +58,10 @@ public sealed class DeleteBehaviorTest : BehaviorTestBase
 
         var path = NewPath("delete-async");
 
-        await Op.WriteAsync(path, RandomBytes(12), CT);
+        await Op.WriteAsync(path, RandomBytes(12), cancellationToken: CT);
         await Op.DeleteAsync(path, cancellationToken: CT);
 
-        var ex = await Assert.ThrowsAsync<OpenDALException>(() => Op.ReadAsync(path, CT));
+        var ex = await Assert.ThrowsAsync<OpenDALException>(() => Op.ReadAsync(path, cancellationToken: CT));
         Assert.True(IsMissingError(ex));
     }
 
@@ -96,13 +96,13 @@ public sealed class DeleteBehaviorTest : BehaviorTestBase
         }
 
         var path = NewPath("delete-version");
-        await Op.WriteAsync(path, RandomBytes(16), CT);
+        await Op.WriteAsync(path, RandomBytes(16), cancellationToken: CT);
 
-        var version = (await Op.StatAsync(path, CT)).Version;
+        var version = (await Op.StatAsync(path, cancellationToken: CT)).Version;
         Assert.NotNull(version);
 
         await Op.DeleteAsync(path, cancellationToken: CT);
-        var missing = await Assert.ThrowsAsync<OpenDALException>(() => Op.StatAsync(path, CT));
+        var missing = await Assert.ThrowsAsync<OpenDALException>(() => Op.StatAsync(path, cancellationToken: CT));
         Assert.True(IsMissingError(missing));
 
         var archived = await Op.StatAsync(path, new StatOptions { Version = version }, CT);
@@ -160,14 +160,14 @@ public sealed class DeleteBehaviorTest : BehaviorTestBase
         }
 
         var path = NewPath("delete-if-match");
-        await Op.WriteAsync(path, RandomBytes(16), CT);
+        await Op.WriteAsync(path, RandomBytes(16), cancellationToken: CT);
 
-        var etag = (await Op.StatAsync(path, CT)).ETag;
+        var etag = (await Op.StatAsync(path, cancellationToken: CT)).ETag;
         Assert.NotNull(etag);
 
         await Op.DeleteAsync(path, new DeleteOptions { IfMatch = etag }, CT);
 
-        var ex = await Assert.ThrowsAsync<OpenDALException>(() => Op.StatAsync(path, CT));
+        var ex = await Assert.ThrowsAsync<OpenDALException>(() => Op.StatAsync(path, cancellationToken: CT));
         Assert.True(IsMissingError(ex));
     }
 
@@ -180,16 +180,16 @@ public sealed class DeleteBehaviorTest : BehaviorTestBase
         }
 
         var path = NewPath("delete-if-match-not-matched");
-        await Op.WriteAsync(path, RandomBytes(16), CT);
+        await Op.WriteAsync(path, RandomBytes(16), cancellationToken: CT);
 
-        var etag = (await Op.StatAsync(path, CT)).ETag;
+        var etag = (await Op.StatAsync(path, cancellationToken: CT)).ETag;
         Assert.NotNull(etag);
 
         var ex = await Assert.ThrowsAsync<OpenDALException>(
             () => Op.DeleteAsync(path, new DeleteOptions { IfMatch = "\"this-etag-does-not-match\"" }, CT));
         Assert.Equal(ErrorCode.ConditionNotMatch, ex.Code);
 
-        var stat = await Op.StatAsync(path, CT);
+        var stat = await Op.StatAsync(path, cancellationToken: CT);
         Assert.Equal(etag, stat.ETag);
     }
 }

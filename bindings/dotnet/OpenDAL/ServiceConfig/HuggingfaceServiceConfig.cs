@@ -29,9 +29,17 @@ namespace OpenDAL.ServiceConfig
     public sealed class HuggingfaceServiceConfig : IServiceConfig
     {
         /// <summary>
+        /// Disable loading config from the environment. When set, the service ignores `HF_ENDPOINT`, `HF_HUB_DISABLE_XET`, `HF_TOKEN`, `HF_TOKEN_PATH`, and the `token` file under `HF_HOME`, `$XDG_CACHE_HOME/huggingface` or `~/.cache/huggingface`.
+        /// </summary>
+        public bool? DisableConfigLoad { get; init; }
+        /// <summary>
         /// Download mode. Either `xet` (default) or `http`. When unset, the mode is resolved from the `HF_HUB_DISABLE_XET` environment variable: a non-empty value forces `http`, otherwise it defaults to `xet`. An explicit value here takes precedence. See &lt;https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfhubdisablexet&gt;.
         /// </summary>
         public string? DownloadMode { get; init; }
+        /// <summary>
+        /// Enable caching of resolved HTTP download addresses and XET file metadata. Defaults to `false`. Set to `true` to share resolve results across readers on the same backend. Changed files may remain invisible while cached results are reused. A reader retains XET metadata from its first read for its lifetime. Create a new reader to resolve the path again when this option is disabled. See [`HfBuilder::enable_resolve_cache`] for freshness semantics.
+        /// </summary>
+        public bool? EnableResolveCache { get; init; }
         /// <summary>
         /// Endpoint of the Hugging Face Hub. The default is `https://huggingface.co`.
         /// </summary>
@@ -62,9 +70,17 @@ namespace OpenDAL.ServiceConfig
         public IReadOnlyDictionary<string, string> ToOptions()
         {
             var map = new Dictionary<string, string>();
+            if (DisableConfigLoad is not null)
+            {
+                map["disable_config_load"] = Utilities.ToOptionString(DisableConfigLoad);
+            }
             if (DownloadMode is not null)
             {
                 map["download_mode"] = Utilities.ToOptionString(DownloadMode);
+            }
+            if (EnableResolveCache is not null)
+            {
+                map["enable_resolve_cache"] = Utilities.ToOptionString(EnableResolveCache);
             }
             if (Endpoint is not null)
             {

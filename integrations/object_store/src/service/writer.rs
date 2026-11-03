@@ -79,15 +79,15 @@ impl oio::MultipartWrite for ObjectStoreWriter {
             .map_err(parse_error)?;
 
         // Build metadata from put result
-        let mut metadata = Metadata::new(EntryMode::FILE);
+        let mut metadata = MetadataBuilder::unknown();
         if let Some(etag) = &result.e_tag {
-            metadata.set_etag(etag);
+            metadata.etag(etag);
         }
         if let Some(version) = &result.version {
-            metadata.set_version(version);
+            metadata.version(version);
         }
 
-        Ok(metadata)
+        Ok(metadata.build())
     }
 
     // Generate a unique upload ID that we'll use to track this session

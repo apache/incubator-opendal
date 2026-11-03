@@ -16,7 +16,7 @@
 // under the License.
 
 use super::backend::*;
-use super::core::parse_error;
+use super::core::{ErrorContext, parse_error};
 use http::Response;
 use http::StatusCode;
 use opendal_core::raw::oio;
@@ -47,6 +47,21 @@ impl WebdavReader {
     }
 }
 
+/// Build the read reply from response headers.
+///
+/// Servers may omit `Content-Length` (for example with chunked transfer
+/// encoding). The metadata is optional in `RpRead`, so return an empty reply
+/// instead of failing the read when the object size is unknown.
+fn parse_read_reply(path: &str, headers: &http::HeaderMap) -> Result<RpRead> {
+    let size = parse_content_range(headers)?
+        .and_then(|value| value.size())
+        .or(parse_content_length(headers)?);
+    if size.is_none() && !path.ends_with('/') {
+        return Ok(RpRead::default());
+    }
+    Ok(RpRead::new(parse_into_metadata(path, headers)?))
+}
+
 impl oio::StreamRead for WebdavReader {
     async fn open(&self, range: BytesRange) -> Result<(RpRead, Box<dyn oio::ReadStreamDyn>)> {
         let backend = &self.backend;
@@ -60,17 +75,63 @@ impl oio::StreamRead for WebdavReader {
         let status = resp.status();
 
         let (rp, stream) = match status {
-            StatusCode::OK | StatusCode::PARTIAL_CONTENT => (
-                RpRead::new(parse_into_metadata(path, resp.headers())?),
-                resp.into_body(),
-            ),
+            StatusCode::OK | StatusCode::PARTIAL_CONTENT => {
+                (parse_read_reply(path, resp.headers())?, resp.into_body())
+            }
             _ => {
                 let (part, mut body) = resp.into_parts();
                 let buf = body.to_buffer().await?;
-                return Err(parse_error(Response::from_parts(part, buf)));
+                return Err(parse_error(
+                    ErrorContext::new(ServiceOperation("Get"))
+                        .with_if_match(args.if_match().is_some()),
+                    Response::from_parts(part, buf),
+                ));
             }
         };
 
         Ok((rp, Box::new(stream) as Box<dyn oio::ReadStreamDyn>))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use http::HeaderMap;
+    use http::header::{CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE};
+
+    use super::*;
+
+    #[test]
+    fn test_parse_read_reply_without_content_length() {
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_TYPE, "text/plain".parse().unwrap());
+
+        let rp = parse_read_reply("file", &headers).unwrap();
+        assert!(rp.metadata().is_none());
+    }
+
+    #[test]
+    fn test_parse_read_reply_with_content_length() {
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_LENGTH, "5".parse().unwrap());
+
+        let rp = parse_read_reply("file", &headers).unwrap();
+        assert_eq!(rp.metadata().unwrap().content_length(), 5);
+    }
+
+    #[test]
+    fn test_parse_read_reply_with_content_range() {
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_RANGE, "bytes 0-1/10".parse().unwrap());
+
+        let rp = parse_read_reply("file", &headers).unwrap();
+        assert_eq!(rp.metadata().unwrap().content_length(), 10);
+    }
+
+    #[test]
+    fn test_parse_read_reply_rejects_invalid_content_length() {
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_LENGTH, "abc".parse().unwrap());
+
+        assert!(parse_read_reply("file", &headers).is_err());
     }
 }

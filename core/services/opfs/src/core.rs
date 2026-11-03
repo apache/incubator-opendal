@@ -57,46 +57,42 @@ impl OpfsCore {
     }
 }
 
-mod error {
-    use wasm_bindgen::JsCast;
-    use wasm_bindgen::JsValue;
-    use web_sys::DomException;
+use wasm_bindgen::JsCast;
+use wasm_bindgen::JsValue;
+use web_sys::DomException;
 
-    use opendal_core::Error;
-    use opendal_core::ErrorKind;
+use opendal_core::Error;
+use opendal_core::ErrorKind;
 
-    pub(crate) fn parse_js_error(value: JsValue) -> Error {
-        if let Some(exc) = value.dyn_ref::<DomException>() {
-            let kind = match exc.name().as_str() {
-                "NotFoundError" => ErrorKind::NotFound,
-                "TypeMismatchError" => ErrorKind::NotFound,
-                "NotAllowedError" => ErrorKind::PermissionDenied,
-                "QuotaExceededError" => ErrorKind::Unexpected,
-                e => {
-                    console_debug!("Got unhandled DOM exception {e:?}");
-                    ErrorKind::Unexpected
-                }
-            };
-            return Error::new(kind, exc.message());
-        }
-
-        // FIXME: how to map `TypeError`` from `getDirectoryHandle`:
-        // "name specified is not a valid string or contains characters that
-        // would interfere with the native file system"
-        if let Some(err) = value.dyn_ref::<js_sys::Error>() {
-            return Error::new(ErrorKind::Unexpected, String::from(err.message()));
-        }
-
-        Error::new(
-            ErrorKind::Unexpected,
-            value
-                .as_string()
-                .unwrap_or_else(|| "unknown JS error".to_string()),
-        )
+pub(crate) fn parse_js_error(value: JsValue) -> Error {
+    if let Some(exc) = value.dyn_ref::<DomException>() {
+        let kind = match exc.name().as_str() {
+            "NotFoundError" => ErrorKind::NotFound,
+            "TypeMismatchError" => ErrorKind::NotFound,
+            "NotAllowedError" => ErrorKind::PermissionDenied,
+            "QuotaExceededError" => ErrorKind::Unexpected,
+            e => {
+                console_debug!("Got unhandled DOM exception {e:?}");
+                ErrorKind::Unexpected
+            }
+        };
+        return Error::new(kind, exc.message());
     }
-}
 
-pub(super) use error::*;
+    // FIXME: how to map `TypeError`` from `getDirectoryHandle`:
+    // "name specified is not a valid string or contains characters that
+    // would interfere with the native file system"
+    if let Some(err) = value.dyn_ref::<js_sys::Error>() {
+        return Error::new(ErrorKind::Unexpected, String::from(err.message()));
+    }
+
+    Error::new(
+        ErrorKind::Unexpected,
+        value
+            .as_string()
+            .unwrap_or_else(|| "unknown JS error".to_string()),
+    )
+}
 
 mod utils {
     use opendal_core::Result;

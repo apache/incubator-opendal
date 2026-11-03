@@ -24,6 +24,7 @@ use std::sync::LazyLock;
 use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
 use bytes::Buf;
+use http::HeaderValue;
 use http::StatusCode;
 use log::debug;
 use log::warn;
@@ -32,6 +33,7 @@ use md5::Md5;
 use reqsign_aws_v4::AssumeRoleCredentialProvider;
 use reqsign_aws_v4::Credential;
 use reqsign_aws_v4::DefaultCredentialProvider;
+use reqsign_aws_v4::ECSCredentialProvider;
 use reqsign_aws_v4::RequestSigner as AwsV4Signer;
 use reqsign_aws_v4::S3ExpressSessionConfig;
 use reqsign_aws_v4::S3ExpressSessionProvider;
@@ -145,6 +147,18 @@ impl S3Builder {
             self.config.region = Some(region.to_string())
         }
 
+        self
+    }
+
+    /// Set the fallback signing region.
+    ///
+    /// OpenDAL uses this value only when `region`, `AWS_REGION`, and
+    /// `AWS_DEFAULT_REGION` do not supply a region. Without any region,
+    /// building the service returns [`ErrorKind::ConfigInvalid`].
+    pub fn default_region(mut self, region: &str) -> Self {
+        if !region.is_empty() {
+            self.config.default_region = Some(region.to_string());
+        }
         self
     }
 
@@ -292,6 +306,16 @@ impl S3Builder {
         self
     }
 
+    /// Control S3 Bucket Keys for SSE-KMS writes and copies.
+    ///
+    /// `true` enables Bucket Keys for destination objects; `false` explicitly
+    /// disables them. If this method is not called, objects inherit the bucket
+    /// setting. This option does not change the bucket's configuration.
+    pub fn server_side_encryption_bucket_key_enabled(mut self, enabled: bool) -> Self {
+        self.config.server_side_encryption_bucket_key_enabled = Some(enabled);
+        self
+    }
+
     /// Set server_side_encryption_customer_algorithm for this backend.
     ///
     /// Available values: `AES256`.
@@ -410,13 +434,74 @@ impl S3Builder {
         self
     }
 
-    /// Disable config load so that opendal will not load config from
-    /// environment.
+    /// Set the relative URI for AWS container credential metadata.
     ///
-    /// For examples:
+    /// An explicit full endpoint takes precedence. The relative URI takes
+    /// precedence over ambient full and relative container credential URIs and
+    /// is joined to [`Self::container_metadata_uri_override`] when set.
     ///
-    /// - envs like `AWS_ACCESS_KEY_ID`
-    /// - files like `~/.aws/config`
+    /// This setting configures the ECS slot in the default credential chain. It
+    /// does not move that slot ahead of earlier default providers.
+    pub fn container_credentials_relative_uri(mut self, uri: &str) -> Self {
+        if !uri.is_empty() {
+            self.config.container_credentials_relative_uri = Some(uri.to_string());
+        }
+        self
+    }
+
+    /// Set the full URI for AWS container credential metadata.
+    ///
+    /// This endpoint takes precedence over the relative URI and both ambient
+    /// container credential URI forms.
+    pub fn container_credentials_endpoint(mut self, endpoint: &str) -> Self {
+        if !endpoint.is_empty() {
+            self.config.container_credentials_endpoint = Some(endpoint.to_string());
+        }
+        self
+    }
+
+    /// Set the authorization token for AWS container credential requests.
+    ///
+    /// This value takes precedence over the configured token file and both
+    /// ambient token forms.
+    pub fn container_authorization_token(mut self, token: &str) -> Self {
+        if !token.is_empty() {
+            self.config.container_authorization_token = Some(token.to_string());
+        }
+        self
+    }
+
+    /// Set the file containing the authorization token for AWS container
+    /// credential requests.
+    ///
+    /// This file takes precedence over both ambient token forms. The credential
+    /// provider trims surrounding whitespace after reading the file.
+    pub fn container_authorization_token_file(mut self, file_path: &str) -> Self {
+        if !file_path.is_empty() {
+            self.config.container_authorization_token_file = Some(file_path.to_string());
+        }
+        self
+    }
+
+    /// Set the base URI used to resolve a relative AWS container credential
+    /// URI.
+    ///
+    /// The override affects relative URIs only and does not alter a configured
+    /// or ambient full URI. The override alone does not select an endpoint.
+    pub fn container_metadata_uri_override(mut self, uri: &str) -> Self {
+        if !uri.is_empty() {
+            self.config.container_metadata_uri_override = Some(uri.to_string());
+        }
+        self
+    }
+
+    /// Disable automatic endpoint loading and the environment/profile
+    /// credential providers.
+    ///
+    /// This skips endpoint environment variables and removes the static
+    /// environment and shared-profile credential slots. Region environment
+    /// lookup and other credential providers, including AWS container
+    /// credentials and EC2 instance metadata, remain enabled.
     pub fn disable_config_load(mut self) -> Self {
         self.config.disable_config_load = true;
         self
@@ -494,6 +579,10 @@ impl S3Builder {
     }
 
     /// Replace the credential providers with a custom chain.
+    ///
+    /// Build the chain from [`opendal_core::reqsign_core`] and
+    /// [`crate::reqsign_aws_v4`] so that its types match the ones this service is
+    /// built with.
     pub fn credential_provider_chain(mut self, chain: ProvideCredentialChain<Credential>) -> Self {
         self.credential_providers = Some(chain);
         self
@@ -712,6 +801,7 @@ impl S3Builder {
     ///   - Cloudflare R2
     ///   - AWS S3
     ///   - Aliyun OSS
+    ///   - Neon Object Storage
     /// - Send a `HEAD` request to endpoint with bucket name to get `x-amz-bucket-region`.
     ///
     /// # Examples
@@ -777,6 +867,21 @@ impl S3Builder {
             if let Some(region) = v.strip_suffix(".aliyuncs.com") {
                 return Some(region.to_string());
             }
+        }
+
+        // If this bucket is Neon Object Storage, the region is part of the branch endpoint.
+        // Neon doesn't return `x-amz-bucket-region` for HeadBucket.
+        //
+        // - `br-xxx.storage.c-6.us-east-2.aws.neon.tech` => `us-east-2`
+        //
+        // Reference: <https://neon.com/docs/storage/s3-compatibility>
+        if let Some((_, region)) = endpoint
+            .strip_prefix("https://")
+            .and_then(|v| v.strip_suffix(".aws.neon.tech"))
+            .and_then(|v| v.split_once(".storage."))
+            .and_then(|(_, v)| v.split_once('.'))
+        {
+            return Some(region.to_string());
         }
 
         // Try to detect region by HeadBucket.
@@ -915,10 +1020,12 @@ impl Builder for S3Builder {
         } else {
             std::env::var("AWS_REGION")
                 .or_else(|_| std::env::var("AWS_DEFAULT_REGION"))
-                .map_err(|_| {
+                .ok()
+                .or_else(|| config.default_region.clone().filter(|v| !v.is_empty()))
+                .ok_or_else(|| {
                     Error::new(
                         ErrorKind::ConfigInvalid,
-                        "region is missing. Please find it by S3::detect_region() or set them in env.",
+                        "region is missing. Set region, an AWS region environment variable, or default_region.",
                     )
                     .with_operation("Builder::build")
                     .with_context("service", S3_SCHEME)
@@ -967,6 +1074,33 @@ impl Builder for S3Builder {
 
             if config.disable_ec2_metadata {
                 builder = builder.no_imds();
+            }
+
+            if config.container_credentials_endpoint.is_some()
+                || config.container_credentials_relative_uri.is_some()
+                || config.container_authorization_token.is_some()
+                || config.container_authorization_token_file.is_some()
+                || config.container_metadata_uri_override.is_some()
+            {
+                let mut ecs = ECSCredentialProvider::new();
+
+                if let Some(endpoint) = config.container_credentials_endpoint.as_deref() {
+                    ecs = ecs.with_endpoint(endpoint);
+                }
+                if let Some(relative_uri) = config.container_credentials_relative_uri.as_deref() {
+                    ecs = ecs.with_relative_uri(relative_uri);
+                }
+                if let Some(token) = config.container_authorization_token.as_deref() {
+                    ecs = ecs.with_auth_token(token);
+                }
+                if let Some(token_file) = config.container_authorization_token_file.as_deref() {
+                    ecs = ecs.with_auth_token_file(token_file);
+                }
+                if let Some(uri_override) = config.container_metadata_uri_override.as_deref() {
+                    ecs = ecs.with_metadata_uri_override(uri_override);
+                }
+
+                builder = builder.ecs(ecs);
             }
 
             ProvideCredentialChain::new().push(builder.build())
@@ -1150,6 +1284,11 @@ impl Builder for S3Builder {
                 root,
                 server_side_encryption,
                 server_side_encryption_aws_kms_key_id,
+                server_side_encryption_bucket_key_enabled: config
+                    .server_side_encryption_bucket_key_enabled
+                    .map(|enabled| {
+                        HeaderValue::from_static(if enabled { "true" } else { "false" })
+                    }),
                 server_side_encryption_customer_algorithm,
                 server_side_encryption_customer_key,
                 server_side_encryption_customer_key_md5,
@@ -1177,6 +1316,7 @@ impl Service for S3Backend {
     type Lister = S3Listers;
     type Deleter = oio::BatchDeleter<S3Deleter>;
     type Copier = S3Copiers;
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -1200,10 +1340,7 @@ impl Service for S3Backend {
 
     async fn stat(&self, ctx: &OperationContext, path: &str, args: OpStat) -> Result<RpStat> {
         let error_ctx = ErrorContext::new(ServiceOperation("HeadObject"))
-            .with_if_match(args.if_match().is_some())
-            .with_if_none_match(args.if_none_match().is_some())
-            .with_if_modified_since(args.if_modified_since().is_some())
-            .with_if_unmodified_since(args.if_unmodified_since().is_some());
+            .with_caller_condition(args.is_conditional());
         let resp = self.core.s3_head_object(ctx, path, args).await?;
 
         let status = resp.status();
@@ -1296,10 +1433,9 @@ impl Service for S3Backend {
         from: &str,
         to: &str,
         args: OpCopy,
-        opts: OpCopier,
     ) -> Result<Self::Copier> {
         let output: S3Copiers = {
-            let copier = new_s3_copier(self.core.clone(), ctx, from, to, args, opts)?;
+            let copier = new_s3_copier(self.core.clone(), ctx, from, to, args)?;
             Ok(copier)
         }?;
 
@@ -1326,17 +1462,15 @@ impl Service for S3Backend {
         args: OpRestore,
     ) -> Result<RpRestore> {
         if let Some(version) = args.version() {
-            let copy_args = OpCopy::new()
-                .with_source_version(version)
-                .with_if_not_exists(args.if_not_exists());
-            let mut copier = new_s3_copier(
-                self.core.clone(),
-                ctx,
-                path,
-                path,
-                copy_args,
-                OpCopier::default(),
+            let copy_args = OpCopy::from_options(
+                &self.capability(),
+                options::CopyOptions {
+                    source_version: Some(version.to_owned()),
+                    if_not_exists: args.if_not_exists(),
+                    ..Default::default()
+                },
             )?;
+            let mut copier = new_s3_copier(self.core.clone(), ctx, path, path, copy_args)?;
 
             return match copier.close().await {
                 Ok(_) => Ok(RpRestore::new()),
@@ -1390,7 +1524,13 @@ impl Service for S3Backend {
             ));
         };
 
-        let delete_args = OpDelete::new().with_version(&marker.version_id);
+        let delete_args = OpDelete::from_options(
+            &self.capability(),
+            options::DeleteOptions {
+                version: Some(marker.version_id.clone()),
+                ..Default::default()
+            },
+        )?;
         let resp = self.core.s3_delete_object(ctx, path, &delete_args).await?;
         match resp.status() {
             StatusCode::NO_CONTENT | StatusCode::NOT_FOUND => Ok(RpRestore::new()),
@@ -1443,11 +1583,107 @@ mod tests {
 
     use bytes::Bytes;
     use http::HeaderMap;
+    use http::HeaderValue;
     use http::Method;
     use http::Request;
     use http::Response;
 
     use super::*;
+
+    #[tokio::test]
+    async fn test_bucket_key_presign_headers() {
+        let header = "x-amz-server-side-encryption-bucket-key-enabled";
+        for (key, value) in [
+            ("server_side_encryption_bucket_key_enabled", None),
+            ("server_side_encryption_bucket_key_enabled", Some("false")),
+            ("server_side_encryption_bucket_key_enabled", Some("true")),
+            ("aws_sse_bucket_key_enabled", Some("false")),
+        ] {
+            let mut config = vec![
+                ("bucket".to_string(), "test-bucket".to_string()),
+                ("region".to_string(), "us-east-1".to_string()),
+                ("access_key_id".to_string(), "test-access-key".to_string()),
+                (
+                    "secret_access_key".to_string(),
+                    "test-secret-key".to_string(),
+                ),
+                ("disable_config_load".to_string(), "true".to_string()),
+                ("server_side_encryption".to_string(), "aws:kms".to_string()),
+            ];
+            if let Some(value) = value {
+                config.push((key.to_string(), value.to_string()));
+            }
+            let op = opendal_core::Operator::from_iter::<S3Builder>(config).unwrap();
+            let write = op
+                .presign_write("test", std::time::Duration::from_secs(60))
+                .await
+                .unwrap();
+            assert_eq!(
+                write.header().get(header).map(|v| v.to_str().unwrap()),
+                value
+            );
+            let read = op
+                .presign_read("test", std::time::Duration::from_secs(60))
+                .await
+                .unwrap();
+            assert!(!read.header().contains_key(header));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_default_region_presign_scope() {
+        let environment_region = std::env::var("AWS_REGION")
+            .or_else(|_| std::env::var("AWS_DEFAULT_REGION"))
+            .ok();
+        for (explicit, expected) in [
+            (None, environment_region.as_deref().unwrap_or("us-west-2")),
+            (Some("us-east-1"), "us-east-1"),
+        ] {
+            let mut config = vec![
+                ("bucket".to_string(), "test-bucket".to_string()),
+                ("aws_default_region".to_string(), "us-west-2".to_string()),
+                ("access_key_id".to_string(), "test-access-key".to_string()),
+                (
+                    "secret_access_key".to_string(),
+                    "test-secret-key".to_string(),
+                ),
+                ("disable_config_load".to_string(), "true".to_string()),
+            ];
+            if let Some(region) = explicit {
+                config.push(("region".to_string(), region.to_string()));
+            }
+            let op = opendal_core::Operator::from_iter::<S3Builder>(config).unwrap();
+            let request = op
+                .presign_read("test", std::time::Duration::from_secs(60))
+                .await
+                .unwrap();
+            let url = url::Url::parse(&request.uri().to_string()).unwrap();
+            let credential = url
+                .query_pairs()
+                .find_map(|(key, value)| (key == "X-Amz-Credential").then(|| value.into_owned()))
+                .unwrap();
+            assert_eq!(credential.split('/').nth(2), Some(expected));
+        }
+    }
+
+    #[tokio::test]
+    async fn test_aws_skip_signature_alias() {
+        let config = [
+            ("bucket", "test-bucket"),
+            ("region", "us-east-1"),
+            ("aws_skip_signature", "true"),
+            ("disable_config_load", "true"),
+            ("disable_ec2_metadata", "true"),
+        ]
+        .map(|(key, value)| (key.to_string(), value.to_string()));
+        let op = opendal_core::Operator::from_iter::<S3Builder>(config).unwrap();
+        let request = op
+            .presign_read("test", std::time::Duration::from_secs(60))
+            .await
+            .unwrap();
+        assert!(request.uri().query().is_none());
+        assert!(!request.header().contains_key(http::header::AUTHORIZATION));
+    }
 
     #[derive(Clone, Copy)]
     enum CreateSessionOutcome {
@@ -1467,6 +1703,8 @@ mod tests {
     #[derive(Clone)]
     struct S3ExpressMockTransport {
         outcome: CreateSessionOutcome,
+        source_content_length: u64,
+        source_version: Option<&'static str>,
         requests: Arc<Mutex<Vec<CapturedRequest>>>,
     }
 
@@ -1474,8 +1712,20 @@ mod tests {
         fn new(outcome: CreateSessionOutcome) -> Self {
             Self {
                 outcome,
+                source_content_length: 1,
+                source_version: None,
                 requests: Arc::new(Mutex::new(Vec::new())),
             }
+        }
+
+        fn with_source_content_length(mut self, source_content_length: u64) -> Self {
+            self.source_content_length = source_content_length;
+            self
+        }
+
+        fn with_source_version(mut self, source_version: &'static str) -> Self {
+            self.source_version = Some(source_version);
+            self
         }
 
         fn requests(&self) -> Vec<CapturedRequest> {
@@ -1534,6 +1784,32 @@ mod tests {
                 };
             }
 
+            if req.method() == Method::HEAD {
+                let mut response = Self::response(StatusCode::OK, Bytes::new());
+                response.headers_mut().insert(
+                    http::header::CONTENT_LENGTH,
+                    self.source_content_length
+                        .to_string()
+                        .parse()
+                        .expect("source content length must be a valid header"),
+                );
+                response.headers_mut().insert(
+                    http::header::ETAG,
+                    "\"source-etag\""
+                        .parse()
+                        .expect("source ETag must be a valid header"),
+                );
+                if let Some(version) = self.source_version {
+                    response.headers_mut().insert(
+                        constants::X_AMZ_VERSION_ID,
+                        version
+                            .parse()
+                            .expect("source version must be a valid header"),
+                    );
+                }
+                return Ok(response);
+            }
+
             let query = req.uri().query().unwrap_or_default();
             if req.headers().contains_key(constants::X_AMZ_COPY_SOURCE) {
                 return Ok(Self::response(
@@ -1564,7 +1840,78 @@ mod tests {
                 ));
             }
 
-            Ok(Self::response(StatusCode::OK, Bytes::new()))
+            let mut response = Self::response(StatusCode::OK, Bytes::new());
+            response
+                .headers_mut()
+                .insert(http::header::ETAG, HeaderValue::from_static("\"etag\""));
+            Ok(response)
+        }
+    }
+
+    #[tokio::test]
+    async fn test_multipart_sse_kms_header_scope() {
+        const PART_SIZE: usize = 5 * 1024 * 1024;
+        for is_copy in [false, true] {
+            let transport = S3ExpressMockTransport::new(CreateSessionOutcome::Success);
+            let op = Operator::new(
+                S3Builder::default()
+                    .bucket("example")
+                    .region("us-west-2")
+                    .server_side_encryption("aws:kms")
+                    .server_side_encryption_aws_kms_key_id("example-kms-key")
+                    .skip_signature()
+                    .disable_config_load()
+                    .disable_ec2_metadata(),
+            )
+            .unwrap()
+            .with_context(
+                OperationContext::new()
+                    .with_http_transport(HttpTransporter::new(transport.clone())),
+            );
+            if is_copy {
+                op.copy_with("source", "target")
+                    .source_content_length_hint(PART_SIZE as u64 + 1)
+                    .chunk(PART_SIZE)
+                    .await
+                    .unwrap();
+            } else {
+                let mut writer = op.writer_with("target").chunk(PART_SIZE).await.unwrap();
+                writer.write(vec![0; PART_SIZE]).await.unwrap();
+                writer.write("x").await.unwrap();
+                writer.close().await.unwrap();
+            }
+            let requests = transport.requests();
+            let initiate = requests
+                .iter()
+                .find(|request| request.uri.query() == Some("uploads"))
+                .unwrap();
+            assert_eq!(header(initiate, "x-amz-server-side-encryption"), "aws:kms");
+            assert_eq!(
+                header(initiate, "x-amz-server-side-encryption-aws-kms-key-id"),
+                "example-kms-key"
+            );
+            let mut parts = 0;
+            let mut completions = 0;
+            for request in requests.iter().filter(|request| {
+                request
+                    .uri
+                    .query()
+                    .is_some_and(|query| query.contains("uploadId="))
+            }) {
+                if request.method == Method::PUT {
+                    parts += 1;
+                } else if request.method == Method::POST {
+                    completions += 1;
+                }
+                assert!(!request.headers.contains_key("x-amz-server-side-encryption"));
+                assert!(
+                    !request
+                        .headers
+                        .contains_key("x-amz-server-side-encryption-aws-kms-key-id")
+                );
+            }
+            assert_eq!(parts, 2);
+            assert_eq!(completions, 1);
         }
     }
 
@@ -1705,6 +2052,98 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_s3_copy_hint_skips_source_snapshot() {
+        let transport = S3ExpressMockTransport::new(CreateSessionOutcome::Success);
+        let op = s3_general_operator(transport.clone());
+
+        let metadata = op
+            .copy_with("source", "target")
+            .source_content_length_hint(7)
+            .await
+            .expect("copy must succeed");
+
+        assert_eq!(metadata.content_length(), 7);
+        let requests = transport.requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].method, Method::PUT);
+        assert!(
+            !requests[0]
+                .headers
+                .contains_key(constants::X_AMZ_COPY_SOURCE_IF_MATCH)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_s3_copy_hint_preserves_explicit_source_version() {
+        let transport = S3ExpressMockTransport::new(CreateSessionOutcome::Success);
+        let op = s3_general_operator(transport.clone());
+
+        op.copy_with("source", "target")
+            .source_version("source-version")
+            .source_content_length_hint(7)
+            .await
+            .expect("copy must succeed");
+
+        let requests = transport.requests();
+        assert_eq!(requests.len(), 1);
+        assert!(
+            header(&requests[0], constants::X_AMZ_COPY_SOURCE).contains("versionId=source-version")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_s3_copy_without_hint_pins_source_etag() {
+        let transport = S3ExpressMockTransport::new(CreateSessionOutcome::Success)
+            .with_source_content_length(7);
+        let op = s3_general_operator(transport.clone());
+
+        let metadata = op
+            .copy("source", "target")
+            .await
+            .expect("copy must succeed");
+
+        assert_eq!(metadata.content_length(), 7);
+        let requests = transport.requests();
+        assert_eq!(
+            requests
+                .iter()
+                .filter(|request| request.method == Method::HEAD)
+                .count(),
+            1
+        );
+        let copy = requests
+            .iter()
+            .find(|request| request.headers.contains_key(constants::X_AMZ_COPY_SOURCE))
+            .expect("CopyObject request must be captured");
+        assert_eq!(
+            header(copy, constants::X_AMZ_COPY_SOURCE_IF_MATCH),
+            "\"source-etag\""
+        );
+    }
+
+    #[tokio::test]
+    async fn test_s3_copy_uses_version_from_source_snapshot() {
+        let transport = S3ExpressMockTransport::new(CreateSessionOutcome::Success)
+            .with_source_version("source-version");
+        let op = s3_general_operator(transport.clone());
+
+        op.copy_with("source", "target")
+            .await
+            .expect("copy must succeed");
+
+        let requests = transport.requests();
+        let copy = requests
+            .iter()
+            .find(|request| request.headers.contains_key(constants::X_AMZ_COPY_SOURCE))
+            .expect("CopyObject request must be captured");
+        assert!(header(copy, constants::X_AMZ_COPY_SOURCE).contains("versionId=source-version"));
+        assert_eq!(
+            header(copy, constants::X_AMZ_COPY_SOURCE_IF_MATCH),
+            "\"source-etag\""
+        );
+    }
+
+    #[tokio::test]
     async fn test_s3_express_copy_and_presign_use_iam_credentials() {
         let transport = S3ExpressMockTransport::new(CreateSessionOutcome::Success);
         let op = s3_express_operator(transport.clone());
@@ -1720,7 +2159,7 @@ mod tests {
                 .filter(|request| request.uri.query() == Some("session"))
                 .count(),
             0,
-            "CopyObject must not create an S3 Express session"
+            "a source length hint must skip HeadObject"
         );
         let copy = requests
             .iter()
@@ -1729,6 +2168,11 @@ mod tests {
         assert_eq!(header(copy, "x-amz-security-token"), "source-session-token");
         assert!(!copy.headers.contains_key("x-amz-s3session-token"));
         assert!(header(copy, "authorization").contains("source-access-key/"));
+        assert!(
+            !copy
+                .headers
+                .contains_key(constants::X_AMZ_COPY_SOURCE_IF_MATCH)
+        );
 
         let presigned = op
             .presign_read("source", Duration::from_secs(60))
@@ -1744,12 +2188,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_s3_express_upload_part_copy_uses_iam_credentials() {
-        let transport = S3ExpressMockTransport::new(CreateSessionOutcome::Success);
+        let source_content_length = 5 * 1024 * 1024 + 1;
+        let transport = S3ExpressMockTransport::new(CreateSessionOutcome::Success)
+            .with_source_content_length(source_content_length);
         let op = s3_express_operator(transport.clone());
 
         op.copy_with("source", "target")
             .chunk(5 * 1024 * 1024)
-            .source_content_length_hint(5 * 1024 * 1024 + 1)
+            .source_content_length_hint(source_content_length)
             .await
             .expect("multipart copy must succeed");
 
@@ -1772,6 +2218,11 @@ mod tests {
             );
             assert!(!request.headers.contains_key("x-amz-s3session-token"));
             assert!(header(request, "authorization").contains("source-access-key/"));
+            assert!(
+                !request
+                    .headers
+                    .contains_key(constants::X_AMZ_COPY_SOURCE_IF_MATCH)
+            );
         }
         assert_eq!(
             requests
@@ -1781,6 +2232,38 @@ mod tests {
             1,
             "session operations in multipart copy must share one session"
         );
+    }
+
+    #[tokio::test]
+    async fn test_s3_multipart_copy_without_hint_pins_every_part() {
+        let source_content_length = 5 * 1024 * 1024 + 1;
+        let transport = S3ExpressMockTransport::new(CreateSessionOutcome::Success)
+            .with_source_content_length(source_content_length);
+        let op = s3_general_operator(transport.clone());
+
+        op.copy_with("source", "target")
+            .chunk(5 * 1024 * 1024)
+            .await
+            .expect("multipart copy must succeed");
+
+        let requests = transport.requests();
+        let part_copies = requests
+            .iter()
+            .filter(|request| {
+                request.headers.contains_key(constants::X_AMZ_COPY_SOURCE)
+                    && request
+                        .uri
+                        .query()
+                        .is_some_and(|query| query.contains("partNumber="))
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(part_copies.len(), 2);
+        for request in part_copies {
+            assert_eq!(
+                header(request, constants::X_AMZ_COPY_SOURCE_IF_MATCH),
+                "\"source-etag\""
+            );
+        }
     }
 
     #[tokio::test]
@@ -2085,6 +2568,12 @@ mod tests {
                 Some("auto"),
             ),
             (
+                "neon",
+                "https://br-example-a1b2c3d4.storage.c-6.us-east-2.aws.neon.tech",
+                "example",
+                Some("us-east-2"),
+            ),
+            (
                 "invalid service",
                 "https://opendal.apache.org",
                 "example",
@@ -2109,7 +2598,14 @@ mod tests {
             .build()
             .expect("build");
 
-        let op = OpWrite::default().with_content_type("application/json");
+        let (op, _) = OpWrite::from_options(
+            &backend.capability(),
+            options::WriteOptions {
+                content_type: Some("application/json".to_owned()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
         let args = OpPresign::new(op, Duration::from_secs(3600));
         let ctx = OperationContext::new();
         let presigned = backend
@@ -2135,7 +2631,11 @@ mod tests {
             .build()
             .expect("build");
 
-        let op = OpStat::default().with_version("a+b/c=d%25&e");
+        let op: OpStat = options::StatOptions {
+            version: Some("a+b/c=d%25&e".to_owned()),
+            ..Default::default()
+        }
+        .into();
         let args = OpPresign::new(op, Duration::from_secs(3600));
         let ctx = OperationContext::new();
         let presigned = backend
@@ -2161,7 +2661,11 @@ mod tests {
             .build()
             .expect("build");
 
-        let op = OpRead::default().with_version("a+b/c=d%25&e");
+        let (_, op, _) = options::ReadOptions {
+            version: Some("a+b/c=d%25&e".to_owned()),
+            ..Default::default()
+        }
+        .into();
         let args = OpPresign::new(
             PresignOperation::Read(BytesRange::default(), op),
             Duration::from_secs(3600),

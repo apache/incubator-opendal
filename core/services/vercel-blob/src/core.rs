@@ -262,7 +262,10 @@ impl VercelBlobCore {
         let status = resp.status();
 
         if status != StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListBlobs")),
+                resp,
+            ));
         }
 
         let body = resp.into_body();
@@ -306,7 +309,10 @@ impl VercelBlobCore {
 
         match status {
             StatusCode::OK => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("DeleteBlob")),
+                resp,
+            )),
         }
     }
 
@@ -416,19 +422,17 @@ impl VercelBlobCore {
 }
 
 pub fn parse_blob(blob: &Blob) -> Result<Metadata> {
-    let mode = if blob.pathname.ends_with('/') {
-        EntryMode::DIR
+    let mut md = if blob.pathname.ends_with('/') {
+        MetadataBuilder::dir()
     } else {
-        EntryMode::FILE
+        MetadataBuilder::file(blob.size)
     };
-    let mut md = Metadata::new(mode);
     if let Some(content_type) = blob.content_type.clone() {
-        md.set_content_type(&content_type);
+        md.content_type(&content_type);
     }
-    md.set_content_length(blob.size);
-    md.set_last_modified(blob.uploaded_at.parse::<Timestamp>()?);
-    md.set_content_disposition(&blob.content_disposition);
-    Ok(md)
+    md.last_modified(blob.uploaded_at.parse::<Timestamp>()?);
+    md.content_disposition(&blob.content_disposition);
+    Ok(md.build())
 }
 
 fn resolve_blob(blobs: Vec<Blob>, path: String) -> String {
@@ -479,101 +483,103 @@ pub struct UploadPartResponse {
     pub etag: String,
 }
 
-mod error {
-    use bytes::Buf;
-    use http::Response;
-    use quick_xml::de;
-    use serde::Deserialize;
+use quick_xml::de;
 
-    use opendal_core::raw::*;
-    use opendal_core::*;
+/// VercelBlobError is the error returned by VercelBlob service.
+#[derive(Default, Debug, Deserialize)]
+#[serde(default)]
+struct VercelBlobError {
+    error: VercelBlobErrorDetail,
+}
 
-    /// VercelBlobError is the error returned by VercelBlob service.
-    #[derive(Default, Debug, Deserialize)]
-    #[serde(default)]
-    struct VercelBlobError {
-        error: VercelBlobErrorDetail,
+#[derive(Default, Debug, Deserialize)]
+#[serde(default)]
+struct VercelBlobErrorDetail {
+    code: String,
+    message: Option<String>,
+}
+
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+}
+
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self { service_operation }
+    }
+}
+
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
+    let (parts, body) = resp.into_parts();
+    let bs = body.to_bytes();
+
+    let (kind, retryable) = match parts.status.as_u16() {
+        403 => (ErrorKind::PermissionDenied, false),
+        404 => (ErrorKind::NotFound, false),
+        500 | 502 | 503 | 504 => (ErrorKind::Unexpected, true),
+        _ => (ErrorKind::Unexpected, false),
+    };
+
+    let (message, _vercel_blob_err) = de::from_reader::<_, VercelBlobError>(bs.clone().reader())
+        .map(|vercel_blob_err| (format!("{vercel_blob_err:?}"), Some(vercel_blob_err)))
+        .unwrap_or_else(|_| (String::from_utf8_lossy(&bs).into_owned(), None));
+
+    let mut err = Error::new(kind, message);
+
+    err = err.with_context("service_operation", ctx.service_operation.0);
+    err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
     }
 
-    #[derive(Default, Debug, Deserialize)]
-    #[serde(default)]
-    struct VercelBlobErrorDetail {
-        code: String,
-        message: Option<String>,
-    }
+    err
+}
 
-    /// Parse error response into Error.
-    pub(crate) fn parse_error(resp: Response<Buffer>) -> Error {
-        let (parts, body) = resp.into_parts();
-        let bs = body.to_bytes();
+#[cfg(test)]
+mod tests {
+    use http::StatusCode;
 
-        let (kind, retryable) = match parts.status.as_u16() {
-            403 => (ErrorKind::PermissionDenied, false),
-            404 => (ErrorKind::NotFound, false),
-            500 | 502 | 503 | 504 => (ErrorKind::Unexpected, true),
-            _ => (ErrorKind::Unexpected, false),
-        };
+    use super::*;
 
-        let (message, _vercel_blob_err) =
-            de::from_reader::<_, VercelBlobError>(bs.clone().reader())
-                .map(|vercel_blob_err| (format!("{vercel_blob_err:?}"), Some(vercel_blob_err)))
-                .unwrap_or_else(|_| (String::from_utf8_lossy(&bs).into_owned(), None));
-
-        let mut err = Error::new(kind, message);
-
-        err = with_error_response_context(err, parts);
-
-        if retryable {
-            err = err.set_temporary();
-        }
-
-        err
-    }
-
-    #[cfg(test)]
-    mod test {
-        use http::StatusCode;
-
-        use super::*;
-
-        #[tokio::test]
-        async fn test_parse_error() {
-            let err_res = vec![(
-                r#"{
+    #[tokio::test]
+    async fn test_parse_error() {
+        let err_res = vec![(
+            r#"{
                     "error": {
                         "code": "forbidden",
                         "message": "Invalid token"
                     }
                 }"#,
-                ErrorKind::PermissionDenied,
-                StatusCode::FORBIDDEN,
-            )];
+            ErrorKind::PermissionDenied,
+            StatusCode::FORBIDDEN,
+        )];
 
-            for res in err_res {
-                let body = Buffer::from(res.0.as_bytes().to_vec());
-                let resp = Response::builder().status(res.2).body(body).unwrap();
+        for res in err_res {
+            let body = Buffer::from(res.0.as_bytes().to_vec());
+            let resp = Response::builder().status(res.2).body(body).unwrap();
 
-                let err = parse_error(resp);
+            let err = parse_error(ErrorContext::new(ServiceOperation("Test")), resp);
 
-                assert_eq!(err.kind(), res.1);
-            }
+            assert_eq!(err.kind(), res.1);
+        }
 
-            let bs = bytes::Bytes::from(
-                r#"{
+        let bs = bytes::Bytes::from(
+            r#"{
                 "error": {
                     "code": "forbidden",
                     "message": "Invalid token"
                 }
             }"#,
-            );
+        );
 
-            let out: VercelBlobError = serde_json::from_reader(bs.reader()).expect("must success");
-            println!("{out:?}");
+        let out: VercelBlobError = serde_json::from_reader(bs.reader()).expect("must success");
+        println!("{out:?}");
 
-            assert_eq!(out.error.code, "forbidden");
-            assert_eq!(out.error.message, Some("Invalid token".to_string()));
-        }
+        assert_eq!(out.error.code, "forbidden");
+        assert_eq!(out.error.message, Some("Invalid token".to_string()));
     }
 }
-
-pub(super) use error::*;

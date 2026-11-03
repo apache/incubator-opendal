@@ -96,7 +96,7 @@ class AzblobConfig(TypedDict):
     encryption_algorithm: NotRequired[str]
     """The encryption algorithm of Azblob service backend."""
     encryption_key: NotRequired[str]
-    """The encryption key of Azblob service backend."""
+    """The Base64-encoded AES-256 customer-provided encryption key.  The key must decode to exactly 32 bytes. Building an operator returns `ConfigInvalid` for invalid Base64 or a different decoded length."""
     encryption_key_sha256: NotRequired[str]
     """The encryption key sha256 of Azblob service backend."""
     endpoint: NotRequired[str]
@@ -310,6 +310,35 @@ class GcsConfig(TypedDict):
     """A Google Cloud OAuth2 token.  Takes precedence over `credential` and `credential_path`."""
 
 
+class GcsGrpcConfig(TypedDict):
+    """Configuration for the `gcs-grpc` service."""
+
+    scheme: Required[Literal["gcs-grpc"]]
+    """The service scheme; fixed to `"gcs-grpc"`."""
+    bucket: Required[str]
+    """Bucket name."""
+    credential: NotRequired[str]
+    """Base64-encoded service account credential."""
+    credential_path: NotRequired[str]
+    """Path to a service account credential file."""
+    disable_config_load: NotRequired[bool]
+    """Disable environment and well-known credential loading."""
+    disable_vm_metadata: NotRequired[bool]
+    """Disable the GCE metadata credential provider."""
+    endpoint: NotRequired[str]
+    """gRPC endpoint."""
+    root: NotRequired[str | os.PathLike[str]]
+    """Root path for all operations."""
+    scope: NotRequired[str]
+    """OAuth 2.0 scope."""
+    service_account: NotRequired[str]
+    """Service account used by the GCE metadata server."""
+    skip_signature: NotRequired[bool]
+    """Send requests without authentication."""
+    token: NotRequired[str]
+    """OAuth 2.0 access token."""
+
+
 class GdriveConfig(TypedDict):
     """Configuration for the `gdrive` service."""
 
@@ -321,6 +350,8 @@ class GdriveConfig(TypedDict):
     """Client id for gdrive."""
     client_secret: NotRequired[str]
     """Client secret for gdrive."""
+    drive_id: NotRequired[str]
+    """Shared drive (formerly Team Drive) id for gdrive.  When set, gdrive resolves `root` inside this shared drive instead of the user's My Drive."""
     refresh_token: NotRequired[str]
     """Refresh token for gdrive."""
     root: NotRequired[str | os.PathLike[str]]
@@ -379,8 +410,12 @@ class HfConfig(TypedDict):
 
     scheme: Required[Literal["hf"]]
     """The service scheme; fixed to `"hf"`."""
+    disable_config_load: NotRequired[bool]
+    """Disable loading config from the environment.  When set, the service ignores `HF_ENDPOINT`, `HF_HUB_DISABLE_XET`, `HF_TOKEN`, `HF_TOKEN_PATH`, and the `token` file under `HF_HOME`, `$XDG_CACHE_HOME/huggingface` or `~/.cache/huggingface`."""
     download_mode: NotRequired[str]
     """Download mode. Either `xet` (default) or `http`.  When unset, the mode is resolved from the `HF_HUB_DISABLE_XET` environment variable: a non-empty value forces `http`, otherwise it defaults to `xet`. An explicit value here takes precedence.  See <https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfhubdisablexet>."""
+    enable_resolve_cache: NotRequired[bool]
+    """Enable caching of resolved HTTP download addresses and XET file metadata.  Defaults to `false`. Set to `true` to share resolve results across readers on the same backend. Changed files may remain invisible while cached results are reused. A reader retains XET metadata from its first read for its lifetime. Create a new reader to resolve the path again when this option is disabled. See [`HfBuilder::enable_resolve_cache`] for freshness semantics."""
     endpoint: NotRequired[str]
     """Endpoint of the Hugging Face Hub.  The default is `https://huggingface.co`."""
     repo_id: NotRequired[str]
@@ -458,6 +493,8 @@ class MemcachedConfig(TypedDict):
     """The maximum number of connections allowed.  default is 10"""
     default_ttl: NotRequired[str]
     """The default ttl for put operations. A human readable duration string, e.g. "5s" (see https://docs.rs/humantime/latest/humantime/fn.parse_duration.html)."""
+    enable_tls: NotRequired[bool]
+    """Enable TLS for TCP connections. Defaults to false.  The server certificate must match the endpoint host and a native trust root."""
     endpoint: NotRequired[str]
     """network address of the memcached service.  For example: "tcp://localhost:11211\""""
     password: NotRequired[str]
@@ -719,14 +756,26 @@ class S3Config(TypedDict):
     """bucket name of this backend.  required."""
     checksum_algorithm: NotRequired[str]
     """Checksum Algorithm to use when sending checksums in HTTP headers. This is necessary when writing to AWS S3 Buckets with Object Lock enabled for example.  Available options: - "crc32c" - "md5\""""
+    container_authorization_token: NotRequired[str]
+    """Authorization token sent to the AWS container credential endpoint.  This token takes precedence over the configured token file and the ambient direct and file token forms."""
+    container_authorization_token_file: NotRequired[str]
+    """File containing the authorization token sent to the AWS container credential endpoint.  This file takes precedence over both ambient token forms. The credential provider trims surrounding whitespace after reading the file."""
+    container_credentials_endpoint: NotRequired[str]
+    """Full URI for AWS container credential metadata.  This endpoint takes precedence over the relative container credential URI and both ambient container credential URI forms. It does not change the position or priority of the default ECS credential provider."""
+    container_credentials_relative_uri: NotRequired[str]
+    """Relative URI for AWS container credential metadata.  An explicit full endpoint takes precedence over this value. This value takes precedence over the ambient full and relative container credential URIs. OpenDAL joins it to `container_metadata_uri_override` when set, otherwise to `http://169.254.170.2`.  Setting any container credential field replaces the ECS slot in the default credential chain. It does not move that slot ahead of earlier default providers."""
+    container_metadata_uri_override: NotRequired[str]
+    """Base URI used to resolve a relative AWS container credential URI.  This override affects relative URIs only. It does not alter a configured or ambient full URI. The override alone does not select an endpoint."""
     default_acl: NotRequired[str]
     """Default ACL for new objects. Note that some s3 services like minio do not support this option."""
+    default_region: NotRequired[str]
+    """Fallback signing region when neither `region`, `AWS_REGION`, nor `AWS_DEFAULT_REGION` supplies one."""
     default_storage_class: NotRequired[str]
     """default storage_class for this backend.  Available values: - `DEEP_ARCHIVE` - `GLACIER` - `GLACIER_IR` - `INTELLIGENT_TIERING` - `ONEZONE_IA` - `EXPRESS_ONEZONE` - `OUTPOSTS` - `REDUCED_REDUNDANCY` - `STANDARD` - `STANDARD_IA`  S3 compatible services don't support all of them"""
     delete_max_size: NotRequired[int]
     """Deprecated: S3 delete batch capability is enabled by default. [Deprecated since 0.57.0] S3 delete batch capability is enabled by default. Use CapabilityOverrideLayer to override delete_max_size for specific endpoints."""
     disable_config_load: NotRequired[bool]
-    """Disable config load so that opendal will not load config from environment.  For examples:  - envs like `AWS_ACCESS_KEY_ID` - files like `~/.aws/config`"""
+    """Disable automatic endpoint loading and the environment/profile credential providers.  This skips endpoint environment variables and removes the static environment and shared-profile credential slots. Region environment lookup and other credential providers, including AWS container credentials and EC2 instance metadata, remain enabled."""
     disable_ec2_metadata: NotRequired[bool]
     """Disable load credential from ec2 metadata.  This option is used to disable the default behavior of opendal to load credential from ec2 metadata, a.k.a., IMDSv2"""
     disable_list_objects_v2: NotRequired[bool]
@@ -763,6 +812,8 @@ class S3Config(TypedDict):
     """server_side_encryption for this backend.  Available values: `AES256`, `aws:kms`."""
     server_side_encryption_aws_kms_key_id: NotRequired[str]
     """server_side_encryption_aws_kms_key_id for this backend  - If `server_side_encryption` set to `aws:kms`, and `server_side_encryption_aws_kms_key_id` is not set, S3 will use aws managed kms key to encrypt data. - If `server_side_encryption` set to `aws:kms`, and `server_side_encryption_aws_kms_key_id` is a valid kms key id, S3 will use the provided kms key to encrypt data. - If the `server_side_encryption_aws_kms_key_id` is invalid or not found, an error will be returned. - If `server_side_encryption` is not `aws:kms`, setting `server_side_encryption_aws_kms_key_id` is a noop."""
+    server_side_encryption_bucket_key_enabled: NotRequired[bool]
+    """Control S3 Bucket Keys for SSE-KMS writes and copies.  Omit this option to inherit the bucket setting. `false` disables Bucket Keys for destination objects, and `true` enables them."""
     server_side_encryption_customer_algorithm: NotRequired[str]
     """server_side_encryption_customer_algorithm for this backend.  Available values: `AES256`."""
     server_side_encryption_customer_key: NotRequired[str]
@@ -936,7 +987,7 @@ class WebdavConfig(TypedDict):
     disable_create_dir: NotRequired[bool]
     """Disable automatic parent directory creation before write operations.  By default, OpenDAL creates parent directories using MKCOL before writing files. This requires PROPFIND support to check directory existence.  Some WebDAV-compatible servers (e.g., bazel-remote) don't support PROPFIND or don't require explicit directory creation. Enable this option to skip the MKCOL calls and write files directly.  Default: false"""
     enable_conditional_read: NotRequired[bool]
-    """Enable conditional read support.  When enabled (the default), OpenDAL forwards the RFC 7232 headers `If-Match`, `If-None-Match`, `If-Modified-Since` and `If-Unmodified-Since` to the server when callers provide them.  Some WebDAV-compatible servers (e.g., nginx-dav) don't return ETags in PROPFIND or don't honor these headers on GET. Setting this to `false` drops the four `read_with_if_*` capabilities, so calls like `reader_with(path).if_match(...)` return `ErrorKind::Unsupported` locally instead of being silently ignored by the server.  Default: true"""
+    """Deprecated: WebDAV conditional read capabilities are enabled by default. [Deprecated since 0.60.0] WebDAV conditional read capabilities are enabled by default. Use CapabilityOverrideLayer to override read_with_if_match, read_with_if_none_match, read_with_if_modified_since and read_with_if_unmodified_since for endpoints without ETag support."""
     enable_user_metadata: NotRequired[bool]
     """Deprecated: WebDAV user metadata capability is enabled by default. [Deprecated since 0.57.0] WebDAV user metadata capability is enabled by default. Use CapabilityOverrideLayer to override write_with_user_metadata for endpoints without PROPPATCH support."""
     endpoint: NotRequired[str]
@@ -1000,6 +1051,7 @@ ServiceConfig = (
     | FsConfig
     | FtpConfig
     | GcsConfig
+    | GcsGrpcConfig
     | GdriveConfig
     | GhacConfig
     | GridfsConfig
@@ -1054,6 +1106,7 @@ __all__ = [
     "FsConfig",
     "FtpConfig",
     "GcsConfig",
+    "GcsGrpcConfig",
     "GdriveConfig",
     "GhacConfig",
     "GridfsConfig",

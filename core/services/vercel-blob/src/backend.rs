@@ -25,9 +25,9 @@ use log::debug;
 use super::VERCEL_BLOB_SCHEME;
 use super::config::VercelBlobConfig;
 use super::core::Blob;
-use super::core::VercelBlobCore;
 use super::core::parse_blob;
 use super::core::parse_error;
+use super::core::{ErrorContext, VercelBlobCore};
 use super::deleter::VercelBlobDeleter;
 use super::lister::VercelBlobLister;
 use super::reader::*;
@@ -138,6 +138,7 @@ impl Service for VercelBlobBackend {
     type Lister = oio::PageLister<VercelBlobLister>;
     type Deleter = oio::OneShotDeleter<VercelBlobDeleter>;
     type Copier = oio::OneShotCopier;
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -173,7 +174,10 @@ impl Service for VercelBlobBackend {
 
                 parse_blob(&resp).map(RpStat::new)
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("HeadBlob")),
+                resp,
+            )),
         }
     }
     fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
@@ -208,21 +212,34 @@ impl Service for VercelBlobBackend {
         ctx: &OperationContext,
         from: &str,
         to: &str,
-        _args: OpCopy,
-        _opts: OpCopier,
+        args: OpCopy,
     ) -> Result<Self::Copier> {
+        let backend = self.clone();
         let core = self.core.clone();
         let ctx = ctx.clone();
         let from = from.to_string();
         let to = to.to_string();
+        let source_content_length_hint = args.source_content_length_hint();
 
         Ok(oio::OneShotCopier::new(async move {
+            let source_size = match source_content_length_hint {
+                Some(size) => size,
+                None => backend
+                    .stat(&ctx, &from, OpStat::default())
+                    .await?
+                    .into_metadata()
+                    .content_length(),
+            };
+
             let resp = core.copy(&ctx, &from, &to).await?;
             let status = resp.status();
 
             match status {
-                StatusCode::OK => Ok(Metadata::default()),
-                _ => Err(parse_error(resp)),
+                StatusCode::OK => Ok(MetadataBuilder::file(source_size).build()),
+                _ => Err(parse_error(
+                    ErrorContext::new(ServiceOperation("CopyBlob")),
+                    resp,
+                )),
             }
         }))
     }

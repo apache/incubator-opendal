@@ -298,6 +298,7 @@ impl<I: RetryInterceptor> Service for RetryService<I> {
     type Lister = RetryWrapper<oio::Lister, I>;
     type Deleter = RetryWrapper<oio::Deleter, I>;
     type Copier = RetryWrapper<oio::Copier, I>;
+    type Composer = oio::Composer;
 
     fn info(&self) -> ServiceInfo {
         self.inner.info()
@@ -305,6 +306,10 @@ impl<I: RetryInterceptor> Service for RetryService<I> {
 
     fn capability(&self) -> Capability {
         self.inner.capability()
+    }
+
+    fn compose(&self, ctx: &OperationContext, to: &str, args: OpCompose) -> Result<Self::Composer> {
+        self.inner.compose(ctx, to, args)
     }
 
     async fn create_dir(
@@ -418,10 +423,9 @@ impl<I: RetryInterceptor> Service for RetryService<I> {
         from: &str,
         to: &str,
         args: OpCopy,
-        opts: OpCopier,
     ) -> Result<Self::Copier> {
         let mut attempt: u32 = 0;
-        let copier = { || self.inner.copy(ctx, from, to, args.clone(), opts.clone()) }
+        let copier = { || self.inner.copy(ctx, from, to, args.clone()) }
             .retry(self.builder)
             .when(|e| e.is_temporary())
             .notify(|err, dur| {
@@ -652,6 +656,12 @@ impl<R: oio::Read, I: RetryInterceptor> oio::ReadStream for RetryReadStream<R, I
                         None => {
                             range.advance(read);
                             read = 0;
+
+                            // Broke after the last byte: nothing is left to
+                            // fetch, and an empty range has no Range header.
+                            if range.size() == Some(0) {
+                                return ((None, range, read), Ok(Buffer::new()));
+                            }
 
                             match reader.open(range).await {
                                 Ok((_, stream)) => stream,
@@ -1128,7 +1138,10 @@ mod tests {
     impl oio::StreamRead for MockReader {
         async fn open(&self, range: BytesRange) -> Result<(RpRead, Box<dyn oio::ReadStreamDyn>)> {
             let backend = &self.backend;
-            let rp = RpRead::new(Metadata::new(EntryMode::FILE).with_content_length(0));
+            let rp = RpRead::new({
+                let metadata = MetadataBuilder::file(13);
+                metadata.build()
+            });
             let stream = MockReadStream {
                 buf: Bytes::from("Hello, World!").into(),
                 range,
@@ -1145,6 +1158,7 @@ mod tests {
         type Lister = MockLister;
         type Deleter = MockDeleter;
         type Copier = MockCopier;
+        type Composer = ();
 
         fn info(&self) -> ServiceInfo {
             ServiceInfo::with_scheme("mock")
@@ -1178,9 +1192,10 @@ mod tests {
         }
 
         async fn stat(&self, _: &OperationContext, _: &str, _: OpStat) -> Result<RpStat> {
-            Ok(RpStat::new(
-                Metadata::new(EntryMode::FILE).with_content_length(13),
-            ))
+            Ok(RpStat::new({
+                let metadata = MetadataBuilder::file(13);
+                metadata.build()
+            }))
         }
 
         fn read(&self, _: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
@@ -1207,14 +1222,7 @@ mod tests {
             Ok(lister)
         }
 
-        fn copy(
-            &self,
-            _: &OperationContext,
-            _: &str,
-            _: &str,
-            _: OpCopy,
-            _: OpCopier,
-        ) -> Result<Self::Copier> {
+        fn copy(&self, _: &OperationContext, _: &str, _: &str, _: OpCopy) -> Result<Self::Copier> {
             Ok(MockCopier {
                 attempt: self.attempt.clone(),
             })
@@ -1308,11 +1316,11 @@ mod tests {
                 .set_temporary()),
                 2 => Ok(Some(oio::Entry::new(
                     "hello",
-                    Metadata::new(EntryMode::FILE),
+                    MetadataBuilder::file(0).build(),
                 ))),
                 3 => Ok(Some(oio::Entry::new(
                     "world",
-                    Metadata::new(EntryMode::FILE),
+                    MetadataBuilder::file(0).build(),
                 ))),
                 4 => Err(
                     Error::new(ErrorKind::Unexpected, "retryable internal server error")
@@ -1320,11 +1328,11 @@ mod tests {
                 ),
                 5 => Ok(Some(oio::Entry::new(
                     "2023/",
-                    Metadata::new(EntryMode::DIR),
+                    MetadataBuilder::dir().build(),
                 ))),
                 6 => Ok(Some(oio::Entry::new(
                     "0208/",
-                    Metadata::new(EntryMode::DIR),
+                    MetadataBuilder::dir().build(),
                 ))),
                 7 => Ok(None),
                 _ => {
@@ -1409,7 +1417,7 @@ mod tests {
         }
 
         async fn close(&mut self) -> Result<Metadata> {
-            Ok(Metadata::default())
+            Ok(MetadataBuilder::unknown().build())
         }
 
         async fn abort(&mut self) -> Result<()> {
@@ -1445,6 +1453,32 @@ mod tests {
         assert_eq!(content, "Hello, World!".as_bytes());
         // The error is retryable, we should request it 3 times.
         assert_eq!(*builder.attempt.lock().unwrap(), 5);
+        Ok(())
+    }
+
+    /// A stream that breaks after its last byte is at EOF, so the layer must end
+    /// the read instead of reopening the empty range left over. `test_retry_read`
+    /// covers the unbounded case, which has no size to stop on and still reopens.
+    #[tokio::test]
+    async fn test_retry_read_bounded_range_does_not_reopen_at_eof() -> Result<()> {
+        setup();
+
+        let builder = MockBuilder::default();
+        let op = Operator::new(builder.clone())?
+            .layer(LoggingLayer::default())
+            .layer(RetryLayer::default());
+
+        let r = op.reader("retryable_error").await?;
+        let mut content = Vec::new();
+        let size = r
+            .read_into(&mut content, 0..13)
+            .await
+            .expect("read must succeed");
+        assert_eq!(size, 13);
+        assert_eq!(content, "Hello, World!".as_bytes());
+        // Two retries, one full read, then the error at EOF. No reopen, so no
+        // fifth attempt.
+        assert_eq!(*builder.attempt.lock().unwrap(), 4);
         Ok(())
     }
 

@@ -15,11 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use std::os::raw::c_int;
-
 use bytes::Buf;
 use bytes::Bytes;
-use pyo3::IntoPyObjectExt;
 use pyo3::exceptions::PyOverflowError;
 use pyo3::ffi;
 use pyo3::prelude::*;
@@ -109,62 +106,6 @@ mod tests {
             buffer
         });
         assert_eq!(buffer.to_vec(), b"mutable");
-    }
-}
-
-/// A bytes-like object that implements buffer protocol.
-#[pyclass(module = "opendal")]
-pub struct Buffer {
-    inner: Vec<u8>,
-}
-
-impl Buffer {
-    pub fn new(inner: Vec<u8>) -> Self {
-        Buffer { inner }
-    }
-
-    /// Consume self to build a bytes
-    pub fn into_bytes(self, py: Python) -> PyResult<Py<PyAny>> {
-        let buffer = self.into_py_any(py)?;
-
-        unsafe {
-            Bound::from_owned_ptr_or_err(py, ffi::PyBytes_FromObject(buffer.as_ptr()))
-                .map(Bound::unbind)
-        }
-    }
-
-    /// Consume self to build a bytes
-    pub fn into_bytes_ref(self, py: Python) -> PyResult<Bound<PyAny>> {
-        let buffer = self.into_py_any(py)?;
-        let view =
-            unsafe { Bound::from_owned_ptr_or_err(py, ffi::PyBytes_FromObject(buffer.as_ptr()))? };
-
-        Ok(view)
-    }
-}
-
-#[pymethods]
-impl Buffer {
-    unsafe fn __getbuffer__(
-        slf: PyRefMut<Self>,
-        view: *mut ffi::Py_buffer,
-        flags: c_int,
-    ) -> PyResult<()> {
-        let bytes = slf.inner.as_slice();
-        let ret = unsafe {
-            ffi::PyBuffer_FillInfo(
-                view,
-                slf.as_ptr() as *mut _,
-                bytes.as_ptr() as *mut _,
-                bytes.len().try_into().unwrap(),
-                1, // read only
-                flags,
-            )
-        };
-        if ret == -1 {
-            return Err(PyErr::fetch(slf.py()));
-        }
-        Ok(())
     }
 }
 

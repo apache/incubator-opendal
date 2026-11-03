@@ -54,8 +54,7 @@ impl oio::BatchDelete for AzblobDeleter {
             StatusCode::NOT_FOUND => Ok(()),
             _ => Err(parse_error(
                 ErrorContext::new(ServiceOperation("DeleteBlob"))
-                    .with_if_match(args.if_match().is_some())
-                    .with_if_none_match(args.if_none_match().is_some()),
+                    .with_caller_condition(args.is_conditional()),
                 resp,
             )),
         }
@@ -116,8 +115,7 @@ impl oio::BatchDelete for AzblobDeleter {
                 batched_result.succeeded.push((path, args));
             } else {
                 let error_ctx = ErrorContext::new(ServiceOperation("BatchDeleteBlobs"))
-                    .with_if_match(args.if_match().is_some())
-                    .with_if_none_match(args.if_none_match().is_some());
+                    .with_caller_condition(args.is_conditional());
                 let err = parse_error(error_ctx, resp);
                 batched_result.failed.push((path, args, err));
             }

@@ -135,6 +135,7 @@ impl Builder for HdfsNativeBuilder {
                     list: true,
 
                     rename: true,
+                    rename_with_if_not_exists: true,
 
                     shared: true,
 
@@ -167,6 +168,7 @@ impl Service for HdfsNativeBackend {
     type Lister = HdfsNativeLazyLister;
     type Deleter = oio::OneShotDeleter<HdfsNativeDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -221,7 +223,6 @@ impl Service for HdfsNativeBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,
@@ -234,9 +235,9 @@ impl Service for HdfsNativeBackend {
         _ctx: &OperationContext,
         from: &str,
         to: &str,
-        _args: OpRename,
+        args: OpRename,
     ) -> Result<RpRename> {
-        self.core.hdfs_rename(from, to).await?;
+        self.core.hdfs_rename(from, to, &args).await?;
         Ok(RpRename::default())
     }
 

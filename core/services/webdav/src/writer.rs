@@ -43,17 +43,17 @@ impl WebdavWriter {
     }
 
     fn parse_metadata(headers: &http::HeaderMap) -> Result<Metadata> {
-        let mut metadata = Metadata::default();
+        let mut metadata = MetadataBuilder::unknown();
 
         if let Some(etag) = parse_etag(headers)? {
-            metadata.set_etag(etag);
+            metadata.etag(etag);
         }
 
         if let Some(last_modified) = parse_last_modified(headers)? {
-            metadata.set_last_modified(last_modified);
+            metadata.last_modified(last_modified);
         }
 
-        Ok(metadata)
+        Ok(metadata.build())
     }
 }
 
@@ -79,9 +79,13 @@ impl oio::OneShotWrite for WebdavWriter {
 
                 // Set user metadata using PROPPATCH if provided
                 if let Some(user_metadata) = self.op.user_metadata() {
+                    let user_metadata = user_metadata
+                        .into_iter()
+                        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+                        .collect();
                     let proppatch_resp = self
                         .core
-                        .webdav_proppatch(&self.ctx, &self.path, user_metadata)
+                        .webdav_proppatch(&self.ctx, &self.path, &user_metadata)
                         .await?;
 
                     let proppatch_status = proppatch_resp.status();
@@ -92,13 +96,19 @@ impl oio::OneShotWrite for WebdavWriter {
                         let xml = String::from_utf8_lossy(&body);
                         check_proppatch_response(&xml)?;
                     } else if !proppatch_status.is_success() {
-                        return Err(parse_error(proppatch_resp));
+                        return Err(parse_error(
+                            ErrorContext::new(ServiceOperation("Proppatch")),
+                            proppatch_resp,
+                        ));
                     }
                 }
 
                 Ok(metadata)
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Put")),
+                resp,
+            )),
         }
     }
 }

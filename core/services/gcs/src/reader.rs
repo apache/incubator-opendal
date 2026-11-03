@@ -56,10 +56,7 @@ impl oio::StreamRead for GcsReader {
         let path = self.path.as_str();
         let args = self.args.clone();
         let error_ctx = ErrorContext::new(ServiceOperation("GetObject"))
-            .with_if_match(args.if_match().is_some())
-            .with_if_none_match(args.if_none_match().is_some())
-            .with_if_version_match(args.if_version_match().is_some())
-            .with_if_version_not_match(args.if_version_not_match().is_some());
+            .with_caller_condition(args.is_conditional());
         let resp = backend
             .core
             .gcs_get_object(&self.ctx, path, range, &args)
@@ -69,11 +66,11 @@ impl oio::StreamRead for GcsReader {
 
         let (rp, stream) = match status {
             StatusCode::OK | StatusCode::PARTIAL_CONTENT => {
-                let mut metadata = parse_into_metadata(path, resp.headers())?;
+                let mut metadata = parse_into_metadata(path, resp.headers())?.into_builder();
                 if let Some(generation) = parse_header_to_str(resp.headers(), X_GOOG_GENERATION)? {
-                    metadata.set_version(generation);
+                    metadata.version(generation);
                 }
-                (RpRead::new(metadata), resp.into_body())
+                (RpRead::new(metadata.build()), resp.into_body())
             }
             _ => {
                 let (part, mut body) = resp.into_parts();

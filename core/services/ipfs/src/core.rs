@@ -207,7 +207,7 @@ impl IpfsCore {
     pub async fn ipfs_stat(&self, ctx: &OperationContext, path: &str) -> Result<Metadata> {
         // Stat root always returns a DIR.
         if path == "/" {
-            return Ok(Metadata::new(EntryMode::DIR));
+            return Ok(MetadataBuilder::dir().build());
         }
 
         let resp = self.ipfs_head(ctx, path).await?;
@@ -215,55 +215,66 @@ impl IpfsCore {
 
         match status {
             StatusCode::OK => {
-                let mut m = Metadata::new(EntryMode::Unknown);
+                let mut m = MetadataBuilder::unknown();
 
-                if let Some(v) = parse_content_length(resp.headers())? {
-                    m.set_content_length(v);
-                }
+                let content_length = parse_content_length(resp.headers())?;
 
                 if let Some(v) = parse_content_type(resp.headers())? {
-                    m.set_content_type(v);
+                    m.content_type(v);
                 }
 
                 if let Some(v) = parse_etag(resp.headers())? {
-                    m.set_etag(v);
+                    m.etag(v);
 
                     if v.starts_with("\"DirIndex") {
-                        m.set_mode(EntryMode::DIR);
+                        m.set_dir();
                     } else {
-                        m.set_mode(EntryMode::FILE);
+                        m.set_file(content_length.ok_or_else(|| {
+                            Error::new(
+                                ErrorKind::Unexpected,
+                                "IPFS response does not contain file content length",
+                            )
+                        })?);
                     }
                 } else {
                     // Some service will stream the output of DirIndex.
                     // If we don't have an etag, it's highly to be a dir.
-                    m.set_mode(EntryMode::DIR);
+                    m.set_dir();
                 }
 
                 if let Some(v) = parse_content_disposition(resp.headers())? {
-                    m.set_content_disposition(v);
+                    m.content_disposition(v);
                 }
 
-                Ok(m)
+                Ok(m.build())
             }
-            StatusCode::FOUND | StatusCode::MOVED_PERMANENTLY => Ok(Metadata::new(EntryMode::DIR)),
-            _ => Err(parse_error(resp)),
+            StatusCode::FOUND | StatusCode::MOVED_PERMANENTLY => Ok(MetadataBuilder::dir().build()),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Resolve")),
+                resp,
+            )),
         }
     }
 }
 
-mod error {
-    use http::Response;
-    use http::StatusCode;
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+}
 
-    use opendal_core::raw::*;
-    use opendal_core::*;
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self { service_operation }
+    }
+}
 
-    /// Parse error response into Error.
-    pub(crate) fn parse_error(resp: Response<Buffer>) -> Error {
-        let (parts, body) = resp.into_parts();
-        let bs = body.to_bytes();
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
+    let (parts, body) = resp.into_parts();
+    let bs = body.to_bytes();
 
-        let (kind, retryable) = match parts.status {
+    let (kind, retryable) = match parts.status {
         StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
         StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, false),
         StatusCode::INTERNAL_SERVER_ERROR
@@ -275,18 +286,16 @@ mod error {
         _ => (ErrorKind::Unexpected, false),
     };
 
-        let message = String::from_utf8_lossy(&bs);
+    let message = String::from_utf8_lossy(&bs);
 
-        let mut err = Error::new(kind, message);
+    let mut err = Error::new(kind, message);
 
-        err = with_error_response_context(err, parts);
+    err = err.with_context("service_operation", ctx.service_operation.0);
+    err = with_error_response_context(err, parts);
 
-        if retryable {
-            err = err.set_temporary();
-        }
-
-        err
+    if retryable {
+        err = err.set_temporary();
     }
-}
 
-pub(super) use error::*;
+    err
+}

@@ -88,12 +88,12 @@ impl oio::List for OpfsLister {
             .and_then(|v| v.as_string())
             .unwrap_or_default();
 
-        let (entry_path, mode) = if kind == "directory" {
-            (format!("{}{}/", self.path, name), EntryMode::DIR)
+        let (entry_path, metadata) = if kind == "directory" {
+            (format!("{}{}/", self.path, name), MetadataBuilder::dir())
         } else {
-            (format!("{}{}", self.path, name), EntryMode::FILE)
+            (format!("{}{}", self.path, name), MetadataBuilder::unknown())
         };
 
-        Ok(Some(oio::Entry::new(&entry_path, Metadata::new(mode))))
+        Ok(Some(oio::Entry::new(&entry_path, metadata.build())))
     }
 }

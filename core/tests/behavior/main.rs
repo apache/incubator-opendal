@@ -21,6 +21,7 @@ mod utils;
 
 pub use utils::*;
 
+mod async_compose;
 mod async_copy;
 mod async_create_dir;
 mod async_delete;
@@ -56,6 +57,7 @@ fn main() -> anyhow::Result<()> {
     let mut tests = Vec::new();
 
     async_copy::tests(&op, &mut tests);
+    async_compose::tests(&op, &mut tests);
     async_create_dir::tests(&op, &mut tests);
     async_delete::tests(&op, &mut tests);
     async_list::tests(&op, &mut tests);

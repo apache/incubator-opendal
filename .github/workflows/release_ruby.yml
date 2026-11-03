@@ -34,7 +34,8 @@ on:
   # a release process. For now, we can rely on artifacts for testing pre-releases.
   # In the future, we could consider a GitHub private registry for pre-releases.
   #
-  # omits `workflow_dispatch` to tighten this release workflow.
+  # Manual dispatch builds candidates and publishes final tags.
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -196,7 +197,7 @@ jobs:
   publish:
     # RC tags only build artifacts for release verification. RubyGems does not
     # provide a staging registry, so publish only from the final release tag.
-    if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-')
+    if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-')
 
     needs: [build, smoke-test, build-native]
     runs-on: ubuntu-latest

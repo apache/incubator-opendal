@@ -50,11 +50,12 @@ impl oio::List for SledLister {
             } else {
                 EntryMode::FILE
             };
-            let mut metadata = Metadata::new(mode);
-            if metadata.mode().is_file() {
-                metadata.set_content_length(value_len);
-            }
-            let entry = oio::Entry::new(&path, metadata);
+            let metadata = if mode.is_file() {
+                MetadataBuilder::file(value_len)
+            } else {
+                MetadataBuilder::dir()
+            };
+            let entry = oio::Entry::new(&path, metadata.build());
             return Ok(Some(entry));
         }
 

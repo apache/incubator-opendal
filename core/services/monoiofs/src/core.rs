@@ -91,21 +91,23 @@ impl MonoiofsCore {
         }
     }
 
-    /// Reject `..` traversal in a key so it cannot escape `root`, matching the
-    /// `fs` backend (#7684). Confinement lives here because `normalize_path`
-    /// deliberately leaves `.`/`..` unresolved (RFC 0112).
+    /// Reject `..` traversal and absolute keys so they cannot escape `root`,
+    /// matching the `fs` backend (#7684). Confinement lives here because
+    /// `normalize_path` deliberately leaves `.`/`..` unresolved (RFC 0112) and
+    /// `PathBuf::join` discards the base when the key is absolute.
     pub fn prepare_path(&self, path: &str) -> Result<PathBuf> {
         use std::path::Component;
         let trimmed = path.trim_end_matches('/');
-        if Path::new(trimmed)
-            .components()
-            .any(|c| matches!(c, Component::ParentDir))
-        {
-            return Err(Error::new(
-                ErrorKind::NotFound,
-                "path escapes the configured root via `..`",
+        if Path::new(trimmed).components().any(|c| {
+            matches!(
+                c,
+                Component::ParentDir | Component::RootDir | Component::Prefix(_)
             )
-            .with_context("path", path));
+        }) {
+            return Err(
+                Error::new(ErrorKind::NotFound, "path escapes the configured root")
+                    .with_context("path", path),
+            );
         }
         Ok(self.root.join(trimmed))
     }
@@ -323,6 +325,20 @@ mod tests {
     async fn test_prepare_path_rejects_parent_dir() {
         let core = Arc::new(MonoiofsCore::new(PathBuf::from("/data/root"), 1, 1024));
         for key in ["../etc/passwd", "../../etc/passwd", "a/../../b", "a/.."] {
+            let err = core.prepare_path(key).unwrap_err();
+            assert_eq!(
+                err.kind(),
+                ErrorKind::NotFound,
+                "key should be rejected: {key}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_prepare_path_rejects_absolute_path() {
+        let core = Arc::new(MonoiofsCore::new(PathBuf::from("/data/root"), 1, 1024));
+        // `PathBuf::join` drops the root when the key is absolute.
+        for key in ["/etc/passwd", "//etc/passwd"] {
             let err = core.prepare_path(key).unwrap_err();
             assert_eq!(
                 err.kind(),

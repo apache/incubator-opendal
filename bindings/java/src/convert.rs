@@ -51,15 +51,15 @@ pub(crate) fn jmap_to_hashmap(env: &mut Env, params: &JObject) -> Result<HashMap
     Ok(result)
 }
 
-pub(crate) fn hashmap_to_jmap<'a>(
+pub(crate) fn hashmap_to_jmap<'a, K: AsRef<str>, V: AsRef<str>>(
     env: &mut Env<'a>,
-    map: &HashMap<String, String>,
+    map: impl IntoIterator<Item = (K, V)>,
 ) -> Result<JObject<'a>> {
     let map_object = env.new_object(jni_str!("java/util/HashMap"), jni_sig!("()V"), &[])?;
     let jmap = env.new_cast_local_ref::<JMap>(&map_object)?;
     for (k, v) in map {
-        let key = env.new_string(k)?;
-        let value = env.new_string(v)?;
+        let key = env.new_string(k.as_ref())?;
+        let value = env.new_string(v.as_ref())?;
         jmap.put(env, &key, &value)?;
     }
     Ok(map_object)

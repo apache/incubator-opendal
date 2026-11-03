@@ -19,6 +19,7 @@ use std::collections::HashMap;
 use std::collections::VecDeque;
 
 use asyncband::mutex::Mutex;
+use asyncband::singleflight::Group;
 
 use super::core::normalize_dir_path;
 use opendal_core::raw::*;
@@ -52,7 +53,7 @@ struct GdrivePathIndexState {
 pub struct GdrivePathIndex<Q: GdrivePathQueryer> {
     query: Q,
     state: Mutex<GdrivePathIndexState>,
-    ensure_dir_lock: Mutex<()>,
+    ensure_dirs: Group<(String, String), String>,
 }
 
 impl<Q: GdrivePathQueryer> GdrivePathIndex<Q> {
@@ -60,7 +61,7 @@ impl<Q: GdrivePathQueryer> GdrivePathIndex<Q> {
         Self {
             query,
             state: Mutex::new(GdrivePathIndexState::default()),
-            ensure_dir_lock: Mutex::new(()),
+            ensure_dirs: Group::new(),
         }
     }
 
@@ -253,8 +254,6 @@ impl<Q: GdrivePathQueryer> GdrivePathIndex<Q> {
 
     /// Ensure input dir exists.
     pub async fn ensure_dir(&self, ctx: &OperationContext, path: &str) -> Result<String> {
-        let _guard = self.ensure_dir_lock.lock().await;
-
         let path = Self::canonical_dir_path(path);
         if path.is_empty() {
             return self.root_id(ctx).await;
@@ -285,17 +284,28 @@ impl<Q: GdrivePathQueryer> GdrivePathIndex<Q> {
                 }
 
                 let name = get_basename(parent);
-                let value = match self.query.query(ctx, &parent_id, name).await {
-                    Ok(Some(value)) => value,
-                    Ok(None) => match self.query.create_dir(ctx, &parent_id, name).await {
-                        Ok(value) => value,
-                        Err(err) if !refreshed && err.kind() == ErrorKind::NotFound => {
-                            refreshed = true;
-                            self.refresh_path(parent).await;
-                            continue 'retry;
+                // A refreshed ancestor has a different ID and must not join work for its old ID.
+                let result: Result<String> = self
+                    .ensure_dirs
+                    .try_work((parent_id.clone(), name.to_string()), async || {
+                        if let Some(value) = {
+                            let state = self.state.lock().await;
+                            Self::lookup_cached_id(&state.entries, parent)
+                        } {
+                            return Ok(value);
                         }
-                        Err(err) => return Err(err),
-                    },
+
+                        let value = match self.query.query(ctx, &parent_id, name).await? {
+                            Some(value) => value,
+                            None => self.query.create_dir(ctx, &parent_id, name).await?,
+                        };
+                        // Publish before completing the flight so a later caller uses the cache.
+                        self.upsert_dir(parent, &value).await;
+                        Ok(value)
+                    })
+                    .await;
+                parent_id = match result {
+                    Ok(value) => value,
                     Err(err) if !refreshed && err.kind() == ErrorKind::NotFound => {
                         refreshed = true;
                         self.refresh_path(parent).await;
@@ -303,9 +313,6 @@ impl<Q: GdrivePathQueryer> GdrivePathIndex<Q> {
                     }
                     Err(err) => return Err(err),
                 };
-
-                self.upsert_dir(parent, &value).await;
-                parent_id = value;
             }
 
             return Ok(parent_id);
@@ -317,11 +324,15 @@ impl<Q: GdrivePathQueryer> GdrivePathIndex<Q> {
 mod tests {
     use std::collections::HashMap;
     use std::collections::HashSet;
+    use std::future::Future;
     use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
     use std::sync::atomic::Ordering;
+    use std::task::Context;
+    use std::task::Waker;
 
     use asyncband::mutex::Mutex;
+    use asyncband::semaphore::Semaphore;
 
     use super::*;
 
@@ -331,6 +342,7 @@ mod tests {
         entries: Arc<Mutex<HashMap<(String, String), String>>>,
         stale_parents: Arc<Mutex<HashSet<String>>>,
         create_count: Arc<AtomicUsize>,
+        create_gate: Option<Arc<Semaphore>>,
     }
 
     impl TestQuery {
@@ -340,6 +352,7 @@ mod tests {
                 entries: Arc::new(Mutex::new(HashMap::new())),
                 stale_parents: Arc::new(Mutex::new(HashSet::new())),
                 create_count: Arc::new(AtomicUsize::new(0)),
+                create_gate: None,
             }
         }
 
@@ -390,6 +403,9 @@ mod tests {
                 return Err(Error::new(ErrorKind::NotFound, "stale parent"));
             }
             self.create_count.fetch_add(1, Ordering::SeqCst);
+            if let Some(gate) = &self.create_gate {
+                drop(gate.acquire(1).await);
+            }
             let id = format!("{parent_id}:{name}");
             self.insert(parent_id, name, &id).await;
             Ok(id)
@@ -453,7 +469,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ensure_dir_is_serialized() {
+    async fn test_ensure_dir_reuses_existing_directory() {
         let query = TestQuery::new();
         query.insert("remote-root", "root/", "svc-root").await;
 
@@ -467,6 +483,81 @@ mod tests {
 
         assert_eq!(first.unwrap(), second.unwrap());
         assert_eq!(query.create_count.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn test_ensure_dir_coalesces_shared_ancestors() {
+        let gate = Arc::new(Semaphore::new(0));
+        let mut query = TestQuery::new();
+        query.create_gate = Some(gate.clone());
+        query.insert("remote-root", "root/", "svc-root").await;
+        let index = GdrivePathIndex::new(query.clone());
+        let ctx = OperationContext::new();
+        let mut first = Box::pin(index.ensure_dir(&ctx, "root/shared/left"));
+        let mut second = Box::pin(index.ensure_dir(&ctx, "root/shared/right"));
+        let mut cx = Context::from_waker(Waker::noop());
+
+        assert!(first.as_mut().poll(&mut cx).is_pending());
+        assert!(second.as_mut().poll(&mut cx).is_pending());
+        assert_eq!(query.create_count.load(Ordering::SeqCst), 1);
+
+        gate.release(1);
+        let (first, second) = tokio::join!(first, second);
+        assert_eq!(first.unwrap(), "svc-root:shared/:left/");
+        assert_eq!(second.unwrap(), "svc-root:shared/:right/");
+        assert_eq!(query.create_count.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn test_ensure_dir_unrelated_paths_progress_concurrently() {
+        for (first_path, second_path) in [("root/left", "root/right"), ("left/dir", "right/dir")] {
+            let gate = Arc::new(Semaphore::new(0));
+            let mut query = TestQuery::new();
+            query.create_gate = Some(gate.clone());
+            for name in ["root/", "left/", "right/"] {
+                query.insert("remote-root", name, name).await;
+            }
+            let index = GdrivePathIndex::new(query.clone());
+            let ctx = OperationContext::new();
+            let mut first = Box::pin(index.ensure_dir(&ctx, first_path));
+            let mut second = Box::pin(index.ensure_dir(&ctx, second_path));
+            let mut cx = Context::from_waker(Waker::noop());
+
+            assert!(first.as_mut().poll(&mut cx).is_pending());
+            assert!(second.as_mut().poll(&mut cx).is_pending());
+            assert_eq!(query.create_count.load(Ordering::SeqCst), 2);
+
+            gate.release(1);
+            let (first, second) = tokio::join!(first, second);
+            assert_ne!(first.unwrap(), second.unwrap());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_ensure_dir_retries_after_creator_is_cancelled() {
+        let gate = Arc::new(Semaphore::new(0));
+        let mut query = TestQuery::new();
+        query.create_gate = Some(gate.clone());
+        query.insert("remote-root", "root/", "svc-root").await;
+        let index = GdrivePathIndex::new(query.clone());
+        let ctx = OperationContext::new();
+        let mut first = Box::pin(index.ensure_dir(&ctx, "root/dir"));
+        let mut second = Box::pin(index.ensure_dir(&ctx, "root/dir"));
+        let mut cx = Context::from_waker(Waker::noop());
+
+        assert!(first.as_mut().poll(&mut cx).is_pending());
+        assert!(second.as_mut().poll(&mut cx).is_pending());
+        drop(first);
+        assert!(second.as_mut().poll(&mut cx).is_pending());
+        assert_eq!(query.create_count.load(Ordering::SeqCst), 2);
+
+        gate.release(1);
+        assert_eq!(second.await.unwrap(), "svc-root:dir/");
+        assert_eq!(
+            index.ensure_dir(&ctx, "root/dir").await.unwrap(),
+            "svc-root:dir/"
+        );
+        assert_eq!(query.create_count.load(Ordering::SeqCst), 2);
     }
 
     #[tokio::test]

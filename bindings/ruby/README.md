@@ -5,7 +5,7 @@
 
 OpenDAL's Ruby [gem](https://rubygems.org/gems/opendal): access S3, GCS, Azure Blob, the local filesystem, and 50+ more services through one API.
 
-![](https://github.com/apache/opendal/assets/5351546/87bbf6e5-f19e-449a-b368-3e283016c887)
+![OpenDAL Architecture](https://opendal.apache.org/img/architectural.png)
 
 We release the OpenDAL Ruby binding independently of the
 [`opendal` crate](https://crates.io/crates/opendal) (Rust core). For updates

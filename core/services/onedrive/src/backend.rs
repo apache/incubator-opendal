@@ -22,9 +22,8 @@ use http::StatusCode;
 use opendal_core::raw::*;
 use opendal_core::*;
 
-use super::core::OneDriveCore;
 use super::core::parse_error;
-use super::core::parse_error_with_retry;
+use super::core::{ErrorContext, OneDriveCore};
 use super::deleter::OneDriveDeleter;
 use super::lister::OneDriveLister;
 use super::reader::*;
@@ -224,6 +223,7 @@ impl Service for OnedriveBackend {
     type Lister = oio::PageLister<OneDriveLister>;
     type Deleter = oio::OneShotDeleter<OneDriveDeleter>;
     type Copier = oio::OneShotCopier;
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -247,8 +247,10 @@ impl Service for OnedriveBackend {
         let response = self.core.onedrive_create_dir(ctx, path).await?;
         match response.status() {
             StatusCode::CREATED | StatusCode::OK => Ok(RpCreateDir::default()),
-            StatusCode::BAD_REQUEST => Err(parse_error_with_retry(response)),
-            _ => Err(parse_error(response)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("CreateFolder")),
+                response,
+            )),
         }
     }
 
@@ -299,18 +301,28 @@ impl Service for OnedriveBackend {
         ctx: &OperationContext,
         from: &str,
         to: &str,
-        _args: OpCopy,
-        _opts: OpCopier,
+        args: OpCopy,
     ) -> Result<Self::Copier> {
+        let backend = self.clone();
         let core = self.core.clone();
         let ctx = ctx.clone();
         let from = from.to_string();
         let to = to.to_string();
+        let source_content_length_hint = args.source_content_length_hint();
 
         Ok(oio::OneShotCopier::new(async move {
+            let source_size = match source_content_length_hint {
+                Some(size) => size,
+                None => backend
+                    .stat(&ctx, &from, OpStat::default())
+                    .await?
+                    .into_metadata()
+                    .content_length(),
+            };
+
             let monitor_url = core.initialize_copy(&ctx, &from, &to).await?;
             core.wait_until_complete(&ctx, monitor_url).await?;
-            Ok(Metadata::default())
+            Ok(MetadataBuilder::file(source_size).build())
         }))
     }
 

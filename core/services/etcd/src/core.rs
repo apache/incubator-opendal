@@ -15,11 +15,12 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use asyncband::pool::ManageObject;
+use asyncband::pool::ObjectStatus;
+use asyncband::pool::bounded;
 use etcd_client::Client;
 use etcd_client::ConnectOptions;
-use fastpool::ManageObject;
-use fastpool::ObjectStatus;
-use fastpool::bounded;
+use etcd_client::KvClient;
 use std::fmt::Debug;
 use std::sync::Arc;
 
@@ -62,6 +63,7 @@ impl ManageObject for Manager {
 pub struct EtcdCore {
     endpoints: Vec<String>,
     options: ConnectOptions,
+    max_decoding_message_size: Option<usize>,
     client: Arc<bounded::Pool<Manager>>,
 }
 
@@ -70,12 +72,17 @@ impl Debug for EtcdCore {
         f.debug_struct("EtcdCore")
             .field("endpoints", &self.endpoints.join(","))
             .field("options", &self.options.clone())
+            .field("max_decoding_message_size", &self.max_decoding_message_size)
             .finish_non_exhaustive()
     }
 }
 
 impl EtcdCore {
-    pub fn new(endpoints: Vec<String>, options: ConnectOptions) -> Self {
+    pub fn new(
+        endpoints: Vec<String>,
+        options: ConnectOptions,
+        max_decoding_message_size: Option<usize>,
+    ) -> Self {
         let client = bounded::Pool::new(
             bounded::PoolConfig::new(64),
             Manager {
@@ -87,6 +94,7 @@ impl EtcdCore {
         Self {
             endpoints,
             options,
+            max_decoding_message_size,
             client,
         }
     }
@@ -106,25 +114,42 @@ impl EtcdCore {
     }
 
     pub async fn has_prefix(&self, prefix: &str) -> Result<bool> {
-        let mut client = self.conn().await?;
+        let client = self.conn().await?;
         let get_options = Some(
             etcd_client::GetOptions::new()
                 .with_prefix()
                 .with_keys_only()
                 .with_limit(1),
         );
-        let resp = client
+        let resp = self
+            .kv_client(&client)
             .get(prefix, get_options)
             .await
             .map_err(format_etcd_error)?;
         Ok(!resp.kvs().is_empty())
     }
+
+    /// Builds a KV client from `conn` with the configured response decoding limit applied.
+    ///
+    /// The limit lives on [`KvClient`] rather than on [`ConnectOptions`], so every KV
+    /// request has to apply it to its own client.
+    pub fn kv_client(&self, conn: &Client) -> KvClient {
+        let kv = conn.kv_client();
+        match self.max_decoding_message_size {
+            Some(size) => kv.max_decoding_message_size(size),
+            None => kv,
+        }
+    }
 }
 
 impl EtcdCore {
     pub async fn get(&self, key: &str) -> Result<Option<Buffer>> {
-        let mut client = self.conn().await?;
-        let resp = client.get(key, None).await.map_err(format_etcd_error)?;
+        let client = self.conn().await?;
+        let resp = self
+            .kv_client(&client)
+            .get(key, None)
+            .await
+            .map_err(format_etcd_error)?;
         if let Some(kv) = resp.kvs().first() {
             Ok(Some(Buffer::from(kv.value().to_vec())))
         } else {
@@ -148,16 +173,10 @@ impl EtcdCore {
     }
 }
 
-mod error {
-    use etcd_client::Error as EtcdError;
+use etcd_client::Error as EtcdError;
 
-    use opendal_core::{Error, ErrorKind};
-
-    pub fn format_etcd_error(e: EtcdError) -> Error {
-        Error::new(ErrorKind::Unexpected, e.to_string().as_str())
-            .set_source(e)
-            .set_temporary()
-    }
+pub fn format_etcd_error(e: EtcdError) -> Error {
+    Error::new(ErrorKind::Unexpected, e.to_string().as_str())
+        .set_source(e)
+        .set_temporary()
 }
-
-pub(super) use error::*;

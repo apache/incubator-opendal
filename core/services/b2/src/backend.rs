@@ -25,11 +25,11 @@ use log::debug;
 
 use super::B2_SCHEME;
 use super::config::B2Config;
-use super::core::B2Core;
 use super::core::B2Signer;
 use super::core::constants;
 use super::core::parse_error;
 use super::core::parse_file_info;
+use super::core::{B2Core, ErrorContext};
 use super::deleter::B2Deleter;
 use super::lister::B2Lister;
 use super::reader::*;
@@ -224,6 +224,7 @@ impl Service for B2Backend {
     type Lister = oio::PageLister<B2Lister>;
     type Deleter = oio::OneShotDeleter<B2Deleter>;
     type Copier = oio::OneShotCopier;
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -250,7 +251,7 @@ impl Service for B2Backend {
     async fn stat(&self, ctx: &OperationContext, path: &str, _args: OpStat) -> Result<RpStat> {
         // Stat root always returns a DIR.
         if path == "/" {
-            return Ok(RpStat::new(Metadata::new(EntryMode::DIR)));
+            return Ok(RpStat::new(MetadataBuilder::dir().build()));
         }
 
         let delimiter = if path.ends_with('/') { Some("/") } else { None };
@@ -317,7 +318,6 @@ impl Service for B2Backend {
         from: &str,
         to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         let core = self.core.clone();
         let ctx = ctx.clone();
@@ -327,6 +327,7 @@ impl Service for B2Backend {
         Ok(oio::OneShotCopier::new(async move {
             let file_info = core.get_file_info(&ctx, &from, None).await?;
             let source_file_id = file_info.file_id;
+            let source_content_length = file_info.content_length;
 
             let Some(source_file_id) = source_file_id else {
                 return Err(Error::new(ErrorKind::IsADirectory, "is a directory"));
@@ -337,8 +338,14 @@ impl Service for B2Backend {
             let status = resp.status();
 
             match status {
-                StatusCode::OK => Ok(Metadata::default()),
-                _ => Err(parse_error(resp)),
+                StatusCode::OK => {
+                    let metadata = MetadataBuilder::file(source_content_length);
+                    Ok(metadata.build())
+                }
+                _ => Err(parse_error(
+                    ErrorContext::new(ServiceOperation("CopyFile")),
+                    resp,
+                )),
             }
         }))
     }
@@ -393,7 +400,7 @@ impl Service for B2Backend {
                     parts.headers,
                 )))
             }
-            PresignOperation::Read(_, _) => {
+            PresignOperation::Read(range, _) => {
                 let resp = self
                     .core
                     .get_download_authorization(ctx, path, args.expire())
@@ -410,7 +417,10 @@ impl Service for B2Backend {
                     resp.authorization_token
                 );
 
-                let req = Request::get(url);
+                let mut req = Request::get(url);
+                if !range.is_full() {
+                    req = req.header(http::header::RANGE, range.to_header());
+                }
 
                 let req = req.body(Buffer::new()).map_err(new_request_build_error)?;
 

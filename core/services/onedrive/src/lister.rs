@@ -23,8 +23,8 @@ use opendal_core::raw::oio;
 use opendal_core::raw::*;
 use opendal_core::*;
 
-use super::core::OneDriveCore;
 use super::core::parse_error;
+use super::core::{ErrorContext, OneDriveCore};
 use super::graph_model::GraphApiOneDriveListResponse;
 use super::graph_model::ItemType;
 
@@ -77,7 +77,10 @@ impl oio::PageList for OneDriveLister {
                 ctx.done = true;
                 return Ok(());
             }
-            return Err(parse_error(response));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListChildren")),
+                response,
+            ));
         }
 
         let bytes = response.into_body();
@@ -138,11 +141,15 @@ impl oio::PageList for OneDriveLister {
                 continue;
             }
 
-            let mut meta = Metadata::new(entry_mode)
-                .with_etag(drive_item.e_tag)
-                .with_content_length(drive_item.size.max(0) as u64);
+            let mut meta = if entry_mode == EntryMode::FILE {
+                MetadataBuilder::file(drive_item.size.max(0) as u64)
+            } else {
+                MetadataBuilder::dir()
+            };
+            meta.etag(drive_item.e_tag);
             let last_modified = drive_item.last_modified_date_time.parse::<Timestamp>()?;
-            meta.set_last_modified(last_modified);
+            meta.last_modified(last_modified);
+            let meta = meta.build();
 
             // OneDrive doesn't support expanding versions while listing a directory.
             // Query each file separately when callers request versions.
@@ -159,20 +166,19 @@ impl oio::PageList for OneDriveLister {
                 }
 
                 for (index, version) in versions.into_iter().enumerate() {
-                    let mut version_meta =
-                        Metadata::new(entry_mode).with_content_length(version.size.max(0) as u64);
+                    let mut version_meta = MetadataBuilder::file(version.size.max(0) as u64);
                     version_meta
-                        .set_last_modified(version.last_modified_date_time.parse::<Timestamp>()?);
-                    version_meta.set_version(&version.id);
-                    version_meta.set_is_current(index == 0);
+                        .last_modified(version.last_modified_date_time.parse::<Timestamp>()?);
+                    version_meta.version(&version.id);
+                    version_meta.is_current(Some(index == 0));
 
                     // OneDrive exposes the ETag only for the current item.
                     if index == 0 {
-                        version_meta.set_etag(meta.etag().unwrap_or_default());
+                        version_meta.etag(meta.etag().unwrap_or_default());
                     }
 
                     ctx.entries
-                        .push_back(oio::Entry::new(&normalized_path, version_meta));
+                        .push_back(oio::Entry::new(&normalized_path, version_meta.build()));
                 }
             } else {
                 ctx.entries

@@ -245,6 +245,7 @@ impl Service for FoyerBackend {
     type Lister = ();
     type Deleter = oio::OneShotDeleter<FoyerDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.info.clone()
@@ -270,12 +271,13 @@ impl Service for FoyerBackend {
         let p = build_abs_path(&self.root, path);
 
         if p == build_abs_path(&self.root, "") {
-            Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+            Ok(RpStat::new(MetadataBuilder::dir().build()))
         } else {
             match self.core.get(&p).await? {
-                Some(bs) => Ok(RpStat::new(
-                    Metadata::new(EntryMode::FILE).with_content_length(bs.len() as u64),
-                )),
+                Some(bs) => Ok(RpStat::new({
+                    let metadata = MetadataBuilder::file(bs.len() as u64);
+                    metadata.build()
+                })),
                 None => Err(Error::new(ErrorKind::NotFound, "key not found in foyer")),
             }
         }
@@ -325,7 +327,6 @@ impl Service for FoyerBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,

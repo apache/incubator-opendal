@@ -153,6 +153,7 @@ impl Service for MiniMokaBackend {
     type Lister = oio::HierarchyLister<MiniMokaLister>;
     type Deleter = oio::OneShotDeleter<MiniMokaDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         ServiceInfo::new(MINI_MOKA_SCHEME, &self.root, "")
@@ -180,13 +181,13 @@ impl Service for MiniMokaBackend {
         // Check if path exists directly in cache
         match self.core.get(&p) {
             Some(value) => {
-                let mut metadata = value.metadata.clone();
+                let mut metadata = value.metadata.clone().into_builder();
                 if p.ends_with('/') {
-                    metadata.set_mode(EntryMode::DIR);
+                    metadata.set_dir();
                 } else {
-                    metadata.set_mode(EntryMode::FILE);
+                    metadata.set_file(value.metadata.content_length());
                 }
-                Ok(RpStat::new(metadata))
+                Ok(RpStat::new(metadata.build()))
             }
             None => {
                 if p.ends_with('/') {
@@ -197,9 +198,9 @@ impl Service for MiniMokaBackend {
                         .any(|entry| entry.key().starts_with(&p) && entry.key() != &p);
 
                     if is_prefix {
-                        let mut metadata = Metadata::default();
-                        metadata.set_mode(EntryMode::DIR);
-                        return Ok(RpStat::new(metadata));
+                        let mut metadata = MetadataBuilder::unknown();
+                        metadata.set_dir();
+                        return Ok(RpStat::new(metadata.build()));
                     }
                 }
 
@@ -260,7 +261,6 @@ impl Service for MiniMokaBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,

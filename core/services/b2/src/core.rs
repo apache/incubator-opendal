@@ -120,7 +120,10 @@ impl B2Core {
                     };
                 }
                 _ => {
-                    return Err(parse_error(resp));
+                    return Err(parse_error(
+                        ErrorContext::new(ServiceOperation("AuthorizeAccount")),
+                        resp,
+                    ));
                 }
             }
             Ok(signer.auth_info.clone())
@@ -196,7 +199,10 @@ impl B2Core {
                     .map_err(new_json_deserialize_error)?;
                 Ok(resp)
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetUploadUrl")),
+                resp,
+            )),
         }
     }
 
@@ -241,7 +247,10 @@ impl B2Core {
                     .map_err(new_json_deserialize_error)?;
                 Ok(resp)
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetDownloadAuthorization")),
+                resp,
+            )),
         }
     }
 
@@ -331,7 +340,7 @@ impl B2Core {
         // B2 uses fileInfo field for custom file info in start_large_file API.
         if let Some(user_metadata) = args.user_metadata() {
             let file_info: HashMap<String, String> = user_metadata
-                .iter()
+                .into_iter()
                 .map(|(k, v)| (k.to_string(), percent_encode_path(v)))
                 .collect();
             start_large_file_request.file_info = Some(file_info);
@@ -385,7 +394,10 @@ impl B2Core {
                     .map_err(new_json_deserialize_error)?;
                 Ok(resp)
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetUploadPartUrl")),
+                resp,
+            )),
         }
     }
 
@@ -505,7 +517,10 @@ impl B2Core {
                 }
                 Ok(resp.files.swap_remove(0))
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListFileNames")),
+                resp,
+            )),
         }
     }
 
@@ -783,19 +798,17 @@ pub struct File {
 
 pub(super) fn parse_file_info(file: &File) -> Metadata {
     if file.file_name.ends_with('/') {
-        return Metadata::new(EntryMode::DIR);
+        return MetadataBuilder::dir().build();
     }
 
-    let mut metadata = Metadata::new(EntryMode::FILE);
-
-    metadata.set_content_length(file.content_length);
+    let mut metadata = MetadataBuilder::file(file.content_length);
 
     if let Some(content_md5) = &file.content_md5 {
-        metadata.set_content_md5(content_md5);
+        metadata.content_md5(content_md5);
     }
 
     if let Some(content_type) = &file.content_type {
-        metadata.set_content_type(content_type);
+        metadata.content_type(content_type);
     }
 
     // Parse user metadata from file_info
@@ -808,11 +821,11 @@ pub(super) fn parse_file_info(file: &File) -> Metadata {
             .map(|(k, v)| (k.to_lowercase(), percent_decode_path(v)))
             .collect();
         if !user_metadata.is_empty() {
-            metadata = metadata.with_user_metadata(user_metadata);
+            metadata.user_metadata(user_metadata);
         }
     }
 
-    metadata
+    metadata.build()
 }
 
 #[derive(Debug, Serialize)]
@@ -843,123 +856,124 @@ pub struct GetDownloadAuthorizationResponse {
     pub authorization_token: String,
 }
 
-mod error {
-    use bytes::Buf;
-    use http::Response;
-    use serde::Deserialize;
+/// the error response of b2
+#[derive(Default, Debug, Deserialize)]
+#[allow(dead_code)]
+struct B2Error {
+    status: u32,
+    code: String,
+    message: String,
+}
 
-    use opendal_core::raw::*;
-    use opendal_core::*;
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+}
 
-    /// the error response of b2
-    #[derive(Default, Debug, Deserialize)]
-    #[allow(dead_code)]
-    struct B2Error {
-        status: u32,
-        code: String,
-        message: String,
-    }
-
-    /// Parse error response into Error.
-    pub(crate) fn parse_error(resp: Response<Buffer>) -> Error {
-        let (parts, body) = resp.into_parts();
-        let bs = body.to_bytes();
-
-        let (mut kind, mut retryable) = match parts.status.as_u16() {
-            403 => (ErrorKind::PermissionDenied, false),
-            404 => (ErrorKind::NotFound, false),
-            304 | 412 => (ErrorKind::ConditionNotMatch, false),
-            // Service b2 could return 403, show the authorization error
-            401 => (ErrorKind::PermissionDenied, true),
-            429 => (ErrorKind::RateLimited, true),
-            500 | 502 | 503 | 504 => (ErrorKind::Unexpected, true),
-            _ => (ErrorKind::Unexpected, false),
-        };
-
-        let (message, b2_err) = serde_json::from_reader::<_, B2Error>(bs.clone().reader())
-            .map(|b2_err| (format!("{b2_err:?}"), Some(b2_err)))
-            .unwrap_or_else(|_| (String::from_utf8_lossy(&bs).into_owned(), None));
-
-        if let Some(b2_err) = b2_err {
-            (kind, retryable) =
-                parse_b2_error_code(b2_err.code.as_str()).unwrap_or((kind, retryable));
-        };
-
-        let mut err = Error::new(kind, message);
-
-        err = with_error_response_context(err, parts);
-
-        if retryable {
-            err = err.set_temporary();
-        }
-
-        err
-    }
-
-    /// Returns the `Error kind` of this code and whether the error is retryable.
-    pub(crate) fn parse_b2_error_code(code: &str) -> Option<(ErrorKind, bool)> {
-        match code {
-            "already_hidden" => Some((ErrorKind::AlreadyExists, false)),
-            "no_such_file" => Some((ErrorKind::NotFound, false)),
-            _ => None,
-        }
-    }
-
-    #[cfg(test)]
-    mod test {
-        use http::StatusCode;
-
-        use super::*;
-
-        #[test]
-        fn test_parse_b2_error_code() {
-            let code = "already_hidden";
-            assert_eq!(
-                parse_b2_error_code(code),
-                Some((opendal_core::ErrorKind::AlreadyExists, false))
-            );
-
-            let code = "no_such_file";
-            assert_eq!(
-                parse_b2_error_code(code),
-                Some((opendal_core::ErrorKind::NotFound, false))
-            );
-
-            let code = "not_found";
-            assert_eq!(parse_b2_error_code(code), None);
-        }
-
-        #[tokio::test]
-        async fn test_parse_error() {
-            let err_res = vec![
-                (
-                    r#"{"status": 403, "code": "access_denied", "message":"The provided customer-managed encryption key is wrong."}"#,
-                    ErrorKind::PermissionDenied,
-                    StatusCode::FORBIDDEN,
-                ),
-                (
-                    r#"{"status": 404, "code": "not_found", "message":"File is not in B2 Cloud Storage."}"#,
-                    ErrorKind::NotFound,
-                    StatusCode::NOT_FOUND,
-                ),
-                (
-                    r#"{"status": 401, "code": "bad_auth_token", "message":"The auth token used is not valid. Call b2_authorize_account again to either get a new one, or an error message describing the problem."}"#,
-                    ErrorKind::PermissionDenied,
-                    StatusCode::UNAUTHORIZED,
-                ),
-            ];
-
-            for res in err_res {
-                let bs = bytes::Bytes::from(res.0);
-                let body = Buffer::from(bs);
-                let resp = Response::builder().status(res.2).body(body).unwrap();
-
-                let err = parse_error(resp);
-
-                assert_eq!(err.kind(), res.1);
-            }
-        }
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self { service_operation }
     }
 }
 
-pub(super) use error::*;
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
+    let (parts, body) = resp.into_parts();
+    let bs = body.to_bytes();
+
+    let (mut kind, mut retryable) = match parts.status.as_u16() {
+        403 => (ErrorKind::PermissionDenied, false),
+        404 => (ErrorKind::NotFound, false),
+        304 | 412 => (ErrorKind::ConditionNotMatch, false),
+        // Service b2 could return 403, show the authorization error
+        401 => (ErrorKind::PermissionDenied, true),
+        429 => (ErrorKind::RateLimited, true),
+        500 | 502 | 503 | 504 => (ErrorKind::Unexpected, true),
+        _ => (ErrorKind::Unexpected, false),
+    };
+
+    let (message, b2_err) = serde_json::from_reader::<_, B2Error>(bs.clone().reader())
+        .map(|b2_err| (format!("{b2_err:?}"), Some(b2_err)))
+        .unwrap_or_else(|_| (String::from_utf8_lossy(&bs).into_owned(), None));
+
+    if let Some(b2_err) = b2_err {
+        (kind, retryable) = parse_b2_error_code(b2_err.code.as_str()).unwrap_or((kind, retryable));
+    };
+
+    let mut err = Error::new(kind, message);
+
+    err = err.with_context("service_operation", ctx.service_operation.0);
+    err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
+
+    err
+}
+
+/// Returns the `Error kind` of this code and whether the error is retryable.
+pub(crate) fn parse_b2_error_code(code: &str) -> Option<(ErrorKind, bool)> {
+    match code {
+        "already_hidden" => Some((ErrorKind::AlreadyExists, false)),
+        "no_such_file" => Some((ErrorKind::NotFound, false)),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use http::StatusCode;
+
+    use super::*;
+
+    #[test]
+    fn test_parse_b2_error_code() {
+        let code = "already_hidden";
+        assert_eq!(
+            parse_b2_error_code(code),
+            Some((opendal_core::ErrorKind::AlreadyExists, false))
+        );
+
+        let code = "no_such_file";
+        assert_eq!(
+            parse_b2_error_code(code),
+            Some((opendal_core::ErrorKind::NotFound, false))
+        );
+
+        let code = "not_found";
+        assert_eq!(parse_b2_error_code(code), None);
+    }
+
+    #[tokio::test]
+    async fn test_parse_error() {
+        let err_res = vec![
+            (
+                r#"{"status": 403, "code": "access_denied", "message":"The provided customer-managed encryption key is wrong."}"#,
+                ErrorKind::PermissionDenied,
+                StatusCode::FORBIDDEN,
+            ),
+            (
+                r#"{"status": 404, "code": "not_found", "message":"File is not in B2 Cloud Storage."}"#,
+                ErrorKind::NotFound,
+                StatusCode::NOT_FOUND,
+            ),
+            (
+                r#"{"status": 401, "code": "bad_auth_token", "message":"The auth token used is not valid. Call b2_authorize_account again to either get a new one, or an error message describing the problem."}"#,
+                ErrorKind::PermissionDenied,
+                StatusCode::UNAUTHORIZED,
+            ),
+        ];
+
+        for res in err_res {
+            let bs = bytes::Bytes::from(res.0);
+            let body = Buffer::from(bs);
+            let resp = Response::builder().status(res.2).body(body).unwrap();
+
+            let err = parse_error(ErrorContext::new(ServiceOperation("Test")), resp);
+
+            assert_eq!(err.kind(), res.1);
+        }
+    }
+}

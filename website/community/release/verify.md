@@ -108,13 +108,15 @@ curl --silent --show-error --location https://github.com/apache/opendal/raw/v${r
 
 The script checks every `*.tar.gz` in the RC directory that has matching `.asc` and `.sha512` files, extracts each `apache-opendal-*-src` tree, verifies `LICENSE` and `NOTICE`, builds `core`, and builds `bindings/java` when that package is present.
 
+The script streams Cargo and Maven output to the terminal so you can follow build progress and inspect errors.
+
 Run the script:
 
 ```shell
 python ./verify.py
 ```
 
-You will see the following output if the verification is successful:
+You will see output similar to the following if the verification is successful (build logs omitted):
 
 ```shell
 $ python ./verify.py

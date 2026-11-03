@@ -44,6 +44,31 @@ impl StdReader {
     pub(super) fn new(handle: tokio::runtime::Handle, r: FuturesAsyncReader) -> Self {
         Self { handle, r: Some(r) }
     }
+
+    /// Read at most `size` bytes and return them as an OpenDAL [`Buffer`].
+    ///
+    /// This method preserves the underlying buffer storage and does not copy
+    /// the payload. It can return fewer bytes than requested, including an
+    /// empty buffer at EOF.
+    pub fn read_buffer(&mut self, size: usize) -> io::Result<Buffer> {
+        let Some(r) = self.r.as_mut() else {
+            return Err(Error::new(ErrorKind::Unexpected, "reader has been dropped").into());
+        };
+
+        self.handle.block_on(r.read_buffer(size))
+    }
+
+    /// Read all remaining bytes and return them as an OpenDAL [`Buffer`].
+    ///
+    /// This method preserves the underlying buffer storage and only allocates
+    /// metadata when multiple buffers must be combined.
+    pub fn read_to_end_buffer(&mut self) -> io::Result<Buffer> {
+        let Some(r) = self.r.as_mut() else {
+            return Err(Error::new(ErrorKind::Unexpected, "reader has been dropped").into());
+        };
+
+        self.handle.block_on(r.read_to_end_buffer())
+    }
 }
 
 impl BufRead for StdReader {

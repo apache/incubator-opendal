@@ -319,16 +319,15 @@ std::string Operator::Read(std::string_view path, const ReadOptions &options) {
 }
 
 void Operator::Write(std::string_view path, std::string_view data) {
-  rust::Vec<uint8_t> vec;
-  std::copy(data.begin(), data.end(), std::back_inserter(vec));
-  operator_->write(utils::rust_str(path), vec);
+  operator_->write(utils::rust_str(path),
+                   utils::rust_slice<const uint8_t>(data));
 }
 
 void Operator::Write(std::string_view path, std::string_view data,
                      const WriteOptions &options) {
-  rust::Vec<uint8_t> vec;
-  std::copy(data.begin(), data.end(), std::back_inserter(vec));
-  operator_->write_options(utils::rust_str(path), vec, ToFfiOptions(options));
+  operator_->write_options(utils::rust_str(path),
+                           utils::rust_slice<const uint8_t>(data),
+                           ToFfiOptions(options));
 }
 
 bool Operator::Exists(std::string_view path) {

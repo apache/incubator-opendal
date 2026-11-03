@@ -18,8 +18,8 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use asyncband::pool::{ManageObject, ObjectStatus, bounded};
 use bytes::Bytes;
-use fastpool::{ManageObject, ObjectStatus, bounded};
 use redis::AsyncCommands;
 use redis::Client;
 use redis::Cmd;

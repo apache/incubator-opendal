@@ -517,34 +517,43 @@ pub(super) fn parse_info(headers: &HeaderMap) -> Result<Metadata> {
         EntryMode::DIR
     };
 
-    let mut m = Metadata::new(mode);
-
-    if let Some(v) = parse_header_to_str(headers, X_UPYUN_FILE_SIZE)? {
-        let size = v.parse::<u64>().map_err(|e| {
-            Error::new(ErrorKind::Unexpected, "header value is not valid integer")
-                .with_operation("parse_info")
-                .set_source(e)
-        })?;
-        m.set_content_length(size);
-    }
+    let size = parse_header_to_str(headers, X_UPYUN_FILE_SIZE)?
+        .map(|value| {
+            value.parse::<u64>().map_err(|e| {
+                Error::new(ErrorKind::Unexpected, "header value is not valid integer")
+                    .with_operation("parse_info")
+                    .set_source(e)
+            })
+        })
+        .transpose()?;
+    let mut m = if mode == EntryMode::FILE {
+        MetadataBuilder::file(size.ok_or_else(|| {
+            Error::new(
+                ErrorKind::Unexpected,
+                "upyun response does not contain file size",
+            )
+        })?)
+    } else {
+        MetadataBuilder::dir()
+    };
 
     if let Some(v) = parse_content_type(headers)? {
-        m.set_content_type(v);
+        m.content_type(v);
     }
 
     if let Some(v) = parse_content_md5(headers)? {
-        m.set_content_md5(v);
+        m.content_md5(v);
     }
 
     if let Some(v) = parse_header_to_str(headers, X_UPYUN_CACHE_CONTROL)? {
-        m.set_cache_control(v);
+        m.cache_control(v);
     }
 
     if let Some(v) = parse_header_to_str(headers, X_UPYUN_CONTENT_DISPOSITION)? {
-        m.set_content_disposition(v);
+        m.content_disposition(v);
     }
 
-    Ok(m)
+    Ok(m.build())
 }
 
 pub fn format_md5(bs: &[u8]) -> String {
@@ -580,93 +589,93 @@ pub(super) struct ListObjectsResponse {
     pub files: Vec<File>,
 }
 
-mod error {
-    use bytes::Buf;
-    use http::Response;
-    use opendal_core::raw::*;
-    use opendal_core::*;
-    use quick_xml::de;
-    use serde::Deserialize;
+use bytes::Buf;
+use quick_xml::de;
 
-    /// UpyunError is the error returned by upyun service.
-    #[derive(Default, Debug, Deserialize)]
-    #[serde(default, rename_all = "PascalCase")]
-    struct UpyunError {
-        code: i64,
-        msg: String,
-        id: String,
-    }
+/// UpyunError is the error returned by upyun service.
+#[derive(Default, Debug, Deserialize)]
+#[serde(default, rename_all = "PascalCase")]
+struct UpyunError {
+    code: i64,
+    msg: String,
+    id: String,
+}
 
-    /// Parse error response into Error.
-    pub(crate) fn parse_error(resp: Response<Buffer>) -> Error {
-        let (parts, body) = resp.into_parts();
-        let bs = body.to_bytes();
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+}
 
-        let (kind, retryable) = match parts.status.as_u16() {
-            403 => (ErrorKind::PermissionDenied, false),
-            404 => (ErrorKind::NotFound, false),
-            304 | 412 => (ErrorKind::ConditionNotMatch, false),
-            // Service like Upyun could return 499 error with a message like:
-            // Client Disconnect, we should retry it.
-            499 => (ErrorKind::Unexpected, true),
-            500 | 502 | 503 | 504 => (ErrorKind::Unexpected, true),
-            _ => (ErrorKind::Unexpected, false),
-        };
-
-        let (message, _upyun_err) = de::from_reader::<_, UpyunError>(bs.clone().reader())
-            .map(|upyun_err| (format!("{upyun_err:?}"), Some(upyun_err)))
-            .unwrap_or_else(|_| (String::from_utf8_lossy(&bs).into_owned(), None));
-
-        let mut err = Error::new(kind, message);
-
-        err = with_error_response_context(err, parts);
-
-        if retryable {
-            err = err.set_temporary();
-        }
-
-        err
-    }
-
-    #[cfg(test)]
-    mod test {
-        use http::StatusCode;
-
-        use super::*;
-
-        #[tokio::test]
-        async fn test_parse_error() {
-            let err_res = vec![
-                (
-                    r#"{"code": 40100016, "msg": "invalid date value in header", "id": "f5b30c720ddcecc70abd2f5c1c64bde8"}"#,
-                    ErrorKind::Unexpected,
-                    StatusCode::UNAUTHORIZED,
-                ),
-                (
-                    r#"{"code": 40300010, "msg": "file type error", "id": "f5b30c720ddcecc70abd2f5c1c64bde7"}"#,
-                    ErrorKind::PermissionDenied,
-                    StatusCode::FORBIDDEN,
-                ),
-            ];
-
-            for res in err_res {
-                let bs = bytes::Bytes::from(res.0);
-                let body = Buffer::from(bs);
-                let resp = Response::builder().status(res.2).body(body).unwrap();
-
-                let err = parse_error(resp);
-
-                assert_eq!(err.kind(), res.1);
-            }
-        }
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self { service_operation }
     }
 }
 
-pub(super) use error::*;
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
+    let (parts, body) = resp.into_parts();
+    let bs = body.to_bytes();
+
+    let (kind, retryable) = match parts.status.as_u16() {
+        403 => (ErrorKind::PermissionDenied, false),
+        404 => (ErrorKind::NotFound, false),
+        304 | 412 => (ErrorKind::ConditionNotMatch, false),
+        // Service like Upyun could return 499 error with a message like:
+        // Client Disconnect, we should retry it.
+        499 => (ErrorKind::Unexpected, true),
+        500 | 502 | 503 | 504 => (ErrorKind::Unexpected, true),
+        _ => (ErrorKind::Unexpected, false),
+    };
+
+    let (message, _upyun_err) = de::from_reader::<_, UpyunError>(bs.clone().reader())
+        .map(|upyun_err| (format!("{upyun_err:?}"), Some(upyun_err)))
+        .unwrap_or_else(|_| (String::from_utf8_lossy(&bs).into_owned(), None));
+
+    let mut err = Error::new(kind, message);
+
+    err = err.with_context("service_operation", ctx.service_operation.0);
+    err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
+
+    err
+}
 
 #[cfg(test)]
 mod tests {
+    use http::StatusCode;
+
     use super::*;
+
+    #[tokio::test]
+    async fn test_parse_error() {
+        let err_res = vec![
+            (
+                r#"{"code": 40100016, "msg": "invalid date value in header", "id": "f5b30c720ddcecc70abd2f5c1c64bde8"}"#,
+                ErrorKind::Unexpected,
+                StatusCode::UNAUTHORIZED,
+            ),
+            (
+                r#"{"code": 40300010, "msg": "file type error", "id": "f5b30c720ddcecc70abd2f5c1c64bde7"}"#,
+                ErrorKind::PermissionDenied,
+                StatusCode::FORBIDDEN,
+            ),
+        ];
+
+        for res in err_res {
+            let bs = bytes::Bytes::from(res.0);
+            let body = Buffer::from(bs);
+            let resp = Response::builder().status(res.2).body(body).unwrap();
+
+            let err = parse_error(ErrorContext::new(ServiceOperation("Test")), resp);
+
+            assert_eq!(err.kind(), res.1);
+        }
+    }
 
     #[test]
     fn folder_path_handles_the_service_root() {

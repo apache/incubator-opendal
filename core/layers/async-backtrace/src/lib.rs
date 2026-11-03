@@ -81,6 +81,7 @@ impl Service for AsyncBacktraceAccessor {
     type Lister = AsyncBacktraceWrapper<oio::Lister>;
     type Deleter = AsyncBacktraceWrapper<oio::Deleter>;
     type Copier = oio::Copier;
+    type Composer = oio::Composer;
 
     fn info(&self) -> ServiceInfo {
         self.inner.info()
@@ -88,6 +89,10 @@ impl Service for AsyncBacktraceAccessor {
 
     fn capability(&self) -> Capability {
         self.inner.capability()
+    }
+
+    fn compose(&self, ctx: &OperationContext, to: &str, args: OpCompose) -> Result<Self::Composer> {
+        self.inner.compose(ctx, to, args)
     }
 
     #[async_backtrace::framed]
@@ -118,9 +123,8 @@ impl Service for AsyncBacktraceAccessor {
         from: &str,
         to: &str,
         args: OpCopy,
-        opts: OpCopier,
     ) -> Result<Self::Copier> {
-        self.inner.copy(ctx, from, to, args, opts)
+        self.inner.copy(ctx, from, to, args)
     }
 
     #[async_backtrace::framed]

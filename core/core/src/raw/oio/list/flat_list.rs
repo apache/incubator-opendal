@@ -79,7 +79,7 @@ impl<S: Service> FlatLister<S> {
         FlatLister {
             service,
             ctx,
-            next_dir: Some(oio::Entry::new(path, Metadata::new(EntryMode::DIR))),
+            next_dir: Some(oio::Entry::new(path, MetadataBuilder::dir().build())),
             active_lister: vec![],
         }
     }
@@ -112,7 +112,15 @@ impl<S: Service> oio::List for FlatLister<S> {
                         );
                         continue;
                     }
-                    Err(e) => return Err(e),
+                    Err(e) => {
+                        // `de` was taken out of `next_dir` above and is not in
+                        // `active_lister` yet, so dropping it here would lose
+                        // the directory: a caller that retries this `next()`
+                        // would resume from the parent and return `Ok` with
+                        // the directory's entries missing.
+                        self.next_dir = Some(de);
+                        return Err(e);
+                    }
                 };
                 let first = loop {
                     match l.next().await {
@@ -125,7 +133,14 @@ impl<S: Service> oio::List for FlatLister<S> {
                             );
                             continue;
                         }
-                        Err(e) => return Err(e),
+                        Err(e) => {
+                            // Same here, and this is the path a temporary
+                            // error takes: nothing has been yielded from `l`
+                            // yet, so the directory can be listed again from
+                            // the start.
+                            self.next_dir = Some(de);
+                            return Err(e);
+                        }
                     }
                 };
                 if let Some(v) = first {

@@ -15,96 +15,182 @@
 // specific language governing permissions and limitations
 // under the License.
 
-use crate::raw::*;
-use crate::*;
-use std::collections::HashMap;
 use std::fmt;
+use std::str;
+
+use crate::EntryMode;
+use crate::raw::Timestamp;
+use crate::types::compact::CompactFieldWriter;
+use crate::types::compact::CompactValues;
+
+const MODE_MASK: u16 = 0b11;
+const MODE_FILE: u16 = 0b01;
+const MODE_DIR: u16 = 0b10;
+const IS_CURRENT_MASK: u16 = 0b11 << 2;
+const IS_CURRENT_FALSE: u16 = 0b01 << 2;
+const IS_CURRENT_TRUE: u16 = 0b10 << 2;
+const IS_DELETED: u16 = 1 << 4;
+const HAS_LAST_MODIFIED: u16 = 1 << 5;
+
+const STRING_FIELD_COUNT: usize = 7;
+const VALUE_FIELD_COUNT: usize = 9;
+
+#[derive(Clone, Copy)]
+#[repr(usize)]
+enum ValueField {
+    CacheControl,
+    ContentDisposition,
+    ContentMd5,
+    ContentType,
+    ContentEncoding,
+    Etag,
+    Version,
+    UserMetadata,
+    Path,
+}
+
+#[derive(Clone, Copy, Eq, PartialEq)]
+struct MetadataHeader {
+    content_length: u64,
+    last_modified_seconds: i64,
+    last_modified_nanoseconds: u32,
+    flags: u16,
+}
+
+impl MetadataHeader {
+    fn new(mode: EntryMode) -> Self {
+        let mut header = Self {
+            content_length: 0,
+            last_modified_seconds: 0,
+            last_modified_nanoseconds: 0,
+            flags: 0,
+        };
+        header.set_mode(mode);
+        header
+    }
+
+    fn mode(&self) -> EntryMode {
+        match self.flags & MODE_MASK {
+            MODE_FILE => EntryMode::FILE,
+            MODE_DIR => EntryMode::DIR,
+            _ => EntryMode::Unknown,
+        }
+    }
+
+    fn set_mode(&mut self, mode: EntryMode) {
+        self.flags &= !MODE_MASK;
+        self.flags |= match mode {
+            EntryMode::FILE => MODE_FILE,
+            EntryMode::DIR => MODE_DIR,
+            EntryMode::Unknown => 0,
+        };
+    }
+
+    fn is_current(&self) -> Option<bool> {
+        match self.flags & IS_CURRENT_MASK {
+            IS_CURRENT_FALSE => Some(false),
+            IS_CURRENT_TRUE => Some(true),
+            _ => None,
+        }
+    }
+
+    fn set_is_current(&mut self, value: Option<bool>) {
+        self.flags &= !IS_CURRENT_MASK;
+        self.flags |= match value {
+            Some(false) => IS_CURRENT_FALSE,
+            Some(true) => IS_CURRENT_TRUE,
+            None => 0,
+        };
+    }
+
+    fn set_flag(&mut self, flag: u16, enabled: bool) {
+        if enabled {
+            self.flags |= flag;
+        } else {
+            self.flags &= !flag;
+        }
+    }
+}
 
 /// Metadata contains all the information related to a specific path.
 ///
-/// Depending on the context of the requests, the metadata for the same path may vary. For example, two
-/// versions of the same path might have different content lengths. Keep in mind that metadata is always
-/// tied to the given context and is not a global state.
+/// Metadata is tied to the operation that produced it. The same path can have
+/// different metadata across versions or requests.
 ///
-/// ## File Versions
+/// ## File versions
 ///
-/// In systems that support versioning, such as AWS S3, the metadata may represent a specific version
-/// of a file.
+/// In systems that support versioning, metadata can represent a specific object
+/// version. [`Metadata::version`] returns its version identifier when available.
+/// [`Metadata::is_current`] and [`Metadata::is_deleted`] describe whether that
+/// version is current or deleted.
 ///
-/// Users can access [`Metadata::version`] to retrieve the file's version, if available. They can also
-/// use [`Metadata::is_current`] and [`Metadata::is_deleted`] to determine whether the metadata
-/// corresponds to the latest version or a deleted one.
+/// | `is_current` | `is_deleted` | Meaning |
+/// | --- | --- | --- |
+/// | `Some(true)` | `false` | The current object version. |
+/// | `Some(true)` | `true` | The current delete marker or soft-deleted version. |
+/// | `Some(false)` | `false` | A previous accessible version. |
+/// | `Some(false)` | `true` | A previous deleted version. |
+/// | `None` | `false` | A non-deleted object whose current-version status is unknown. |
+/// | `None` | `true` | A deleted object whose current-version status is unknown. |
 ///
-/// The all possible combinations of `is_current` and `is_deleted` are as follows:
-///
-/// | `is_current`  | `is_deleted` | description                                                                                                                                                                                                                                                                                                                                                                          |
-/// |---------------|--------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-/// | `Some(true)`  | `false`      | **The metadata's associated version is the latest, current version.** This is the normal state, indicating that this version is the most up-to-date and accessible version.                                                                                                                                                                                                          |
-/// | `Some(true)`  | `true`       | **The metadata's associated version is the latest, deleted version (Latest Delete Marker or Soft Deleted).** This is particularly important in object storage systems like S3. It signifies that this version is the **most recent delete marker**, indicating the object has been deleted. Subsequent GET requests will return 404 errors unless a specific version ID is provided. |
-/// | `Some(false)` | `false`      | **The metadata's associated version is neither the latest version nor deleted.** This indicates that this version is a previous version, still accessible by specifying its version ID.                                                                                                                                                                                              |
-/// | `Some(false)` | `true`       | **The metadata's associated version is not the latest version and is deleted.** This represents a historical version that has been marked for deletion. Users will need to specify the version ID to access it, and accessing it may be subject to specific delete marker behavior (e.g., in S3, it might not return actual data but a specific delete marker response).             |
-/// | `None`        | `false`      | **The metadata's associated file is not deleted, but its version status is either unknown or it is not the latest version.** This likely indicates that versioning is not enabled for this file, or versioning information is unavailable.                                                                                                                                           |
-/// | `None`        | `true`       | **The metadata's associated file is deleted, but its version status is either unknown or it is not the latest version.** This typically means the file was deleted without versioning enabled, or its versioning information is unavailable. This may represent an actual data deletion operation rather than an S3 delete marker.                                                   |
-#[derive(Clone, Eq, PartialEq, Default)]
+/// Metadata is an immutable owned value. Use [`MetadataBuilder`] to create a
+/// value and [`Metadata::into_builder`] to create a modified value.
+#[derive(Clone)]
 pub struct Metadata {
-    mode: EntryMode,
-
-    is_current: Option<bool>,
-    is_deleted: bool,
-
-    cache_control: Option<String>,
-    content_disposition: Option<String>,
-    content_length: Option<u64>,
-    content_md5: Option<String>,
-    content_type: Option<String>,
-    content_encoding: Option<String>,
-    etag: Option<String>,
-    last_modified: Option<Timestamp>,
-    version: Option<String>,
-
-    user_metadata: Option<HashMap<String, String>>,
+    header: MetadataHeader,
+    values: CompactValues,
 }
+
+impl PartialEq for Metadata {
+    fn eq(&self, other: &Self) -> bool {
+        self.header == other.header
+            && (0..ValueField::Path as usize)
+                .all(|field| self.values.get(field) == other.values.get(field))
+    }
+}
+
+impl Eq for Metadata {}
 
 impl fmt::Debug for Metadata {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut ds = f.debug_struct("Metadata");
-        ds.field("mode", &self.mode);
+        ds.field("mode", &self.mode());
 
-        if let Some(is_current) = self.is_current {
-            ds.field("is_current", &is_current);
+        if let Some(value) = self.is_current() {
+            ds.field("is_current", &value);
         }
-        if self.is_deleted {
-            ds.field("is_deleted", &self.is_deleted);
+        if self.is_deleted() {
+            ds.field("is_deleted", &true);
         }
-        if let Some(cache_control) = &self.cache_control {
-            ds.field("cache_control", cache_control);
+        if let Some(value) = self.cache_control() {
+            ds.field("cache_control", &value);
         }
-        if let Some(content_disposition) = &self.content_disposition {
-            ds.field("content_disposition", content_disposition);
+        if let Some(value) = self.content_disposition() {
+            ds.field("content_disposition", &value);
         }
-        if let Some(content_length) = self.content_length {
-            ds.field("content_length", &content_length);
+        if self.is_file() {
+            ds.field("content_length", &self.content_length());
         }
-        if let Some(content_md5) = &self.content_md5 {
-            ds.field("content_md5", content_md5);
+        if let Some(value) = self.content_md5() {
+            ds.field("content_md5", &value);
         }
-        if let Some(content_type) = &self.content_type {
-            ds.field("content_type", content_type);
+        if let Some(value) = self.content_type() {
+            ds.field("content_type", &value);
         }
-        if let Some(content_encoding) = &self.content_encoding {
-            ds.field("content_encoding", content_encoding);
+        if let Some(value) = self.content_encoding() {
+            ds.field("content_encoding", &value);
         }
-        if let Some(etag) = &self.etag {
-            ds.field("etag", etag);
+        if let Some(value) = self.etag() {
+            ds.field("etag", &value);
         }
-        if let Some(last_modified) = self.last_modified {
-            ds.field("last_modified", &last_modified);
+        if let Some(value) = self.last_modified() {
+            ds.field("last_modified", &value);
         }
-        if let Some(version) = &self.version {
-            ds.field("version", version);
+        if let Some(value) = self.version() {
+            ds.field("version", &value);
         }
-        if let Some(user_metadata) = &self.user_metadata {
-            ds.field("user_metadata", user_metadata);
+        if let Some(value) = self.user_metadata() {
+            ds.field("user_metadata", &value);
         }
 
         ds.finish()
@@ -112,381 +198,683 @@ impl fmt::Debug for Metadata {
 }
 
 impl Metadata {
-    /// Create a new metadata
-    pub fn new(mode: EntryMode) -> Self {
+    /// Consume this metadata and return a builder initialized with its values.
+    #[inline]
+    pub fn into_builder(self) -> MetadataBuilder {
+        MetadataBuilder::from_metadata(self)
+    }
+
+    /// Return this entry's mode.
+    #[inline]
+    pub fn mode(&self) -> EntryMode {
+        self.header.mode()
+    }
+
+    /// Return `true` if this metadata is for a file.
+    #[inline]
+    pub fn is_file(&self) -> bool {
+        self.mode().is_file()
+    }
+
+    /// Return `true` if this metadata is for a directory.
+    #[inline]
+    pub fn is_dir(&self) -> bool {
+        self.mode().is_dir()
+    }
+
+    /// Return whether this metadata describes the current object version.
+    ///
+    /// `None` means the service did not report whether the version is current.
+    #[inline]
+    pub fn is_current(&self) -> Option<bool> {
+        self.header.is_current()
+    }
+
+    /// Return whether this metadata describes a deleted object or delete marker.
+    #[inline]
+    pub fn is_deleted(&self) -> bool {
+        self.header.flags & IS_DELETED != 0
+    }
+
+    /// Return this entry's Cache-Control value.
+    ///
+    /// See [RFC 9111](https://www.rfc-editor.org/rfc/rfc9111.html).
+    #[inline]
+    pub fn cache_control(&self) -> Option<&str> {
+        self.string(ValueField::CacheControl)
+    }
+
+    /// Return the full content length of this entry.
+    ///
+    /// For file metadata returned by stat, list, or read operations, this value
+    /// is the complete object size even when a read returns only a range.
+    /// Directory and unknown metadata return zero.
+    #[inline]
+    pub fn content_length(&self) -> u64 {
+        self.header.content_length
+    }
+
+    /// Return this entry's Content-MD5 value.
+    ///
+    /// OpenDAL returns the service-provided value and does not guarantee that it
+    /// is the MD5 digest of the content.
+    #[inline]
+    pub fn content_md5(&self) -> Option<&str> {
+        self.string(ValueField::ContentMd5)
+    }
+
+    /// Return this entry's Content-Type value.
+    ///
+    /// See [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#field.content-type).
+    #[inline]
+    pub fn content_type(&self) -> Option<&str> {
+        self.string(ValueField::ContentType)
+    }
+
+    /// Return this entry's Content-Encoding value.
+    ///
+    /// See [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#field.content-encoding).
+    #[inline]
+    pub fn content_encoding(&self) -> Option<&str> {
+        self.string(ValueField::ContentEncoding)
+    }
+
+    /// Return this entry's Last-Modified timestamp.
+    ///
+    /// See [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#field.last-modified).
+    #[inline]
+    pub fn last_modified(&self) -> Option<Timestamp> {
+        if self.header.flags & HAS_LAST_MODIFIED == 0 {
+            return None;
+        }
+
+        Some(
+            Timestamp::new(
+                self.header.last_modified_seconds,
+                self.header.last_modified_nanoseconds as i32,
+            )
+            .expect("metadata stores a previously validated timestamp"),
+        )
+    }
+
+    /// Return this entry's service-provided ETag as-is.
+    ///
+    /// Quotes and weak-validator prefixes are part of the returned value. See
+    /// [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#field.etag).
+    #[inline]
+    pub fn etag(&self) -> Option<&str> {
+        self.string(ValueField::Etag)
+    }
+
+    /// Return this entry's Content-Disposition value.
+    ///
+    /// See [RFC 6266](https://www.rfc-editor.org/rfc/rfc6266.html).
+    #[inline]
+    pub fn content_disposition(&self) -> Option<&str> {
+        self.string(ValueField::ContentDisposition)
+    }
+
+    /// Return this entry's service-specific version identifier.
+    #[inline]
+    pub fn version(&self) -> Option<&str> {
+        self.string(ValueField::Version)
+    }
+
+    /// Return a borrowed view of this entry's user metadata.
+    ///
+    /// Service-specific metadata prefixes are removed from the returned keys.
+    #[inline]
+    pub fn user_metadata(&self) -> Option<UserMetadata<'_>> {
+        self.values
+            .get(ValueField::UserMetadata as usize)
+            .map(UserMetadata::new)
+    }
+
+    #[inline]
+    pub(crate) fn path(&self) -> Option<&str> {
+        self.string(ValueField::Path)
+    }
+
+    #[inline]
+    fn string(&self, field: ValueField) -> Option<&str> {
+        self.values.get_str(field as usize)
+    }
+}
+
+/// Mutable construction state for [`Metadata`].
+pub struct MetadataBuilder {
+    header: MetadataHeader,
+    values: CompactValues,
+    strings: [Option<String>; STRING_FIELD_COUNT],
+    user_metadata: Option<Vec<(String, String)>>,
+    path: Option<String>,
+}
+
+impl MetadataBuilder {
+    /// Create a builder for file metadata with its complete content length.
+    #[inline]
+    pub fn file(content_length: u64) -> Self {
+        let mut builder = Self::fresh(EntryMode::FILE);
+        builder.header.content_length = content_length;
+        builder
+    }
+
+    /// Create a builder for directory metadata.
+    #[inline]
+    pub fn dir() -> Self {
+        Self::fresh(EntryMode::DIR)
+    }
+
+    /// Create a builder for metadata whose entry mode is not known.
+    #[inline]
+    pub fn unknown() -> Self {
+        Self::fresh(EntryMode::Unknown)
+    }
+
+    fn fresh(mode: EntryMode) -> Self {
         Self {
-            mode,
-
-            is_current: None,
-            is_deleted: false,
-
-            cache_control: None,
-            content_length: None,
-            content_md5: None,
-            content_type: None,
-            content_encoding: None,
-            last_modified: None,
-            etag: None,
-            content_disposition: None,
-            version: None,
+            header: MetadataHeader::new(mode),
+            values: CompactValues::default(),
+            strings: Default::default(),
             user_metadata: None,
+            path: None,
         }
     }
 
-    /// mode represent this entry's mode.
-    pub fn mode(&self) -> EntryMode {
-        self.mode
+    fn from_metadata(metadata: Metadata) -> Self {
+        Self {
+            header: metadata.header,
+            values: metadata.values,
+            strings: Default::default(),
+            user_metadata: None,
+            path: None,
+        }
     }
 
-    /// Set mode for entry.
-    pub fn set_mode(&mut self, v: EntryMode) -> &mut Self {
-        self.mode = v;
+    /// Set the entry mode to file and replace its complete content length.
+    pub fn set_file(&mut self, content_length: u64) -> &mut Self {
+        self.header.set_mode(EntryMode::FILE);
+        self.header.content_length = content_length;
         self
     }
 
-    /// Set mode for entry.
-    pub fn with_mode(mut self, v: EntryMode) -> Self {
-        self.mode = v;
+    /// Set the entry mode to directory and discard any file content length.
+    pub fn set_dir(&mut self) -> &mut Self {
+        self.header.set_mode(EntryMode::DIR);
+        self.header.content_length = 0;
         self
     }
 
-    /// Returns `true` if this metadata is for a file.
-    pub fn is_file(&self) -> bool {
-        matches!(self.mode, EntryMode::FILE)
-    }
-
-    /// Returns `true` if this metadata is for a directory.
-    pub fn is_dir(&self) -> bool {
-        matches!(self.mode, EntryMode::DIR)
-    }
-
-    /// Checks whether the metadata corresponds to the most recent version of the file.
-    ///
-    /// This function is particularly useful when working with versioned objects,
-    /// such as those stored in systems like AWS S3 with versioning enabled. It helps
-    /// determine if the retrieved metadata represents the current state of the file
-    /// or an older version.
-    ///
-    /// Refer to docs in [`Metadata`] for more information about file versions.
-    ///
-    /// # Return Value
-    ///
-    /// The function returns an `Option<bool>` which can have the following values:
-    ///
-    /// - `Some(true)`:  Indicates that the metadata **is** associated with the latest version of the file.
-    ///   The metadata is current and reflects the most up-to-date state.
-    /// - `Some(false)`: Indicates that the metadata **is not** associated with the latest version of the file.
-    ///   The metadata belongs to an older version, and there might be a more recent version available.
-    /// - `None`:      Indicates that the currency of the metadata **cannot be determined**. This might occur if
-    ///   versioning is not supported or enabled, or if there is insufficient information to ascertain the version status.
-    pub fn is_current(&self) -> Option<bool> {
-        self.is_current
-    }
-
-    /// Set the `is_current` status of this entry.
-    ///
-    /// By default, this value will be `None`. Please avoid using this API if it's unclear whether the entry is current.
-    /// Set it to `true` if it is known to be the latest; otherwise, set it to `false`.
-    pub fn set_is_current(&mut self, is_current: bool) -> &mut Self {
-        self.is_current = Some(is_current);
+    /// Set the entry mode to unknown and discard any file content length.
+    pub fn set_unknown(&mut self) -> &mut Self {
+        self.header.set_mode(EntryMode::Unknown);
+        self.header.content_length = 0;
         self
     }
 
-    /// Set the `is_current` status of this entry.
-    ///
-    /// By default, this value will be `None`. Please avoid using this API if it's unclear whether the entry is current.
-    /// Set it to `true` if it is known to be the latest; otherwise, set it to `false`.
-    pub fn with_is_current(mut self, is_current: Option<bool>) -> Self {
-        self.is_current = is_current;
+    /// Set whether this metadata describes the current object version.
+    pub fn is_current(&mut self, value: Option<bool>) -> &mut Self {
+        self.header.set_is_current(value);
         self
     }
 
-    /// Checks if the file (or version) associated with this metadata has been deleted.
-    ///
-    /// This function returns `true` if the file represented by this metadata has been marked for
-    /// deletion or has been permanently deleted.
-    /// It returns `false` otherwise, indicating that the file (or version) is still present and accessible.
-    ///
-    /// Refer to docs in [`Metadata`] for more information about file versions.
-    ///
-    /// # Returns
-    ///
-    /// `bool`: `true` if the object is considered deleted, `false` otherwise.
-    pub fn is_deleted(&self) -> bool {
-        self.is_deleted
-    }
-
-    /// Set the deleted status of this entry.
-    pub fn set_is_deleted(&mut self, v: bool) -> &mut Self {
-        self.is_deleted = v;
+    /// Set whether this metadata describes a deleted object.
+    pub fn is_deleted(&mut self, value: bool) -> &mut Self {
+        self.header.set_flag(IS_DELETED, value);
         self
     }
 
-    /// Set the deleted status of this entry.
-    pub fn with_is_deleted(mut self, v: bool) -> Self {
-        self.is_deleted = v;
+    /// Set the Cache-Control value.
+    pub fn cache_control(&mut self, value: impl Into<String>) -> &mut Self {
+        self.set_string(ValueField::CacheControl, value.into())
+    }
+
+    /// Set the Content-MD5 value.
+    pub fn content_md5(&mut self, value: impl Into<String>) -> &mut Self {
+        self.set_string(ValueField::ContentMd5, value.into())
+    }
+
+    /// Set the Content-Type value.
+    pub fn content_type(&mut self, value: impl Into<String>) -> &mut Self {
+        self.set_string(ValueField::ContentType, value.into())
+    }
+
+    /// Set the Content-Encoding value.
+    pub fn content_encoding(&mut self, value: impl Into<String>) -> &mut Self {
+        self.set_string(ValueField::ContentEncoding, value.into())
+    }
+
+    /// Set the last-modified timestamp.
+    pub fn last_modified(&mut self, value: Timestamp) -> &mut Self {
+        let value = value.into_inner();
+        self.header.last_modified_seconds = value.as_second();
+        self.header.last_modified_nanoseconds = value.subsec_nanosecond() as u32;
+        self.header.set_flag(HAS_LAST_MODIFIED, true);
         self
     }
 
-    /// Cache control of this entry.
-    ///
-    /// Cache-Control is defined by [RFC 7234](https://httpwg.org/specs/rfc7234.html#header.cache-control)
-    /// Refer to [MDN Cache-Control](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cache-Control) for more information.
-    pub fn cache_control(&self) -> Option<&str> {
-        self.cache_control.as_deref()
+    /// Set the ETag.
+    pub fn etag(&mut self, value: impl Into<String>) -> &mut Self {
+        self.set_string(ValueField::Etag, value.into())
     }
 
-    /// Set cache control of this entry.
+    /// Set the Content-Disposition value.
+    pub fn content_disposition(&mut self, value: impl Into<String>) -> &mut Self {
+        self.set_string(ValueField::ContentDisposition, value.into())
+    }
+
+    /// Set the object version.
+    pub fn version(&mut self, value: impl Into<String>) -> &mut Self {
+        self.set_string(ValueField::Version, value.into())
+    }
+
+    /// Set user metadata from owned key-value pairs.
     ///
-    /// Cache-Control is defined by [RFC 7234](https://httpwg.org/specs/rfc7234.html#header.cache-control)
-    /// Refer to [MDN Cache-Control](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cache-Control) for more information.
-    pub fn set_cache_control(&mut self, v: &str) -> &mut Self {
-        self.cache_control = Some(v.to_string());
+    /// Duplicate keys are rejected because user metadata has map semantics.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `values` contains duplicate keys.
+    pub fn user_metadata(
+        &mut self,
+        values: impl IntoIterator<Item = (String, String)>,
+    ) -> &mut Self {
+        let mut values: Vec<_> = values.into_iter().collect();
+        values.sort_unstable_by(|left, right| left.0.cmp(&right.0));
+        assert!(
+            values.windows(2).all(|pair| pair[0].0 != pair[1].0),
+            "user metadata contains duplicate keys"
+        );
+        self.user_metadata = Some(values);
         self
     }
 
-    /// Set cache control of this entry.
+    /// Finish this builder as immutable metadata.
     ///
-    /// Cache-Control is defined by [RFC 7234](https://httpwg.org/specs/rfc7234.html#header.cache-control)
-    /// Refer to [MDN Cache-Control](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Cache-Control) for more information.
-    pub fn with_cache_control(mut self, v: String) -> Self {
-        self.cache_control = Some(v);
+    /// # Panics
+    ///
+    /// Panics when the compact value block, including its index, exceeds `u16::MAX` bytes.
+    pub fn build(self) -> Metadata {
+        let Self {
+            header,
+            values,
+            strings,
+            user_metadata,
+            path,
+        } = self;
+        let has_value_edits =
+            strings.iter().any(Option::is_some) || user_metadata.is_some() || path.is_some();
+        if !has_value_edits {
+            return Metadata { header, values };
+        }
+        let mut fields = values.fields::<VALUE_FIELD_COUNT>();
+        for (index, value) in strings.iter().enumerate() {
+            if let Some(value) = value {
+                fields[index] = Some(value.as_bytes());
+            }
+        }
+        let user_metadata = user_metadata.as_deref();
+        if let Some(path) = path.as_deref() {
+            fields[ValueField::Path as usize] = Some(path.as_bytes());
+        }
+
+        let mut lengths = fields.map(|value| value.map(<[u8]>::len));
+        if let Some(user_metadata) = user_metadata {
+            lengths[ValueField::UserMetadata as usize] =
+                Some(user_metadata_encoded_len(user_metadata));
+        }
+
+        let values = CompactValues::encode_with(&lengths, |field, output| {
+            if field == ValueField::UserMetadata as usize
+                && let Some(user_metadata) = user_metadata
+            {
+                write_user_metadata(user_metadata, output);
+            } else {
+                output.write(fields[field].expect("present field has a value"));
+            }
+        });
+
+        Metadata { header, values }
+    }
+
+    pub(crate) fn path(&mut self, value: impl Into<String>) -> &mut Self {
+        self.path = Some(value.into());
         self
     }
 
-    /// Content length of this entry.
-    ///
-    /// `Content-Length` is defined by [RFC 7230](https://httpwg.org/specs/rfc7230.html#header.content-length)
-    ///
-    /// Refer to [MDN Content-Length](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Length) for more information.
-    ///
-    /// For file metadata returned by stat, list, or read operations, this value
-    /// represents the full object size, even if the read operation only returns
-    /// a range of the object.
-    ///
-    /// # Returns
-    ///
-    /// Content length of this entry. It will be `0` if the content length is not set by the storage services.
-    pub fn content_length(&self) -> u64 {
-        self.content_length.unwrap_or_default()
-    }
-
-    /// Returns `true` if this metadata contains an explicit content length.
-    pub(crate) fn has_content_length(&self) -> bool {
-        self.content_length.is_some()
-    }
-
-    /// Set content length of this entry.
-    pub fn set_content_length(&mut self, v: u64) -> &mut Self {
-        self.content_length = Some(v);
-        self
-    }
-
-    /// Set content length of this entry.
-    pub fn with_content_length(mut self, v: u64) -> Self {
-        self.content_length = Some(v);
-        self
-    }
-
-    /// Content MD5 of this entry.
-    ///
-    /// Content MD5 is defined by [RFC 2616](http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html).
-    /// And removed by [RFC 7231](https://www.rfc-editor.org/rfc/rfc7231).
-    ///
-    /// OpenDAL will try its best to set this value, but not guarantee this value is the md5 of content.
-    pub fn content_md5(&self) -> Option<&str> {
-        self.content_md5.as_deref()
-    }
-
-    /// Set content MD5 of this entry.
-    pub fn set_content_md5(&mut self, v: &str) -> &mut Self {
-        self.content_md5 = Some(v.to_string());
-        self
-    }
-
-    /// Set content MD5 of this entry.
-    pub fn with_content_md5(mut self, v: String) -> Self {
-        self.content_md5 = Some(v);
-        self
-    }
-
-    /// Content Type of this entry.
-    ///
-    /// Content Type is defined by [RFC 9110](https://httpwg.org/specs/rfc9110.html#field.content-type).
-    ///
-    /// Refer to [MDN Content-Type](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type) for more information.
-    pub fn content_type(&self) -> Option<&str> {
-        self.content_type.as_deref()
-    }
-
-    /// Set Content Type of this entry.
-    pub fn set_content_type(&mut self, v: &str) -> &mut Self {
-        self.content_type = Some(v.to_string());
-        self
-    }
-
-    /// Set Content Type of this entry.
-    pub fn with_content_type(mut self, v: String) -> Self {
-        self.content_type = Some(v);
-        self
-    }
-
-    /// Content Encoding of this entry.
-    ///
-    /// Content Encoding is defined by [RFC 7231](https://httpwg.org/specs/rfc7231.html#header.content-encoding)
-    ///
-    /// Refer to [MDN Content-Encoding](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Encoding) for more information.
-    pub fn content_encoding(&self) -> Option<&str> {
-        self.content_encoding.as_deref()
-    }
-
-    /// Set Content Encoding of this entry.
-    pub fn set_content_encoding(&mut self, v: &str) -> &mut Self {
-        self.content_encoding = Some(v.to_string());
-        self
-    }
-
-    /// Last modified of this entry.
-    ///
-    /// `Last-Modified` is defined by [RFC 7232](https://httpwg.org/specs/rfc7232.html#header.last-modified)
-    ///
-    /// Refer to [MDN Last-Modified](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Last-Modified) for more information.
-    pub fn last_modified(&self) -> Option<Timestamp> {
-        self.last_modified
-    }
-
-    /// Set Last modified of this entry.
-    pub fn set_last_modified(&mut self, v: Timestamp) -> &mut Self {
-        self.last_modified = Some(v);
-        self
-    }
-
-    /// Set Last modified of this entry.
-    pub fn with_last_modified(mut self, v: Timestamp) -> Self {
-        self.last_modified = Some(v);
-        self
-    }
-
-    /// ETag of this entry.
-    ///
-    /// `ETag` is defined by [RFC 7232](https://httpwg.org/specs/rfc7232.html#header.etag)
-    ///
-    /// Refer to [MDN ETag](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/ETag) for more information.
-    ///
-    /// OpenDAL will return this value AS-IS like the following:
-    ///
-    /// - `"33a64df551425fcc55e4d42a148795d9f25f89d4"`
-    /// - `W/"0815"`
-    ///
-    /// `"` is part of etag.
-    pub fn etag(&self) -> Option<&str> {
-        self.etag.as_deref()
-    }
-
-    /// Set ETag of this entry.
-    pub fn set_etag(&mut self, v: &str) -> &mut Self {
-        self.etag = Some(v.to_string());
-        self
-    }
-
-    /// Set ETag of this entry.
-    pub fn with_etag(mut self, v: String) -> Self {
-        self.etag = Some(v);
-        self
-    }
-
-    /// Content-Disposition of this entry
-    ///
-    /// `Content-Disposition` is defined by [RFC 2616](https://www.rfc-editor/rfcs/2616) and
-    /// clarified usage in [RFC 6266](https://www.rfc-editor/6266).
-    ///
-    /// Refer to [MDN Content-Disposition](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Disposition) for more information.
-    ///
-    /// OpenDAL will return this value AS-IS like the following:
-    ///
-    /// - "inline"
-    /// - "attachment"
-    /// - "attachment; filename=\"filename.jpg\""
-    pub fn content_disposition(&self) -> Option<&str> {
-        self.content_disposition.as_deref()
-    }
-
-    /// Set Content-Disposition of this entry
-    pub fn set_content_disposition(&mut self, v: &str) -> &mut Self {
-        self.content_disposition = Some(v.to_string());
-        self
-    }
-
-    /// Set Content-Disposition of this entry
-    pub fn with_content_disposition(mut self, v: String) -> Self {
-        self.content_disposition = Some(v);
-        self
-    }
-
-    /// Retrieves the `version` of the file, if available.
-    ///
-    /// The version is typically used in systems that support object versioning, such as AWS S3.
-    ///
-    /// # Returns
-    ///
-    /// - `Some(&str)`: If the file has a version associated with it,
-    ///   this function returns `Some` containing a reference to the version ID string.
-    /// - `None`: If the file does not have a version, or if versioning is
-    ///   not supported or enabled for the underlying storage system, this function
-    ///   returns `None`.
-    pub fn version(&self) -> Option<&str> {
-        self.version.as_deref()
-    }
-
-    /// Set the version of the file
-    pub fn set_version(&mut self, v: &str) -> &mut Self {
-        self.version = Some(v.to_string());
-        self
-    }
-
-    /// With the version of the file.
-    pub fn with_version(mut self, v: String) -> Self {
-        self.version = Some(v);
-        self
-    }
-
-    /// User defined metadata of this entry
-    ///
-    /// The prefix of the user defined metadata key(for example: in oss, it's x-oss-meta-)
-    /// is remove from the key
-    pub fn user_metadata(&self) -> Option<&HashMap<String, String>> {
-        self.user_metadata.as_ref()
-    }
-
-    /// With user defined metadata of this entry
-    pub fn with_user_metadata(mut self, data: HashMap<String, String>) -> Self {
-        self.user_metadata = Some(data);
+    fn set_string(&mut self, field: ValueField, value: String) -> &mut Self {
+        let index = field as usize;
+        debug_assert!(index < STRING_FIELD_COUNT);
+        self.strings[index] = Some(value);
         self
     }
 }
 
+/// Borrowed user metadata stored in a [`Metadata`] value.
+#[derive(Clone, Copy)]
+pub struct UserMetadata<'a> {
+    encoded: &'a [u8],
+}
+
+impl<'a> UserMetadata<'a> {
+    #[inline]
+    pub(crate) fn new(encoded: &'a [u8]) -> Self {
+        Self { encoded }
+    }
+
+    /// Return the value associated with `key`.
+    #[inline]
+    pub fn get(&self, key: &str) -> Option<&'a str> {
+        let mut left = 0;
+        let mut right = self.len();
+        let header_len = 2 + right * 4;
+        while left < right {
+            let middle = left + (right - left) / 2;
+            let (candidate, value) = user_metadata_entry(self.encoded, middle, header_len);
+            match candidate.cmp(key) {
+                std::cmp::Ordering::Less => left = middle + 1,
+                std::cmp::Ordering::Greater => right = middle,
+                std::cmp::Ordering::Equal => return Some(value),
+            }
+        }
+        None
+    }
+
+    /// Return the number of user metadata pairs.
+    #[inline]
+    pub fn len(&self) -> usize {
+        user_metadata_count(self.encoded)
+    }
+
+    /// Return `true` when no user metadata pairs are present.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+impl fmt::Debug for UserMetadata<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_map().entries(*self).finish()
+    }
+}
+
+impl serde::Serialize for UserMetadata<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.collect_map(*self)
+    }
+}
+
+/// Iterator over borrowed user metadata pairs.
+pub struct UserMetadataIntoIter<'a> {
+    encoded: &'a [u8],
+    index: usize,
+    header_len: usize,
+}
+
+impl<'a> Iterator for UserMetadataIntoIter<'a> {
+    type Item = (&'a str, &'a str);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if 2 + self.index * 4 == self.header_len {
+            return None;
+        }
+        let entry = user_metadata_entry(self.encoded, self.index, self.header_len);
+        self.index += 1;
+        Some(entry)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let remaining = (self.header_len - 2) / 4 - self.index;
+        (remaining, Some(remaining))
+    }
+}
+
+impl ExactSizeIterator for UserMetadataIntoIter<'_> {}
+
+impl<'a> IntoIterator for UserMetadata<'a> {
+    type Item = (&'a str, &'a str);
+    type IntoIter = UserMetadataIntoIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let len = self.len();
+        UserMetadataIntoIter {
+            encoded: self.encoded,
+            index: 0,
+            header_len: 2 + len * 4,
+        }
+    }
+}
+
+impl<'a> IntoIterator for &UserMetadata<'a> {
+    type Item = (&'a str, &'a str);
+    type IntoIter = UserMetadataIntoIter<'a>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        (*self).into_iter()
+    }
+}
+
+pub(crate) fn user_metadata_encoded_len(values: &[(String, String)]) -> usize {
+    u16::try_from(values.len()).expect("user metadata contains too many pairs");
+    let header_len = size_of::<u16>() + values.len() * 2 * size_of::<u16>();
+    let payload_len: usize = values
+        .iter()
+        .map(|(key, value)| key.len() + value.len())
+        .sum();
+    let total_len = header_len
+        .checked_add(payload_len)
+        .expect("user metadata length overflowed");
+    assert!(
+        total_len <= u16::MAX as usize,
+        "user metadata exceeds 64 KiB"
+    );
+    total_len
+}
+
+pub(crate) fn write_user_metadata(
+    values: &[(String, String)],
+    output: &mut CompactFieldWriter<'_>,
+) {
+    let count = u16::try_from(values.len()).expect("user metadata contains too many pairs");
+    let header_len = size_of::<u16>() + values.len() * 2 * size_of::<u16>();
+    output.write(&count.to_le_bytes());
+
+    let mut payload_offset = header_len;
+    for (key, value) in values {
+        for part in [key.as_bytes(), value.as_bytes()] {
+            payload_offset += part.len();
+            let end = u16::try_from(payload_offset).expect("user metadata length was validated");
+            output.write(&end.to_le_bytes());
+        }
+    }
+
+    for (key, value) in values {
+        output.write(key.as_bytes());
+        output.write(value.as_bytes());
+    }
+}
+
+#[inline]
+fn user_metadata_count(encoded: &[u8]) -> usize {
+    u16::from_le_bytes(
+        encoded[..2]
+            .try_into()
+            .expect("user metadata contains its pair count"),
+    ) as usize
+}
+
+#[inline]
+fn user_metadata_entry(encoded: &[u8], index: usize, header_len: usize) -> (&str, &str) {
+    debug_assert!(index * 4 + 6 <= header_len);
+    let key_offset = index * 2;
+    let key_start = if key_offset == 0 {
+        header_len
+    } else {
+        user_metadata_offset(encoded, key_offset - 1)
+    };
+    let key_end = user_metadata_offset(encoded, key_offset);
+    let value_end = user_metadata_offset(encoded, key_offset + 1);
+    (
+        // User metadata enters this encoding from owned UTF-8 strings.
+        unsafe { str::from_utf8_unchecked(&encoded[key_start..key_end]) },
+        // User metadata enters this encoding from owned UTF-8 strings.
+        unsafe { str::from_utf8_unchecked(&encoded[key_end..value_end]) },
+    )
+}
+
+#[inline]
+fn user_metadata_offset(encoded: &[u8], index: usize) -> usize {
+    let offset = 2 + index * 2;
+    u16::from_le_bytes(
+        encoded[offset..offset + 2]
+            .try_into()
+            .expect("user metadata contains a complete offset"),
+    ) as usize
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use super::*;
 
     #[test]
-    fn debug_metadata_omits_default_values() {
-        let metadata = Metadata::new(EntryMode::FILE);
-
-        assert_eq!(format!("{metadata:?}"), "Metadata { mode: FILE }");
+    #[cfg(target_pointer_width = "64")]
+    fn metadata_layout_is_40_bytes() {
+        assert_eq!(size_of::<MetadataHeader>(), 24);
+        assert_eq!(size_of::<CompactValues>(), 16);
+        assert_eq!(size_of::<Metadata>(), 40);
     }
 
     #[test]
-    fn debug_metadata_keeps_meaningful_values() {
-        let metadata = Metadata::new(EntryMode::FILE)
-            .with_is_current(Some(false))
-            .with_is_deleted(true)
-            .with_content_length(42)
-            .with_version("v1".to_string());
-
+    fn debug_metadata_omits_default_values() {
+        let metadata = MetadataBuilder::file(0).build();
         assert_eq!(
             format!("{metadata:?}"),
-            "Metadata { mode: FILE, is_current: false, is_deleted: true, content_length: 42, version: \"v1\" }"
+            "Metadata { mode: FILE, content_length: 0 }"
         );
+    }
+
+    #[test]
+    fn metadata_roundtrip() {
+        let timestamp = Timestamp::new(-1, -123_456_789).unwrap();
+        let mut builder = MetadataBuilder::file(42);
+        builder
+            .is_current(Some(false))
+            .is_deleted(true)
+            .last_modified(timestamp)
+            .version("v1")
+            .user_metadata([
+                ("owner".to_string(), "opendal".to_string()),
+                ("region".to_string(), "us-east-1".to_string()),
+            ]);
+        let metadata = builder.build();
+
+        assert_eq!(metadata.mode(), EntryMode::FILE);
+        assert_eq!(metadata.is_current(), Some(false));
+        assert!(metadata.is_deleted());
+        assert_eq!(metadata.content_length(), 42);
+        assert_eq!(metadata.last_modified(), Some(timestamp));
+        assert_eq!(metadata.version(), Some("v1"));
+        assert_eq!(
+            metadata.user_metadata().unwrap().get("owner"),
+            Some("opendal")
+        );
+        assert_eq!(
+            metadata
+                .user_metadata()
+                .unwrap()
+                .into_iter()
+                .collect::<HashMap<_, _>>()
+                .len(),
+            2
+        );
+    }
+
+    #[test]
+    fn into_builder_preserves_values_for_header_changes() {
+        let mut builder = MetadataBuilder::file(0);
+        builder.etag("etag");
+        let metadata = builder.build();
+        let cloned = metadata.clone();
+
+        let mut builder = metadata.into_builder();
+        builder.set_file(42);
+        let changed = builder.build();
+
+        assert_eq!(cloned.content_length(), 0);
+        assert_eq!(changed.content_length(), 42);
+        assert_eq!(changed.etag(), Some("etag"));
+        assert_eq!(cloned.etag(), Some("etag"));
+    }
+
+    #[test]
+    fn mode_transitions_reset_content_length() {
+        let mut builder = MetadataBuilder::file(42);
+        builder.set_dir();
+        let directory = builder.build();
+        assert!(directory.is_dir());
+        assert_eq!(directory.content_length(), 0);
+
+        let mut builder = directory.into_builder();
+        builder.set_file(7);
+        let file = builder.build();
+        assert!(file.is_file());
+        assert_eq!(file.content_length(), 7);
+
+        let mut builder = file.into_builder();
+        builder.set_unknown();
+        let unknown = builder.build();
+        assert_eq!(unknown.mode(), EntryMode::Unknown);
+        assert_eq!(unknown.content_length(), 0);
+    }
+
+    #[test]
+    fn into_builder_does_not_mutate_shared_packed_values() {
+        let mut builder = MetadataBuilder::file(0);
+        builder.etag("original").version("version").user_metadata([
+            ("owner".to_string(), "opendal".to_string()),
+            ("region".to_string(), "us-east-1".to_string()),
+        ]);
+        let original = builder.build();
+
+        let mut builder = original.clone().into_builder();
+        builder
+            .etag("changed")
+            .user_metadata([("owner".to_string(), "another-owner".to_string())]);
+        let changed = builder.build();
+
+        assert_eq!(original.etag(), Some("original"));
+        assert_eq!(original.version(), Some("version"));
+        assert_eq!(original.user_metadata().unwrap().len(), 2);
+        assert_eq!(changed.etag(), Some("changed"));
+        assert_eq!(changed.version(), Some("version"));
+        assert_eq!(
+            changed.user_metadata().unwrap().get("owner"),
+            Some("another-owner")
+        );
+    }
+
+    #[test]
+    fn empty_user_metadata_is_present() {
+        let mut builder = MetadataBuilder::file(0);
+        builder.user_metadata([]);
+        let metadata = builder.build();
+
+        assert!(metadata.user_metadata().unwrap().is_empty());
+    }
+
+    #[test]
+    fn internal_entry_path_does_not_change_metadata_equality() {
+        let metadata = MetadataBuilder::file(0).build();
+        let mut builder = metadata.clone().into_builder();
+        builder.path("path");
+        let metadata_with_path = builder.build();
+
+        assert_eq!(metadata, metadata_with_path);
     }
 }

@@ -170,73 +170,79 @@ impl IpmfsCore {
     }
 }
 
-mod error {
-    use http::Response;
-    use http::StatusCode;
-    use serde::Deserialize;
-    use serde_json::de;
+use http::StatusCode;
+use serde::Deserialize;
+use serde_json::de;
 
-    use opendal_core::raw::*;
-    use opendal_core::*;
+#[derive(Deserialize, Default, Debug)]
+#[serde(default)]
+struct IpfsError {
+    #[serde(rename = "Message")]
+    message: String,
+    #[serde(rename = "Code")]
+    code: usize,
+    #[serde(rename = "Type")]
+    ty: String,
+}
 
-    #[derive(Deserialize, Default, Debug)]
-    #[serde(default)]
-    struct IpfsError {
-        #[serde(rename = "Message")]
-        message: String,
-        #[serde(rename = "Code")]
-        code: usize,
-        #[serde(rename = "Type")]
-        ty: String,
-    }
+/// Parse error response into io::Error.
+///
+/// > Status code 500 means that the function does exist, but IPFS was not
+/// > able to fulfil the request because of an error.
+/// > To know that reason, you have to look at the error message that is
+/// > usually returned with the body of the response
+/// > (if no error, check the daemon logs).
+///
+/// ref: https://docs.ipfs.tech/reference/kubo/rpc/#http-status-codes
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+}
 
-    /// Parse error response into io::Error.
-    ///
-    /// > Status code 500 means that the function does exist, but IPFS was not
-    /// > able to fulfil the request because of an error.
-    /// > To know that reason, you have to look at the error message that is
-    /// > usually returned with the body of the response
-    /// > (if no error, check the daemon logs).
-    ///
-    /// ref: https://docs.ipfs.tech/reference/kubo/rpc/#http-status-codes
-    pub(crate) fn parse_error(resp: Response<Buffer>) -> Error {
-        let (parts, body) = resp.into_parts();
-        let bs = body.to_bytes();
-
-        let ipfs_error = de::from_slice::<IpfsError>(&bs).ok();
-
-        let (kind, retryable) = match parts.status {
-            StatusCode::INTERNAL_SERVER_ERROR => {
-                if let Some(ie) = &ipfs_error {
-                    match ie.message.as_str() {
-                        "file does not exist" => (ErrorKind::NotFound, false),
-                        _ => (ErrorKind::Unexpected, false),
-                    }
-                } else {
-                    (ErrorKind::Unexpected, false)
-                }
-            }
-            StatusCode::BAD_GATEWAY
-            | StatusCode::SERVICE_UNAVAILABLE
-            | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
-            _ => (ErrorKind::Unexpected, false),
-        };
-
-        let message = match ipfs_error {
-            Some(ipfs_error) => format!("{ipfs_error:?}"),
-            None => String::from_utf8_lossy(&bs).into_owned(),
-        };
-
-        let mut err = Error::new(kind, message);
-
-        err = with_error_response_context(err, parts);
-
-        if retryable {
-            err = err.set_temporary();
-        }
-
-        err
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self { service_operation }
     }
 }
 
-pub(super) use error::*;
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
+    let (parts, body) = resp.into_parts();
+    let bs = body.to_bytes();
+
+    let ipfs_error = de::from_slice::<IpfsError>(&bs).ok();
+
+    let (kind, retryable) = match parts.status {
+        StatusCode::INTERNAL_SERVER_ERROR => {
+            if let Some(ie) = &ipfs_error {
+                match ie.message.as_str() {
+                    "file does not exist" => (ErrorKind::NotFound, false),
+                    _ => (ErrorKind::Unexpected, false),
+                }
+            } else {
+                (ErrorKind::Unexpected, false)
+            }
+        }
+        StatusCode::BAD_GATEWAY | StatusCode::SERVICE_UNAVAILABLE | StatusCode::GATEWAY_TIMEOUT => {
+            (ErrorKind::Unexpected, true)
+        }
+        _ => (ErrorKind::Unexpected, false),
+    };
+
+    let message = match ipfs_error {
+        Some(ipfs_error) => format!("{ipfs_error:?}"),
+        None => String::from_utf8_lossy(&bs).into_owned(),
+    };
+
+    let mut err = Error::new(kind, message);
+
+    err = err.with_context("service_operation", ctx.service_operation.0);
+    err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
+
+    err
+}

@@ -32,9 +32,11 @@ async function run() {
   if (repoType === "bucket") {
     await hfRequest("DELETE", `/api/buckets/${repoId}`, token);
   } else {
+    const [organization, name] = repoId.split("/");
     await hfRequest("DELETE", "/api/repos/delete", token, {
       type: repoType,
-      name: repoId,
+      name,
+      organization,
     });
   }
 

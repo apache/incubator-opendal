@@ -25,7 +25,7 @@ homepage = "https://opendal.apache.org/"
 license = "Apache-2.0"
 repository = "https://github.com/apache/opendal"
 rust-version = "1.91"
-version = "0.59.0"
+version = "0.60.5"
 
 [features]
 send_wrapper = ["dep:send_wrapper"]
@@ -38,12 +38,12 @@ path = "tests/behavior/main.rs"
 
 [dependencies]
 async-trait = "0.1"
-asyncband = { version = "0.6" }
+asyncband = { version = "0.7.1", features = ["mutex", "oneshot"] }
 bytes = "1"
 chrono = { version = "0.4.42", features = ["std", "clock"] }
 futures = "0.3"
 object_store = "0.14.1"
-opendal = { version = "0.58.2", path = "../../core", default-features = false }
+opendal = { version = "0.59.5", path = "../../core", default-features = false }
 pin-project = "1.1"
 send_wrapper = { version = "0.6", features = ["futures"], optional = true }
 tokio = { version = "1", default-features = false }
@@ -51,7 +51,7 @@ tokio = { version = "1", default-features = false }
 [dev-dependencies]
 anyhow = "1.0.86"
 libtest-mimic = "0.8.1"
-opendal = { version = "0.58.2", path = "../../core", features = [
+opendal = { version = "0.59.5", path = "../../core", features = [
   "services-fs",
   "services-memory",
   "services-s3",

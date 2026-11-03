@@ -21,8 +21,7 @@ use bytes::Buf;
 
 use crate::core::parse_error;
 use crate::core::*;
-use opendal_core::EntryMode;
-use opendal_core::Metadata;
+use opendal_core::MetadataBuilder;
 use opendal_core::OperationContext;
 use opendal_core::Result;
 use opendal_core::raw::*;
@@ -77,7 +76,10 @@ impl oio::PageList for TosLister {
             .await?;
 
         if resp.status() != http::StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListObjectsV2")),
+                resp,
+            ));
         }
 
         let bs = resp.into_body();
@@ -90,7 +92,7 @@ impl oio::PageList for TosLister {
         for prefix in output.common_prefixes {
             let de = oio::Entry::new(
                 &build_rel_path(&self.core.root, &prefix.prefix),
-                Metadata::new(EntryMode::DIR),
+                MetadataBuilder::dir().build(),
             );
 
             ctx.entries.push_back(de);
@@ -102,16 +104,19 @@ impl oio::PageList for TosLister {
                 path = "/".to_string();
             }
 
-            let mut meta = Metadata::new(EntryMode::from_path(&path));
-            meta.set_is_current(true);
+            let mut meta = if path.ends_with('/') {
+                MetadataBuilder::dir()
+            } else {
+                MetadataBuilder::file(object.size)
+            };
+            meta.is_current(Some(true));
             if let Some(etag) = &object.etag {
-                meta.set_etag(etag);
-                meta.set_content_md5(etag.trim_matches('"'));
+                meta.etag(etag);
+                meta.content_md5(etag.trim_matches('"'));
             }
-            meta.set_content_length(object.size);
-            meta.set_last_modified(object.last_modified.parse::<Timestamp>()?);
+            meta.last_modified(object.last_modified.parse::<Timestamp>()?);
 
-            let de = oio::Entry::with(path, meta);
+            let de = oio::Entry::with(path, meta.build());
             ctx.entries.push_back(de);
         }
 
@@ -172,7 +177,10 @@ impl oio::PageList for TosObjectVersionsLister {
             .await?;
 
         if resp.status() != http::StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListObjectVersions")),
+                resp,
+            ));
         }
 
         let bs = resp.into_body();
@@ -193,7 +201,7 @@ impl oio::PageList for TosObjectVersionsLister {
         for prefix in output.common_prefixes {
             let de = oio::Entry::new(
                 &build_rel_path(&self.core.root, &prefix.prefix),
-                Metadata::new(EntryMode::DIR),
+                MetadataBuilder::dir().build(),
             );
 
             ctx.entries.push_back(de);
@@ -209,18 +217,21 @@ impl oio::PageList for TosObjectVersionsLister {
                 path = "/".to_string();
             }
 
-            let mut meta = Metadata::new(EntryMode::from_path(&path));
-            meta.set_version(&version_object.version_id);
-            meta.set_is_current(version_object.is_latest);
-            meta.set_content_length(version_object.size);
-            meta.set_last_modified(version_object.last_modified.parse::<Timestamp>()?);
+            let mut meta = if path.ends_with('/') {
+                MetadataBuilder::dir()
+            } else {
+                MetadataBuilder::file(version_object.size)
+            };
+            meta.version(&version_object.version_id);
+            meta.is_current(Some(version_object.is_latest));
+            meta.last_modified(version_object.last_modified.parse::<Timestamp>()?);
 
             if let Some(etag) = version_object.etag {
-                meta.set_etag(&etag);
-                meta.set_content_md5(etag.trim_matches('"'));
+                meta.etag(&etag);
+                meta.content_md5(etag.trim_matches('"'));
             }
 
-            let de = oio::Entry::with(path, meta);
+            let de = oio::Entry::with(path, meta.build());
             ctx.entries.push_back(de);
         }
 
@@ -231,13 +242,17 @@ impl oio::PageList for TosObjectVersionsLister {
                     path = "/".to_string();
                 }
 
-                let mut meta = Metadata::new(EntryMode::FILE);
-                meta.set_version(&delete_marker.version_id);
-                meta.set_is_deleted(true);
-                meta.set_is_current(delete_marker.is_latest);
-                meta.set_last_modified(delete_marker.last_modified.parse::<Timestamp>()?);
+                let mut meta = if path.ends_with('/') {
+                    MetadataBuilder::dir()
+                } else {
+                    MetadataBuilder::file(0)
+                };
+                meta.version(&delete_marker.version_id);
+                meta.is_deleted(true);
+                meta.is_current(Some(delete_marker.is_latest));
+                meta.last_modified(delete_marker.last_modified.parse::<Timestamp>()?);
 
-                let de = oio::Entry::with(path, meta);
+                let de = oio::Entry::with(path, meta.build());
                 ctx.entries.push_back(de);
             }
         }

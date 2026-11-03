@@ -1,6 +1,6 @@
 ---
 sidebar_label: Concepts
-description: The four ideas behind every OpenDAL API — service, operator, layer, and operation.
+description: The shared model behind every OpenDAL API — the storage semantics and path and operation concepts every binding expresses through its own native API.
 ---
 
 import MentalModel from "@site/src/components/concepts/MentalModel";
@@ -9,10 +9,15 @@ import { conceptSamples } from "@site/src/components/concepts/samples";
 
 # Concepts
 
-Every OpenDAL API, in every language, follows one model:
+Every OpenDAL API is built on the same core model:
 
-**Configure a service, build an operator, optionally wrap it with layers, then
-call operations.**
+**One set of storage semantics, expressed through each binding's native
+API.** Every binding builds on the same contracts for how operations and
+paths behave, and maps them onto its own native types and lifecycle. Which
+features a binding exposes and how it represents errors are the binding's
+own; its documentation is the reference for both. The picture below shows
+the model as the Rust core defines it — an operator built from one
+configured service, with optional layers around it:
 
 <MentalModel />
 
@@ -23,19 +28,28 @@ filesystem, an in-memory store — [more than 50 in total](/services).
 
 You never talk to a service directly. You describe it with plain configuration
 — bucket, root, endpoint, credentials — and OpenDAL builds the client for you.
-Because a service is only configuration, switching backends is a configuration
-change, not a code change: `s3` in production, `fs` on your laptop, `memory`
-in tests.
+Because a service is only configuration, switching backends is mostly a
+configuration change: `s3` in production, `fs` on your laptop, `memory` in
+tests. Each service has its own configuration keys and capabilities, though,
+so switching means supplying the new service's configuration and checking that
+it supports the features you rely on.
 
 ## Operator
 
-The operator is the entry point for everything. It is built from one service's
-configuration, and every storage call in your application goes through it.
+In the Rust core, the operator is the handle every operation goes through: it
+is built from one service's configuration, and every storage call is a method
+on it. Many bindings expose it publicly under the same name — Python, Node.js,
+and Java all have an `Operator` — but a binding may also wrap or rename it to
+fit its language: the Dart binding, for example, exposes `Storage`, `File`,
+and `Directory` objects and keeps the operator internal.
 
-Operators are lightweight handles: cheap to create, and safe to share across
-threads and tasks. There are no connections to pool or cursors to manage. One
-operator maps to one service and one root path — to work with two buckets,
-build two operators.
+Wherever the operator sits, the same rules apply. One operator maps to one
+service and one root path — to work with two buckets, build two operators (or
+two of your binding's client objects). An operator is designed to be created
+once and reused for many calls. How you construct, share, and release a
+storage handle — configuration style, sharing model, explicit close — follows
+each language's own conventions; your binding's documentation describes its
+lifecycle.
 
 ## Layer
 
@@ -43,23 +57,37 @@ A layer adds behavior around an operator: automatic retry, logging, timeouts,
 metrics, concurrency limits.
 
 Layers nest like an onion: every operation passes through every layer on the
-way in and on the way out. Cross-cutting concerns are composed once at startup
-instead of being scattered through your code. Applying a layer returns a new
-operator and leaves the original untouched.
+way in and on the way out, so cross-cutting concerns are composed once at
+startup instead of being scattered through your code. Applying a layer returns
+a new operator and leaves the original untouched.
+
+Layers live in the Rust core, and bindings differ in what they expose. Some,
+such as Python, Node.js, and Java, let you apply layers yourself; some apply a
+fixed policy such as retry internally; others do not expose layers yet. Check
+your binding's documentation for what is available.
 
 ## Operation
 
 Operations are the verbs: `read`, `write`, `stat`, `list`, `delete`, `copy`,
-`rename`, and friends. They are the same on every service, so code written
-against one backend runs against any other.
+`rename`, and friends. An operation has the same meaning on every service, so
+code written against one backend runs against any other that supports the same
+features.
+
+Not every service supports every operation or optional feature. Each operator
+carries a **capability** set describing what its service can do, and an
+unsupported call fails with an explicit error instead of silently misbehaving.
+Where a binding exposes capability inspection, check for optional behavior —
+such as conditional writes or multipart uploads — before relying on it.
 
 Paths follow one rule everywhere: they are always relative to the operator's
 root, and a trailing `/` means a directory. `logs/app/` is a directory;
 `logs/app` is a file.
 
-## One model, every language
+## The model in code
 
-The same four steps, in the language you already ship:
+The same model, written in bindings that expose the operator and layers
+directly. In a binding with a different surface — such as Dart's `Storage` and
+`File` — the same steps happen behind its own types:
 
 <CodeTabs samples={conceptSamples} title="service → operator → layer → operation" />
 

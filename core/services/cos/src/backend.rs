@@ -18,6 +18,7 @@
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use bytes::Buf;
 use http::StatusCode;
 use http::Uri;
 use log::debug;
@@ -249,6 +250,9 @@ impl Builder for CosBuilder {
             write_with_content_disposition: true,
             write_with_if_not_exists: true,
             copy_with_if_not_exists: true,
+            copy_with_source_version: true,
+            restore: true,
+            restore_with_version: true,
             // The min multipart size of COS is 1 MiB.
             //
             // ref: <https://www.tencentcloud.com/document/product/436/14112>
@@ -307,6 +311,7 @@ impl Service for CosBackend {
     type Lister = CosListers;
     type Deleter = oio::OneShotDeleter<CosDeleter>;
     type Copier = oio::OneShotCopier;
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -336,22 +341,26 @@ impl Service for CosBackend {
         match status {
             StatusCode::OK => {
                 let headers = resp.headers();
-                let mut meta = parse_into_metadata(path, headers)?;
+                let mut meta = parse_into_metadata(path, headers)?.into_builder();
 
                 let user_meta = parse_prefixed_headers(headers, "x-cos-meta-");
                 if !user_meta.is_empty() {
-                    meta = meta.with_user_metadata(user_meta);
+                    meta.user_metadata(user_meta);
                 }
 
                 if let Some(v) = parse_header_to_str(headers, constants::X_COS_VERSION_ID)?
                     && v != "null"
                 {
-                    meta.set_version(v);
+                    meta.version(v);
                 }
 
-                Ok(RpStat::new(meta))
+                Ok(RpStat::new(meta.build()))
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("HeadObject"))
+                    .with_caller_condition(args.is_conditional()),
+                resp,
+            )),
         }
     }
     fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
@@ -429,20 +438,45 @@ impl Service for CosBackend {
         from: &str,
         to: &str,
         args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         let core = self.core.clone();
         let ctx = ctx.clone();
         let from = from.to_string();
         let to = to.to_string();
         Ok(oio::OneShotCopier::new(async move {
+            let source_size = match args.source_content_length_hint() {
+                Some(size) => size,
+                None => {
+                    let stat_args = options::StatOptions {
+                        version: args.source_version().map(str::to_owned),
+                        ..Default::default()
+                    }
+                    .into();
+                    let resp = core.cos_head_object(&ctx, &from, &stat_args).await?;
+                    match resp.status() {
+                        StatusCode::OK => {
+                            parse_into_metadata(&from, resp.headers())?.content_length()
+                        }
+                        _ => {
+                            return Err(parse_error(
+                                ErrorContext::new(ServiceOperation("HeadObject")),
+                                resp,
+                            ));
+                        }
+                    }
+                }
+            };
             let resp = core.cos_copy_object(&ctx, &from, &to, &args).await?;
 
             let status = resp.status();
 
             match status {
-                StatusCode::OK => Ok(Metadata::default()),
-                _ => Err(parse_error(resp)),
+                StatusCode::OK => Ok(MetadataBuilder::file(source_size).build()),
+                _ => Err(parse_error(
+                    ErrorContext::new(ServiceOperation("CopyObject"))
+                        .with_if_not_exists(args.if_not_exists()),
+                    resp,
+                )),
             }
         }))
     }
@@ -458,6 +492,102 @@ impl Service for CosBackend {
             ErrorKind::Unsupported,
             "operation is not supported",
         ))
+    }
+
+    async fn restore(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        args: OpRestore,
+    ) -> Result<RpRestore> {
+        if let Some(version) = args.version() {
+            let copy_args = OpCopy::from_options(
+                &self.capability(),
+                options::CopyOptions {
+                    source_version: Some(version.to_owned()),
+                    ..Default::default()
+                },
+            )?;
+            let resp = self
+                .core
+                .cos_copy_object(ctx, path, path, &copy_args)
+                .await?;
+            return match resp.status() {
+                StatusCode::OK => Ok(RpRestore::new()),
+                _ => Err(parse_error(
+                    ErrorContext::new(ServiceOperation("CopyObject")),
+                    resp,
+                )),
+            };
+        }
+
+        let resp = self
+            .core
+            .cos_list_object_versions(ctx, path, "", Some(1), "", "")
+            .await?;
+        if resp.status() != StatusCode::OK {
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListObjectVersions")),
+                resp,
+            ));
+        }
+
+        let output: ListObjectVersionsOutput =
+            quick_xml::de::from_reader(resp.into_body().reader())
+                .map_err(new_xml_deserialize_error)
+                .map_err(Error::set_temporary)?;
+        let abs_path = build_abs_path(&self.core.root, path);
+
+        if output
+            .version
+            .iter()
+            .any(|version| version.key == abs_path && version.is_latest)
+        {
+            return Ok(RpRestore::new());
+        }
+
+        let Some(marker) = output
+            .delete_marker
+            .into_iter()
+            .find(|marker| marker.key == abs_path && marker.is_latest)
+        else {
+            return Err(Error::new(
+                ErrorKind::NotFound,
+                "no live object or current delete marker exists",
+            ));
+        };
+
+        let delete_args = OpDelete::from_options(
+            &self.capability(),
+            options::DeleteOptions {
+                version: Some(marker.version_id),
+                ..Default::default()
+            },
+        )?;
+        let resp = self.core.cos_delete_object(ctx, path, &delete_args).await?;
+        match resp.status() {
+            StatusCode::NO_CONTENT => {
+                // COS can still list a marker after it was deleted. Only a
+                // deletion of an existing marker returns this response header.
+                if resp
+                    .headers()
+                    .get("x-cos-delete-marker")
+                    .is_some_and(|v| v == "true")
+                {
+                    Ok(RpRestore::new())
+                } else {
+                    Err(Error::new(
+                        ErrorKind::Unexpected,
+                        "the listed delete marker no longer exists; retry after the version listing updates",
+                    )
+                    .set_temporary())
+                }
+            }
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("DeleteObject")),
+                resp,
+            )),
+        }
     }
 
     async fn presign(

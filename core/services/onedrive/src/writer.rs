@@ -24,8 +24,8 @@ use http::StatusCode;
 use opendal_core::raw::*;
 use opendal_core::*;
 
-use super::core::OneDriveCore;
 use super::core::parse_error;
+use super::core::{ErrorContext, OneDriveCore};
 use super::graph_model::OneDriveItem;
 use super::graph_model::OneDriveUploadSessionCreationResponseBody;
 
@@ -82,17 +82,20 @@ impl OneDriveWriter {
                 let item: OneDriveItem = serde_json::from_reader(response.into_body().reader())
                     .map_err(new_json_deserialize_error)?;
 
-                let mut meta = Metadata::new(EntryMode::FILE)
-                    .with_etag(item.e_tag)
-                    .with_content_length(item.size.max(0) as u64);
+                let mut meta = MetadataBuilder::file(item.size.max(0) as u64);
+                meta.etag(item.e_tag);
 
                 let last_modified = item.last_modified_date_time;
                 let date_utc_last_modified = last_modified.parse::<Timestamp>()?;
-                meta.set_last_modified(date_utc_last_modified);
+                meta.last_modified(date_utc_last_modified);
 
-                Ok(meta)
+                Ok(meta.build())
             }
-            _ => Err(parse_error(response)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("UploadContent"))
+                    .with_caller_condition(self.op.is_conditional()),
+                response,
+            )),
         }
     }
 
@@ -138,16 +141,20 @@ impl OneDriveWriter {
                     let item: OneDriveItem = serde_json::from_reader(response.into_body().reader())
                         .map_err(new_json_deserialize_error)?;
 
-                    let mut meta = Metadata::new(EntryMode::FILE)
-                        .with_etag(item.e_tag)
-                        .with_content_length(item.size.max(0) as u64);
+                    let mut meta = MetadataBuilder::file(item.size.max(0) as u64);
+                    meta.etag(item.e_tag);
 
                     let last_modified = item.last_modified_date_time;
                     let date_utc_last_modified = last_modified.parse::<Timestamp>()?;
-                    meta.set_last_modified(date_utc_last_modified);
-                    return Ok(meta);
+                    meta.last_modified(date_utc_last_modified);
+                    return Ok(meta.build());
                 }
-                _ => return Err(parse_error(response)),
+                _ => {
+                    return Err(parse_error(
+                        ErrorContext::new(ServiceOperation("UploadFragment")),
+                        response,
+                    ));
+                }
             }
 
             offset += OneDriveWriter::CHUNK_SIZE_FACTOR;
@@ -155,7 +162,7 @@ impl OneDriveWriter {
 
         debug_assert!(false, "should have returned");
 
-        Ok(Metadata::default()) // should not happen, but start with handling this gracefully - do nothing, but return the default metadata
+        Ok(MetadataBuilder::unknown().build()) // should not happen, but start with handling this gracefully - do nothing, but return the default metadata
     }
 
     async fn create_upload_session(&self) -> Result<OneDriveUploadSessionCreationResponseBody> {
@@ -170,7 +177,11 @@ impl OneDriveWriter {
                     serde_json::from_reader(bs.reader()).map_err(new_json_deserialize_error)?;
                 Ok(result)
             }
-            _ => Err(parse_error(response)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("CreateUploadSession"))
+                    .with_caller_condition(self.op.is_conditional()),
+                response,
+            )),
         }
     }
 }

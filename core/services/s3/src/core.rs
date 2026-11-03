@@ -67,6 +67,8 @@ pub mod constants {
         "x-amz-server-side-encryption-customer-key-md5";
     pub const X_AMZ_SERVER_SIDE_ENCRYPTION_AWS_KMS_KEY_ID: &str =
         "x-amz-server-side-encryption-aws-kms-key-id";
+    pub const X_AMZ_SERVER_SIDE_ENCRYPTION_BUCKET_KEY_ENABLED: &str =
+        "x-amz-server-side-encryption-bucket-key-enabled";
     pub const X_AMZ_STORAGE_CLASS: &str = "x-amz-storage-class";
 
     pub const X_AMZ_COPY_SOURCE_SERVER_SIDE_ENCRYPTION_CUSTOMER_ALGORITHM: &str =
@@ -101,6 +103,7 @@ pub struct S3Core {
     pub root: String,
     pub server_side_encryption: Option<HeaderValue>,
     pub server_side_encryption_aws_kms_key_id: Option<HeaderValue>,
+    pub server_side_encryption_bucket_key_enabled: Option<HeaderValue>,
     pub server_side_encryption_customer_algorithm: Option<HeaderValue>,
     pub server_side_encryption_customer_key: Option<HeaderValue>,
     pub server_side_encryption_customer_key_md5: Option<HeaderValue>,
@@ -308,16 +311,15 @@ impl S3Core {
             .await
     }
 
-    /// # Note
+    /// Adds SSE-C headers and, for object creation, SSE-S3/SSE-KMS configuration.
     ///
-    /// header like X_AMZ_SERVER_SIDE_ENCRYPTION doesn't need to set while
-    /// get or stat.
+    /// Multipart uploads choose SSE-S3/SSE-KMS encryption at initiation.
     pub fn insert_sse_headers(
         &self,
         mut req: http::request::Builder,
-        is_write: bool,
+        configure_destination_encryption: bool,
     ) -> http::request::Builder {
-        if is_write {
+        if configure_destination_encryption {
             if let Some(v) = &self.server_side_encryption {
                 let mut v = v.clone();
                 v.set_sensitive(true);
@@ -649,6 +651,12 @@ impl S3Core {
 
         // Set SSE headers.
         req = self.insert_sse_headers(req, true);
+        if let Some(value) = &self.server_side_encryption_bucket_key_enabled {
+            req = req.header(
+                constants::X_AMZ_SERVER_SIDE_ENCRYPTION_BUCKET_KEY_ENABLED,
+                value,
+            );
+        }
 
         // Calculate Checksum.
         if let Some(checksum) = self.calculate_checksum(&body) {
@@ -694,6 +702,12 @@ impl S3Core {
 
         // Set SSE headers.
         req = self.insert_sse_headers(req, true);
+        if let Some(value) = &self.server_side_encryption_bucket_key_enabled {
+            req = req.header(
+                constants::X_AMZ_SERVER_SIDE_ENCRYPTION_BUCKET_KEY_ENABLED,
+                value,
+            );
+        }
 
         // Calculate Checksum.
         if let Some(checksum) = self.calculate_checksum(&body) {
@@ -776,13 +790,15 @@ impl S3Core {
         ctx: &OperationContext,
         from: &str,
         to: &str,
+        source_version: Option<&str>,
+        source_if_match: Option<&str>,
         args: &OpCopy,
     ) -> Result<Response<Buffer>> {
         let from = build_abs_path(&self.root, from);
         let to = build_abs_path(&self.root, to);
 
         let source = format!("{}/{}", self.bucket, percent_encode_path(&from));
-        let source = if let Some(version) = args.source_version() {
+        let source = if let Some(version) = source_version {
             QueryPairsWriter::new(&source)
                 .push(
                     constants::S3_QUERY_VERSION_ID,
@@ -803,9 +819,18 @@ impl S3Core {
         if let Some(if_match) = args.if_match() {
             req = req.header(IF_MATCH, if_match);
         }
+        if let Some(source_if_match) = source_if_match {
+            req = req.header(constants::X_AMZ_COPY_SOURCE_IF_MATCH, source_if_match);
+        }
 
         // Set SSE headers.
         req = self.insert_sse_headers(req, true);
+        if let Some(value) = &self.server_side_encryption_bucket_key_enabled {
+            req = req.header(
+                constants::X_AMZ_SERVER_SIDE_ENCRYPTION_BUCKET_KEY_ENABLED,
+                value,
+            );
+        }
 
         if let Some(v) = &self.server_side_encryption_customer_algorithm {
             let mut v = v.clone();
@@ -1002,6 +1027,12 @@ impl S3Core {
 
         // Set SSE headers.
         req = self.insert_sse_headers(req, true);
+        if let Some(value) = &self.server_side_encryption_bucket_key_enabled {
+            req = req.header(
+                constants::X_AMZ_SERVER_SIDE_ENCRYPTION_BUCKET_KEY_ENABLED,
+                value,
+            );
+        }
 
         // Set checksum type headers.
         // For multipart upload creation, only CRC32 | CRC32C | SHA1 | SHA256 | CRC64NVME are accepted.
@@ -1051,6 +1082,12 @@ impl S3Core {
 
         // Set SSE headers.
         req = self.insert_sse_headers(req, true);
+        if let Some(value) = &self.server_side_encryption_bucket_key_enabled {
+            req = req.header(
+                constants::X_AMZ_SERVER_SIDE_ENCRYPTION_BUCKET_KEY_ENABLED,
+                value,
+            );
+        }
 
         let req = req
             .extension(Operation::Copy)
@@ -1110,7 +1147,7 @@ impl S3Core {
         }
 
         // Set SSE headers.
-        req = self.insert_sse_headers(req, true);
+        req = self.insert_sse_headers(req, false);
 
         if let Some(v) = &self.server_side_encryption_customer_algorithm {
             let mut v = v.clone();
@@ -1189,7 +1226,7 @@ impl S3Core {
         req = self.insert_request_payer_header(req);
 
         // Set SSE headers.
-        req = self.insert_sse_headers(req, true);
+        req = self.insert_sse_headers(req, false);
 
         if let Some(checksum) = checksum {
             // Set Checksum header.
@@ -1227,7 +1264,7 @@ impl S3Core {
         let mut req = Request::post(&url);
 
         // Set SSE headers.
-        req = self.insert_sse_headers(req, true);
+        req = self.insert_sse_headers(req, false);
 
         let content = quick_xml::se::to_string(&CompleteMultipartUploadRequest { part: parts })
             .map_err(new_xml_serialize_error)?;
@@ -1279,7 +1316,7 @@ impl S3Core {
         let mut req = Request::post(&url);
 
         // Set SSE headers.
-        req = self.insert_sse_headers(req, true);
+        req = self.insert_sse_headers(req, false);
 
         let content = quick_xml::se::to_string(&CompleteMultipartUploadRequest { part: parts })
             .map_err(new_xml_serialize_error)?;
@@ -2146,56 +2183,27 @@ pub struct S3Error {
 #[derive(Clone, Copy, Debug)]
 pub struct ErrorContext {
     service_operation: ServiceOperation,
-    if_match: bool,
-    if_none_match: bool,
-    if_modified_since: bool,
-    if_unmodified_since: bool,
-    if_not_exists: bool,
+    caller_condition: bool,
+    source_if_match: bool,
 }
 
 impl ErrorContext {
     pub const fn new(service_operation: ServiceOperation) -> Self {
         Self {
             service_operation,
-            if_match: false,
-            if_none_match: false,
-            if_modified_since: false,
-            if_unmodified_since: false,
-            if_not_exists: false,
+            caller_condition: false,
+            source_if_match: false,
         }
     }
 
-    pub const fn with_if_match(mut self, if_match: bool) -> Self {
-        self.if_match = if_match;
+    pub const fn with_caller_condition(mut self, caller_condition: bool) -> Self {
+        self.caller_condition = caller_condition;
         self
     }
 
-    pub const fn with_if_none_match(mut self, if_none_match: bool) -> Self {
-        self.if_none_match = if_none_match;
+    pub const fn with_source_if_match(mut self, source_if_match: bool) -> Self {
+        self.source_if_match = source_if_match;
         self
-    }
-
-    pub const fn with_if_modified_since(mut self, if_modified_since: bool) -> Self {
-        self.if_modified_since = if_modified_since;
-        self
-    }
-
-    pub const fn with_if_unmodified_since(mut self, if_unmodified_since: bool) -> Self {
-        self.if_unmodified_since = if_unmodified_since;
-        self
-    }
-
-    pub const fn with_if_not_exists(mut self, if_not_exists: bool) -> Self {
-        self.if_not_exists = if_not_exists;
-        self
-    }
-
-    const fn has_condition(self) -> bool {
-        self.if_match
-            || self.if_none_match
-            || self.if_modified_since
-            || self.if_unmodified_since
-            || self.if_not_exists
     }
 }
 
@@ -2207,7 +2215,7 @@ pub fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
     let (mut kind, mut retryable) = match parts.status.as_u16() {
         403 => (ErrorKind::PermissionDenied, false),
         404 => (ErrorKind::NotFound, false),
-        304 | 412 if ctx.has_condition() => (ErrorKind::ConditionNotMatch, false),
+        304 | 412 if ctx.caller_condition => (ErrorKind::ConditionNotMatch, false),
         // Service like R2 could return 499 error with a message like:
         // Client Disconnect, we should retry it.
         499 => (ErrorKind::Unexpected, true),
@@ -2290,13 +2298,45 @@ pub fn parse_s3_error_code(ctx: ErrorContext, code: &str) -> Option<(ErrorKind, 
         | "ExceedBucketQPSLimit"
         | "ExceedBucketRateLimit" => Some((ErrorKind::RateLimited, true)),
         "InvalidRange" => Some((ErrorKind::RangeNotSatisfied, false)),
-        "PreconditionFailed" | "412 Precondition Failed" => {
+        "PreconditionFailed" | "412 Precondition Failed" if ctx.caller_condition => {
             Some((ErrorKind::ConditionNotMatch, false))
+        }
+        "PreconditionFailed" | "412 Precondition Failed" if ctx.source_if_match => {
+            Some((ErrorKind::Conflict, false))
         }
         "ConditionalRequestConflict" => Some((
             ErrorKind::Conflict,
             ctx.service_operation == ServiceOperation("PutObject"),
         )),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod error_tests {
+    use super::*;
+
+    #[test]
+    fn precondition_failed_uses_operation_context() {
+        let caller_condition = ErrorContext::new(ServiceOperation("CopyObject"))
+            .with_caller_condition(true)
+            .with_source_if_match(true);
+        assert_eq!(
+            parse_s3_error_code(caller_condition, "PreconditionFailed"),
+            Some((ErrorKind::ConditionNotMatch, false))
+        );
+
+        let internal_source_condition =
+            ErrorContext::new(ServiceOperation("CopyObject")).with_source_if_match(true);
+        assert_eq!(
+            parse_s3_error_code(internal_source_condition, "PreconditionFailed"),
+            Some((ErrorKind::Conflict, false))
+        );
+
+        let no_condition = ErrorContext::new(ServiceOperation("CopyObject"));
+        assert_eq!(
+            parse_s3_error_code(no_condition, "PreconditionFailed"),
+            None
+        );
     }
 }

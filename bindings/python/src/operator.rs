@@ -20,7 +20,10 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use pyo3::IntoPyObjectExt;
+use pyo3::exceptions::PyTypeError;
+use pyo3::types::PyBytes;
 use pyo3::types::PyDict;
+use pyo3::types::PyString;
 use pyo3::types::PyTuple;
 use pyo3::types::PyType;
 use pyo3_async_runtimes::tokio::future_into_py;
@@ -63,6 +66,26 @@ fn build_blocking_operator_from_uri(
 
 fn normalize_scheme(raw: &str) -> String {
     raw.trim().to_ascii_lowercase().replace('_', "-")
+}
+
+fn extract_delete_paths(paths: &Bound<'_, PyAny>) -> PyResult<Vec<String>> {
+    // A scalar path must not become an iterable of characters or components.
+    if paths.is_instance_of::<PyString>()
+        || paths.is_instance_of::<PyBytes>()
+        || paths.hasattr("__fspath__")?
+    {
+        return Err(PyTypeError::new_err(
+            "delete_many requires an iterable of paths, not a single path",
+        ));
+    }
+
+    paths
+        .try_iter()?
+        .map(|entry| {
+            let path = entry?.extract::<PathBuf>()?;
+            Ok(path.to_string_lossy().into_owned())
+        })
+        .collect()
 }
 
 /// Convert a config value into the string form core's config deserializer
@@ -181,15 +204,18 @@ impl Operator {
     /// scheme : str | Scheme
     ///     The scheme of the service.
     /// **kwargs : dict
-    ///     The options for the service.
+    ///     The options for the service. Path-like values are converted to strings.
     ///
     /// Returns
     /// -------
     /// Operator
     ///     The new operator.
     #[new]
-    #[pyo3(signature = (scheme: "str | Scheme", *, **kwargs: "str"))]
-    pub fn new(scheme: Bound<PyAny>, kwargs: Option<HashMap<String, String>>) -> PyResult<Self> {
+    #[pyo3(signature = (scheme: "str | Scheme", *, **kwargs: "str | PathLike[str]"))]
+    pub fn new(
+        scheme: Bound<PyAny>,
+        kwargs: Option<HashMap<String, Bound<PyAny>>>,
+    ) -> PyResult<Self> {
         let scheme = if let Ok(scheme_str) = scheme.extract::<&str>() {
             scheme_str.to_string()
         } else if let Ok(py_scheme) = scheme.extract::<Scheme>() {
@@ -200,7 +226,21 @@ impl Operator {
             ));
         };
         let scheme = normalize_scheme(&scheme);
-        let map = kwargs.unwrap_or_default();
+        let map = kwargs
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(key, value)| {
+                let value = value.extract::<String>().or_else(|_| {
+                    value
+                        .py()
+                        .import("os")?
+                        .getattr("fspath")?
+                        .call1((&value,))?
+                        .extract::<String>()
+                })?;
+                Ok((key, value))
+            })
+            .collect::<PyResult<HashMap<_, _>>>()?;
 
         Ok(Operator {
             core: build_blocking_operator(&scheme, map.clone())?,
@@ -338,6 +378,7 @@ impl Operator {
     #[pyo3(signature = (path, mode, *, **kwargs: "Unpack[OpenKwargs]"))]
     pub fn open(
         &self,
+        py: Python<'_>,
         path: PathBuf,
         mode: String,
         kwargs: Option<&Bound<PyDict>>,
@@ -357,17 +398,29 @@ impl Operator {
 
         if mode == "rb" {
             let range = reader_opts.make_range();
-            let reader = this
-                .reader_options(&path, reader_opts.into())
-                .map_err(format_pyerr)?;
-
-            let r = reader
-                .into_std_read(range.to_range())
+            let r = py
+                .detach(move || {
+                    let reader = this.reader_options(&path, reader_opts.into())?;
+                    reader.into_std_read(range.to_range())
+                })
                 .map_err(format_pyerr)?;
             Ok(File::new_reader(r))
         } else if mode == "wb" {
-            let writer = this
-                .writer_options(&path, writer_opts.into())
+            let mut writer_opts = writer_opts;
+            // Keep small writes coalesced without the std::io adapter when
+            // neither the caller nor the service supplies a chunk size.
+            if writer_opts.chunk.is_none()
+                && this.info().capability().write_multi_min_size.is_none()
+            {
+                writer_opts.chunk = Some(256 * 1024);
+            }
+            let writer = py
+                .detach(move || {
+                    let op: ocore::Operator = this.into();
+                    pyo3_async_runtimes::tokio::get_runtime()
+                        .handle()
+                        .block_on(op.writer_options(&path, writer_opts.into()))
+                })
                 .map_err(format_pyerr)?;
             Ok(File::new_writer(writer))
         } else {
@@ -468,9 +521,9 @@ impl Operator {
             cache_control,
             content_disposition,
         };
-        let buffer = self
-            .core
-            .read_options(&path, opts.into())
+        let this = self.core.clone();
+        let buffer = py
+            .detach(move || this.read_options(&path, opts.into()))
             .map_err(format_pyerr)?;
 
         Ok(buffer_into_py_bytes(py, buffer)?.into_any())
@@ -524,6 +577,7 @@ impl Operator {
         user_metadata = None))]
     pub fn write(
         &self,
+        py: Python<'_>,
         path: PathBuf,
         bs: &Bound<PyAny>,
         append: Option<bool>,
@@ -554,8 +608,8 @@ impl Operator {
             user_metadata,
         };
 
-        self.core
-            .write_options(&path, bs, opts.into())
+        let this = self.core.clone();
+        py.detach(move || this.write_options(&path, bs, opts.into()))
             .map(|_| ())
             .map_err(format_pyerr)
     }
@@ -599,6 +653,7 @@ impl Operator {
         content_disposition=None))]
     pub fn stat(
         &self,
+        py: Python<'_>,
         path: PathBuf,
         version: Option<String>,
         if_match: Option<String>,
@@ -620,8 +675,8 @@ impl Operator {
             cache_control,
             content_disposition,
         };
-        self.core
-            .stat_options(&path, opts.into())
+        let this = self.core.clone();
+        py.detach(move || this.stat_options(&path, opts.into()))
             .map_err(format_pyerr)
             .map(Metadata::new)
     }
@@ -634,11 +689,11 @@ impl Operator {
     ///     The path to the source file.
     /// target : str
     ///     The path to the target file.
-    pub fn copy(&self, source: PathBuf, target: PathBuf) -> PyResult<()> {
+    pub fn copy(&self, py: Python<'_>, source: PathBuf, target: PathBuf) -> PyResult<()> {
         let source = source.to_string_lossy().to_string();
         let target = target.to_string_lossy().to_string();
-        self.core
-            .copy(&source, &target)
+        let this = self.core.clone();
+        py.detach(move || this.copy(&source, &target))
             .map(|_| ())
             .map_err(format_pyerr)
     }
@@ -651,10 +706,12 @@ impl Operator {
     ///     The path to the source file.
     /// target : str
     ///     The path to the target file.
-    pub fn rename(&self, source: PathBuf, target: PathBuf) -> PyResult<()> {
+    pub fn rename(&self, py: Python<'_>, source: PathBuf, target: PathBuf) -> PyResult<()> {
         let source = source.to_string_lossy().to_string();
         let target = target.to_string_lossy().to_string();
-        self.core.rename(&source, &target).map_err(format_pyerr)
+        let this = self.core.clone();
+        py.detach(move || this.rename(&source, &target))
+            .map_err(format_pyerr)
     }
 
     /// Recursively remove all files and directories at the given path.
@@ -663,18 +720,20 @@ impl Operator {
     /// ----------
     /// path : str
     ///     The path to remove.
-    pub fn remove_all(&self, path: PathBuf) -> PyResult<()> {
+    pub fn remove_all(&self, py: Python<'_>, path: PathBuf) -> PyResult<()> {
         use ocore::options::DeleteOptions;
         let path = path.to_string_lossy().to_string();
-        self.core
-            .delete_options(
+        let this = self.core.clone();
+        py.detach(move || {
+            this.delete_options(
                 &path,
                 DeleteOptions {
                     recursive: true,
                     ..Default::default()
                 },
             )
-            .map_err(format_pyerr)
+        })
+        .map_err(format_pyerr)
     }
 
     /// Create a directory at the given path.
@@ -688,9 +747,11 @@ impl Operator {
     /// ----------
     /// path : str
     ///     The path to the directory.
-    pub fn create_dir(&self, path: PathBuf) -> PyResult<()> {
+    pub fn create_dir(&self, py: Python<'_>, path: PathBuf) -> PyResult<()> {
         let path = path.to_string_lossy().to_string();
-        self.core.create_dir(&path).map_err(format_pyerr)
+        let this = self.core.clone();
+        py.detach(move || this.create_dir(&path))
+            .map_err(format_pyerr)
     }
 
     /// Delete a file at the given path.
@@ -713,12 +774,14 @@ impl Operator {
     #[pyo3(signature = (path, *, version=None, recursive=None, if_match=None))]
     pub fn delete(
         &self,
+        py: Python<'_>,
         path: PathBuf,
         version: Option<String>,
         recursive: Option<bool>,
         if_match: Option<String>,
     ) -> PyResult<()> {
         let path = path.to_string_lossy().to_string();
+        let this = self.core.clone();
         if version.is_some() || recursive.is_some() || if_match.is_some() {
             let opts = ocore::options::DeleteOptions {
                 version,
@@ -726,10 +789,37 @@ impl Operator {
                 if_match,
                 ..Default::default()
             };
-            self.core.delete_options(&path, opts).map_err(format_pyerr)
+            py.detach(move || this.delete_options(&path, opts))
+                .map_err(format_pyerr)
         } else {
-            self.core.delete(&path).map_err(format_pyerr)
+            py.detach(move || this.delete(&path)).map_err(format_pyerr)
         }
+    }
+
+    /// Delete an explicit collection of paths with default delete options.
+    ///
+    /// Notes
+    /// -----
+    /// This method collects the iterable and converts its Python path objects
+    /// before deletion starts, using memory proportional to the number of paths.
+    /// Empty collections do nothing. Paths that do not exist are ignored.
+    /// Storage or path-validation errors can leave some paths deleted; this
+    /// operation is not atomic and does not guarantee a single remote request.
+    /// Use `remove_all` to recursively delete a path prefix.
+    ///
+    /// Parameters
+    /// ----------
+    /// paths : Iterable[str | PathLike[str]]
+    ///     The paths to delete. A single path is not accepted.
+    #[pyo3(signature = (paths: "collections.abc.Iterable[str | PathLike[str]]"))]
+    pub fn delete_many(&self, py: Python<'_>, paths: &Bound<'_, PyAny>) -> PyResult<()> {
+        let paths = extract_delete_paths(paths)?;
+        if paths.is_empty() {
+            return Ok(());
+        }
+        let this = self.core.clone();
+        py.detach(move || this.delete_iter(paths))
+            .map_err(format_pyerr)
     }
 
     /// Check if a path exists.
@@ -743,9 +833,10 @@ impl Operator {
     /// -------
     /// bool
     ///     True if the path exists, False otherwise.
-    pub fn exists(&self, path: PathBuf) -> PyResult<bool> {
+    pub fn exists(&self, py: Python<'_>, path: PathBuf) -> PyResult<bool> {
         let path = path.to_string_lossy().to_string();
-        self.core.exists(&path).map_err(format_pyerr)
+        let this = self.core.clone();
+        py.detach(move || this.exists(&path)).map_err(format_pyerr)
     }
 
     /// List entries in the given directory.
@@ -769,6 +860,7 @@ impl Operator {
     /// -------
     /// BlockingLister
     ///     An iterator over the entries in the directory.
+    #[allow(clippy::too_many_arguments)]
     #[pyo3(signature = (path, *,
         limit=None,
         start_after=None,
@@ -777,6 +869,7 @@ impl Operator {
         deleted=None) -> "collections.abc.Iterable[Entry]")]
     pub fn list(
         &self,
+        py: Python<'_>,
         path: PathBuf,
         limit: Option<usize>,
         start_after: Option<String>,
@@ -794,9 +887,9 @@ impl Operator {
             deleted,
         };
 
-        let l = self
-            .core
-            .lister_options(&path, opts.into())
+        let this = self.core.clone();
+        let l = py
+            .detach(move || this.lister_options(&path, opts.into()))
             .map_err(format_pyerr)?;
         Ok(BlockingLister::new(l))
     }
@@ -831,13 +924,14 @@ impl Operator {
         deleted=None) -> "collections.abc.Iterable[Entry]")]
     pub fn scan(
         &self,
+        py: Python<'_>,
         path: PathBuf,
         limit: Option<usize>,
         start_after: Option<String>,
         versions: Option<bool>,
         deleted: Option<bool>,
     ) -> PyResult<BlockingLister> {
-        self.list(path, limit, start_after, Some(true), versions, deleted)
+        self.list(py, path, limit, start_after, Some(true), versions, deleted)
     }
 
     /// Get all capabilities of this operator.
@@ -856,8 +950,9 @@ impl Operator {
     /// ------
     /// Exception
     ///     If the operator is not able to work correctly.
-    pub fn check(&self) -> PyResult<()> {
-        self.core.check().map_err(format_pyerr)
+    pub fn check(&self, py: Python<'_>) -> PyResult<()> {
+        let this = self.core.clone();
+        py.detach(move || this.check()).map_err(format_pyerr)
     }
 
     /// Create a new `AsyncOperator` from this blocking operator.
@@ -918,15 +1013,18 @@ impl AsyncOperator {
     /// scheme : str | Scheme
     ///     The scheme of the service.
     /// **kwargs : dict
-    ///     The options for the service.
+    ///     The options for the service. Path-like values are converted to strings.
     ///
     /// Returns
     /// -------
     /// AsyncOperator
     ///     The new async operator.
     #[new]
-    #[pyo3(signature = (scheme: "str | Scheme", * ,**kwargs: "str"))]
-    pub fn new(scheme: Bound<PyAny>, kwargs: Option<HashMap<String, String>>) -> PyResult<Self> {
+    #[pyo3(signature = (scheme: "str | Scheme", *, **kwargs: "str | PathLike[str]"))]
+    pub fn new(
+        scheme: Bound<PyAny>,
+        kwargs: Option<HashMap<String, Bound<PyAny>>>,
+    ) -> PyResult<Self> {
         let scheme = if let Ok(scheme_str) = scheme.extract::<&str>() {
             scheme_str.to_string()
         } else if let Ok(py_scheme) = scheme.extract::<Scheme>() {
@@ -938,7 +1036,21 @@ impl AsyncOperator {
         };
         let scheme = normalize_scheme(&scheme);
 
-        let map = kwargs.unwrap_or_default();
+        let map = kwargs
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(key, value)| {
+                let value = value.extract::<String>().or_else(|_| {
+                    value
+                        .py()
+                        .import("os")?
+                        .getattr("fspath")?
+                        .call1((&value,))?
+                        .extract::<String>()
+                })?;
+                Ok((key, value))
+            })
+            .collect::<PyResult<HashMap<_, _>>>()?;
 
         Ok(AsyncOperator {
             core: build_operator(&scheme, map.clone())?,
@@ -1104,12 +1216,19 @@ impl AsyncOperator {
                     .map_err(format_pyerr)?;
                 Ok(AsyncFile::new_reader(r))
             } else if mode == "wb" {
+                let mut writer_opts = writer_opts;
+                // Keep small writes coalesced when neither the caller nor the
+                // service supplies a chunk size, as the AsyncWrite adapter did.
+                if writer_opts.chunk.is_none()
+                    && this.info().capability().write_multi_min_size.is_none()
+                {
+                    writer_opts.chunk = Some(256 * 1024);
+                }
                 let writer = this
                     .writer_options(&path, writer_opts.into())
                     .await
                     .map_err(format_pyerr)?;
-                let w = writer.into_futures_async_write();
-                Ok(AsyncFile::new_writer(w))
+                Ok(AsyncFile::new_writer(writer))
             } else {
                 Err(Unsupported::new_err(format!(
                     "OpenDAL doesn't support mode: {mode}"
@@ -1558,6 +1677,42 @@ impl AsyncOperator {
             } else {
                 this.delete(&path).await.map_err(format_pyerr)
             }
+        })
+    }
+
+    /// Delete an explicit collection of paths with default delete options.
+    ///
+    /// Notes
+    /// -----
+    /// This method collects the iterable and converts its Python path objects
+    /// before deletion starts, using memory proportional to the number of paths.
+    /// Empty collections do nothing. Paths that do not exist are ignored.
+    /// Storage or path-validation errors can leave some paths deleted; this
+    /// operation is not atomic and does not guarantee a single remote request.
+    /// Use `remove_all` to recursively delete a path prefix.
+    ///
+    /// Parameters
+    /// ----------
+    /// paths : Iterable[str | PathLike[str]]
+    ///     The paths to delete. A single path is not accepted.
+    ///
+    /// Returns
+    /// -------
+    /// Awaitable[None]
+    ///     An awaitable that completes when deletion finishes.
+    #[pyo3(signature = (paths: "collections.abc.Iterable[str | PathLike[str]]") -> "collections.abc.Awaitable[None]")]
+    pub fn delete_many<'p>(
+        &'p self,
+        py: Python<'p>,
+        paths: &Bound<'_, PyAny>,
+    ) -> PyResult<Bound<'p, PyAny>> {
+        let paths = extract_delete_paths(paths)?;
+        let this = self.core.clone();
+        future_into_py(py, async move {
+            if paths.is_empty() {
+                return Ok(());
+            }
+            this.delete_iter(paths).await.map_err(format_pyerr)
         })
     }
 

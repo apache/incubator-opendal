@@ -1,3 +1,19 @@
+# v0.59.5
+
+- [Release notes](https://github.com/apache/opendal/releases/tag/v0.59.5)
+
+# v0.59.4
+
+- [Release notes](https://github.com/apache/opendal/releases/tag/v0.59.4)
+
+# v0.59.3
+
+- [Release notes](https://github.com/apache/opendal/releases/tag/v0.59.3)
+
+# v0.59.2
+
+- [Release notes](https://github.com/apache/opendal/releases/tag/v0.59.2)
+
 # Change Log
 
 All notable changes to this project will be documented in this file.
@@ -6,6 +22,106 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
 <!-- Release notes generated with: gh release create v_draft --generate-notes --draft -->
+
+## [v0.59.1] - 2026-09-05
+
+### Fixed
+* Include the changelog in the `opendal-core` crate so packages downloaded from crates.io compile. https://github.com/apache/opendal/pull/8223
+* Resolve GooseFS master addresses from `goosefs-site.properties`. https://github.com/apache/opendal/pull/8216
+
+### Added
+* Support response header overrides in GCS presigned XML requests. https://github.com/apache/opendal/pull/8206
+
+### Docs
+* Add conda-forge installation instructions for Python. https://github.com/apache/opendal/pull/8213
+
+### CI
+* Refresh the APT package index before installing dependencies. https://github.com/apache/opendal/pull/8215
+* Use the GHCR v2.0.0 GooseFS fixture image. https://github.com/apache/opendal/pull/8214
+
+**Full Changelog**: https://github.com/apache/opendal/compare/v0.59.0...v0.59.1
+
+## [v0.59.0] - 2026-08-31
+
+### Breaking Changes
+* core: `Metadata` and raw operation arguments now use immutable compact representations. Construct metadata with `MetadataBuilder`, use `into_builder()` to modify existing metadata, and convert public options into finalized raw arguments. `DeleteInput` has been removed.
+* core: `OpCopier` has been removed. Raw `Service::copy` implementations now receive copy execution settings through `OpCopy`.
+* integrations/object_store: `object_store_opendal` 0.60 uses `opendal` 0.59. Update direct OpenDAL dependencies together.
+* integrations/parquet: `parquet_opendal` 0.10 uses `opendal` 0.59. Update direct OpenDAL dependencies together.
+* bindings/dotnet: `Operator.DeleteAsync` now accepts `DeleteOptions` before the cancellation token. Pass the token as `cancellationToken: token`, or pass `null` for options before a positional token.
+
+### Added
+* feat(bindings/dotnet): add DeleteOptions with delete functions by @Fatorin in https://github.com/apache/opendal/pull/8098
+* feat(services/s3): add conditional delete with if-match by @YuangGao in https://github.com/apache/opendal/pull/7607
+* feat(bindings/dotnet): support conditional delete with if-match by @Fatorin in https://github.com/apache/opendal/pull/8137
+* feat(services/s3): support S3 Express session authentication by @Xuanwo in https://github.com/apache/opendal/pull/8135
+* feat(services/s3): support object restoration by @Xuanwo in https://github.com/apache/opendal/pull/8143
+* feat(services): support conditional delete for Azure services by @Xuanwo in https://github.com/apache/opendal/pull/8142
+* RFC: Add limited read by @Xuanwo in https://github.com/apache/opendal/pull/7945
+* feat(services/azdls): support custom credential providers by @zakariya-s in https://github.com/apache/opendal/pull/8030
+* feat(core): add conflict error kind by @Xuanwo in https://github.com/apache/opendal/pull/8154
+* feat(parquet): expose writer abort by @starpact in https://github.com/apache/opendal/pull/8102
+* feat: support if_not_changed preconditions by @Xuanwo in https://github.com/apache/opendal/pull/8156
+* feat(services/s3): support Writer::copy_from by @Xuanwo in https://github.com/apache/opendal/pull/8140
+* feat(services/gcs-grpc): add GCS gRPC service by @Xuanwo in https://github.com/apache/opendal/pull/8153
+* feat(services/gcs): support compose by @Xuanwo in https://github.com/apache/opendal/pull/8191
+
+### Changed
+* refactor(services/monoiofs): use asyncband channels by @tisonkun in https://github.com/apache/opendal/pull/8126
+* refactor(bindings/dotnet): generate capability and service configs from core by @Fatorin in https://github.com/apache/opendal/pull/8146
+* refactor(services): standardize error normalization by @Xuanwo in https://github.com/apache/opendal/pull/8174
+* refactor!: merge OpCopier into OpCopy by @Xuanwo in https://github.com/apache/opendal/pull/8190
+* refactor!: compact metadata and operation arguments by @Xuanwo in https://github.com/apache/opendal/pull/8196
+
+### Fixed
+* fix(bindings/dotnet): correct stream error kind and if-modified-since test by @Fatorin in https://github.com/apache/opendal/pull/8121
+* Reapply "fix(core): deserialize duration config values from strings" by @erickguan in https://github.com/apache/opendal/pull/8123
+* fix: Canonicalize HuggingFace IDs to avoid inconsistent API by @mhambre in https://github.com/apache/opendal/pull/8108
+* fix(services/goosefs): skip CreateDirectory when rename parent already exists by @XuQianJin-Stars in https://github.com/apache/opendal/pull/8129
+* fix(services/azblob): carry content type and user metadata on Put Block List by @PDGGK in https://github.com/apache/opendal/pull/8148
+* fix(services/memcached): reject a TTL over 30 days by @PDGGK in https://github.com/apache/opendal/pull/8150
+* fix(dev): validate integration version bumps by @Xuanwo in https://github.com/apache/opendal/pull/8139
+* fix(services/ghac): propagate v2 finalize errors by @fly1d in https://github.com/apache/opendal/pull/8136
+* fix(services/hf): cache XET classification and CAS auth tokens by @kszucs in https://github.com/apache/opendal/pull/8106
+* fix(core): add missing tokio test features so crates build on their own by @Lstarsky0 in https://github.com/apache/opendal/pull/8103
+* fix(ci): use distinct reusable concurrency groups by @jsk1004ha in https://github.com/apache/opendal/pull/8119
+* fix(core): return Ok(0) instead of panicking on zero-length write by @bavardage in https://github.com/apache/opendal/pull/8162
+* fix(bindings/python): fix sized File.readline by @Xuanwo in https://github.com/apache/opendal/pull/8169
+* fix: repair azfile, b2, and conditional read behavior by @Xuanwo in https://github.com/apache/opendal/pull/8175
+* fix(core): align conditional missing-target semantics by @Xuanwo in https://github.com/apache/opendal/pull/8172
+* fix(bindings): enable gcs-grpc service by @Xuanwo in https://github.com/apache/opendal/pull/8185
+* fix: update generated gcs-grpc service docs by @Xuanwo in https://github.com/apache/opendal/pull/8186
+* fix(bindings/python): remove greenlet benchmark dependencies by @Xuanwo in https://github.com/apache/opendal/pull/8189
+* fix(services): return authoritative copy metadata by @Xuanwo in https://github.com/apache/opendal/pull/8197
+* fix(services/gcs): make conditional uploads retry-safe by @Xuanwo in https://github.com/apache/opendal/pull/8199
+* fix: preserve conditional error semantics by @Xuanwo in https://github.com/apache/opendal/pull/8204
+
+### Docs
+* docs: add AI-assisted contribution policy by @Xuanwo in https://github.com/apache/opendal/pull/8099
+* RFC-8147: write_if_not_changed by @Xuanwo in https://github.com/apache/opendal/pull/8147
+* RFC-8145: Distinguish conflicts from unmet conditions by @Xuanwo in https://github.com/apache/opendal/pull/8145
+* docs: forbid speculative service changes in agent guidance by @Xuanwo in https://github.com/apache/opendal/pull/8152
+* docs: clarify helper function guidelines by @Xuanwo in https://github.com/apache/opendal/pull/8155
+* docs: establish OpenDAL specifications by @Xuanwo in https://github.com/apache/opendal/pull/8183
+* docs: add RFC for whole-object composition by @Xuanwo in https://github.com/apache/opendal/pull/8188
+* RFC: Compact metadata and operation arguments by @Xuanwo in https://github.com/apache/opendal/pull/8194
+
+### CI
+* ci: pin pnpm action setup to commit by @Xuanwo in https://github.com/apache/opendal/pull/8131
+
+### Chore
+* chore(services/hf): bump hf-xet to 1.6.0 by @kszucs in https://github.com/apache/opendal/pull/8113
+* chore(services/ftp): upgrade suppaftp to 10 and switch to tokio by @Xuanwo in https://github.com/apache/opendal/pull/8184
+
+## New Contributors
+* @fly1d made their first contribution in https://github.com/apache/opendal/pull/8136
+* @zakariya-s made their first contribution in https://github.com/apache/opendal/pull/8030
+* @Lstarsky0 made their first contribution in https://github.com/apache/opendal/pull/8103
+* @starpact made their first contribution in https://github.com/apache/opendal/pull/8102
+* @bavardage made their first contribution in https://github.com/apache/opendal/pull/8162
+* @jsk1004ha made their first contribution in https://github.com/apache/opendal/pull/8119
+
+**Full Changelog**: https://github.com/apache/opendal/compare/v0.58.2...v0.59.0
 
 ## [v0.58.2] - 2026-08-17
 

@@ -55,6 +55,70 @@ public static class Utilities
 	}
 
 	/// <summary>
+	/// Maps the native entry mode discriminant to <see cref="EntryMode"/>.
+	/// </summary>
+	/// <param name="code">Discriminant produced by the native side.</param>
+	/// <returns>The matching mode, or <see cref="EntryMode.Unknown"/> for anything else.</returns>
+	internal static EntryMode ToEntryMode(int code)
+	{
+		return code switch
+		{
+			0 => EntryMode.File,
+			1 => EntryMode.Dir,
+			_ => EntryMode.Unknown,
+		};
+	}
+
+	/// <summary>
+	/// Builds a timestamp from native Unix seconds and nanoseconds.
+	/// </summary>
+	/// <param name="second">Seconds since the Unix epoch.</param>
+	/// <param name="nanosecond">Nanoseconds within the second; truncated to the 100-nanosecond tick resolution of <see cref="DateTimeOffset"/>.</param>
+	/// <returns>The matching timestamp.</returns>
+	internal static DateTimeOffset ToDateTimeOffset(long second, int nanosecond)
+	{
+		return DateTimeOffset.FromUnixTimeSeconds(second).AddTicks(nanosecond / NanosecondsPerTick);
+	}
+
+	/// <summary>
+	/// Reads two parallel native arrays of UTF-8 C strings into a dictionary.
+	/// </summary>
+	/// <param name="keysPtr">Pointer to an array of <paramref name="len"/> key string pointers.</param>
+	/// <param name="valuesPtr">Pointer to an array of <paramref name="len"/> value string pointers.</param>
+	/// <param name="len">Number of pairs.</param>
+	/// <param name="comparer">Key comparer for the resulting dictionary.</param>
+	/// <returns>A dictionary holding the decoded pairs; a later duplicate key wins.</returns>
+	/// <exception cref="InvalidOperationException"><paramref name="len"/> exceeds <see cref="int.MaxValue"/>.</exception>
+	internal static unsafe Dictionary<string, string> ReadStringPairs(
+		IntPtr keysPtr,
+		IntPtr valuesPtr,
+		nuint len,
+		StringComparer comparer)
+	{
+		if (len == 0 || keysPtr == IntPtr.Zero || valuesPtr == IntPtr.Zero)
+		{
+			return new Dictionary<string, string>(comparer);
+		}
+
+		if (len > int.MaxValue)
+		{
+			throw new InvalidOperationException("Native string pair array exceeds supported size");
+		}
+
+		var count = (int)len;
+		var keys = new ReadOnlySpan<IntPtr>((void*)keysPtr, count);
+		var values = new ReadOnlySpan<IntPtr>((void*)valuesPtr, count);
+
+		var result = new Dictionary<string, string>(count, comparer);
+		for (var index = 0; index < count; index++)
+		{
+			result[ReadUtf8(keys[index])] = ReadUtf8(values[index]);
+		}
+
+		return result;
+	}
+
+	/// <summary>
 	/// Formats a managed value into the option string expected by OpenDAL service configs.
 	/// </summary>
 	/// <param name="value">Managed value to format.</param>

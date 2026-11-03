@@ -61,7 +61,14 @@ impl oio::OneShotDelete for PcloudDeleter {
 
                 Ok(())
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(if path.ends_with('/') {
+                    ServiceOperation("DeleteFolder")
+                } else {
+                    ServiceOperation("DeleteFile")
+                }),
+                resp,
+            )),
         }
     }
 }

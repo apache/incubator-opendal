@@ -42,20 +42,14 @@ services:
   # Ports (host:container) are mapped on 127.0.0.1 so the fixture can
   # coexist with other fixtures on a dev machine.
   #
-  # Image source: goosefs.tencentcloudcr.com/goosefs/repo:v2.1.0.1
+  # Image source: ghcr.io/tencent/tencent-goosefs-rust-sdk/goosefs:v2.0.0
+  # linux/amd64, public, no auth required. Override with GOOSEFS_IMAGE
+  # (TCR fallback: goosefs.tencentcloudcr.com/goosefs/repo:v2.1.0.1).
   #
-  # The image is built from the official GooseFS 2.1.0 release tarball
-  # (goosefs-2.1.0-SNAPSHOT.tar.gz) and published to Tencent Cloud
-  # Container Registry (public, no auth required) so that GitHub Actions
-  # runners can pull it without credentials. The tag is intentionally
-  # pinned to `v2.1.0.1` (never `latest`) so behavior tests stay
-  # reproducible and cannot silently break when a new image is published.
-  #
-  # The image is published as a multi-arch manifest list covering both
-  # linux/amd64 and linux/arm64, so Docker auto-selects the right variant
-  # on GitHub Actions amd64 runners and on Apple Silicon dev machines
-  # without any `platform:` override. The manifest was built with
-  # `docker buildx build --platform linux/amd64,linux/arm64 --push ...`.
+  # The tag is intentionally pinned (never `latest`) so behavior tests
+  # stay reproducible and cannot silently break when a new image is
+  # published. GitHub-hosted runners can pull GHCR without credentials
+  # and without hitting TCR timeouts.
   # ==========================================================================
 
   # --------------------------------------------------------------------------
@@ -79,7 +73,7 @@ services:
   # `--profile local-full`.
   # --------------------------------------------------------------------------
   goosefs:
-    image: goosefs.tencentcloudcr.com/goosefs/repo:v2.1.0.1
+    image: ${GOOSEFS_IMAGE:-ghcr.io/tencent/tencent-goosefs-rust-sdk/goosefs:v2.0.0}
     container_name: opendal-goosefs
     profiles: ["", "local"]
     # Bypass the image's stock `docker-entrypoint.sh` and run the
@@ -220,7 +214,7 @@ services:
   # Opt-in via `--profile distributed`.
   # --------------------------------------------------------------------------
   goosefs-master:
-    image: goosefs.tencentcloudcr.com/goosefs/repo:v2.1.0.1
+    image: ${GOOSEFS_IMAGE:-ghcr.io/tencent/tencent-goosefs-rust-sdk/goosefs:v2.0.0}
     container_name: opendal-goosefs-master
     profiles: ["distributed"]
     command: master
@@ -246,7 +240,7 @@ services:
       start_period: 60s
 
   goosefs-job-master:
-    image: goosefs.tencentcloudcr.com/goosefs/repo:v2.1.0.1
+    image: ${GOOSEFS_IMAGE:-ghcr.io/tencent/tencent-goosefs-rust-sdk/goosefs:v2.0.0}
     container_name: opendal-goosefs-job-master
     profiles: ["distributed"]
     command: job_master
@@ -259,7 +253,7 @@ services:
         condition: service_healthy
 
   goosefs-worker:
-    image: goosefs.tencentcloudcr.com/goosefs/repo:v2.1.0.1
+    image: ${GOOSEFS_IMAGE:-ghcr.io/tencent/tencent-goosefs-rust-sdk/goosefs:v2.0.0}
     container_name: opendal-goosefs-worker
     profiles: ["distributed"]
     command: worker
@@ -277,7 +271,7 @@ services:
         condition: service_healthy
 
   goosefs-job-worker:
-    image: goosefs.tencentcloudcr.com/goosefs/repo:v2.1.0.1
+    image: ${GOOSEFS_IMAGE:-ghcr.io/tencent/tencent-goosefs-rust-sdk/goosefs:v2.0.0}
     container_name: opendal-goosefs-job-worker
     profiles: ["distributed"]
     command: job_worker

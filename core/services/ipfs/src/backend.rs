@@ -25,8 +25,8 @@ use prost::Message;
 use super::reader::*;
 use crate::IPFS_SCHEME;
 use crate::config::IpfsConfig;
-use crate::core::IpfsCore;
 use crate::core::parse_error;
+use crate::core::{ErrorContext, IpfsCore};
 use crate::ipld::PBNode;
 use opendal_core::raw::*;
 use opendal_core::*;
@@ -148,6 +148,7 @@ impl Service for IpfsBackend {
     type Lister = oio::PageLister<DirStream>;
     type Deleter = ();
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -216,7 +217,6 @@ impl Service for IpfsBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,
@@ -271,7 +271,10 @@ impl oio::PageList for DirStream {
         let resp = self.core.ipfs_list(&self.ctx, &self.path).await?;
 
         if resp.status() != StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("List")),
+                resp,
+            ));
         }
 
         let bs = resp.into_body();

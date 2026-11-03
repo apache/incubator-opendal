@@ -15,12 +15,23 @@ cargo add opendal --features services-goosefs
 The service is available as `opendal::services::GooseFs`. Configure the
 service builder, then pass it to `opendal::Operator::new`.
 
+Optional client caches stay on this crate, not on the `opendal` facade. Add
+this crate as a direct dependency so Cargo unifies the features into the same
+`opendal-service-goosefs` build:
+
+```shell
+cargo add opendal-service-goosefs --features metadata-cache,page-cache
+# Linux io_uring page-cache backend:
+cargo add opendal-service-goosefs --features page-cache-io-uring
+```
+
 ## Use with `opendal-core`
 
 Add the split crates directly:
 
 ```shell
 cargo add opendal-core opendal-service-goosefs
+# Optional caches: cargo add opendal-service-goosefs --features metadata-cache,page-cache
 ```
 
 Pass a configured service builder to `Operator::new`:

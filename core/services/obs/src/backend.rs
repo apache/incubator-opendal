@@ -35,9 +35,9 @@ use reqsign_huaweicloud_obs::StaticCredentialProvider;
 
 use super::OBS_SCHEME;
 use super::config::ObsConfig;
-use super::core::ObsCore;
 use super::core::constants;
 use super::core::parse_error;
+use super::core::{ErrorContext, ObsCore};
 use super::deleter::ObsDeleter;
 use super::lister::ObsLister;
 use super::reader::*;
@@ -271,6 +271,7 @@ impl Service for ObsBackend {
     type Lister = oio::PageLister<ObsLister>;
     type Deleter = oio::OneShotDeleter<ObsDeleter>;
     type Copier = oio::OneShotCopier;
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -301,7 +302,7 @@ impl Service for ObsBackend {
         // The response is very similar to azblob.
         match status {
             StatusCode::OK => {
-                let mut meta = parse_into_metadata(path, headers)?;
+                let meta = parse_into_metadata(path, headers)?;
                 let user_meta = headers
                     .iter()
                     .filter_map(|(name, _)| {
@@ -315,20 +316,24 @@ impl Service for ObsBackend {
                     })
                     .collect::<HashMap<_, _>>();
 
+                let mut meta = meta.into_builder();
                 if !user_meta.is_empty() {
-                    meta = meta.with_user_metadata(user_meta);
+                    meta.user_metadata(user_meta);
                 }
 
                 if let Some(v) = parse_header_to_str(headers, constants::X_OBS_VERSION_ID)? {
-                    meta.set_version(v);
+                    meta.version(v);
                 }
 
-                Ok(RpStat::new(meta))
+                Ok(RpStat::new(meta.build()))
             }
             StatusCode::NOT_FOUND if path.ends_with('/') => {
-                Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+                Ok(RpStat::new(MetadataBuilder::dir().build()))
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("HeadObject")),
+                resp,
+            )),
         }
     }
     fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
@@ -395,21 +400,34 @@ impl Service for ObsBackend {
         ctx: &OperationContext,
         from: &str,
         to: &str,
-        _args: OpCopy,
-        _opts: OpCopier,
+        args: OpCopy,
     ) -> Result<Self::Copier> {
+        let backend = self.clone();
         let core = self.core.clone();
         let ctx = ctx.clone();
         let from = from.to_string();
         let to = to.to_string();
+        let source_content_length_hint = args.source_content_length_hint();
         Ok(oio::OneShotCopier::new(async move {
+            let source_size = match source_content_length_hint {
+                Some(size) => size,
+                None => backend
+                    .stat(&ctx, &from, OpStat::default())
+                    .await?
+                    .into_metadata()
+                    .content_length(),
+            };
+
             let resp = core.obs_copy_object(&ctx, &from, &to).await?;
 
             let status = resp.status();
 
             match status {
-                StatusCode::OK => Ok(Metadata::default()),
-                _ => Err(parse_error(resp)),
+                StatusCode::OK => Ok(MetadataBuilder::file(source_size).build()),
+                _ => Err(parse_error(
+                    ErrorContext::new(ServiceOperation("CopyObject")),
+                    resp,
+                )),
             }
         }))
     }

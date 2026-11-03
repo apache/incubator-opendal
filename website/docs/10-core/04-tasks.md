@@ -50,7 +50,8 @@ if let Some(etag) = meta.etag() {
 If the ETag no longer matches between `stat` and `read_with`, the read returns
 `ErrorKind::ConditionNotMatch`. `read_with` and `reader_with` also support
 `if_none_match`, `if_modified_since`, and `if_unmodified_since`. The same
-conditions are available on `stat_with` for conditional metadata checks.
+conditions are available on `stat_with` for conditional metadata checks. See
+[Conditional operations] for the portable condition and error contract.
 
 ## Stream a large file
 
@@ -97,7 +98,9 @@ let _meta = op
 ```
 
 A false condition returns `ErrorKind::ConditionNotMatch`. `if_none_match` is
-also available on services that advertise `write_with_if_none_match`.
+also available on services that advertise `write_with_if_none_match`. See
+[Conditional operations] for atomicity semantics and the behavior when the
+file does not exist.
 
 ## Stream a large upload
 
@@ -218,7 +221,8 @@ op.rename_with("old.txt", "new.txt")
 
 Check `copy_with_if_not_exists` or `rename_with_if_not_exists` before using
 these conditions. If the target exists, the operation returns
-`ErrorKind::ConditionNotMatch`.
+`ErrorKind::ConditionNotMatch`. Conditions guard the destination; see
+[Conditional operations] for the complete contract.
 
 ## Generate a presigned URL
 
@@ -236,3 +240,4 @@ let req = op.presign_read("path/to/file", Duration::from_secs(3600)).await?;
 [`Buffer`]: https://docs.rs/opendal/latest/opendal/struct.Buffer.html
 [`Writer`]: https://docs.rs/opendal/latest/opendal/struct.Writer.html
 [`Lister`]: https://docs.rs/opendal/latest/opendal/struct.Lister.html
+[Conditional operations]: /docs/specifications/conditional-operations/

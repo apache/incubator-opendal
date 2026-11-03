@@ -126,6 +126,7 @@ impl Service for FoundationdbBackend {
     type Lister = ();
     type Deleter = oio::OneShotDeleter<FoundationdbDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.info.clone()
@@ -151,13 +152,14 @@ impl Service for FoundationdbBackend {
         let p = build_abs_path(&self.root, path);
 
         if p == build_abs_path(&self.root, "") {
-            Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+            Ok(RpStat::new(MetadataBuilder::dir().build()))
         } else {
             let bs = self.core.get(&p).await?;
             match bs {
-                Some(bs) => Ok(RpStat::new(
-                    Metadata::new(EntryMode::FILE).with_content_length(bs.len() as u64),
-                )),
+                Some(bs) => Ok(RpStat::new({
+                    let metadata = MetadataBuilder::file(bs.len() as u64);
+                    metadata.build()
+                })),
                 None => Err(Error::new(
                     ErrorKind::NotFound,
                     "kv not found in foundationdb",
@@ -210,7 +212,6 @@ impl Service for FoundationdbBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,

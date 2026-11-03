@@ -20,8 +20,8 @@ use std::fmt::Formatter;
 
 /// Identifies the operation being performed.
 ///
-/// Most variants map to methods on the `Access` trait, although some names
-/// differ to improve readability.
+/// Most variants map to methods on the [`Service`][crate::raw::Service] trait,
+/// although some names differ to improve readability.
 ///
 /// An operation might have different meanings and costs depending on a
 /// storage service.
@@ -39,6 +39,8 @@ pub enum Operation {
     Write,
     /// Operation to copy a file.
     Copy,
+    /// Operation to compose multiple files into one file.
+    Compose,
     /// Operation to rename a file.
     Rename,
     /// Operation to restore a file.
@@ -74,6 +76,7 @@ impl From<Operation> for &'static str {
             Operation::Read => "read",
             Operation::Write => "write",
             Operation::Copy => "copy",
+            Operation::Compose => "compose",
             Operation::Rename => "rename",
             Operation::Restore => "restore",
             Operation::Stat => "stat",

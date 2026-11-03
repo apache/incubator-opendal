@@ -105,9 +105,9 @@ pub struct Writer {
 
 impl Writer {
     /// Create a new writer from an `oio::Writer`.
-    pub(crate) async fn new(ctx: WriteContext) -> Result<Self> {
+    pub(crate) fn new(ctx: WriteContext) -> Result<Self> {
         let ctx = Arc::new(ctx);
-        let inner = std::future::ready(WriteGenerator::create(ctx.clone())).await?;
+        let inner = WriteGenerator::create(ctx.clone())?;
 
         Ok(Self { ctx, inner })
     }

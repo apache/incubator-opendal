@@ -46,7 +46,10 @@ impl oio::BatchDelete for OssDeleter {
 
         match status {
             StatusCode::NO_CONTENT | StatusCode::NOT_FOUND => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("DeleteObject")),
+                resp,
+            )),
         }
     }
 
@@ -63,7 +66,10 @@ impl oio::BatchDelete for OssDeleter {
         let status = resp.status();
 
         if status != StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("DeleteMultipleObjects")),
+                resp,
+            ));
         }
 
         let bs = resp.into_body();
@@ -88,10 +94,14 @@ impl oio::BatchDelete for OssDeleter {
 
         for i in result.deleted {
             let path = build_rel_path(&self.core.root, &i.key);
-            let mut op = OpDelete::default();
-            if let Some(version) = &i.version_id {
-                op = op.with_version(version);
-            }
+            let op = OpDelete::from_options(
+                &Capability::default(),
+                options::DeleteOptions {
+                    version: i.version_id,
+                    ..Default::default()
+                },
+            )
+            .expect("delete result does not contain a logical condition");
             let object = (path, op);
             keys.remove(&object);
             batched_result.succeeded.push(object);

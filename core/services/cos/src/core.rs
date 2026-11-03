@@ -365,7 +365,11 @@ impl CosCore {
         let source = build_abs_path(&self.root, from);
         let target = build_abs_path(&self.root, to);
 
-        let source = format!("/{}/{}", self.bucket, percent_encode_path(&source));
+        let mut source = format!("/{}/{}", self.bucket, percent_encode_path(&source));
+        if let Some(version) = args.source_version() {
+            source.push_str("?versionId=");
+            source.push_str(&percent_encode_path(version));
+        }
         let url = format!("{}/{}", self.endpoint, percent_encode_path(&target));
 
         let mut req = Request::put(&url)
@@ -836,75 +840,11 @@ mod tests {
             ["hello", "world"],
         )
     }
-}
 
-mod error {
-    use bytes::Buf;
-    use http::Response;
-    use http::StatusCode;
-    use quick_xml::de;
-    use serde::Deserialize;
-
-    use opendal_core::Buffer;
-    use opendal_core::Error;
-    use opendal_core::ErrorKind;
-    use opendal_core::raw::*;
-
-    /// CosError is the error returned by cos service.
-    #[derive(Default, Debug, Deserialize)]
-    #[serde(default, rename_all = "PascalCase")]
-    struct CosError {
-        code: String,
-        message: String,
-        resource: String,
-        request_id: String,
-        host_id: String,
-    }
-
-    /// Parse error response into Error.
-    pub(crate) fn parse_error(resp: Response<Buffer>) -> Error {
-        let (parts, body) = resp.into_parts();
-        let bs = body.to_bytes();
-
-        let (kind, retryable) = match parts.status {
-            StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
-            StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, false),
-            StatusCode::PRECONDITION_FAILED | StatusCode::NOT_MODIFIED | StatusCode::CONFLICT => {
-                (ErrorKind::ConditionNotMatch, false)
-            }
-            StatusCode::INTERNAL_SERVER_ERROR
-            | StatusCode::BAD_GATEWAY
-            | StatusCode::SERVICE_UNAVAILABLE
-            | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
-            // COS could return `520 Origin Error` errors which should be retried.
-            v if v.as_u16() == 520 => (ErrorKind::Unexpected, true),
-
-            _ => (ErrorKind::Unexpected, false),
-        };
-
-        let message = match de::from_reader::<_, CosError>(bs.clone().reader()) {
-            Ok(cos_error) => format!("{cos_error:?}"),
-            Err(_) => String::from_utf8_lossy(&bs).into_owned(),
-        };
-
-        let mut err = Error::new(kind, message);
-
-        err = with_error_response_context(err, parts);
-
-        if retryable {
-            err = err.set_temporary();
-        }
-        err
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::*;
-
-        #[test]
-        fn test_parse_error() {
-            let bs = bytes::Bytes::from(
-                r#"
+    #[test]
+    fn test_parse_error() {
+        let bs = bytes::Bytes::from(
+            r#"
 <?xml version="1.0" encoding="UTF-8"?>
 <Error>
 <Code>NoSuchKey</Code>
@@ -914,21 +854,185 @@ mod error {
 <HostId>RkRCRDJENDc5MzdGQkQ4OUY3MTI4NTQ3NDk2Mjg0M0FBQUFBQUFBYmJiYmJiYmJD</HostId>
 </Error>
 "#,
-            );
+        );
 
-            let out: CosError = de::from_reader(bs.reader()).expect("must success");
-            println!("{out:?}");
+        let out: CosError = de::from_reader(bs.reader()).expect("must success");
+        println!("{out:?}");
 
-            assert_eq!(out.code, "NoSuchKey");
-            assert_eq!(out.message, "The resource you requested does not exist");
-            assert_eq!(out.resource, "/example-bucket/object");
-            assert_eq!(out.request_id, "001B21A61C6C0000013402C4616D5285");
-            assert_eq!(
-                out.host_id,
-                "RkRCRDJENDc5MzdGQkQ4OUY3MTI4NTQ3NDk2Mjg0M0FBQUFBQUFBYmJiYmJiYmJD"
-            );
-        }
+        assert_eq!(out.code, "NoSuchKey");
+        assert_eq!(out.message, "The resource you requested does not exist");
+        assert_eq!(out.resource, "/example-bucket/object");
+        assert_eq!(out.request_id, "001B21A61C6C0000013402C4616D5285");
+        assert_eq!(
+            out.host_id,
+            "RkRCRDJENDc5MzdGQkQ4OUY3MTI4NTQ3NDk2Mjg0M0FBQUFBQUFBYmJiYmJiYmJD"
+        );
     }
 }
 
-pub(super) use error::*;
+use bytes::Buf;
+use http::StatusCode;
+use quick_xml::de;
+
+use opendal_core::Error;
+use opendal_core::ErrorKind;
+
+/// CosError is the error returned by cos service.
+#[derive(Default, Debug, Deserialize)]
+#[serde(default, rename_all = "PascalCase")]
+struct CosError {
+    code: String,
+    message: String,
+    resource: String,
+    request_id: String,
+    host_id: String,
+}
+
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+    caller_condition: bool,
+    if_not_exists: bool,
+}
+
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self {
+            service_operation,
+            caller_condition: false,
+            if_not_exists: false,
+        }
+    }
+
+    pub(crate) const fn with_caller_condition(mut self, caller_condition: bool) -> Self {
+        self.caller_condition = caller_condition;
+        self
+    }
+
+    pub(crate) const fn with_if_not_exists(mut self, if_not_exists: bool) -> Self {
+        self.caller_condition = self.caller_condition || if_not_exists;
+        self.if_not_exists = if_not_exists;
+        self
+    }
+}
+
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
+    let (parts, body) = resp.into_parts();
+    let bs = body.to_bytes();
+
+    let cos_error = de::from_reader::<_, CosError>(bs.clone().reader()).ok();
+
+    let (mut kind, mut retryable) = match parts.status {
+        StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
+        StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, false),
+        StatusCode::PRECONDITION_FAILED | StatusCode::NOT_MODIFIED if ctx.caller_condition => {
+            (ErrorKind::ConditionNotMatch, false)
+        }
+        StatusCode::INTERNAL_SERVER_ERROR
+        | StatusCode::BAD_GATEWAY
+        | StatusCode::SERVICE_UNAVAILABLE
+        | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
+        // COS could return `520 Origin Error` errors which should be retried.
+        v if v.as_u16() == 520 => (ErrorKind::Unexpected, true),
+
+        _ => (ErrorKind::Unexpected, false),
+    };
+
+    if let Some(cos_error) = &cos_error {
+        match cos_error.code.as_str() {
+            "PreconditionFailed" if ctx.caller_condition => {
+                (kind, retryable) = (ErrorKind::ConditionNotMatch, false);
+            }
+            "FileAlreadyExists" if ctx.if_not_exists => {
+                (kind, retryable) = (ErrorKind::ConditionNotMatch, false);
+            }
+            "FileAlreadyExists"
+            | "PathConflict"
+            | "UploadConflict"
+            | "InvalidBucketState"
+            | "ObjectLocked"
+            | "InvalidObjectState"
+            | "RestoreAlreadyInProgress"
+            | "ObjectNotAppendable" => {
+                (kind, retryable) = (ErrorKind::Conflict, false);
+            }
+            _ if matches!(
+                parts.status,
+                StatusCode::CONFLICT | StatusCode::PRECONDITION_FAILED
+            ) =>
+            {
+                (kind, retryable) = (ErrorKind::Unexpected, false);
+            }
+            _ => {}
+        }
+    }
+
+    let message = match cos_error {
+        Some(cos_error) => format!("{cos_error:?}"),
+        None => String::from_utf8_lossy(&bs).into_owned(),
+    };
+
+    let mut err = Error::new(kind, message);
+
+    err = err.with_context("service_operation", ctx.service_operation.0);
+    err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
+    err
+}
+
+#[cfg(test)]
+mod error_tests {
+    use super::*;
+
+    fn parse_cos_error(ctx: ErrorContext, status: StatusCode, code: &str) -> Error {
+        let body = Buffer::from(format!(
+            "<Error><Code>{code}</Code><Message>test</Message></Error>"
+        ));
+        let resp = Response::builder()
+            .status(status)
+            .body(body)
+            .expect("response must build");
+        parse_error(ctx, resp)
+    }
+
+    #[test]
+    fn conflict_classification_uses_native_code_and_condition() {
+        let conditional = ErrorContext::new(ServiceOperation("PutObject")).with_if_not_exists(true);
+        assert_eq!(
+            parse_cos_error(conditional, StatusCode::CONFLICT, "FileAlreadyExists").kind(),
+            ErrorKind::ConditionNotMatch
+        );
+        assert_eq!(
+            parse_cos_error(
+                conditional,
+                StatusCode::PRECONDITION_FAILED,
+                "PreconditionFailed"
+            )
+            .kind(),
+            ErrorKind::ConditionNotMatch
+        );
+
+        let unconditional = ErrorContext::new(ServiceOperation("PutObject"));
+        for code in [
+            "PathConflict",
+            "UploadConflict",
+            "ObjectLocked",
+            "InvalidObjectState",
+        ] {
+            assert_eq!(
+                parse_cos_error(unconditional, StatusCode::CONFLICT, code).kind(),
+                ErrorKind::Conflict,
+                "native code {code}"
+            );
+        }
+        assert_eq!(
+            parse_cos_error(unconditional, StatusCode::CONFLICT, "UnknownConflict").kind(),
+            ErrorKind::Unexpected
+        );
+    }
+}

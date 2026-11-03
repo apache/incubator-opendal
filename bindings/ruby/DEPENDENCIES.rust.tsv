@@ -4,7 +4,7 @@ aho-corasick@1.1.4										X			X
 allocator-api2@0.2.21	X									X				
 anyhow@1.0.103	X									X				
 async-trait@0.1.89	X									X				
-asyncband@0.6.7	X													
+asyncband@0.7.1	X													
 atomic-waker@1.1.2	X									X				
 autocfg@1.5.1	X									X				
 aws-lc-rs@1.17.1	X							X						
@@ -127,6 +127,7 @@ log@0.4.33	X									X
 magnus@0.8.2										X				
 magnus-macros@0.8.0										X				
 md-5@0.11.0	X									X				
+mea@0.6.7	X													
 memchr@2.8.3										X			X	
 minimal-lexical@0.2.1	X									X				
 mio@1.2.1										X				
@@ -137,30 +138,30 @@ num-integer@0.1.46	X									X
 num-iter@0.1.46	X									X				
 num-traits@0.2.19	X									X				
 once_cell@1.21.4	X									X				
-opendal@0.58.2	X													
-opendal-core@0.58.2	X													
-opendal-http-transport-reqwest@0.58.2	X													
-opendal-layer-concurrent-limit@0.58.2	X													
-opendal-layer-logging@0.58.2	X													
-opendal-layer-retry@0.58.2	X													
-opendal-layer-throttle@0.58.2	X													
-opendal-layer-timeout@0.58.2	X													
-opendal-ruby@0.1.10	X													
-opendal-service-azblob@0.58.2	X													
-opendal-service-azdls@0.58.2	X													
-opendal-service-azfile@0.58.2	X													
-opendal-service-azure-common@0.58.2	X													
-opendal-service-cos@0.58.2	X													
-opendal-service-fs@0.58.2	X													
-opendal-service-gcs@0.58.2	X													
-opendal-service-ghac@0.58.2	X													
-opendal-service-http@0.58.2	X													
-opendal-service-ipmfs@0.58.2	X													
-opendal-service-obs@0.58.2	X													
-opendal-service-oss@0.58.2	X													
-opendal-service-s3@0.58.2	X													
-opendal-service-webdav@0.58.2	X													
-opendal-service-webhdfs@0.58.2	X													
+opendal@0.59.5	X													
+opendal-core@0.59.5	X													
+opendal-http-transport-reqwest@0.59.5	X													
+opendal-layer-concurrent-limit@0.59.5	X													
+opendal-layer-logging@0.59.5	X													
+opendal-layer-retry@0.59.5	X													
+opendal-layer-throttle@0.59.5	X													
+opendal-layer-timeout@0.59.5	X													
+opendal-ruby@0.1.16	X													
+opendal-service-azblob@0.59.5	X													
+opendal-service-azdls@0.59.5	X													
+opendal-service-azfile@0.59.5	X													
+opendal-service-azure-common@0.59.5	X													
+opendal-service-cos@0.59.5	X													
+opendal-service-fs@0.59.5	X													
+opendal-service-gcs@0.59.5	X													
+opendal-service-ghac@0.59.5	X													
+opendal-service-http@0.59.5	X													
+opendal-service-ipmfs@0.59.5	X													
+opendal-service-obs@0.59.5	X													
+opendal-service-oss@0.59.5	X													
+opendal-service-s3@0.59.5	X													
+opendal-service-webdav@0.59.5	X													
+opendal-service-webhdfs@0.59.5	X													
 openssl-probe@0.2.1	X									X				
 ordered-multimap@0.7.3										X				
 parking_lot@0.12.5	X									X				
@@ -183,6 +184,7 @@ prost@0.14.4	X
 prost-derive@0.14.4	X													
 quanta@0.12.6										X				
 quick-xml@0.41.0										X				
+quick-xml@0.42.0										X				
 quote@1.0.46	X									X				
 r-efi@5.3.0	X								X	X				
 r-efi@6.0.0	X								X	X				
@@ -201,11 +203,11 @@ regex@1.12.4	X									X
 regex-automata@0.4.14	X									X				
 regex-syntax@0.8.11	X									X				
 reqsign-aliyun-oss@3.1.3	X													
-reqsign-aws-core@3.1.0	X													
-reqsign-aws-v4@3.2.0	X													
+reqsign-aws-core@3.1.1	X													
+reqsign-aws-v4@3.3.0	X													
 reqsign-azure-storage@3.1.2	X													
-reqsign-core@3.3.0	X													
-reqsign-file-read-tokio@3.0.5	X													
+reqsign-core@3.3.1	X													
+reqsign-file-read-tokio@3.0.6	X													
 reqsign-google@3.0.4	X													
 reqsign-huaweicloud-obs@3.0.4	X													
 reqsign-tencent-cos@3.0.4	X													

@@ -23,6 +23,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * Operator represents an underneath OpenDAL operator that accesses data
@@ -114,8 +115,46 @@ public class Operator extends NativeObject {
         return read(nativeHandle, path, options);
     }
 
+    /**
+     * Creates a reusable reader for a file with default execution options.
+     *
+     * @param path file path
+     * @return a reader that the caller must close
+     * @see #createReader(String, ReaderOptions)
+     */
+    public OperatorReader createReader(String path) {
+        return createReader(path, ReaderOptions.builder().build());
+    }
+
+    /**
+     * Creates a reusable reader for a file. Options apply to every read through the reader;
+     * each read selects its own byte range. The reader can outlive this operator.
+     * Creation does not read file contents or guarantee that the file exists.
+     * Version selection and conditions apply to all requests through the reader, including
+     * streams. All conditions must hold; a failed condition on an existing file
+     * fails with ConditionNotMatch and a missing file fails with NotFound. Depending on the
+     * service, errors may surface at creation or during reading.
+     *
+     * @param path file path
+     * @param options reader execution options
+     * @return a reader that the caller must close
+     * @throws OpenDALException if options are invalid (ConfigInvalid), the path is a directory
+     *     (IsADirectory), or the service does not support reads or a requested option (Unsupported)
+     * @throws IllegalStateException if this operator is closed
+     */
+    public OperatorReader createReader(String path, ReaderOptions options) {
+        if (isDisposed()) {
+            throw new IllegalStateException("Operator is closed");
+        }
+        Objects.requireNonNull(path, "path");
+        Objects.requireNonNull(options, "options");
+        return new OperatorReader(createReader(nativeHandle, path, options));
+    }
+
+    private static native long createReader(long operator, String path, ReaderOptions options);
+
     public OperatorInputStream createInputStream(String path) {
-        return new OperatorInputStream(this, path, ReadOptions.builder().build());
+        return createInputStream(path, ReadOptions.builder().build());
     }
 
     public OperatorInputStream createInputStream(String path, ReadOptions options) {

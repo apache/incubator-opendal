@@ -12,8 +12,22 @@ This program builds an operator, writes a file, reads it back, inspects its
 metadata, and deletes it. It runs against the in-memory service with no
 credentials, so you can run it right after installing.
 
+Install from PyPI:
+
 ```shell
 pip install opendal
+```
+
+Or install from Anaconda main:
+
+```shell
+conda install opendal
+```
+
+Or install from conda-forge:
+
+```shell
+conda install conda-forge::opendal
 ```
 
 ```python file=bindings/python/examples/getting_started.py region=quickstart

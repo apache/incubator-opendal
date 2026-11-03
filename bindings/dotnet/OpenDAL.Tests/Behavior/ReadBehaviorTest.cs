@@ -60,8 +60,8 @@ public sealed class ReadBehaviorTest : BehaviorTestBase
         var path = NewPath("read-async");
         var content = RandomBytes(2048);
 
-        await Op.WriteAsync(path, content, CT);
-        var actual = await Op.ReadAsync(path, CT);
+        await Op.WriteAsync(path, content, cancellationToken: CT);
+        var actual = await Op.ReadAsync(path, cancellationToken: CT);
 
         Assert.Equal(content, actual);
     }
@@ -77,7 +77,10 @@ public sealed class ReadBehaviorTest : BehaviorTestBase
         // Covers the whole path end to end at a size worth measuring. The chunk
         // walking itself is pinned by the unit tests in src/buffer.rs, which build
         // multi-part buffers a backend may or may not produce.
-        const int size = 8 * 1024 * 1024;
+        const int defaultSize = 8 * 1024 * 1024;
+        var size = (int)Math.Min(
+            (ulong)defaultSize,
+            Capability.WriteTotalMaxSize ?? ulong.MaxValue);
         var path = NewPath("read-large");
         var content = RandomBytes(size);
 
@@ -96,11 +99,15 @@ public sealed class ReadBehaviorTest : BehaviorTestBase
             return;
         }
 
+        const int defaultSize = 8 * 1024 * 1024;
+        var size = (int)Math.Min(
+            (ulong)defaultSize,
+            Capability.WriteTotalMaxSize ?? ulong.MaxValue);
         var path = NewPath("read-large-async");
-        var content = RandomBytes(8 * 1024 * 1024);
+        var content = RandomBytes(size);
 
-        await Op.WriteAsync(path, content, CT);
-        var actual = await Op.ReadAsync(path, CT);
+        await Op.WriteAsync(path, content, cancellationToken: CT);
+        var actual = await Op.ReadAsync(path, cancellationToken: CT);
 
         Assert.Equal(content.Length, actual.Length);
         Assert.True(content.AsSpan().SequenceEqual(actual));
@@ -134,7 +141,7 @@ public sealed class ReadBehaviorTest : BehaviorTestBase
         var path = NewPath("read-range-async");
         var content = RandomBytes(512);
 
-        await Op.WriteAsync(path, content, CT);
+        await Op.WriteAsync(path, content, cancellationToken: CT);
         var partial = await Op.ReadAsync(path, new ReadOptions { Offset = 10, Length = 100 }, CT);
 
         Assert.Equal(content.AsSpan(10, 100).ToArray(), partial);
@@ -161,7 +168,7 @@ public sealed class ReadBehaviorTest : BehaviorTestBase
             return;
         }
 
-        var ex = await Assert.ThrowsAsync<OpenDALException>(() => Op.ReadAsync(NewPath("missing-async"), CT));
+        var ex = await Assert.ThrowsAsync<OpenDALException>(() => Op.ReadAsync(NewPath("missing-async"), cancellationToken: CT));
 
         Assert.True(IsMissingError(ex));
     }
@@ -176,7 +183,7 @@ public sealed class ReadBehaviorTest : BehaviorTestBase
 
         var path = NewPath("read-consume");
         var content = RandomBytes(100_000);
-        await Op.WriteAsync(path, content, CT);
+        await Op.WriteAsync(path, content, cancellationToken: CT);
 
         var length = 0L;
         var actual = Op.Read(path, sequence =>
@@ -265,7 +272,7 @@ public sealed class ReadBehaviorTest : BehaviorTestBase
 
         var path = NewPath("read-consume-throw");
         var content = RandomBytes(1024);
-        await Op.WriteAsync(path, content, CT);
+        await Op.WriteAsync(path, content, cancellationToken: CT);
 
         Assert.Throws<InvalidOperationException>(() => Op.Read<byte[]>(
             path, _ => throw new InvalidOperationException("consumer failed")));

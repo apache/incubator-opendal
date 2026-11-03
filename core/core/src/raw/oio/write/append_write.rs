@@ -73,7 +73,7 @@ impl<W: AppendWrite> AppendWriter<W> {
         Self {
             inner,
             offset: None,
-            meta: Metadata::default(),
+            meta: MetadataBuilder::unknown().build(),
         }
     }
 }
@@ -100,9 +100,9 @@ where
     }
 
     async fn close(&mut self) -> Result<Metadata> {
-        self.meta
-            .set_content_length(self.offset.unwrap_or_default());
-        Ok(self.meta.clone())
+        let mut builder = self.meta.clone().into_builder();
+        builder.set_file(self.offset.unwrap_or_default());
+        Ok(builder.build())
     }
 
     async fn abort(&mut self) -> Result<()> {

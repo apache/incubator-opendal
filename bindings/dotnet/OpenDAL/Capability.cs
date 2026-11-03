@@ -95,6 +95,19 @@ public struct Capability
         CopyCanMulti = native.copyCanMulti != 0;
         CopyMultiMaxSize = native.copyMultiMaxSize == nuint.MaxValue ? null : native.copyMultiMaxSize;
         CopyMultiMinSize = native.copyMultiMinSize == nuint.MaxValue ? null : native.copyMultiMinSize;
+        Compose = native.compose != 0;
+        ComposeWithContentType = native.composeWithContentType != 0;
+        ComposeWithContentDisposition = native.composeWithContentDisposition != 0;
+        ComposeWithContentEncoding = native.composeWithContentEncoding != 0;
+        ComposeWithCacheControl = native.composeWithCacheControl != 0;
+        ComposeWithUserMetadata = native.composeWithUserMetadata != 0;
+        ComposeWithIfMatch = native.composeWithIfMatch != 0;
+        ComposeWithIfNoneMatch = native.composeWithIfNoneMatch != 0;
+        ComposeWithIfVersionMatch = native.composeWithIfVersionMatch != 0;
+        ComposeWithIfVersionNotMatch = native.composeWithIfVersionNotMatch != 0;
+        ComposeWithIfNotExists = native.composeWithIfNotExists != 0;
+        ComposeWithSourceVersion = native.composeWithSourceVersion != 0;
+        ComposeWithSourceIfMatch = native.composeWithSourceIfMatch != 0;
         Restore = native.restore != 0;
         RestoreWithVersion = native.restoreWithVersion != 0;
         RestoreWithIfNotExists = native.restoreWithIfNotExists != 0;
@@ -413,6 +426,71 @@ public struct Capability
     /// Minimum size required for segmented copy tasks.
     /// </summary>
     public ulong? CopyMultiMinSize { get; private set; }
+
+    /// <summary>
+    /// Indicates if the operator supports composing complete source objects.
+    /// </summary>
+    public bool Compose { get; private set; }
+
+    /// <summary>
+    /// Indicates if Content-Type can be specified during composition.
+    /// </summary>
+    public bool ComposeWithContentType { get; private set; }
+
+    /// <summary>
+    /// Indicates if Content-Disposition can be specified during composition.
+    /// </summary>
+    public bool ComposeWithContentDisposition { get; private set; }
+
+    /// <summary>
+    /// Indicates if Content-Encoding can be specified during composition.
+    /// </summary>
+    public bool ComposeWithContentEncoding { get; private set; }
+
+    /// <summary>
+    /// Indicates if Cache-Control can be specified during composition.
+    /// </summary>
+    public bool ComposeWithCacheControl { get; private set; }
+
+    /// <summary>
+    /// Indicates if custom user metadata can be attached during composition.
+    /// </summary>
+    public bool ComposeWithUserMetadata { get; private set; }
+
+    /// <summary>
+    /// Indicates if composition supports a destination ETag match condition.
+    /// </summary>
+    public bool ComposeWithIfMatch { get; private set; }
+
+    /// <summary>
+    /// Indicates if composition supports a destination ETag non-match condition.
+    /// </summary>
+    public bool ComposeWithIfNoneMatch { get; private set; }
+
+    /// <summary>
+    /// Indicates if composition supports a destination version match condition.
+    /// </summary>
+    public bool ComposeWithIfVersionMatch { get; private set; }
+
+    /// <summary>
+    /// Indicates if composition supports a destination version non-match condition.
+    /// </summary>
+    public bool ComposeWithIfVersionNotMatch { get; private set; }
+
+    /// <summary>
+    /// Indicates if composition can require a missing destination.
+    /// </summary>
+    public bool ComposeWithIfNotExists { get; private set; }
+
+    /// <summary>
+    /// Indicates if composition can select a specific source version.
+    /// </summary>
+    public bool ComposeWithSourceVersion { get; private set; }
+
+    /// <summary>
+    /// Indicates if composition supports a source ETag match condition.
+    /// </summary>
+    public bool ComposeWithSourceIfMatch { get; private set; }
 
     /// <summary>
     /// Indicates if restore operations are supported.

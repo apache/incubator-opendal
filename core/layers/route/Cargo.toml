@@ -33,10 +33,10 @@ all-features = true
 
 [dependencies]
 globset = "0.4.15"
-opendal-core = { path = "../../core", version = "0.58.2", default-features = false }
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false }
 
 [dev-dependencies]
 futures = { workspace = true }
-opendal-core = { path = "../../core", version = "0.58.2" }
-opendal-service-fs = { path = "../../services/fs", version = "0.58.2" }
+opendal-core = { path = "../../core", version = "0.59.5" }
+opendal-service-fs = { path = "../../services/fs", version = "0.59.5" }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

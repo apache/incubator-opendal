@@ -32,6 +32,7 @@ doc = false
 
 [dependencies]
 # this crate won't be published, we always use the local version
+asyncband = { version = "0.7.1", features = ["mutex"] }
 bytes = "1.12.1"
 futures = "0.3"
 opendal = { version = ">=0", path = "../../core", features = [
@@ -53,6 +54,7 @@ opendal = { version = ">=0", path = "../../core", features = [
   "services-cos",
   "services-fs",
   "services-gcs",
+  "services-gcs-grpc",
   "services-ghac",
   "services-http",
   "services-ipmfs",

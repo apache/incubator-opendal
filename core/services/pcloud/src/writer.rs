@@ -22,9 +22,9 @@ use http::StatusCode;
 use opendal_core::raw::*;
 use opendal_core::*;
 
-use super::core::PcloudCore;
 use super::core::PcloudError;
 use super::core::parse_error;
+use super::core::{ErrorContext, PcloudCore};
 
 pub type PcloudWriters = oio::OneShotWriter<PcloudWriter>;
 
@@ -59,9 +59,12 @@ impl oio::OneShotWrite for PcloudWriter {
                     return Err(Error::new(ErrorKind::Unexpected, format!("{resp:?}")));
                 }
 
-                Ok(Metadata::default())
+                Ok(MetadataBuilder::unknown().build())
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("UploadFile")),
+                resp,
+            )),
         }
     }
 }

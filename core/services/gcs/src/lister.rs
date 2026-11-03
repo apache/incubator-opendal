@@ -31,33 +31,17 @@ pub struct GcsLister {
     ctx: OperationContext,
 
     path: String,
-    delimiter: &'static str,
-    limit: Option<usize>,
-
-    /// Filter results to objects whose names are lexicographically
-    /// **equal to or after** startOffset
-    start_after: Option<String>,
+    args: OpList,
 }
 
 impl GcsLister {
     /// Generate a new directory walker
-    pub fn new(
-        core: Arc<GcsCore>,
-        ctx: OperationContext,
-        path: &str,
-        recursive: bool,
-        limit: Option<usize>,
-        start_after: Option<&str>,
-    ) -> Self {
-        let delimiter = if recursive { "" } else { "/" };
+    pub fn new(core: Arc<GcsCore>, ctx: OperationContext, path: &str, args: OpList) -> Self {
         Self {
             core,
             ctx,
-
             path: path.to_string(),
-            delimiter,
-            limit,
-            start_after: start_after.map(String::from),
+            args,
         }
     }
 }
@@ -66,18 +50,7 @@ impl oio::PageList for GcsLister {
     async fn next_page(&self, ctx: &mut oio::PageContext) -> Result<()> {
         let resp = self
             .core
-            .gcs_list_objects(
-                &self.ctx,
-                &self.path,
-                &ctx.token,
-                self.delimiter,
-                self.limit,
-                if ctx.token.is_empty() {
-                    self.start_after.clone()
-                } else {
-                    None
-                },
-            )
+            .gcs_list_objects(&self.ctx, &self.path, &ctx.token, &self.args)
             .await?;
 
         if !resp.status().is_success() {
@@ -100,7 +73,7 @@ impl oio::PageList for GcsLister {
         for prefix in output.prefixes {
             let de = oio::Entry::new(
                 &build_rel_path(&self.core.root, &prefix),
-                Metadata::new(EntryMode::DIR),
+                MetadataBuilder::dir().build(),
             );
 
             ctx.entries.push_back(de);
@@ -112,30 +85,33 @@ impl oio::PageList for GcsLister {
             if path.is_empty() {
                 path = "/".to_string();
             }
-            if self.start_after.as_ref() == Some(&path) {
+            if self.args.start_after() == Some(path.as_str()) {
                 continue;
-            }
-
-            let mut meta = Metadata::new(EntryMode::from_path(&path));
-
-            // set metadata fields
-            meta.set_content_md5(object.md5_hash.as_str());
-            meta.set_etag(object.etag.as_str());
-            if !object.generation.is_empty() {
-                meta.set_version(&object.generation);
             }
 
             let size = object.size.parse().map_err(|e| {
                 Error::new(ErrorKind::Unexpected, "parse u64 from list response").set_source(e)
             })?;
-            meta.set_content_length(size);
-            if !object.content_type.is_empty() {
-                meta.set_content_type(&object.content_type);
+            let mut meta = if path.ends_with('/') {
+                MetadataBuilder::dir()
+            } else {
+                MetadataBuilder::file(size)
+            };
+
+            // set metadata fields
+            meta.content_md5(object.md5_hash.as_str());
+            meta.etag(object.etag.as_str());
+            if !object.generation.is_empty() {
+                meta.version(&object.generation);
             }
 
-            meta.set_last_modified(object.updated.parse::<Timestamp>()?);
+            if !object.content_type.is_empty() {
+                meta.content_type(&object.content_type);
+            }
 
-            let de = oio::Entry::with(path, meta);
+            meta.last_modified(object.updated.parse::<Timestamp>()?);
+
+            let de = oio::Entry::with(path, meta.build());
 
             ctx.entries.push_back(de);
         }

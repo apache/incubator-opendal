@@ -15,13 +15,18 @@
 // specific language governing permissions and limitations
 // under the License.
 
-//! Generator for the .NET binding capability mirrors and service configs.
+//! Generator for the .NET binding capability and metadata mirrors and the
+//! service configs.
 //!
 //! The capability payload crosses the FFI boundary as a `#[repr(C)]` struct,
 //! so the Rust mirror, the C# interop struct, and the public C# surface must
 //! agree on field order and on the sentinel that encodes an absent limit.
 //! All three files are rendered from `core/core/src/types/capability.rs` so
 //! they cannot drift from core or from each other.
+//!
+//! The metadata payload follows the same pattern, with the interop struct
+//! also carrying the conversion into the public class. All three files are
+//! rendered from the accessors of `core/core/src/types/metadata.rs`.
 //!
 //! The typed `*ServiceConfig` classes mirror each service's config struct and
 //! are rendered from the same parsed service definitions the Java and Python
@@ -34,6 +39,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::capability;
+use super::metadata::{self, MetadataKind};
 use super::parser::{Config, ConfigType, Services, sorted_services};
 
 /// Render model handed to the capability templates, with every casing
@@ -50,6 +56,52 @@ struct CapabilityField {
     is_bool: bool,
     /// Field doc from core, XML-escaped for use in C# doc comments.
     doc: String,
+}
+
+/// Render model handed to the metadata templates. Every per-kind decision is
+/// precomputed in `metadata_field` so the templates stay purely structural.
+#[derive(Serialize)]
+struct MetadataField {
+    /// snake_case accessor name, used by the Rust mirror.
+    name: String,
+    /// PascalCase, used by the C# interop struct and the public properties.
+    pascal: String,
+    /// camelCase, used for constructor parameters.
+    camel: String,
+    /// The FFI shape; the public template derives `IsFile`/`IsDir` from `mode`.
+    kind: MetadataKind,
+    /// Accessor doc from core, used verbatim in Rust doc comments.
+    doc: String,
+    /// The same doc, XML-escaped for C# doc comments.
+    doc_xml: String,
+    /// The mirror fields this accessor flattens into, in declaration order.
+    parts: Vec<MetadataPart>,
+    /// Pattern that binds every part from `rs_from`: the bare name for a
+    /// single part, a tuple otherwise.
+    rs_bind: String,
+    /// Expression that produces the part values from `metadata`.
+    rs_from: String,
+    /// Statement that releases the parts' heap memory, empty when none.
+    rs_release: String,
+    /// The public C# type of the property.
+    cs_type: String,
+    /// Expression that reads the public value from the interop struct's fields.
+    cs_read: String,
+}
+
+/// One field of the mirrors. An accessor with an optional or composite
+/// return type flattens into several, following the binding's convention of
+/// a `*_has_value` byte followed by the parts.
+#[derive(Serialize)]
+struct MetadataPart {
+    /// snake_case field name in the Rust mirror.
+    name: String,
+    /// PascalCase field name in the C# interop struct.
+    pascal: String,
+    /// Field type in the Rust `#[repr(C)]` mirror.
+    rs_type: String,
+    /// Field type in the C# interop struct.
+    interop_type: String,
 }
 
 /// Render model for one field of a `*ServiceConfig` class.
@@ -73,6 +125,7 @@ struct ConfigField {
 
 pub fn generate(workspace_dir: PathBuf, services: Services) -> Result<()> {
     generate_capability(&workspace_dir)?;
+    generate_metadata(&workspace_dir)?;
     generate_service_configs(&workspace_dir, services)
 }
 
@@ -90,9 +143,12 @@ fn generate_capability(workspace_dir: &Path) -> Result<()> {
         .collect();
 
     let mut env = Environment::new();
-    env.add_template("capability_rs", include_str!("dotnet_capability_rs.j2"))?;
-    env.add_template("interop_cs", include_str!("dotnet_interop_cs.j2"))?;
-    env.add_template("public_cs", include_str!("dotnet_public_cs.j2"))?;
+    env.add_template("capability_rs", include_str!("dotnet/capability_rs.j2"))?;
+    env.add_template(
+        "interop_cs",
+        include_str!("dotnet/capability_interop_cs.j2"),
+    )?;
+    env.add_template("public_cs", include_str!("dotnet/capability_public_cs.j2"))?;
 
     let outputs = [
         ("capability_rs", "bindings/dotnet/src/capability.rs"),
@@ -111,10 +167,164 @@ fn generate_capability(workspace_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+fn generate_metadata(workspace_dir: &Path) -> Result<()> {
+    let source = workspace_dir.join("core/core/src/types/metadata.rs");
+    let fields: Vec<MetadataField> = metadata::parse(&source)?
+        .into_iter()
+        .map(metadata_field)
+        .collect();
+
+    let mut env = Environment::new();
+    env.add_template("metadata_rs", include_str!("dotnet/metadata_rs.j2"))?;
+    env.add_template(
+        "metadata_interop_cs",
+        include_str!("dotnet/metadata_interop_cs.j2"),
+    )?;
+    env.add_template(
+        "metadata_public_cs",
+        include_str!("dotnet/metadata_public_cs.j2"),
+    )?;
+
+    let outputs = [
+        ("metadata_rs", "bindings/dotnet/src/metadata.rs"),
+        (
+            "metadata_interop_cs",
+            "bindings/dotnet/OpenDAL/Interop/NativeObject/OpenDALMetadata.cs",
+        ),
+        ("metadata_public_cs", "bindings/dotnet/OpenDAL/Metadata.cs"),
+    ];
+    for (template, relative) in outputs {
+        let tmpl = env.get_template(template)?;
+        let rendered = tmpl.render(context! { fields => fields })?;
+        write_rendered(&workspace_dir.join(relative), rendered)?;
+    }
+
+    Ok(())
+}
+
+/// The C# name for a metadata accessor, allowing the established casing of
+/// names that predate codegen.
+fn metadata_pascal(name: &str) -> String {
+    match name {
+        "etag" => "ETag".to_string(),
+        _ => heck::AsUpperCamelCase(name).to_string(),
+    }
+}
+
+/// Precompute every per-kind decision for one accessor.
+///
+/// This table is the only place that knows how a return type crosses the FFI
+/// boundary: the mirror fields it flattens into, how the Rust side fills and
+/// releases them, and how the C# side reads them back. A new return type
+/// needs one row here and, when it flattens into several fields, a helper in
+/// `bindings/dotnet/src/utils.rs`. Accessors that reuse a known return type
+/// need nothing.
+fn metadata_field(f: metadata::MetadataField) -> MetadataField {
+    let name = &f.name;
+    let pascal = metadata_pascal(name);
+    let camel = heck::AsLowerCamelCase(name).to_string();
+    let part = |suffix: &str, rs_type: &str, interop_type: &str| MetadataPart {
+        name: format!("{name}{suffix}"),
+        pascal: format!("{pascal}{}", heck::AsUpperCamelCase(suffix)),
+        rs_type: rs_type.to_string(),
+        interop_type: interop_type.to_string(),
+    };
+
+    let (parts, rs_from, rs_release, cs_type, cs_read) = match f.kind {
+        MetadataKind::Mode => (
+            vec![part("", "i32", "int")],
+            format!("crate::utils::entry_mode_code(metadata.{name}())"),
+            String::new(),
+            "EntryMode",
+            format!("Utilities.ToEntryMode({pascal})"),
+        ),
+        MetadataKind::Bool => (
+            vec![part("", "u8", "byte")],
+            format!("u8::from(metadata.{name}())"),
+            String::new(),
+            "bool",
+            format!("{pascal} != 0"),
+        ),
+        MetadataKind::U64 => (
+            vec![part("", "u64", "ulong")],
+            format!("metadata.{name}()"),
+            String::new(),
+            "ulong",
+            pascal.clone(),
+        ),
+        MetadataKind::OptionBool => (
+            vec![part("_has_value", "u8", "byte"), part("", "u8", "byte")],
+            format!("crate::utils::optional_bool(metadata.{name}())"),
+            String::new(),
+            "bool?",
+            format!("{pascal}HasValue != 0 ? {pascal} != 0 : null"),
+        ),
+        MetadataKind::OptionStr => (
+            vec![part("", "*mut c_char", "IntPtr")],
+            format!("crate::utils::optional_c_string(metadata.{name}())"),
+            format!("crate::utils::release_c_string(&mut metadata.{name});"),
+            "string?",
+            format!("Utilities.ReadNullableUtf8({pascal})"),
+        ),
+        MetadataKind::OptionTimestamp => (
+            vec![
+                part("_has_value", "u8", "byte"),
+                part("_second", "i64", "long"),
+                part("_nanosecond", "i32", "int"),
+            ],
+            format!("crate::utils::optional_timestamp(metadata.{name}())"),
+            String::new(),
+            "DateTimeOffset?",
+            format!(
+                "{pascal}HasValue != 0 ? Utilities.ToDateTimeOffset({pascal}Second, {pascal}Nanosecond) : null"
+            ),
+        ),
+        MetadataKind::OptionUserMetadata => (
+            vec![
+                part("_has_value", "u8", "byte"),
+                part("_keys", "*mut *mut c_char", "IntPtr"),
+                part("_values", "*mut *mut c_char", "IntPtr"),
+                part("_len", "usize", "nuint"),
+            ],
+            format!("crate::utils::string_pairs(metadata.{name}())"),
+            format!(
+                "crate::utils::release_string_pairs(&mut metadata.{name}_keys, &mut metadata.{name}_values, &mut metadata.{name}_len);"
+            ),
+            "IReadOnlyDictionary<string, string>?",
+            format!(
+                "{pascal}HasValue != 0 ? Utilities.ReadStringPairs({pascal}Keys, {pascal}Values, {pascal}Len, StringComparer.Ordinal) : null"
+            ),
+        ),
+    };
+
+    let rs_bind = match parts.as_slice() {
+        [only] => only.name.clone(),
+        many => {
+            let names: Vec<&str> = many.iter().map(|p| p.name.as_str()).collect();
+            format!("({})", names.join(", "))
+        }
+    };
+
+    MetadataField {
+        kind: f.kind,
+        doc_xml: xml_escape(&f.doc),
+        parts,
+        rs_bind,
+        rs_from,
+        rs_release,
+        cs_type: cs_type.to_string(),
+        cs_read,
+        pascal,
+        camel,
+        doc: f.doc,
+        name: f.name,
+    }
+}
+
 fn enabled_service(srv: &str) -> bool {
     match srv {
         // not enabled in bindings/dotnet/Cargo.toml
-        "foundationdb" | "foyer" | "ftp" | "hdfs" | "rocksdb" => false,
+        "foundationdb" | "foyer" | "ftp" | "git" | "hdfs" | "rocksdb" | "smb" => false,
         _ => true,
     }
 }
@@ -133,7 +343,7 @@ fn generate_service_configs(workspace_dir: &Path, services: Services) -> Result<
     let srvs = sorted_services(services, enabled_service);
 
     let mut env = Environment::new();
-    env.add_template("service_config", include_str!("dotnet_service_config.j2"))?;
+    env.add_template("service_config", include_str!("dotnet/service_config.j2"))?;
     let tmpl = env.get_template("service_config")?;
 
     let mut names: Vec<&String> = srvs.keys().collect();
@@ -233,7 +443,11 @@ fn pascalize_backticks(text: &str) -> String {
         result.push_str(&rest[..start]);
         let after = &rest[start + 1..];
         match after.find('`') {
-            Some(end) if after[..end].chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_') => {
+            Some(end)
+                if after[..end]
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_') =>
+            {
                 result.push_str(&heck::AsUpperCamelCase(&after[..end]).to_string());
                 rest = &after[end + 1..];
             }

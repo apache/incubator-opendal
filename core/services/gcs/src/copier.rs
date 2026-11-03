@@ -49,9 +49,8 @@ impl GcsCopier {
         from: &str,
         to: &str,
         args: OpCopy,
-        opts: OpCopier,
     ) -> Self {
-        let chunk = opts.chunk().map(|v| {
+        let chunk = args.chunk().map(|v| {
             let v = v.clamp(GCS_REWRITE_MIN_CHUNK_SIZE, GCS_REWRITE_MAX_CHUNK_SIZE);
             v / GCS_REWRITE_MIN_CHUNK_SIZE * GCS_REWRITE_MIN_CHUNK_SIZE
         });
@@ -92,11 +91,7 @@ impl oio::Copy for GcsCopier {
         if !resp.status().is_success() {
             return Err(parse_error(
                 ErrorContext::new(ServiceOperation("RewriteObject"))
-                    .with_if_not_exists(self.args.if_not_exists())
-                    .with_if_match(self.args.if_match().is_some())
-                    .with_if_none_match(self.args.if_none_match().is_some())
-                    .with_if_version_match(self.args.if_version_match().is_some())
-                    .with_if_version_not_match(self.args.if_version_not_match().is_some()),
+                    .with_caller_condition(self.args.is_conditional()),
                 resp,
             ));
         }
@@ -162,7 +157,13 @@ impl oio::Copy for GcsCopier {
             self.next().await?;
         }
 
-        Ok(self.metadata.clone().unwrap_or_default())
+        let metadata = self
+            .metadata
+            .clone()
+            .unwrap_or_else(|| MetadataBuilder::unknown().build());
+        let mut builder = metadata.into_builder();
+        builder.set_file(self.total_bytes_rewritten);
+        Ok(builder.build())
     }
 
     async fn abort(&mut self) -> Result<()> {

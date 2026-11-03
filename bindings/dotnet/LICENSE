@@ -199,3 +199,31 @@
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+
+------------------------------------------------------------------------------------
+This product bundles third-party components under other open source licenses.
+This section summarizes those components and their licenses. See the referenced
+license files for text of these licenses.
+
+
+Creative Commons Zero v1.0 Universal
+------------------------------------
+
+.gitignore
+
+The above file is part of the source distribution only. It is derived from
+VisualStudio.gitignore in https://github.com/github/gitignore. Its license
+text is in LICENSE-CC0-1.0.txt.
+
+
+Mozilla Public License 2.0
+--------------------------
+
+colored 3.1.1        https://crates.io/crates/colored/3.1.1
+option-ext 0.2.0     https://crates.io/crates/option-ext/0.2.0
+persy 1.8.1          https://crates.io/crates/persy/1.8.1
+
+The above Rust crates are statically linked into the native library bundled in
+the NuGet package. Their source code is available from the listed pages. Their
+license text is in LICENSE-MPL-2.0.txt.

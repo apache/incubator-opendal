@@ -21,6 +21,8 @@ Use [`crate::SeafileConfig`] for serializable configuration and this builder's
 methods for direct construction. The field and method documentation defines
 accepted values, defaults, and environment interaction.
 
+Authentication and library lookup are initialized together on first use. Failed or cancelled initialization can be retried by a subsequent operation; successful initialization is shared by an operator and its clones.
+
 ## Example
 
 ### Via Builder

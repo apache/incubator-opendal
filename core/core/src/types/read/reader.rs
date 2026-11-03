@@ -413,6 +413,11 @@ impl Reader {
     /// Convert reader into [`FuturesAsyncReader`] which implements [`futures::AsyncRead`],
     /// [`futures::AsyncSeek`] and [`futures::AsyncBufRead`].
     ///
+    /// Unbounded ranges resolve the object length only for operations that require it, such as
+    /// seeking relative to the end. Seeking from the start or current position can move beyond
+    /// the end without resolving the length, and subsequent reads return EOF. Explicit bounded
+    /// ranges continue to reject seeks beyond their logical end.
+    ///
     /// # Notes
     ///
     /// FuturesAsyncReader is not a zero-cost abstraction. The underlying reader
@@ -476,8 +481,7 @@ impl Reader {
         self,
         range: impl Into<BytesRange>,
     ) -> Result<FuturesAsyncReader> {
-        let range = self.ctx.parse_into_range(range).await?;
-        Ok(FuturesAsyncReader::new(self.ctx, range))
+        FuturesAsyncReader::new(self.ctx, range).await
     }
 
     /// Convert reader into [`FuturesBytesStream`] which implements [`futures::Stream`].
@@ -619,9 +623,10 @@ mod tests {
             }
 
             Ok((
-                RpRead::new(
-                    Metadata::new(EntryMode::FILE).with_content_length(self.content.len() as u64),
-                ),
+                RpRead::new({
+                    let metadata = MetadataBuilder::file(self.content.len() as u64);
+                    metadata.build()
+                }),
                 Buffer::from(self.content.slice(start..end)),
             ))
         }

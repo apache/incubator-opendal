@@ -26,7 +26,7 @@ license = "Apache-2.0"
 repository = "https://github.com/apache/opendal"
 rust-version = "1.91"
 # Release candidate builds derive prerelease versions from tags in release_python.yml.
-version = "0.47.6"
+version = "0.47.12"
 
 [features]
 default = [
@@ -59,6 +59,7 @@ services-all = [
   'services-dashmap',
   'services-dropbox',
   'services-ftp',
+  'services-gcs-grpc',
   'services-gdrive',
   'services-gridfs',
   'services-hdfs-native',
@@ -116,6 +117,7 @@ services-foyer = ["opendal/services-foyer"]
 services-fs = ["opendal/services-fs"]
 services-ftp = ["opendal/services-ftp"]
 services-gcs = ["opendal/services-gcs"]
+services-gcs-grpc = ["opendal/services-gcs-grpc"]
 services-gdrive = ["opendal/services-gdrive"]
 services-ghac = ["opendal/services-ghac"]
 services-github = [
@@ -198,7 +200,7 @@ doc = false
 name = "_opendal"
 
 [dependencies]
-asyncband = { version = "0.6" }
+asyncband = { version = "0.7.1", features = ["mutex"] }
 bytes = "1.10.1"
 futures = "0.3.28"
 jiff = { version = "0.2.15" }
@@ -207,12 +209,12 @@ opendal = { version = ">=0", path = "../../core", features = [
   "blocking",
   "layers-mime-guess",
 ] }
-pyo3 = { version = ">=0.29.1", features = [
+pyo3 = { version = "0.29.1", features = [
   "experimental-inspect",
   "generate-import-lib",
   "jiff-02",
 ] }
-pyo3-async-runtimes = { version = ">=0.29.0", features = ["tokio-runtime"] }
+pyo3-async-runtimes = { version = "0.29.0", features = ["tokio-runtime"] }
 tokio = "1"
 
 [profile.release]

@@ -189,6 +189,7 @@ impl Service for UpyunBackend {
     type Lister = oio::PageLister<UpyunLister>;
     type Deleter = oio::OneShotDeleter<UpyunDeleter>;
     type Copier = oio::OneShotCopier;
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -210,7 +211,10 @@ impl Service for UpyunBackend {
 
         match status {
             StatusCode::OK => Ok(RpCreateDir::default()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("CreateFolder")),
+                resp,
+            )),
         }
     }
 
@@ -221,7 +225,10 @@ impl Service for UpyunBackend {
 
         match status {
             StatusCode::OK => parse_info(resp.headers()).map(RpStat::new),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetFileInfo")),
+                resp,
+            )),
         }
     }
     fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
@@ -275,21 +282,34 @@ impl Service for UpyunBackend {
         ctx: &OperationContext,
         from: &str,
         to: &str,
-        _args: OpCopy,
-        _opts: OpCopier,
+        args: OpCopy,
     ) -> Result<Self::Copier> {
+        let backend = self.clone();
         let core = self.core.clone();
         let ctx = ctx.clone();
         let from = from.to_string();
         let to = to.to_string();
+        let source_content_length_hint = args.source_content_length_hint();
 
         Ok(oio::OneShotCopier::new(async move {
+            let source_size = match source_content_length_hint {
+                Some(size) => size,
+                None => backend
+                    .stat(&ctx, &from, OpStat::default())
+                    .await?
+                    .into_metadata()
+                    .content_length(),
+            };
+
             let resp = core.copy(&ctx, &from, &to).await?;
             let status = resp.status();
 
             match status {
-                StatusCode::OK => Ok(Metadata::default()),
-                _ => Err(parse_error(resp)),
+                StatusCode::OK => Ok(MetadataBuilder::file(source_size).build()),
+                _ => Err(parse_error(
+                    ErrorContext::new(ServiceOperation("CopyFile")),
+                    resp,
+                )),
             }
         }))
     }
@@ -307,7 +327,10 @@ impl Service for UpyunBackend {
 
         match status {
             StatusCode::OK => Ok(RpRename::default()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("MoveFile")),
+                resp,
+            )),
         }
     }
 

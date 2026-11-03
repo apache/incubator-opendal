@@ -734,6 +734,7 @@ impl<I: MetricsIntercept> Service for MetricsAccessor<I> {
     type Lister = MetricsWrapper<oio::Lister, I>;
     type Deleter = MetricsWrapper<oio::Deleter, I>;
     type Copier = MetricsWrapper<oio::Copier, I>;
+    type Composer = oio::Composer;
 
     fn info(&self) -> ServiceInfo {
         self.info.clone()
@@ -741,6 +742,10 @@ impl<I: MetricsIntercept> Service for MetricsAccessor<I> {
 
     fn capability(&self) -> Capability {
         self.inner.capability()
+    }
+
+    fn compose(&self, ctx: &OperationContext, to: &str, args: OpCompose) -> Result<Self::Composer> {
+        self.inner.compose(ctx, to, args)
     }
 
     async fn create_dir(
@@ -842,7 +847,6 @@ impl<I: MetricsIntercept> Service for MetricsAccessor<I> {
         from: &str,
         to: &str,
         args: OpCopy,
-        opts: OpCopier,
     ) -> Result<Self::Copier> {
         let labels = MetricLabels::new(self.info.clone(), Operation::Copy.into_static());
 
@@ -853,7 +857,7 @@ impl<I: MetricsIntercept> Service for MetricsAccessor<I> {
         let mut guard =
             ExecutingGuard::new_operation(self.interceptor.clone(), labels.clone(), start);
 
-        match self.inner.copy(ctx, from, to, args, opts.clone()) {
+        match self.inner.copy(ctx, from, to, args) {
             Ok(copier) => {
                 guard.defuse();
                 Ok(MetricsWrapper::new(

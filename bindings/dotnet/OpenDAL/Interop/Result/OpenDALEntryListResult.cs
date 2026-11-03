@@ -17,8 +17,9 @@
  * under the License.
  */
 
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
-using OpenDAL.Interop.Marshalling;
+using OpenDAL.Interop.NativeObject;
 using OpenDAL.Interop.Result.Abstractions;
 
 namespace OpenDAL.Interop.Result;
@@ -38,9 +39,39 @@ internal struct OpenDALEntryListResult : INativeValueResult<IReadOnlyList<Entry>
         return Error;
     }
 
-    public readonly IReadOnlyList<Entry> ToValue()
+    /// <summary>
+    /// Reads the native entry list and converts it into managed entries.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Thrown when the native list size exceeds <see cref="int.MaxValue"/>.</exception>
+    public readonly unsafe IReadOnlyList<Entry> ToValue()
     {
-        return EntryMarshaller.ToEntries(Ptr);
+        if (Ptr == IntPtr.Zero)
+        {
+            return Array.Empty<Entry>();
+        }
+
+        var payload = Unsafe.Read<OpenDALEntryList>((void*)Ptr);
+        if (payload.Len > int.MaxValue)
+        {
+            throw new InvalidOperationException("Entry list too large");
+        }
+
+        var count = (int)payload.Len;
+        var results = new List<Entry>(count);
+        if (payload.Entries == IntPtr.Zero)
+        {
+            return results;
+        }
+
+        var entries = new ReadOnlySpan<OpenDALEntry>((void*)payload.Entries, count);
+        for (var index = 0; index < count; index++)
+        {
+            ref readonly var entryPayload = ref entries[index];
+            var path = Utilities.ReadUtf8(entryPayload.Path);
+            results.Add(new Entry(path, entryPayload.Metadata.ToMetadata()));
+        }
+
+        return results;
     }
 
     public readonly void Release()

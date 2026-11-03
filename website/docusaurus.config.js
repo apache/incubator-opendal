@@ -28,11 +28,19 @@ const {
   getWebsiteSettings,
   orderByPathDepth,
 } = require("./config/site-helpers");
+const {
+  parseSpecificationFrontMatter,
+  remarkIncludeSpecification,
+} = require("./plugins/specifications-docs-plugin");
 
 const repoAddress = "https://github.com/apache/opendal";
 
 const { baseUrl, websiteNotLatest, websiteStaging, websiteVersion } =
   getWebsiteSettings();
+const localImages = require("./plugins/local-images")({
+  siteDir: __dirname,
+  baseUrl,
+});
 
 /** @type {import('@docusaurus/types').Config} */
 const config = {
@@ -55,6 +63,7 @@ const config = {
   onBrokenLinks: "throw",
   markdown: {
     format: "detect",
+    parseFrontMatter: parseSpecificationFrontMatter,
     hooks: {
       onBrokenMarkdownLinks: "throw",
     }
@@ -84,12 +93,18 @@ const config = {
           editUrl: "https://github.com/apache/opendal/tree/main/website/",
           showLastUpdateAuthor: true,
           showLastUpdateTime: true,
+          beforeDefaultRemarkPlugins: [remarkIncludeSpecification],
           remarkPlugins: [require("./plugins/remark-include-code")],
+          rehypePlugins: [localImages.rehype],
         },
         blog: {
           showReadingTime: true,
           editUrl: "https://github.com/apache/opendal/tree/main/website/",
           onUntruncatedBlogPosts: "warn",
+          rehypePlugins: [localImages.rehype],
+        },
+        pages: {
+          rehypePlugins: [localImages.rehype],
         },
         theme: {
           customCss: [
@@ -112,6 +127,10 @@ const config = {
   ],
 
   plugins: [
+    // Keep a single @docusaurus/theme-common instance so navbar hooks share
+    // the same React context as theme-classic providers under pnpm.
+    require.resolve("./plugins/theme-common-singleton-plugin"),
+    require.resolve("./plugins/specifications-docs-plugin"),
     [
       "@docusaurus/plugin-content-docs",
       {
@@ -120,6 +139,7 @@ const config = {
         routeBasePath: "community",
         sidebarPath: require.resolve("./community/sidebars.js"),
         editUrl: "https://github.com/apache/opendal/tree/main/website/",
+        rehypePlugins: [localImages.rehype],
       },
     ],
     [require.resolve("docusaurus-plugin-image-zoom"), {}],
@@ -142,8 +162,7 @@ const config = {
     require.resolve("docusaurus-lunr-search"),
     // Generates the /services section from data/services.json.
     require.resolve("./plugins/services-docs-plugin"),
-    // This plugin will download all images to local and rewrite the url in html.
-    require.resolve("./plugins/image-ssr-plugin"),
+    localImages.plugin,
     [
       "docusaurus-plugin-llms-builder",
       /** @type {import("docusaurus-plugin-llms-builder").PluginOptions} */
@@ -160,7 +179,7 @@ const config = {
             generateLLMsFullTxt: true,
             hooks: {
               "generate:prepare": (ctx) => {
-                addRustdocLlmSessions(ctx);
+                addRustdocLlmSessions(ctx, baseUrl);
               },
             },
             sessions: [

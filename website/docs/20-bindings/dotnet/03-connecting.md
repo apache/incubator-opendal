@@ -94,6 +94,16 @@ page under [Services](/services) for the exact keys and credential behavior.
 Avoid hard-coding secrets in source. Read them from the environment or a secret
 manager and pass them in when you build the operator.
 
+## Verify the connection
+
+`Check` lists the service root and throws `OpenDALException` when the service
+is unreachable or rejects the request. Call it at startup so wrong credentials
+or endpoints fail there instead of on the first real operation:
+
+```csharp
+await op.CheckAsync();
+```
+
 ## One operator per service and root
 
 An operator maps to one service, one root path, and one executor. To work with

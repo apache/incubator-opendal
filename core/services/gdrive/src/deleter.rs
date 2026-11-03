@@ -70,7 +70,10 @@ impl oio::OneShotDelete for GdriveDeleter {
                 return Ok(());
             }
             if resp.status() != StatusCode::OK {
-                return Err(parse_error(resp));
+                return Err(parse_error(
+                    ErrorContext::new(ServiceOperation("GetFile")),
+                    resp,
+                ));
             }
 
             let bs = resp.into_body().to_bytes();
@@ -99,7 +102,10 @@ impl oio::OneShotDelete for GdriveDeleter {
             return Ok(());
         }
         if resp.status() != StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("TrashFile")),
+                resp,
+            ));
         }
 
         if is_dir {

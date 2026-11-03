@@ -89,3 +89,8 @@ components. Their source code is available from the linked project pages:
 - `persy` 1.8.1 ([source](https://crates.io/crates/persy/1.8.1), [homepage](https://persy.rs)), licensed under MPL-2.0.
 
 The distribution includes the MPL-2.0 text in `LICENSE-MPL-2.0.txt`.
+
+The source distribution includes `.gitignore`, derived from
+[`VisualStudio.gitignore`](https://github.com/github/gitignore) and dedicated to
+the public domain under CC0-1.0. The distribution includes the CC0-1.0 text in
+`LICENSE-CC0-1.0.txt`.

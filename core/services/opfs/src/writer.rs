@@ -101,9 +101,7 @@ impl oio::Write for OpfsWriter {
         }
 
         // We cannot set LastModified here - stream does not have such metadata
-        let mut meta = Metadata::new(EntryMode::FILE);
-        meta.set_content_length(self.bytes_written);
-        Ok(meta)
+        Ok(MetadataBuilder::file(self.bytes_written).build())
     }
 
     async fn abort(&mut self) -> Result<()> {

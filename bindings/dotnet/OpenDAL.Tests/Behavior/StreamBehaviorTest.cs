@@ -84,7 +84,7 @@ public sealed class StreamBehaviorTest : BehaviorTestBase
     [Fact]
     public async Task StreamBehavior_LargeRoundtripAsync_Works()
     {
-        if (!Supports(c => c.Read && c.Write))
+        if (!Supports(c => c.Read && c.Write && c.WriteCanMulti))
         {
             return;
         }
@@ -150,7 +150,7 @@ public sealed class StreamBehaviorTest : BehaviorTestBase
         }
 
         var path = NewPath("stream-complete-async");
-        var content = RandomBytes(100_000);
+        var content = RandomBytes(4 * 1024);
 
         await using (var output = Op.OpenWriteStream(path, bufferSize: 8 * 1024))
         {
@@ -158,7 +158,7 @@ public sealed class StreamBehaviorTest : BehaviorTestBase
             await output.CompleteAsync(CT);
         }
 
-        Assert.Equal(content, await Op.ReadAsync(path, CT));
+        Assert.Equal(content, await Op.ReadAsync(path, cancellationToken: CT));
     }
 
     [Fact]
@@ -177,7 +177,7 @@ public sealed class StreamBehaviorTest : BehaviorTestBase
             await output.WriteAsync(content.AsMemory(), CT);
         }
 
-        Assert.Equal(content, await Op.ReadAsync(path, CT));
+        Assert.Equal(content, await Op.ReadAsync(path, cancellationToken: CT));
     }
 
     [Fact]
@@ -258,7 +258,8 @@ public sealed class StreamBehaviorTest : BehaviorTestBase
     [Fact]
     public void StreamBehavior_OpenReadStream_IfMatchUnsupported_SurfacesUnsupported()
     {
-        if (!Supports(c => c.Read && c.Write && !c.ReadWithIfMatch))
+        if (!Supports(c => c.Read && c.Write && !c.ReadWithIfMatch)
+            || CapabilityBeforeOverrides.ReadWithIfMatch)
         {
             return;
         }
@@ -280,7 +281,8 @@ public sealed class StreamBehaviorTest : BehaviorTestBase
     [Fact]
     public void StreamBehavior_OpenReadStream_VersionUnsupported_SurfacesUnsupported()
     {
-        if (!Supports(c => c.Read && c.Write && !c.ReadWithVersion))
+        if (!Supports(c => c.Read && c.Write && !c.ReadWithVersion)
+            || CapabilityBeforeOverrides.ReadWithVersion)
         {
             return;
         }

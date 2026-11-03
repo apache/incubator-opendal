@@ -23,8 +23,21 @@ use std::fmt::{self, Display, Formatter};
 use std::str::FromStr;
 use toml_edit::{DocumentMut, Item};
 
-pub fn validate_release_versions(packages: &[Package]) -> anyhow::Result<()> {
-    let baseline = latest_final_release_tag()?;
+pub fn validate_release_versions(
+    packages: &[Package],
+    baseline: Option<&str>,
+) -> anyhow::Result<()> {
+    let baseline = match baseline {
+        Some(tag) => {
+            let version = Version::parse(tag.strip_prefix('v').unwrap_or(tag))?;
+            anyhow::ensure!(
+                version.pre.is_empty() && version.build.is_empty(),
+                "baseline must be a final release"
+            );
+            tag.to_string()
+        }
+        None => latest_final_release_tag()?,
+    };
     let mut violations = Vec::new();
 
     for package in packages {
@@ -48,6 +61,39 @@ pub fn validate_release_versions(packages: &[Package]) -> anyhow::Result<()> {
 
     println!("release version targets are compatible with changes since {baseline}");
     Ok(())
+}
+
+/// Raise integration versions when their public dependencies cross compatibility lines.
+pub(super) fn prepare_public_dependencies(
+    packages: &mut [Package],
+    baseline: &str,
+) -> anyhow::Result<std::collections::BTreeMap<String, String>> {
+    let mut reasons = std::collections::BTreeMap::new();
+    loop {
+        let mut targets = std::collections::BTreeMap::new();
+        for package in packages.iter() {
+            if !package.public_compat_dependencies().is_empty()
+                && let Some(violation) = validate_package(package, baseline)?
+            {
+                reasons.insert(
+                    package.name().to_string(),
+                    violation
+                        .changes
+                        .iter()
+                        .map(|change| {
+                            format!("{}: {} -> {}", change.name, change.previous, change.target)
+                        })
+                        .collect::<Vec<_>>()
+                        .join("; "),
+                );
+                targets.insert(package.name().to_string(), violation.required);
+            }
+        }
+        if targets.is_empty() {
+            return Ok(reasons);
+        }
+        super::package::apply_versions(packages, &targets);
+    }
 }
 
 fn validate_package(package: &Package, baseline: &str) -> anyhow::Result<Option<Violation>> {
@@ -81,7 +127,7 @@ fn validate_package(package: &Package, baseline: &str) -> anyhow::Result<Option<
     ))
 }
 
-fn latest_final_release_tag() -> anyhow::Result<String> {
+pub(super) fn latest_final_release_tag() -> anyhow::Result<String> {
     let mut cmd = find_command("git", workspace_dir());
     cmd.args([
         "describe",
@@ -292,7 +338,7 @@ fn same_cargo_compatibility_line(previous: &Version, target: &Version) -> bool {
     previous.patch == target.patch
 }
 
-fn next_incompatible_version(version: &Version) -> Version {
+pub(super) fn next_incompatible_version(version: &Version) -> Version {
     if version.major != 0 {
         Version::new(version.major + 1, 0, 0)
     } else if version.minor != 0 {

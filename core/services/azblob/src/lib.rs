@@ -46,3 +46,13 @@ pub mod writer;
 
 pub use backend::AzblobBuilder as Azblob;
 pub use config::AzblobConfig;
+
+/// Re-export of the [`reqsign_azure_storage`] crate that this service signs
+/// requests with.
+///
+/// [`Azblob::credential_provider_chain`] takes a chain of providers for
+/// [`reqsign_azure_storage::Credential`]. Implement providers against this
+/// re-export and [`opendal_core::reqsign_core`] rather than depending on the
+/// `reqsign` crates directly, so that the types always match the ones this
+/// service is built with.
+pub use reqsign_azure_storage;

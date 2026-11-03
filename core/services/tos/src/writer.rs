@@ -47,19 +47,24 @@ impl TosWriter {
     }
 
     fn parse_header_into_meta(path: &str, headers: &http::HeaderMap) -> Result<Metadata> {
-        let mut meta = Metadata::new(EntryMode::from_path(path));
+        let mut meta = if path.ends_with('/') {
+            MetadataBuilder::dir()
+        } else {
+            MetadataBuilder::unknown()
+        };
         if let Some(etag) = tos_parse_etag(headers)? {
-            meta.set_etag(etag);
+            meta.etag(etag);
         }
         if let Some(version) = parse_header_to_str(headers, X_TOS_VERSION_ID)? {
-            meta.set_version(version);
+            meta.version(version);
         }
-        if let Some(value) =
-            parse_header_to_str(headers, X_TOS_OBJECT_SIZE)?.and_then(|size| size.parse().ok())
+        if !path.ends_with('/')
+            && let Some(value) =
+                parse_header_to_str(headers, X_TOS_OBJECT_SIZE)?.and_then(|size| size.parse().ok())
         {
-            meta.set_content_length(value);
+            meta.set_file(value);
         }
-        Ok(meta)
+        Ok(meta.build())
     }
 }
 
@@ -77,7 +82,10 @@ impl oio::MultipartWrite for TosWriter {
 
         match status {
             StatusCode::CREATED | StatusCode::OK => Ok(meta),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("PutObject")),
+                resp,
+            )),
         }
     }
 
@@ -97,7 +105,10 @@ impl oio::MultipartWrite for TosWriter {
 
                 Ok(result.upload_id)
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("CreateMultipartUpload")),
+                resp,
+            )),
         }
     }
 
@@ -135,7 +146,10 @@ impl oio::MultipartWrite for TosWriter {
                     size: None,
                 })
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("UploadPart")),
+                resp,
+            )),
         }
     }
 
@@ -158,7 +172,8 @@ impl oio::MultipartWrite for TosWriter {
             .await?;
 
         let status = resp.status();
-        let mut meta = TosWriter::parse_header_into_meta(&self.path, resp.headers())?;
+        let mut meta =
+            TosWriter::parse_header_into_meta(&self.path, resp.headers())?.into_builder();
 
         match status {
             StatusCode::OK => {
@@ -171,15 +186,18 @@ impl oio::MultipartWrite for TosWriter {
                 if !ret.etag.is_empty() {
                     // CompleteMultipartUpload response wraps ETag in quotes:
                     // https://www.volcengine.com/docs/6349/74868
-                    meta.set_etag(ret.etag.trim_matches('"'));
+                    meta.etag(ret.etag.trim_matches('"'));
                 }
                 if !ret.version_id.is_empty() {
-                    meta.set_version(&ret.version_id);
+                    meta.version(&ret.version_id);
                 }
 
-                Ok(meta)
+                Ok(meta.build())
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("CompleteMultipartUpload")),
+                resp,
+            )),
         }
     }
 
@@ -191,7 +209,10 @@ impl oio::MultipartWrite for TosWriter {
 
         match resp.status() {
             StatusCode::NO_CONTENT => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("AbortMultipartUpload")),
+                resp,
+            )),
         }
     }
 }

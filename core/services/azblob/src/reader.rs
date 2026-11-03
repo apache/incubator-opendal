@@ -53,10 +53,7 @@ impl oio::StreamRead for AzblobReader {
         let path = self.path.as_str();
         let args = self.args.clone();
         let error_ctx = ErrorContext::new(ServiceOperation("GetBlob"))
-            .with_if_match(args.if_match().is_some())
-            .with_if_none_match(args.if_none_match().is_some())
-            .with_if_modified_since(args.if_modified_since().is_some())
-            .with_if_unmodified_since(args.if_unmodified_since().is_some());
+            .with_caller_condition(args.is_conditional());
         let resp = backend
             .core
             .azblob_get_blob(&self.ctx, path, range, &args)

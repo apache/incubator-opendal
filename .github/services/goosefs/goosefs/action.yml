@@ -24,10 +24,12 @@ description: "Behavior test for GooseFS (single-container / local profile)"
 # `{service=goosefs, setup=goosefs, feature=services-goosefs}`. No changes
 # to workflow YAMLs are required.
 #
-# The fixture image `goosefs.tencentcloudcr.com/goosefs/repo:v2.1.0` is
-# public (no authentication required), so this action does NOT pull any
+# The fixture image `ghcr.io/tencent/tencent-goosefs-rust-sdk/goosefs:v2.0.0`
+# is public (no authentication required), so this action does NOT pull any
 # 1Password secret and therefore runs on every PR (plan.py filters out
 # actions that reference `op:` URLs when GITHUB_HAS_SECRETS is not set).
+# Override with GOOSEFS_IMAGE (for example TCR
+# goosefs.tencentcloudcr.com/goosefs/repo:v2.1.0.1).
 runs:
   using: "composite"
   steps:
@@ -35,7 +37,14 @@ runs:
       shell: bash
       working-directory: fixtures/goosefs
       run: |
-        docker compose -f docker-compose-goosefs.yml up -d --wait
+        set -euo pipefail
+        IMAGE="${GOOSEFS_IMAGE:-ghcr.io/tencent/tencent-goosefs-rust-sdk/goosefs:v2.0.0}"
+        export GOOSEFS_IMAGE="${IMAGE}"
+        echo "GOOSEFS_IMAGE=${IMAGE}"
+        # Bound the wait so an unhealthy fixture fails fast instead of
+        # hanging the job indefinitely.
+        docker compose -f docker-compose-goosefs.yml up -d --wait \
+          --wait-timeout "${GOOSEFS_WAIT_TIMEOUT:-300}"
     - name: Set environment variables
       shell: bash
       run: |

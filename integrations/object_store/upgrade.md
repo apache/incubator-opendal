@@ -1,3 +1,16 @@
+# Upgrade to v0.60
+
+## Upgrade OpenDAL to v0.59
+
+`object_store_opendal` 0.60 uses `opendal` 0.59 while continuing to implement the `object_store` 0.14 API. Update both OpenDAL dependencies together when they appear in the same dependency graph:
+
+```diff
+-opendal = "0.58"
+-object_store_opendal = "0.59"
++opendal = "0.59"
++object_store_opendal = "0.60"
+```
+
 # Upgrade to v0.59
 
 ## Upgrade `object_store` to v0.14

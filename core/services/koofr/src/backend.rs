@@ -27,9 +27,9 @@ use log::debug;
 use super::KOOFR_SCHEME;
 use super::config::KoofrConfig;
 use super::core::File;
-use super::core::KoofrCore;
 use super::core::KoofrSigner;
 use super::core::parse_error;
+use super::core::{ErrorContext, KoofrCore};
 use super::deleter::KoofrDeleter;
 use super::lister::KoofrLister;
 use super::reader::*;
@@ -190,6 +190,7 @@ impl Service for KoofrBackend {
     type Lister = oio::PageLister<KoofrLister>;
     type Deleter = oio::OneShotDeleter<KoofrDeleter>;
     type Copier = oio::OneShotCopier;
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -231,15 +232,21 @@ impl Service for KoofrBackend {
                     EntryMode::FILE
                 };
 
-                let mut md = Metadata::new(mode);
+                let mut md = if mode == EntryMode::FILE {
+                    MetadataBuilder::file(file.size)
+                } else {
+                    MetadataBuilder::dir()
+                };
 
-                md.set_content_length(file.size)
-                    .set_content_type(&file.content_type)
-                    .set_last_modified(Timestamp::from_millisecond(file.modified)?);
+                md.content_type(&file.content_type)
+                    .last_modified(Timestamp::from_millisecond(file.modified)?);
 
-                Ok(RpStat::new(md))
+                Ok(RpStat::new(md.build()))
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("FilesInfo")),
+                resp,
+            )),
         }
     }
     fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
@@ -292,33 +299,49 @@ impl Service for KoofrBackend {
         ctx: &OperationContext,
         from: &str,
         to: &str,
-        _args: OpCopy,
-        _opts: OpCopier,
+        args: OpCopy,
     ) -> Result<Self::Copier> {
+        let backend = self.clone();
         let core = self.core.clone();
         let ctx = ctx.clone();
         let from = from.to_string();
         let to = to.to_string();
+        let source_content_length_hint = args.source_content_length_hint();
 
         Ok(oio::OneShotCopier::new(async move {
+            let source_size = match source_content_length_hint {
+                Some(size) => size,
+                None => backend
+                    .stat(&ctx, &from, OpStat::default())
+                    .await?
+                    .into_metadata()
+                    .content_length(),
+            };
+
             core.ensure_dir_exists(&ctx, &to).await?;
             if from == to {
-                Ok(Metadata::default())
+                Ok(MetadataBuilder::file(source_size).build())
             } else {
                 let resp = core.remove(&ctx, &to).await?;
 
                 let status = resp.status();
 
                 if status != StatusCode::OK && status != StatusCode::NOT_FOUND {
-                    Err(parse_error(resp))
+                    Err(parse_error(
+                        ErrorContext::new(ServiceOperation("FilesRemove")),
+                        resp,
+                    ))
                 } else {
                     let resp = core.copy(&ctx, &from, &to).await?;
 
                     let status = resp.status();
 
                     match status {
-                        StatusCode::OK => Ok(Metadata::default()),
-                        _ => Err(parse_error(resp)),
+                        StatusCode::OK => Ok(MetadataBuilder::file(source_size).build()),
+                        _ => Err(parse_error(
+                            ErrorContext::new(ServiceOperation("FilesCopy")),
+                            resp,
+                        )),
                     }
                 }
             }
@@ -343,7 +366,10 @@ impl Service for KoofrBackend {
         let status = resp.status();
 
         if status != StatusCode::OK && status != StatusCode::NOT_FOUND {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("FilesRemove")),
+                resp,
+            ));
         }
 
         let resp = self.core.move_object(ctx, from, to).await?;
@@ -352,7 +378,10 @@ impl Service for KoofrBackend {
 
         match status {
             StatusCode::OK => Ok(RpRename::default()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("FilesMove")),
+                resp,
+            )),
         }
     }
 

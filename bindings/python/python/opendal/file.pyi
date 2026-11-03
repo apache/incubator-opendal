@@ -99,6 +99,13 @@ class AsyncFile:
             The reference point for the offset.
             0: start of file (default); 1: current position; 2: end of file.
 
+        Notes
+        -----
+        Unbounded readable files allow non-negative positions beyond EOF. Reads
+        from those positions return empty bytes when the backing service reports
+        an unsatisfied unbounded range. Other service errors propagate. Explicit
+        bounded views reject positions beyond their range.
+
         Returns
         -------
         coroutine
@@ -156,6 +163,9 @@ class File:
     A file-like object for reading and writing data.
 
     Created by the `open` method of the `Operator` class.
+
+    Storage I/O releases the Python GIL while waiting. Concurrent operations on
+    the same file are rejected; use separate files for I/O from multiple threads.
     """
 
     def __enter__(self, /) -> File: ...
@@ -192,6 +202,8 @@ class File:
 
         Notes
         -----
+        Passes pending input to the core writer. Storage chunks can remain
+        buffered until more data arrives or `close()` completes the write.
         Is a no-op if the file is not `writable`.
         """
     def read(self, /, size: int | None = None) -> bytes:
@@ -270,6 +282,13 @@ class File:
         whence : int, optional
             The reference point for the offset.
             0: start of file (default); 1: current position; 2: end of file.
+
+        Notes
+        -----
+        Unbounded readable files allow non-negative positions beyond EOF. Reads
+        from those positions return empty bytes when the backing service reports
+        an unsatisfied unbounded range. Other service errors propagate. Explicit
+        bounded views reject positions beyond their range.
 
         Returns
         -------

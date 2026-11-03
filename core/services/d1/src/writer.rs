@@ -50,8 +50,12 @@ impl oio::Write for D1Writer {
         let length = buf.len() as u64;
         self.core.set(&self.ctx, &self.path, buf).await?;
 
-        let meta = Metadata::new(EntryMode::from_path(&self.path)).with_content_length(length);
-        Ok(meta)
+        let metadata = if self.path.ends_with('/') {
+            MetadataBuilder::dir()
+        } else {
+            MetadataBuilder::file(length)
+        };
+        Ok(metadata.build())
     }
 
     async fn abort(&mut self) -> Result<()> {

@@ -17,11 +17,9 @@
  * under the License.
  */
 
-#include <algorithm>
-#include <iterator>
-
 #include "lib.rs.h"
 #include "opendal.hpp"
+#include "utils/rust_converter.hpp"
 
 namespace opendal {
 
@@ -41,10 +39,7 @@ Writer::Writer(Writer &&other) noexcept : writer_{other.writer_} {
 Writer::~Writer() noexcept { Destroy(); }
 
 void Writer::Write(std::string_view data) {
-  rust::Vec<uint8_t> bytes;
-  bytes.reserve(data.size());
-  std::copy(data.begin(), data.end(), std::back_inserter(bytes));
-  writer_->write(bytes);
+  writer_->write(utils::rust_slice<const uint8_t>(data));
 }
 
 void Writer::Flush() { writer_->flush(); }

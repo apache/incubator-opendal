@@ -231,7 +231,10 @@ impl oio::Write for GhacWriterV1 {
             .ghac_v1_write(&self.ctx, &self.url, size, offset, bs)
             .await?;
         if !resp.status().is_success() {
-            return Err(parse_error(resp).with_operation("Backend::ghac_upload"));
+            return Err(
+                parse_error(ErrorContext::new(ServiceOperation("UploadChunk")), resp)
+                    .with_operation("Backend::ghac_upload"),
+            );
         }
         self.size += size;
         Ok(())
@@ -245,7 +248,11 @@ impl oio::Write for GhacWriterV1 {
         self.core
             .ghac_finalize_upload(&self.ctx, &self.path, &self.url, self.size)
             .await?;
-        Ok(Metadata::default().with_content_length(self.size))
+        Ok({
+            let mut metadata = MetadataBuilder::unknown();
+            metadata.set_file(self.size);
+            metadata.build()
+        })
     }
 }
 
@@ -273,7 +280,11 @@ impl oio::Write for GhacWriterV2 {
         self.core
             .ghac_finalize_upload(&self.ctx, &self.path, &self.url, self.size)
             .await?;
-        Ok(Metadata::default().with_content_length(self.size))
+        Ok({
+            let mut metadata = MetadataBuilder::unknown();
+            metadata.set_file(self.size);
+            metadata.build()
+        })
     }
 
     async fn abort(&mut self) -> Result<()> {

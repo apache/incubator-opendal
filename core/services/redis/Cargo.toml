@@ -37,10 +37,10 @@ native-tls = ["redis/tokio-native-tls-comp"]
 rustls = ["redis/tokio-rustls-comp"]
 
 [dependencies]
+asyncband = { workspace = true, features = ["pool"] }
 bytes = { workspace = true }
-fastpool = "1.0.2"
 http = { workspace = true }
-opendal-core = { path = "../../core", version = "0.58.2", default-features = false }
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false }
 redis = { version = "1.2", features = [
   "cluster-async",
   "tokio-comp",

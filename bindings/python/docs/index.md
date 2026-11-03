@@ -2,8 +2,22 @@
 
 ## Installation
 
+Install from PyPI:
+
 ```bash
 pip install opendal
+```
+
+Or install from [Anaconda main](https://anaconda.org/main/opendal):
+
+```bash
+conda install opendal
+```
+
+Or install from [conda-forge](https://anaconda.org/conda-forge/opendal):
+
+```bash
+conda install conda-forge::opendal
 ```
 
 ## Local Usage
@@ -160,10 +174,12 @@ Async API equivalent:
 ```python
 import asyncio
 
+
 async def main():
     op = opendal.AsyncOperator("fs", root="/tmp")
     await op.write("test.txt", b"Hello World")
     print(await op.read("test.txt"))
+
 
 asyncio.run(main())
 ```

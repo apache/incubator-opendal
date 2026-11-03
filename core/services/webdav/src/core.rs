@@ -140,7 +140,10 @@ impl WebdavCore {
 
         let resp = ctx.http_transport().send(req).await?;
         if !resp.status().is_success() {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("Propfind")),
+                resp,
+            ));
         }
 
         let bs = resp.into_body();
@@ -155,15 +158,15 @@ impl WebdavCore {
             )
         })?;
 
-        let mut metadata = parse_propstats(&propfind_resp.propstat)?;
+        let mut metadata = parse_propstats(&propfind_resp.propstat)?.into_builder();
 
         // Parse user metadata from the raw XML response using configured namespace
         let user_metadata = parse_user_metadata_from_xml(&xml_str, &self.user_metadata_uri);
         if !user_metadata.is_empty() {
-            metadata = metadata.with_user_metadata(user_metadata);
+            metadata.user_metadata(user_metadata);
         }
 
-        Ok(metadata)
+        Ok(metadata.build())
     }
 
     pub async fn webdav_get(
@@ -324,8 +327,6 @@ impl WebdavCore {
         from: &str,
         to: &str,
     ) -> Result<Response<Buffer>> {
-        // Check if source file exists.
-        let _ = self.webdav_stat(ctx, from).await?;
         // Make sure target's dir is exist.
         self.webdav_mkcol(ctx, get_parent(to)).await?;
 
@@ -358,6 +359,7 @@ impl WebdavCore {
         ctx: &OperationContext,
         from: &str,
         to: &str,
+        if_not_exists: bool,
     ) -> Result<Response<Buffer>> {
         // Check if source file exists.
         let _ = self.webdav_stat(ctx, from).await?;
@@ -377,7 +379,7 @@ impl WebdavCore {
         }
 
         req = req.header(HEADER_DESTINATION, target_uri);
-        req = req.header(HEADER_OVERWRITE, "T");
+        req = req.header(HEADER_OVERWRITE, if if_not_exists { "F" } else { "T" });
 
         let req = req
             .extension(Operation::Rename)
@@ -495,7 +497,10 @@ impl WebdavCore {
 
                 Ok(())
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Mkcol")),
+                resp,
+            )),
         }
     }
 }
@@ -623,10 +628,10 @@ pub fn parse_user_metadata_from_xml(xml: &str, namespace_uri: &str) -> HashMap<S
             Ok(Event::Start(ref e)) => {
                 // Extract namespace declarations from attributes
                 for attr in e.attributes().flatten() {
-                    let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
+                    let key = attr.key.as_ref().to_string();
                     if key.starts_with("xmlns:") {
                         let prefix = key.strip_prefix("xmlns:").unwrap_or("").to_string();
-                        let uri = String::from_utf8_lossy(&attr.value).to_string();
+                        let uri = attr.value.to_string();
                         if uri == namespace_uri && !target_prefixes.contains(&prefix) {
                             target_prefixes.push(prefix.clone());
                         }
@@ -635,7 +640,7 @@ pub fn parse_user_metadata_from_xml(xml: &str, namespace_uri: &str) -> HashMap<S
                 }
 
                 // Check if this element is in our target namespace
-                let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                let name = e.name().as_ref().to_string();
                 if let Some(colon_pos) = name.find(':') {
                     let prefix = &name[..colon_pos];
                     let local_name = &name[colon_pos + 1..];
@@ -648,10 +653,10 @@ pub fn parse_user_metadata_from_xml(xml: &str, namespace_uri: &str) -> HashMap<S
             Ok(Event::Empty(ref e)) => {
                 // Extract namespace declarations from attributes
                 for attr in e.attributes().flatten() {
-                    let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
+                    let key = attr.key.as_ref().to_string();
                     if key.starts_with("xmlns:") {
                         let prefix = key.strip_prefix("xmlns:").unwrap_or("").to_string();
-                        let uri = String::from_utf8_lossy(&attr.value).to_string();
+                        let uri = attr.value.to_string();
                         if uri == namespace_uri && !target_prefixes.contains(&prefix) {
                             target_prefixes.push(prefix.clone());
                         }
@@ -660,7 +665,7 @@ pub fn parse_user_metadata_from_xml(xml: &str, namespace_uri: &str) -> HashMap<S
                 }
 
                 // For Empty events (self-closing tags), immediately insert with empty value
-                let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                let name = e.name().as_ref().to_string();
                 if let Some(colon_pos) = name.find(':') {
                     let prefix = &name[..colon_pos];
                     let local_name = &name[colon_pos + 1..];
@@ -671,13 +676,11 @@ pub fn parse_user_metadata_from_xml(xml: &str, namespace_uri: &str) -> HashMap<S
             }
             Ok(Event::Text(ref e)) if current_prop_key.is_some() => {
                 // Text content - add directly (no escaping needed)
-                let text_str = String::from_utf8_lossy(e.as_ref());
-                current_prop_value.push_str(&text_str);
+                current_prop_value.push_str(e.as_ref());
             }
             Ok(Event::GeneralRef(ref e)) if current_prop_key.is_some() => {
                 // Handle XML entity references (e.g., &lt; &gt; &amp; &quot; &apos;)
-                let entity_name = String::from_utf8_lossy(e.as_ref());
-                let decoded = match entity_name.as_ref() {
+                let decoded = match e.as_ref() {
                     "lt" => "<",
                     "gt" => ">",
                     "amp" => "&",
@@ -688,7 +691,7 @@ pub fn parse_user_metadata_from_xml(xml: &str, namespace_uri: &str) -> HashMap<S
                 current_prop_value.push_str(decoded);
             }
             Ok(Event::End(ref e)) => {
-                let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                let name = e.name().as_ref().to_string();
                 if let Some(colon_pos) = name.find(':') {
                     let prefix = &name[..colon_pos];
                     let local_name = &name[colon_pos + 1..];
@@ -730,7 +733,7 @@ pub fn check_proppatch_response(xml: &str) -> Result<()> {
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => {
-                let name = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
+                let name = e.name().as_ref().to_lowercase();
                 // Match status element regardless of namespace prefix
                 if name.ends_with(":status") || name == "status" {
                     in_status = true;
@@ -738,11 +741,10 @@ pub fn check_proppatch_response(xml: &str) -> Result<()> {
                 }
             }
             Ok(Event::Text(ref e)) if in_status => {
-                let text_str = String::from_utf8_lossy(e.as_ref());
-                status_text.push_str(&text_str);
+                status_text.push_str(e.as_ref());
             }
             Ok(Event::End(ref e)) => {
-                let name = String::from_utf8_lossy(e.name().as_ref()).to_lowercase();
+                let name = e.name().as_ref().to_lowercase();
                 if name.ends_with(":status") || name == "status" {
                     // Parse status code from "HTTP/1.1 XXX Description"
                     if let Some(code_str) = status_text.split_whitespace().nth(1)
@@ -823,21 +825,26 @@ pub fn parse_propstat(propstat: &Propstat) -> Result<Metadata> {
     } else {
         EntryMode::FILE
     };
-    let mut m = Metadata::new(mode);
-
-    if let Some(v) = getcontentlength {
-        let content_length = v.parse::<u64>().map_err(|err| {
-            Error::new(ErrorKind::Unexpected, "parse webdav content length").set_source(err)
+    let mut m = if mode == EntryMode::FILE {
+        let content_length = getcontentlength.as_ref().ok_or_else(|| {
+            Error::new(
+                ErrorKind::Unexpected,
+                "webdav response does not contain file content length",
+            )
         })?;
-        m.set_content_length(content_length);
-    }
+        MetadataBuilder::file(content_length.parse::<u64>().map_err(|err| {
+            Error::new(ErrorKind::Unexpected, "parse webdav content length").set_source(err)
+        })?)
+    } else {
+        MetadataBuilder::dir()
+    };
 
     if let Some(v) = getcontenttype {
-        m.set_content_type(v);
+        m.content_type(v);
     }
 
     if let Some(v) = getetag {
-        m.set_etag(v);
+        m.etag(v);
     }
 
     // https://www.rfc-editor.org/rfc/rfc4918#section-14.18
@@ -847,10 +854,10 @@ pub fn parse_propstat(propstat: &Propstat) -> Result<Metadata> {
             "propfind response missing getlastmodified",
         ));
     };
-    m.set_last_modified(Timestamp::parse_rfc2822(getlastmodified)?);
+    m.last_modified(Timestamp::parse_rfc2822(getlastmodified)?);
 
     // the storage services have returned all the properties
-    Ok(m)
+    Ok(m.build())
 }
 
 pub fn parse_propstats(propstats: &[Propstat]) -> Result<Metadata> {
@@ -1100,11 +1107,12 @@ mod tests {
                     resourcetype: ResourceTypeContainer::default(),
                 },
             },
-            new_propstat("HTTP/1.1 200 OK", None),
+            new_propstat("HTTP/1.1 200 OK", Some("0")),
         ];
 
         let meta = parse_propstats(&propstats).unwrap();
         assert!(meta.is_file());
+        assert_eq!(meta.content_length(), 0);
     }
 
     #[test]
@@ -1622,52 +1630,99 @@ mod tests {
 
         assert!(check_proppatch_response(xml).is_ok());
     }
-}
 
-mod error {
-    use http::Response;
-    use http::StatusCode;
+    #[test]
+    fn test_parse_error_maps_missing_if_match_to_not_found() {
+        let resp = Response::builder()
+            .status(StatusCode::PRECONDITION_FAILED)
+            .body(Buffer::from(
+                "An If-Match header was specified and the resource did not exist",
+            ))
+            .unwrap();
 
-    use opendal_core::raw::*;
-    use opendal_core::*;
+        let err = parse_error(
+            ErrorContext::new(ServiceOperation("Get")).with_if_match(true),
+            resp,
+        );
+        assert_eq!(err.kind(), ErrorKind::NotFound);
+    }
 
-    /// Parse error response into Error.
-    pub(crate) fn parse_error(resp: Response<Buffer>) -> Error {
-        let (parts, body) = resp.into_parts();
-        let bs = body.to_bytes();
+    #[test]
+    fn test_parse_error_preserves_etag_mismatch() {
+        let resp = Response::builder()
+            .status(StatusCode::PRECONDITION_FAILED)
+            .body(Buffer::from("The ETag did not match"))
+            .unwrap();
 
-        let (kind, retryable) = match parts.status {
-            StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
-            // Some services (like owncloud) return 403 while file locked.
-            StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, true),
-            // RFC 7232: 412 means an If-Match / If-Unmodified-Since
-            // precondition failed; 304 means an If-None-Match /
-            // If-Modified-Since precondition matched. Surface both as
-            // ConditionNotMatch so callers can branch on it.
-            StatusCode::PRECONDITION_FAILED | StatusCode::NOT_MODIFIED => {
-                (ErrorKind::ConditionNotMatch, false)
-            }
-            // Allowing retry for resource locked.
-            StatusCode::LOCKED => (ErrorKind::Unexpected, true),
-            StatusCode::INTERNAL_SERVER_ERROR
-            | StatusCode::BAD_GATEWAY
-            | StatusCode::SERVICE_UNAVAILABLE
-            | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
-            _ => (ErrorKind::Unexpected, false),
-        };
-
-        let message = String::from_utf8_lossy(&bs);
-
-        let mut err = Error::new(kind, message);
-
-        err = with_error_response_context(err, parts);
-
-        if retryable {
-            err = err.set_temporary();
-        }
-
-        err
+        let err = parse_error(
+            ErrorContext::new(ServiceOperation("Get")).with_if_match(true),
+            resp,
+        );
+        assert_eq!(err.kind(), ErrorKind::ConditionNotMatch);
     }
 }
 
-pub(super) use error::*;
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+    if_match: bool,
+}
+
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self {
+            service_operation,
+            if_match: false,
+        }
+    }
+
+    pub(crate) const fn with_if_match(mut self, if_match: bool) -> Self {
+        self.if_match = if_match;
+        self
+    }
+}
+
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
+    let (parts, body) = resp.into_parts();
+    let bs = body.to_bytes();
+
+    let message = String::from_utf8_lossy(&bs);
+
+    let (kind, retryable) = match parts.status {
+        StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
+        // Some services (like owncloud) return 403 while file locked.
+        StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, true),
+        // RFC 7232: 412 means an If-Match / If-Unmodified-Since
+        // precondition failed; 304 means an If-None-Match /
+        // If-Modified-Since precondition matched. Surface both as
+        // ConditionNotMatch so callers can branch on it.
+        StatusCode::PRECONDITION_FAILED
+            if ctx.if_match && message.contains("resource did not exist") =>
+        {
+            (ErrorKind::NotFound, false)
+        }
+        StatusCode::PRECONDITION_FAILED | StatusCode::NOT_MODIFIED => {
+            (ErrorKind::ConditionNotMatch, false)
+        }
+        // Allowing retry for resource locked.
+        StatusCode::LOCKED => (ErrorKind::Unexpected, true),
+        StatusCode::INTERNAL_SERVER_ERROR
+        | StatusCode::BAD_GATEWAY
+        | StatusCode::SERVICE_UNAVAILABLE
+        | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
+        _ => (ErrorKind::Unexpected, false),
+    };
+
+    let mut err = Error::new(kind, message);
+
+    err = err.with_context("service_operation", ctx.service_operation.0);
+    err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
+
+    err
+}

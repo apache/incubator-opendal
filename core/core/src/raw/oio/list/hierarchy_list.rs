@@ -105,8 +105,9 @@ impl<P> HierarchyLister<P> {
                 path.to_string()
             };
 
-            e.set_path(&path);
-            e.set_mode(EntryMode::DIR);
+            let mut builder = e.metadata().clone().into_builder();
+            builder.set_dir();
+            *e = oio::Entry::with(path.clone(), builder.build());
             self.visited.insert(path);
 
             return true;

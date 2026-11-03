@@ -56,6 +56,11 @@ pub enum ErrorKind {
     Unsupported,
 
     /// The config for this service is invalid.
+    ///
+    /// OpenDAL also returns this kind for an invalid option value or
+    /// combination, for example `if_not_changed` metadata that contains no
+    /// usable version or ETag, or a restore `if_not_exists` without a
+    /// restore version.
     ConfigInvalid,
     /// The given path is not found.
     NotFound,
@@ -73,14 +78,24 @@ pub enum ErrorKind {
     IsSameFile,
     /// A condition supplied through the OpenDAL operation evaluated to false.
     ///
-    /// The condition can originate from options such as `if_match`, `if_none_match`,
-    /// or `if_not_exists`.
+    /// Options such as `if_match`, `if_not_exists`, and `if_not_changed`
+    /// produce this error. It is returned only for conditions the caller
+    /// supplied: a service-side conflict unrelated to such a condition
+    /// returns [`ErrorKind::Conflict`], and observing a missing file with
+    /// `stat` or `read` returns [`ErrorKind::NotFound`] regardless of
+    /// conditions.
+    /// See the [conditional operation specification][crate::docs::specs::conditional_operations]
+    /// for its portable error semantics.
     ConditionNotMatch,
     /// The range of the content is not satisfied.
     ///
     /// OpenDAL returns this error to indicate that the range of the read request is not satisfied.
     RangeNotSatisfied,
     /// The operation conflicts with the current or transitional state of the resource.
+    ///
+    /// This covers conflicts the service reports on its own; a false
+    /// condition supplied through OpenDAL options returns
+    /// [`ErrorKind::ConditionNotMatch`] instead.
     ///
     /// This error kind does not indicate whether retrying the same operation is safe.
     /// Inspect the error's retry status for that decision.

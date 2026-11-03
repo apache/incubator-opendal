@@ -51,7 +51,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install ninja-build valgrind doxygen
+          sudo apt-get install -y ninja-build valgrind doxygen
 
       - name: Setup Rust toolchain
         uses: ./.github/actions/setup

@@ -36,7 +36,7 @@ async-trait = "0.1"
 bytes = { workspace = true }
 http = { workspace = true }
 log = { workspace = true }
-opendal-core = { path = "../../core", version = "0.58.2", default-features = false, features = [
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false, features = [
   "reqsign",
 ] }
 percent-encoding = "2.3"
@@ -47,7 +47,10 @@ reqsign-google = { version = "3.0.3", default-features = false }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt"] }
+uuid = { workspace = true, features = ["v4"] }
 
 [dev-dependencies]
+asyncband = { workspace = true, features = ["latch", "mutex"] }
+futures = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

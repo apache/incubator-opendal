@@ -44,7 +44,10 @@ impl oio::StreamRead for EtcdReader {
             Some(buffer) => {
                 let total_size = buffer.len() as u64;
                 let sliced_buffer = buffer.slice(range.to_content_range(buffer.len())?);
-                let metadata = Metadata::new(EntryMode::FILE).with_content_length(total_size);
+                let metadata = {
+                    let metadata = MetadataBuilder::file(total_size);
+                    metadata.build()
+                };
 
                 Ok((
                     RpRead::new(metadata),

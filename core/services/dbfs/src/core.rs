@@ -24,6 +24,7 @@ use http::Request;
 use http::Response;
 use http::StatusCode;
 use http::header;
+use serde::Deserialize;
 use serde_json::json;
 
 use opendal_core::raw::*;
@@ -222,71 +223,75 @@ impl DbfsCore {
             StatusCode::NOT_FOUND => {
                 self.dbfs_create_dir(ctx, path).await?;
             }
-            _ => return Err(parse_error(resp)),
+            _ => {
+                return Err(parse_error(
+                    ErrorContext::new(ServiceOperation("GetStatus")),
+                    resp,
+                ));
+            }
         }
         Ok(())
     }
 }
 
-mod error {
-    use std::fmt::Debug;
+/// DbfsError is the error returned by DBFS service.
+#[derive(Default, Deserialize)]
+struct DbfsError {
+    error_code: String,
+    message: String,
+}
 
-    use http::Response;
-    use http::StatusCode;
-    use serde::Deserialize;
-
-    use opendal_core::raw::*;
-    use opendal_core::*;
-
-    /// DbfsError is the error returned by DBFS service.
-    #[derive(Default, Deserialize)]
-    struct DbfsError {
-        error_code: String,
-        message: String,
-    }
-
-    impl Debug for DbfsError {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            f.debug_struct("DbfsError")
-                .field("error_code", &self.error_code)
-                // replace `\n` to ` ` for better reading.
-                .field("message", &self.message.replace('\n', " "))
-                .finish()
-        }
-    }
-
-    pub(crate) fn parse_error(resp: Response<Buffer>) -> Error {
-        let (parts, body) = resp.into_parts();
-        let bs = body.to_bytes();
-
-        let (kind, retryable) = match parts.status {
-            StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
-            StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => {
-                (ErrorKind::PermissionDenied, false)
-            }
-            StatusCode::PRECONDITION_FAILED => (ErrorKind::ConditionNotMatch, false),
-            StatusCode::INTERNAL_SERVER_ERROR
-            | StatusCode::BAD_GATEWAY
-            | StatusCode::SERVICE_UNAVAILABLE
-            | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
-            _ => (ErrorKind::Unexpected, false),
-        };
-
-        let message = match serde_json::from_slice::<DbfsError>(&bs) {
-            Ok(dbfs_error) => format!("{:?}", dbfs_error.message),
-            Err(_) => String::from_utf8_lossy(&bs).into_owned(),
-        };
-
-        let mut err = Error::new(kind, message);
-
-        err = with_error_response_context(err, parts);
-
-        if retryable {
-            err = err.set_temporary();
-        }
-
-        err
+impl Debug for DbfsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("DbfsError")
+            .field("error_code", &self.error_code)
+            // replace `\n` to ` ` for better reading.
+            .field("message", &self.message.replace('\n', " "))
+            .finish()
     }
 }
 
-pub(super) use error::*;
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+}
+
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self { service_operation }
+    }
+}
+
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
+    let (parts, body) = resp.into_parts();
+    let bs = body.to_bytes();
+
+    let (kind, retryable) = match parts.status {
+        StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, false),
+        StatusCode::PRECONDITION_FAILED => (ErrorKind::ConditionNotMatch, false),
+        StatusCode::INTERNAL_SERVER_ERROR
+        | StatusCode::BAD_GATEWAY
+        | StatusCode::SERVICE_UNAVAILABLE
+        | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
+        _ => (ErrorKind::Unexpected, false),
+    };
+
+    let message = match serde_json::from_slice::<DbfsError>(&bs) {
+        Ok(dbfs_error) => format!("{:?}", dbfs_error.message),
+        Err(_) => String::from_utf8_lossy(&bs).into_owned(),
+    };
+
+    let mut err = Error::new(kind, message);
+
+    err = err.with_context("service_operation", ctx.service_operation.0);
+    err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
+
+    err
+}

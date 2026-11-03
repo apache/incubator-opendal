@@ -25,8 +25,8 @@ use log::debug;
 use super::GITHUB_SCHEME;
 use super::config::GithubConfig;
 use super::core::Entry;
-use super::core::GithubCore;
 use super::core::parse_error;
+use super::core::{ErrorContext, GithubCore};
 use super::deleter::GithubDeleter;
 use super::lister::GithubLister;
 use super::reader::*;
@@ -162,6 +162,7 @@ impl Service for GithubBackend {
     type Lister = oio::PageLister<GithubLister>;
     type Deleter = oio::OneShotDeleter<GithubDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.core.info.clone()
@@ -188,7 +189,10 @@ impl Service for GithubBackend {
 
         match status {
             StatusCode::OK | StatusCode::CREATED => Ok(RpCreateDir::default()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("CreateOrUpdateFileContents")),
+                resp,
+            )),
         }
     }
 
@@ -204,16 +208,21 @@ impl Service for GithubBackend {
                     serde_json::from_reader(body.reader()).map_err(new_json_deserialize_error)?;
 
                 let m = if resp.type_field == "dir" {
-                    Metadata::new(EntryMode::DIR)
+                    MetadataBuilder::dir().build()
                 } else {
-                    Metadata::new(EntryMode::FILE)
-                        .with_content_length(resp.size)
-                        .with_etag(resp.sha)
+                    {
+                        let mut metadata = MetadataBuilder::file(resp.size);
+                        metadata.etag(resp.sha);
+                        metadata.build()
+                    }
                 };
 
                 Ok(RpStat::new(m))
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetRepositoryContent")),
+                resp,
+            )),
         }
     }
     fn read(&self, ctx: &OperationContext, path: &str, args: OpRead) -> Result<Self::Reader> {
@@ -267,7 +276,6 @@ impl Service for GithubBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,

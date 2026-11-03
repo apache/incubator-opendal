@@ -68,14 +68,16 @@ impl HdfsNativeCore {
             EntryMode::FILE
         };
 
-        let mut metadata = Metadata::new(mode);
-        metadata
-            .set_last_modified(Timestamp::from_millisecond(
-                status.modification_time as i64,
-            )?)
-            .set_content_length(status.length as u64);
+        let mut metadata = if mode == EntryMode::FILE {
+            MetadataBuilder::file(status.length as u64)
+        } else {
+            MetadataBuilder::dir()
+        };
+        metadata.last_modified(Timestamp::from_millisecond(
+            status.modification_time as i64,
+        )?);
 
-        Ok(metadata)
+        Ok(metadata.build())
     }
 
     pub async fn hdfs_open(&self, path: &str) -> Result<hdfs_native::file::FileReader> {
@@ -164,32 +166,63 @@ impl HdfsNativeCore {
         Ok(Some((p, current_path)))
     }
 
-    pub async fn hdfs_rename(&self, from: &str, to: &str) -> Result<()> {
+    pub async fn hdfs_rename(&self, from: &str, to: &str, args: &OpRename) -> Result<()> {
         let from_path = build_rooted_abs_path(&self.root, from);
         let to_path = build_rooted_abs_path(&self.root, to);
 
-        match self.client.get_file_info(&to_path).await {
+        let target_exists = match self.client.get_file_info(&to_path).await {
             Ok(status) => {
                 if status.isdir {
                     return Err(Error::new(ErrorKind::IsADirectory, "path should be a file")
                         .with_context("input", &to_path));
-                } else {
-                    self.client
-                        .delete(&to_path, true)
-                        .await
-                        .map_err(parse_hdfs_error)?;
                 }
+                true
             }
             Err(err) => match &err {
-                HdfsError::FileNotFound(_) => {
-                    self.client
-                        .create(&to_path, WriteOptions::default().create_parent(true))
-                        .await
-                        .map_err(parse_hdfs_error)?;
-                }
+                HdfsError::FileNotFound(_) => false,
                 _ => return Err(parse_hdfs_error(err)),
             },
         };
+
+        if args.if_not_exists() {
+            if let Some((parent, _)) = to_path
+                .rsplit_once('/')
+                .filter(|(parent, _)| !target_exists && !parent.is_empty())
+            {
+                self.client
+                    .mkdirs(parent, 0o777, true)
+                    .await
+                    .map_err(parse_hdfs_error)?;
+            }
+            return self
+                .client
+                .rename(&from_path, &to_path, false)
+                .await
+                .map_err(|err| {
+                    if matches!(&err, HdfsError::AlreadyExists(_)) {
+                        Error::new(
+                            ErrorKind::ConditionNotMatch,
+                            "target path already exists while if_not_exists is set",
+                        )
+                        .with_context("input", &to_path)
+                        .set_source(err)
+                    } else {
+                        parse_hdfs_error(err)
+                    }
+                });
+        }
+
+        if target_exists {
+            self.client
+                .delete(&to_path, true)
+                .await
+                .map_err(parse_hdfs_error)?;
+        } else {
+            self.client
+                .create(&to_path, WriteOptions::default().create_parent(true))
+                .await
+                .map_err(parse_hdfs_error)?;
+        }
 
         self.client
             .rename(&from_path, &to_path, true)
@@ -200,49 +233,41 @@ impl HdfsNativeCore {
     }
 }
 
-mod error {
-    use hdfs_native::HdfsError;
-
-    use opendal_core::*;
-
-    /// Parse hdfs-native error into opendal::Error.
-    pub fn parse_hdfs_error(hdfs_error: HdfsError) -> Error {
-        let (kind, retryable, msg) = match &hdfs_error {
-            HdfsError::IOError(err) => (ErrorKind::Unexpected, false, err.to_string()),
-            HdfsError::DataTransferError(msg) => (ErrorKind::Unexpected, false, msg.clone()),
-            HdfsError::ChecksumError => (
-                ErrorKind::Unexpected,
-                false,
-                "checksums didn't match".to_string(),
-            ),
-            HdfsError::UrlParseError(err) => (ErrorKind::Unexpected, false, err.to_string()),
-            HdfsError::AlreadyExists(msg) => (ErrorKind::AlreadyExists, false, msg.clone()),
-            HdfsError::OperationFailed(msg) => (ErrorKind::Unexpected, false, msg.clone()),
-            HdfsError::RPCError(msg0, msg1) => {
-                if msg0.contains("java.io.FileNotFoundException") {
-                    (ErrorKind::NotFound, false, msg1.clone())
-                } else {
-                    (ErrorKind::Unexpected, false, msg1.clone())
-                }
+/// Parse hdfs-native error into opendal::Error.
+pub fn parse_hdfs_error(hdfs_error: HdfsError) -> Error {
+    let (kind, retryable, msg) = match &hdfs_error {
+        HdfsError::IOError(err) => (ErrorKind::Unexpected, false, err.to_string()),
+        HdfsError::DataTransferError(msg) => (ErrorKind::Unexpected, false, msg.clone()),
+        HdfsError::ChecksumError => (
+            ErrorKind::Unexpected,
+            false,
+            "checksums didn't match".to_string(),
+        ),
+        HdfsError::UrlParseError(err) => (ErrorKind::Unexpected, false, err.to_string()),
+        HdfsError::AlreadyExists(msg) => (ErrorKind::AlreadyExists, false, msg.clone()),
+        HdfsError::OperationFailed(msg) => (ErrorKind::Unexpected, false, msg.clone()),
+        HdfsError::RPCError(msg0, msg1) => {
+            if msg0.contains("java.io.FileNotFoundException") {
+                (ErrorKind::NotFound, false, msg1.clone())
+            } else {
+                (ErrorKind::Unexpected, false, msg1.clone())
             }
-            HdfsError::FileNotFound(msg) => (ErrorKind::NotFound, false, msg.clone()),
-            HdfsError::BlocksNotFound(msg) => (ErrorKind::NotFound, false, msg.clone()),
-            HdfsError::IsADirectoryError(msg) => (ErrorKind::IsADirectory, false, msg.clone()),
-            _ => (
-                ErrorKind::Unexpected,
-                false,
-                "unexpected error from hdfs".to_string(),
-            ),
-        };
-
-        let mut err = Error::new(kind, msg).set_source(hdfs_error);
-
-        if retryable {
-            err = err.set_temporary();
         }
+        HdfsError::FileNotFound(msg) => (ErrorKind::NotFound, false, msg.clone()),
+        HdfsError::BlocksNotFound(msg) => (ErrorKind::NotFound, false, msg.clone()),
+        HdfsError::IsADirectoryError(msg) => (ErrorKind::IsADirectory, false, msg.clone()),
+        _ => (
+            ErrorKind::Unexpected,
+            false,
+            "unexpected error from hdfs".to_string(),
+        ),
+    };
 
-        err
+    let mut err = Error::new(kind, msg).set_source(hdfs_error);
+
+    if retryable {
+        err = err.set_temporary();
     }
-}
 
-pub(super) use error::*;
+    err
+}

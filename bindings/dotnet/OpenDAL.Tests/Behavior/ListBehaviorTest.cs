@@ -32,6 +32,28 @@ public sealed class ListBehaviorTest : BehaviorTestBase
     }
 
     [Fact]
+    public void ListBehavior_Check_Succeeds()
+    {
+        if (!Supports(c => c.Read && c.Write && c.List))
+        {
+            return;
+        }
+
+        Op.Check();
+    }
+
+    [Fact]
+    public async Task ListBehavior_Check_SucceedsAsync()
+    {
+        if (!Supports(c => c.Read && c.Write && c.List))
+        {
+            return;
+        }
+
+        await Op.CheckAsync(CT);
+    }
+
+    [Fact]
     public void ListBehavior_ListsEntriesUnderPrefix()
     {
         if (!Supports(c => c.List && c.Write && c.CreateDir))
@@ -66,8 +88,8 @@ public sealed class ListBehaviorTest : BehaviorTestBase
         var b = $"{dir}nested/b.txt";
 
         await Op.CreateDirAsync(dir, CT);
-        await Op.WriteAsync(a, RandomBytes(10), CT);
-        await Op.WriteAsync(b, RandomBytes(20), CT);
+        await Op.WriteAsync(a, RandomBytes(10), cancellationToken: CT);
+        await Op.WriteAsync(b, RandomBytes(20), cancellationToken: CT);
 
         var entries = await Op.ListAsync(dir, new ListOptions { Recursive = true }, CT);
 
@@ -89,7 +111,7 @@ public sealed class ListBehaviorTest : BehaviorTestBase
         {
             var path = $"{dir}file-{i}.txt";
             files.Add(path);
-            await Op.WriteAsync(path, RandomBytes(8), CT);
+            await Op.WriteAsync(path, RandomBytes(8), cancellationToken: CT);
         }
 
         var entries = await Op.ListAsync(dir, new ListOptions { Recursive = true, Limit = 3 }, CT);
@@ -121,5 +143,53 @@ public sealed class ListBehaviorTest : BehaviorTestBase
         {
             Assert.Contains(entries, e => e.Path == file);
         }
+    }
+
+    [Fact]
+    public void ListBehavior_WithVersions_ReportsVersionMetadata()
+    {
+        if (!Supports(c => c.List && c.ListWithVersions && c.Write))
+        {
+            return;
+        }
+
+        var dir = NewPath("list-versions") + "/";
+        var path = $"{dir}file.txt";
+
+        Op.Write(path, RandomBytes(8));
+        Op.Write(path, RandomBytes(16));
+
+        var versions = Op.List(dir, new ListOptions { Versions = true })
+            .Where(e => e.Path == path)
+            .ToList();
+
+        Assert.True(versions.Count >= 2, $"expected at least two versions, got {versions.Count}");
+        Assert.All(versions, e => Assert.False(string.IsNullOrEmpty(e.Metadata.Version)));
+
+        var currentCount = versions.Count(e => e.Metadata.IsCurrent == true);
+        Assert.InRange(currentCount, 0, 1);
+        if (versions.All(e => e.Metadata.IsCurrent.HasValue))
+        {
+            Assert.Equal(1, currentCount);
+        }
+    }
+
+    [Fact]
+    public void ListBehavior_WithDeleted_ReportsDeleteMarker()
+    {
+        if (!Supports(c => c.List && c.ListWithDeleted && c.Write && c.Delete))
+        {
+            return;
+        }
+
+        var dir = NewPath("list-deleted") + "/";
+        var path = $"{dir}file.txt";
+
+        Op.Write(path, RandomBytes(8));
+        Op.Delete(path);
+
+        var entries = Op.List(dir, new ListOptions { Deleted = true });
+
+        Assert.Contains(entries, e => e.Path == path && e.Metadata.IsDeleted);
     }
 }

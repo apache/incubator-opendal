@@ -169,6 +169,10 @@ data ErrorCode
     IsSameFile
   | -- | The operation conflicts with the current or transitional state of the resource.
     Conflict
+  | -- | A condition supplied through the OpenDAL operation evaluated to false.
+    ConditionNotMatch
+  | -- | The requested content range cannot be satisfied.
+    RangeNotSatisfied
   deriving (Eq, Show)
 
 -- | Represents an error that can occur when using OpenDAL.
@@ -315,6 +319,8 @@ parseErrorCode 9 = AlreadyExists
 parseErrorCode 10 = RateLimited
 parseErrorCode 11 = IsSameFile
 parseErrorCode 12 = Conflict
+parseErrorCode 13 = ConditionNotMatch
+parseErrorCode 14 = RangeNotSatisfied
 parseErrorCode _ = FFIError
 
 parseEntryMode :: Int -> EntryMode

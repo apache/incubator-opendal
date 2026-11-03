@@ -11,7 +11,8 @@ A Swift binding for OpenDAL: access storage services through one API, backed
 by the Rust core.
 
 New to the model behind the API? Read [Concepts](../../03-concepts.mdx) first —
-service, operator, and operation are the same ideas in every language.
+the shared storage semantics and path and operation concepts every binding
+expresses through its own native API.
 
 :::warning Experimental / WIP
 This binding is unreleased and under active development. The API surface is

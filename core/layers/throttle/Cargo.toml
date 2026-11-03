@@ -33,7 +33,8 @@ all-features = true
 
 [dependencies]
 governor = "0.10.4"
-opendal-core = { path = "../../core", version = "0.58.2", default-features = false }
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false }
 
 [dev-dependencies]
-opendal-core = { path = "../../core", version = "0.58.2" }
+opendal-core = { path = "../../core", version = "0.59.5" }
+tokio = { workspace = true, features = ["macros", "rt", "time"] }

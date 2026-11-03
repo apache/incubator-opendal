@@ -29,7 +29,7 @@ use std::ptr;
 
 use crate::chunk::OpendalChunk;
 use crate::error::OpenDALError;
-use crate::result::OpendalWriteBufferResult;
+use crate::result::OpendalWriteResult;
 use crate::utils::config_invalid_error;
 
 #[repr(C)]
@@ -317,9 +317,9 @@ pub(crate) fn take_payload(
 ///
 /// The returned handle must eventually be released with `write_buffer_free`.
 #[unsafe(no_mangle)]
-pub extern "C" fn write_buffer_create(capacity: usize) -> OpendalWriteBufferResult {
+pub extern "C" fn write_buffer_create(capacity: usize) -> OpendalWriteResult {
     if capacity == 0 {
-        return OpendalWriteBufferResult::from_error(config_invalid_error(
+        return OpendalWriteResult::from_error(config_invalid_error(
             "write buffer capacity must be greater than 0",
         ));
     }
@@ -332,7 +332,7 @@ pub extern "C" fn write_buffer_create(capacity: usize) -> OpendalWriteBufferResu
     });
     let handle = Box::into_raw(Box::new(slot)) as *mut c_void;
 
-    OpendalWriteBufferResult::ok(OpendalWriteBuffer {
+    OpendalWriteResult::ok(OpendalWriteBuffer {
         handle,
         data,
         capacity,
@@ -351,21 +351,19 @@ pub unsafe extern "C" fn write_buffer_add_segment(
     handle: *mut c_void,
     committed_in_current: usize,
     min_capacity: usize,
-) -> OpendalWriteBufferResult {
+) -> OpendalWriteResult {
     if handle.is_null() {
-        return OpendalWriteBufferResult::from_error(config_invalid_error(
-            "write buffer handle is null",
-        ));
+        return OpendalWriteResult::from_error(config_invalid_error("write buffer handle is null"));
     }
 
     let slot = unsafe { &mut *(handle as *mut WriteBufferSlot) };
     match grow(slot, committed_in_current, min_capacity) {
-        Ok((data, capacity)) => OpendalWriteBufferResult::ok(OpendalWriteBuffer {
+        Ok((data, capacity)) => OpendalWriteResult::ok(OpendalWriteBuffer {
             handle,
             data,
             capacity,
         }),
-        Err(error) => OpendalWriteBufferResult::from_error(error),
+        Err(error) => OpendalWriteResult::from_error(error),
     }
 }
 

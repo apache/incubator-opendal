@@ -46,7 +46,10 @@ impl oio::StreamRead for SledReader {
             }
         };
         let content = bs.slice(range.to_content_range(bs.len())?);
-        let metadata = Metadata::new(EntryMode::FILE).with_content_length(bs.len() as u64);
+        let metadata = {
+            let metadata = MetadataBuilder::file(bs.len() as u64);
+            metadata.build()
+        };
         Ok((
             RpRead::new(metadata),
             Box::new(content) as Box<dyn oio::ReadStreamDyn>,

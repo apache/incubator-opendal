@@ -32,6 +32,7 @@ use opendal_core::Buffer;
 use opendal_core::Error;
 use opendal_core::ErrorKind;
 use opendal_core::HttpBody;
+use opendal_core::HttpRedirect;
 use opendal_core::HttpTransport;
 use opendal_core::HttpTransporter;
 use opendal_core::Result;
@@ -79,14 +80,42 @@ impl HttpTransport for ReqwestTransport {
         let uri = req.uri().clone();
         let is_head = req.method() == http::Method::HEAD;
 
-        let (parts, body) = req.into_parts();
+        let (mut parts, body) = req.into_parts();
+        let original = uri.to_string();
+        let target = parts
+            .extensions
+            .get::<HttpRedirect>()
+            .map(|redirect| redirect.uri().original_uri())
+            .unwrap_or(&original);
 
-        let url = reqwest::Url::parse(&uri.to_string()).map_err(|err| {
+        let url = reqwest::Url::parse(target).map_err(|err| {
             Error::new(ErrorKind::Unexpected, "request url is invalid")
                 .with_operation("reqwest::fetch")
                 .with_context("url", uri.to_string())
                 .set_source(err)
         })?;
+
+        if parts.extensions.get::<HttpRedirect>().is_some() {
+            let original = reqwest::Url::parse(&uri.to_string()).map_err(|err| {
+                Error::new(ErrorKind::Unexpected, "original request url is invalid").set_source(err)
+            })?;
+            if original.origin() != url.origin() {
+                // A reused redirect must not gain credentials from client
+                // defaults or cookie storage that a normal redirect strips.
+                for name in [
+                    "authorization",
+                    "proxy-authorization",
+                    "cookie",
+                    "cookie2",
+                    "www-authenticate",
+                ] {
+                    parts.headers.insert(
+                        http::header::HeaderName::from_static(name),
+                        http::HeaderValue::from_static(""),
+                    );
+                }
+            }
+        }
 
         let mut req_builder = self
             .client
@@ -116,7 +145,7 @@ impl HttpTransport for ReqwestTransport {
                 .with_operation("reqwest::send")
                 .with_context("url", uri.to_string())
                 .with_temporary(is_temporary_error(&err))
-                .set_source(err)
+                .set_source(err.without_url())
         })?;
 
         // Get content length from header so that we can check it.
@@ -134,6 +163,19 @@ impl HttpTransport for ReqwestTransport {
             // Insert uri into response extension so that we can fetch
             // it later.
             .extension(uri.clone());
+
+        // Optional metadata must not turn a successful fetch into an error.
+        if let Ok(target) = resp.url().as_str().parse::<http::Uri>()
+            && target != uri
+        {
+            let redirect = parts
+                .extensions
+                .get::<HttpRedirect>()
+                .filter(|redirect| redirect.uri().original_uri() == resp.url().as_str())
+                .cloned()
+                .unwrap_or_else(|| HttpRedirect::new(target));
+            hr = hr.extension(redirect);
+        }
 
         // Response builder under wasm doesn't support set version.
         #[cfg(not(target_arch = "wasm32"))]
@@ -153,7 +195,7 @@ impl HttpTransport for ReqwestTransport {
                         .with_operation("reqwest::fetch")
                         .with_context("url", uri.to_string())
                         .with_temporary(is_temporary_error(&err))
-                        .set_source(err)
+                        .set_source(err.without_url())
                 }),
             content_length,
         );

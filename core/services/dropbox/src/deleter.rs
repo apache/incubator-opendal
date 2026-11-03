@@ -44,7 +44,7 @@ impl oio::OneShotDelete for DropboxDeleter {
         match status {
             StatusCode::OK => Ok(()),
             _ => {
-                let err = parse_error(resp);
+                let err = parse_error(ErrorContext::new(ServiceOperation("DeleteFile")), resp);
                 match err.kind() {
                     ErrorKind::NotFound => Ok(()),
                     _ => Err(err),

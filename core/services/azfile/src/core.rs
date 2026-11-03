@@ -487,103 +487,221 @@ impl AzfileCore {
                 continue;
             }
 
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("CreateDirectory")),
+                resp,
+            ));
         }
 
         Ok(())
     }
 }
 
-mod error {
-    use std::fmt::Debug;
+use bytes::Buf;
+use opendal_core::raw::ServiceOperation;
+use opendal_service_azure_common::with_azure_error_response_context;
+use quick_xml::de;
+use serde::Deserialize;
 
-    use bytes::Buf;
-    use http::Response;
-    use http::StatusCode;
-    use opendal_core::*;
-    use opendal_service_azure_common::with_azure_error_response_context;
-    use quick_xml::de;
-    use serde::Deserialize;
+/// AzfileError is the error returned by azure file service.
+#[derive(Default, Deserialize)]
+#[serde(default, rename_all = "PascalCase")]
+struct AzfileError {
+    code: String,
+    message: String,
+    query_parameter_name: String,
+    query_parameter_value: String,
+    reason: String,
+}
 
-    /// AzfileError is the error returned by azure file service.
-    #[derive(Default, Deserialize)]
-    #[serde(default, rename_all = "PascalCase")]
-    struct AzfileError {
-        code: String,
-        message: String,
-        query_parameter_name: String,
-        query_parameter_value: String,
-        reason: String,
-    }
+impl Debug for AzfileError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut de = f.debug_struct("AzfileError");
+        de.field("code", &self.code);
+        // replace `\n` to ` ` for better reading.
+        de.field("message", &self.message.replace('\n', " "));
 
-    impl Debug for AzfileError {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            let mut de = f.debug_struct("AzfileError");
-            de.field("code", &self.code);
-            // replace `\n` to ` ` for better reading.
-            de.field("message", &self.message.replace('\n', " "));
-
-            if !self.query_parameter_name.is_empty() {
-                de.field("query_parameter_name", &self.query_parameter_name);
-            }
-            if !self.query_parameter_value.is_empty() {
-                de.field("query_parameter_value", &self.query_parameter_value);
-            }
-            if !self.reason.is_empty() {
-                de.field("reason", &self.reason);
-            }
-
-            de.finish()
+        if !self.query_parameter_name.is_empty() {
+            de.field("query_parameter_name", &self.query_parameter_name);
         }
-    }
-
-    /// Parse error response into Error.
-    pub(crate) fn parse_error(resp: Response<Buffer>) -> Error {
-        let (parts, body) = resp.into_parts();
-        let bs = body.to_bytes();
-
-        let (kind, retryable) = match parts.status {
-            StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
-            StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, false),
-            StatusCode::PRECONDITION_FAILED | StatusCode::NOT_MODIFIED => {
-                (ErrorKind::ConditionNotMatch, false)
-            }
-            StatusCode::INTERNAL_SERVER_ERROR
-            | StatusCode::BAD_GATEWAY
-            | StatusCode::SERVICE_UNAVAILABLE
-            | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
-            _ => (ErrorKind::Unexpected, false),
-        };
-
-        let mut message = match de::from_reader::<_, AzfileError>(bs.clone().reader()) {
-            Ok(azfile_err) => format!("{azfile_err:?}"),
-            Err(_) => String::from_utf8_lossy(&bs).into_owned(),
-        };
-
-        // If there is no body here, fill with error code.
-        if message.is_empty()
-            && let Some(v) = parts.headers.get("x-ms-error-code")
-            && let Ok(code) = v.to_str()
-        {
-            message = format!(
-                "{:?}",
-                AzfileError {
-                    code: code.to_string(),
-                    ..Default::default()
-                }
-            )
+        if !self.query_parameter_value.is_empty() {
+            de.field("query_parameter_value", &self.query_parameter_value);
+        }
+        if !self.reason.is_empty() {
+            de.field("reason", &self.reason);
         }
 
-        let mut err = Error::new(kind, &message);
-
-        err = with_azure_error_response_context(err, parts);
-
-        if retryable {
-            err = err.set_temporary();
-        }
-
-        err
+        de.finish()
     }
 }
 
-pub(super) use error::*;
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+}
+
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self { service_operation }
+    }
+}
+
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
+    let (parts, body) = resp.into_parts();
+    let bs = body.to_bytes();
+
+    let mut azfile_error = de::from_reader::<_, AzfileError>(bs.clone().reader()).ok();
+    if azfile_error.as_ref().is_none_or(|err| err.code.is_empty())
+        && let Some(code) = parts
+            .headers
+            .get("x-ms-error-code")
+            .and_then(|value| value.to_str().ok())
+    {
+        azfile_error.get_or_insert_with(AzfileError::default).code = code.to_string();
+    }
+
+    let (mut kind, mut retryable) = match parts.status {
+        StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
+        StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, false),
+        StatusCode::TOO_MANY_REQUESTS => (ErrorKind::RateLimited, true),
+        StatusCode::INTERNAL_SERVER_ERROR
+        | StatusCode::BAD_GATEWAY
+        | StatusCode::SERVICE_UNAVAILABLE
+        | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
+        _ => (ErrorKind::Unexpected, false),
+    };
+
+    if let Some(azfile_error) = &azfile_error {
+        match azfile_error.code.as_str() {
+            "ParentNotFound" => {
+                (kind, retryable) = (ErrorKind::NotFound, false);
+            }
+            "ResourceAlreadyExists" => {
+                (kind, retryable) = (ErrorKind::AlreadyExists, false);
+            }
+            "DeletePending" | "ShareBeingDeleted"
+                if ctx.service_operation == ServiceOperation("CreateDirectory") =>
+            {
+                (kind, retryable) = (ErrorKind::Conflict, true);
+            }
+            "CannotDeleteFileOrDirectory"
+            | "ContainerQuotaDowngradeNotAllowed"
+            | "DeletePending"
+            | "DeleteShareWhenSnapshotLeased"
+            | "DirectoryNotEmpty"
+            | "FileGenerationMismatch"
+            | "FileLockConflict"
+            | "FileOpenBySmbClient"
+            | "LeaseAcquireDuringShareDelete"
+            | "LeaseIdMismatchWithFileLeaseOperation"
+            | "LeaseIdMismatchWithFileOperation"
+            | "LeaseIdMismatchWithFileShareLeaseOperation"
+            | "LeaseIdMismatchWithFileShareOperation"
+            | "LeaseIdMissingWithFileOperation"
+            | "LeaseIdMissingWithFileShareOperation"
+            | "LeaseLostWithFileOperation"
+            | "LeaseLostWithFileShareOperation"
+            | "LeaseNotPresentWithFileLeaseOperation"
+            | "LeaseNotPresentWithFileOperation"
+            | "LeaseNotPresentWithFileShareLeaseOperation"
+            | "LeaseNotPresentWithFileShareOperation"
+            | "PreviousSnapshotNotFound"
+            | "PreviousSnapshotOperationNotSupported"
+            | "ReadOnlyAttribute"
+            | "RenameCannotOverwriteDestinationFile"
+            | "RenameCycle"
+            | "RenameDirectoryHasOpenFiles"
+            | "ShareAlreadyExists"
+            | "ShareBeingDeleted"
+            | "ShareHasSnapshots"
+            | "ShareSnapshotInProgress"
+            | "SharingViolation" => {
+                (kind, retryable) = (ErrorKind::Conflict, false);
+            }
+            _ if matches!(
+                parts.status,
+                StatusCode::CONFLICT | StatusCode::PRECONDITION_FAILED
+            ) =>
+            {
+                (kind, retryable) = (ErrorKind::Unexpected, false);
+            }
+            _ => {}
+        }
+    }
+
+    let message = azfile_error
+        .map(|err| format!("{err:?}"))
+        .unwrap_or_else(|| String::from_utf8_lossy(&bs).into_owned());
+
+    let mut err = Error::new(kind, &message);
+
+    err = err.with_context("service_operation", ctx.service_operation.0);
+    err = with_azure_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
+
+    err
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn parse_native_error(operation: &'static str, status: StatusCode, code: &str) -> Error {
+        let resp = Response::builder()
+            .status(status)
+            .header("x-ms-error-code", code)
+            .body(Buffer::new())
+            .expect("response must build");
+        parse_error(ErrorContext::new(ServiceOperation(operation)), resp)
+    }
+
+    #[test]
+    fn test_parse_native_conflict_codes() {
+        let err = parse_native_error("CreateDirectory", StatusCode::CONFLICT, "DeletePending");
+        assert_eq!(err.kind(), ErrorKind::Conflict);
+        assert!(err.is_temporary());
+
+        let err = parse_native_error("PutRange", StatusCode::CONFLICT, "FileLockConflict");
+        assert_eq!(err.kind(), ErrorKind::Conflict);
+        assert!(!err.is_temporary());
+
+        let err = parse_native_error(
+            "GetFileProperties",
+            StatusCode::PRECONDITION_FAILED,
+            "LeaseIdMismatchWithFileOperation",
+        );
+        assert_eq!(err.kind(), ErrorKind::Conflict);
+        assert!(!err.is_temporary());
+    }
+
+    #[test]
+    fn test_parse_non_conflict_native_codes() {
+        assert_eq!(
+            parse_native_error(
+                "CreateDirectory",
+                StatusCode::CONFLICT,
+                "ResourceAlreadyExists"
+            )
+            .kind(),
+            ErrorKind::AlreadyExists
+        );
+        assert_eq!(
+            parse_native_error("CreateDirectory", StatusCode::NOT_FOUND, "ParentNotFound").kind(),
+            ErrorKind::NotFound
+        );
+        assert_eq!(
+            parse_native_error(
+                "GetFileProperties",
+                StatusCode::PRECONDITION_FAILED,
+                "UnknownPrecondition"
+            )
+            .kind(),
+            ErrorKind::Unexpected
+        );
+    }
+}

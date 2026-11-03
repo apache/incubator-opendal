@@ -16,9 +16,9 @@
 // under the License.
 
 use super::backend::*;
-use super::core::{HfCore, HfDownloadMode, XetFileResponse};
+use super::core::HfDownloadMode;
+use super::core::{HfCore, HfReadResponse, XetFileResponse};
 use asyncband::once::OnceCell;
-use bytes::Buf;
 use http::Response;
 use opendal_core::raw::*;
 use opendal_core::*;
@@ -45,15 +45,17 @@ fn xet_range(range: BytesRange) -> Option<Range<u64>> {
 
 impl HfReadStream {
     /// Build the stream directly from an already-known XET hash + size,
-    /// whether that came from a resolve response just parsed in [`HfReader::open`]
-    /// or was reused from its cache.
+    /// resolved or reused by [`HfCore`].
     async fn new_xet(
         group: &XetDownloadStreamGroup,
         hash: &str,
         size: u64,
         range: BytesRange,
     ) -> Result<(RpRead, Self)> {
-        let metadata = Metadata::new(EntryMode::FILE).with_content_length(size);
+        let metadata = {
+            let metadata = MetadataBuilder::file(size);
+            metadata.build()
+        };
         let xet_range = xet_range(range);
 
         let mut stream = group
@@ -75,22 +77,6 @@ impl HfReadStream {
     fn new_http(path: &str, resp: Response<HttpBody>) -> Result<(RpRead, Self)> {
         let metadata = parse_into_metadata(path, resp.headers())?;
         Ok((RpRead::new(metadata), Self::Http(resp.into_body())))
-    }
-
-    /// Retrieve a resolve response's XET metadata, or hand the response
-    /// back untouched if it doesn't carry any -- its body is then the
-    /// actual range content, still there for [`Self::new_http`].
-    async fn maybe_xet(
-        resp: Response<HttpBody>,
-    ) -> Result<std::result::Result<XetFileResponse, Response<HttpBody>>> {
-        if !resp.headers().contains_key("x-xet-hash") {
-            return Ok(Err(resp));
-        }
-        let (_, mut body) = resp.into_parts();
-        let buf = body.to_buffer().await?;
-        let info: XetFileResponse =
-            serde_json::from_reader(buf.reader()).map_err(new_json_deserialize_error)?;
-        Ok(Ok(info))
     }
 }
 
@@ -116,17 +102,10 @@ pub struct HfReader {
     backend: HfBackend,
     ctx: OperationContext,
     path: String,
-    // `Some((hash, size))`/`None` once this path is known to be (or not be)
-    // XET-backed; only consulted in `HfDownloadMode::Xet`. Single-flighted via
-    // `get_or_try_init`, so concurrent cold opens share one classifying
-    // resolve and every later range reuses it. If not XET-backed, that first
-    // resolve's body goes unused and every open falls back to its own fresh
-    // resolve -- one wasted request per reader, not per range.
-    //
-    // Never re-validated for this reader's life, so a file changed mid-read
-    // (e.g. a new commit on a floating `main`) can serve stale content --
-    // scoped to one reader, not the `Operator`, to bound that window.
-    resolved: OnceCell<Option<(String, u64)>>,
+    // Keep one XET file version for this reader, independently of the backend's
+    // optional cross-reader cache. Concurrent ranges share initialization;
+    // failed resolutions remain retryable. None means the first read used HTTP.
+    resolved: OnceCell<Option<XetFileResponse>>,
     // Built once per reader and reused for every later XET range, seeded
     // from `HfCore`'s cached CAS token. Reuse across concurrent ranges
     // relies on the `xet` crate's documented (not type-enforced) support
@@ -160,26 +139,6 @@ impl HfReader {
             .await?;
         HfReadStream::new_xet(group, hash, size, range).await
     }
-
-    /// Classify an already-fetched resolve response and dispatch to the
-    /// matching stream. Used by [`Self::open`]'s Http-mode branch, which
-    /// classifies the same response it fetches bytes from. The Xet-mode
-    /// fallback (re-resolving in `HfDownloadMode::Http` after classification
-    /// came back non-XET) does not call this -- it never re-checks for
-    /// XET metadata on that second resolve, so it goes straight to
-    /// `new_http` instead.
-    async fn dispatch(
-        &self,
-        core: &HfCore,
-        path: &str,
-        range: BytesRange,
-        resp: Response<HttpBody>,
-    ) -> Result<(RpRead, HfReadStream)> {
-        match HfReadStream::maybe_xet(resp).await? {
-            Ok(info) => self.xet_stream(core, &info.hash, info.size, range).await,
-            Err(resp) => HfReadStream::new_http(path, resp),
-        }
-    }
 }
 
 impl oio::StreamRead for HfReader {
@@ -187,40 +146,37 @@ impl oio::StreamRead for HfReader {
         let core = &self.backend.core;
         let path = self.path.as_str();
 
-        if core.download_mode != HfDownloadMode::Xet {
-            // Http mode: resolve() is itself the byte-fetching request, done
-            // fresh per range -- there's no separate metadata step to cache.
-            let resp = core
-                .resolve(&self.ctx, path, range, core.download_mode)
-                .await?;
-            let (rp, stream) = self.dispatch(core, path, range, resp).await?;
-            return Ok((rp, Box::new(stream) as Box<dyn oio::ReadStreamDyn>));
-        }
-
-        // Xet mode: classification is single-flighted, see `resolved`'s
-        // doc comment for why that's free for the XET outcome and cheap
-        // (one extra request, once per reader) for the NotXet one.
-        let classification = self
-            .resolved
-            .get_or_try_init(|| async {
-                let resp = core
-                    .resolve(&self.ctx, path, range, HfDownloadMode::Xet)
-                    .await?;
-                match HfReadStream::maybe_xet(resp).await? {
-                    Ok(info) => Ok(Some((info.hash, info.size))),
-                    Err(_) => Ok(None),
-                }
-            })
-            .await?;
-
-        let (rp, stream) = match classification {
-            Some((hash, size)) => self.xet_stream(core, hash, *size, range).await?,
-            None => {
-                let resp = core
-                    .resolve(&self.ctx, path, range, HfDownloadMode::Http)
-                    .await?;
-                HfReadStream::new_http(path, resp)?
+        let mut first_http_response = None;
+        let resolved = if core.download_mode == HfDownloadMode::Xet {
+            self.resolved
+                .get_or_try_init(async || {
+                    match core.read(&self.ctx, path, range).await? {
+                        HfReadResponse::Xet(info) => Ok(Some(info)),
+                        HfReadResponse::Http(resp) => {
+                            // This response already contains the initializing caller's
+                            // range. Keep its bytes instead of probing and discarding them.
+                            first_http_response = Some(resp);
+                            Ok(None)
+                        }
+                    }
+                })
+                .await?
+                .as_ref()
+        } else {
+            None
+        };
+        let response = match resolved {
+            Some(info) => HfReadResponse::Xet(info.clone()),
+            None => match first_http_response {
+                Some(resp) => HfReadResponse::Http(resp),
+                None => core.read(&self.ctx, path, range).await?,
+            },
+        };
+        let (rp, stream) = match response {
+            HfReadResponse::Xet(info) => {
+                self.xet_stream(core, &info.hash, info.size, range).await?
             }
+            HfReadResponse::Http(resp) => HfReadStream::new_http(path, resp)?,
         };
 
         Ok((rp, Box::new(stream) as Box<dyn oio::ReadStreamDyn>))
@@ -229,7 +185,9 @@ impl oio::StreamRead for HfReader {
 
 #[cfg(test)]
 mod tests {
-    use super::super::backend::test_utils::{mbpp_operator, testing_dataset_core};
+    use super::super::backend::test_utils::{
+        mbpp_operator, miscased_mbpp_operator, testing_dataset_core,
+    };
     use super::super::core::HfRepoType;
     use super::super::core::test_utils::create_test_core;
     use super::super::core::{CommitFile, DeletedFile, HfCore};
@@ -255,6 +213,29 @@ mod tests {
         assert_eq!(xet_range(BytesRange::default()), None);
         assert_eq!(xet_range(BytesRange::new(4, Some(4))), Some(4..8));
         assert_eq!(xet_range(BytesRange::new(4, None)), Some(4..u64::MAX));
+    }
+
+    #[tokio::test]
+    async fn test_default_reads_resolve_each_range_across_readers() -> Result<()> {
+        for mode in [HfDownloadMode::Http, HfDownloadMode::Xet] {
+            let (mut core, ctx, mock_client) = create_test_core(
+                HfRepoType::Model,
+                "test-user/test-repo",
+                "main",
+                "https://huggingface.co",
+            );
+            core.download_mode = mode;
+            let core = Arc::new(core);
+            let first = hf_reader_from_arc(core.clone(), ctx.clone(), "plain.txt");
+            let second = hf_reader_from_arc(core, ctx, "plain.txt");
+
+            for (index, reader) in [&first, &first, &second].into_iter().enumerate() {
+                let (_, mut stream) = reader.open(BytesRange::new(index as u64, Some(1))).await?;
+                assert!(!stream.read().await?.is_empty());
+                assert_eq!(mock_client.request_count(), index + 1);
+            }
+        }
+        Ok(())
     }
 
     #[tokio::test]
@@ -305,26 +286,26 @@ mod tests {
     /// file has no separate metadata step to skip for its actual bytes: the
     /// classifying resolve's body is discarded and every open, including the
     /// first, fetches its own bytes with its own resolve. So the first open
-    /// costs 3 (canonical repo id + classify + fetch) and every later one
-    /// costs 1 (fetch only, classification and the canonical repo id already
-    /// cached).
+    /// costs 2 (classify + fetch) and every later one costs 1 (fetch only,
+    /// classification already cached).
     #[tokio::test]
     async fn test_non_xet_reads_cache_classification_but_still_fetch_each_range() -> Result<()> {
-        let (core, ctx, mock_client) = create_test_core(
+        let (mut core, ctx, mock_client) = create_test_core(
             HfRepoType::Model,
             "test-user/test-repo",
             "main",
             "https://huggingface.co",
         );
+        core.enable_resolve_cache = true;
         let reader = hf_reader(core, ctx, "plain.txt");
 
         let (_, mut s1) = reader.open(BytesRange::new(0, Some(1))).await?;
         s1.read().await?;
-        assert_eq!(mock_client.request_count(), 3);
+        assert_eq!(mock_client.request_count(), 2);
 
         let (_, mut s2) = reader.open(BytesRange::new(1, Some(1))).await?;
         s2.read().await?;
-        assert_eq!(mock_client.request_count(), 4);
+        assert_eq!(mock_client.request_count(), 3);
 
         Ok(())
     }
@@ -334,17 +315,16 @@ mod tests {
     /// stuck erroring for the reader's whole lifetime.
     #[tokio::test]
     async fn test_classification_retries_after_resolve_failure() -> Result<()> {
-        let (core, ctx, mock_client) = create_test_core(
+        let (mut core, ctx, mock_client) = create_test_core(
             HfRepoType::Model,
             "test-user/test-repo",
             "main",
             "https://huggingface.co",
         );
+        core.enable_resolve_cache = true;
         let reader = hf_reader(core, ctx, "plain.txt");
         mock_client.fail_next_requests(1);
 
-        // The injected failure hits the canonical repo id lookup, the first
-        // request a classifying resolve makes.
         let result = reader.open(BytesRange::new(0, Some(1))).await;
         assert!(
             result.is_err(),
@@ -356,127 +336,192 @@ mod tests {
         stream.read().await?;
         assert_eq!(
             mock_client.request_count(),
-            4,
-            "classification must retry (canonical repo id + resolve) then fetch the range (1 more)"
+            3,
+            "classification must retry (1 resolve) then fetch the range (1 more)"
         );
 
         Ok(())
     }
 
-    /// Same guarantee as the non-XET version below, but for a file that
-    /// classifies as XET-backed: concurrent opens must share both the one
-    /// classifying resolve and the one `xet_group` build (and, via that
-    /// group, the one CAS read-token fetch) rather than each independently
-    /// racing to build its own group.
     #[tokio::test]
-    async fn test_concurrent_cold_opens_on_xet_file_share_one_group() -> Result<()> {
+    async fn test_concurrent_xet_ranges_reuse_reader_resolution() -> Result<()> {
+        for enabled in [false, true] {
+            let (mut core, ctx, mock_client) = create_test_core(
+                HfRepoType::Model,
+                "test-user/test-repo",
+                "main",
+                "https://huggingface.co",
+            );
+            core.enable_resolve_cache = enabled;
+            mock_client.set_xet_backed(&"00".repeat(32), 64);
+            let core = Arc::new(core);
+            let reader = hf_reader_from_arc(core.clone(), ctx.clone(), "xet-file.bin");
+
+            let (r1, r2, r3) = futures::join!(
+                reader.open(BytesRange::new(0, Some(1))),
+                reader.open(BytesRange::new(1, Some(1))),
+                reader.open(BytesRange::new(2, Some(1))),
+            );
+            r1?;
+            r2?;
+            r3?;
+            // One resolve and one CAS token request; actual CAS bytes are
+            // covered by the live multiple-range test below.
+            assert_eq!(mock_client.request_count(), 2);
+
+            mock_client.set_xet_backed(&"11".repeat(32), 128);
+            let (rp, _) = reader.open(BytesRange::new(3, Some(1))).await?;
+            assert_eq!(rp.metadata().unwrap().content_length(), 64);
+            assert_eq!(
+                reader.resolved.get().unwrap().as_ref().unwrap().hash,
+                "00".repeat(32)
+            );
+            assert_eq!(mock_client.request_count(), 2);
+
+            let fresh = hf_reader_from_arc(core, ctx, "xet-file.bin");
+            let (rp, _) = fresh.open(BytesRange::new(0, Some(1))).await?;
+            assert_eq!(
+                rp.metadata().unwrap().content_length(),
+                if enabled { 64 } else { 128 }
+            );
+            assert_eq!(mock_client.request_count(), if enabled { 2 } else { 3 });
+        }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_reader_resolution_retries_after_failure() -> Result<()> {
         let (core, ctx, mock_client) = create_test_core(
             HfRepoType::Model,
             "test-user/test-repo",
             "main",
             "https://huggingface.co",
         );
-        mock_client.set_xet_backed(&"00".repeat(32), 4);
-        mock_client.set_xet_token_expires_at(u64::MAX);
+        mock_client.set_xet_backed(&"00".repeat(32), 64);
+        mock_client.fail_next_requests(1);
         let reader = hf_reader(core, ctx, "xet-file.bin");
-
-        let (r1, r2, r3) = futures::join!(
-            reader.open(BytesRange::new(0, Some(1))),
-            reader.open(BytesRange::new(1, Some(1))),
-            reader.open(BytesRange::new(2, Some(1))),
-        );
-        r1?;
-        r2?;
-        r3?;
-
-        // 1 shared canonical repo id lookup + 1 shared classifying resolve +
-        // 1 shared xet-read-token fetch for the shared group build. Fetching
-        // actual bytes from the group would need a real CAS server, so this
-        // test only covers open().
+        assert!(reader.open(BytesRange::new(0, Some(1))).await.is_err());
+        assert!(reader.resolved.get().is_none());
+        reader.open(BytesRange::new(0, Some(1))).await?;
+        reader.open(BytesRange::new(1, Some(1))).await?;
         assert_eq!(mock_client.request_count(), 3);
-
         Ok(())
     }
 
-    /// Documents a known sharp edge in the single-flighted classification:
-    /// the `Range` header on the one shared classifying resolve comes from
-    /// whichever concurrent `open()` call happens to win `get_or_try_init`'s
-    /// race, not from the caller that ends up consuming the result. All
-    /// racing callers get that winner's classification regardless of their
-    /// own requested range. See `resolved`'s field doc and the review notes
-    /// on this PR -- not yet confirmed against the real HF service, so no
-    /// fix has been applied; this test only pins today's behavior so a
-    /// future change here is deliberate.
+    /// The probe asks for a fixed single byte, never the caller's range.
+    /// Verified against the live API: XET metadata is byte-identical for no
+    /// range, a head range, and a range far into the file, so one response
+    /// serves every caller -- and for a path that turns out not to be
+    /// XET-backed the discarded body is one byte instead of the whole file
+    /// (248,987 B measured before this).
     #[tokio::test]
-    async fn test_concurrent_cold_opens_classify_with_one_racing_callers_range() -> Result<()> {
-        let (core, ctx, mock_client) = create_test_core(
+    async fn test_xet_probe_uses_fixed_single_byte_range() -> Result<()> {
+        let (mut core, ctx, mock_client) = create_test_core(
             HfRepoType::Model,
             "test-user/test-repo",
             "main",
             "https://huggingface.co",
         );
-        mock_client.set_xet_backed(&"00".repeat(32), 4);
+        core.enable_resolve_cache = true;
+        mock_client.set_xet_backed(&"00".repeat(32), 64);
         mock_client.set_xet_token_expires_at(u64::MAX);
         let reader = hf_reader(core, ctx, "xet-file.bin");
 
-        let ranges = [
-            BytesRange::new(0, Some(1)),
-            BytesRange::new(10, Some(1)),
-            BytesRange::new(20, Some(1)),
-        ];
-        let (r1, r2, r3) = futures::join!(
-            reader.open(ranges[0]),
-            reader.open(ranges[1]),
-            reader.open(ranges[2]),
-        );
-        r1?;
-        r2?;
-        r3?;
+        reader.open(BytesRange::new(8, Some(4))).await?;
 
-        // Exactly one classifying resolve fires (see
-        // `test_concurrent_cold_opens_on_xet_file_share_one_group`), and its
-        // `Range` header must be exactly one of the three racing callers'
-        // own ranges -- not absent, and not some range not asked for by any
-        // of them.
-        let captured = mock_client
-            .get_captured_classify_range_header()
-            .expect("the shared classifying resolve must carry a Range header");
-        assert!(
-            ranges.iter().any(|r| r.to_header() == captured),
-            "the shared classifying resolve's Range header ({captured:?}) must match \
-             one of the racing callers' own ranges"
+        assert_eq!(
+            mock_client.get_captured_classify_range_header().as_deref(),
+            Some("bytes=0-0"),
+            "the probe must not inherit the caller's range"
         );
 
         Ok(())
     }
 
-    /// Concurrent opens on a cold reader share exactly one classifying
-    /// resolve (`object_store::get_ranges` drives up to 8 by default) --
-    /// they must not each independently probe the path before finding out
-    /// it isn't XET-backed. Each still fetches its own range afterward.
+    /// Http mode never classifies. HF puts `x-xet-hash` on the 302 it
+    /// answers with, not on the CDN response the transport follows it to, so
+    /// a response that does carry the header is still streamed as bytes
+    /// rather than parsed as metadata -- and no separate probe is issued.
     #[tokio::test]
-    async fn test_concurrent_cold_opens_share_one_classifying_resolve() -> Result<()> {
-        let (core, ctx, mock_client) = create_test_core(
+    async fn test_http_mode_streams_bytes_without_probing() -> Result<()> {
+        let (mut core, ctx, mock_client) = create_test_core(
             HfRepoType::Model,
             "test-user/test-repo",
             "main",
             "https://huggingface.co",
         );
-        let reader = hf_reader(core, ctx, "plain.txt");
+        core.download_mode = HfDownloadMode::Http;
+        mock_client.set_xet_backed(&"11".repeat(32), 64);
+        let reader = hf_reader(core, ctx, "file.bin");
 
-        let (r1, r2, r3) = futures::join!(
-            reader.open(BytesRange::new(0, Some(1))),
-            reader.open(BytesRange::new(1, Some(1))),
-            reader.open(BytesRange::new(2, Some(1))),
+        let (_, mut stream) = reader.open(BytesRange::new(0, Some(4))).await?;
+        let chunk = stream.read().await?;
+
+        assert!(
+            chunk.to_bytes().starts_with(br#"{"hash""#),
+            "the body must be handed back verbatim, not parsed"
         );
-        r1?.1.read().await?;
-        r2?.1.read().await?;
-        r3?.1.read().await?;
-
-        // 1 canonical repo id lookup + 1 shared classifying resolve + 3 individual fetches.
-        assert_eq!(mock_client.request_count(), 5);
+        assert_eq!(mock_client.request_count(), 1, "one resolve, no probe");
 
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_concurrent_non_xet_ranges_keep_initial_response() -> Result<()> {
+        for enabled in [false, true] {
+            let (mut core, ctx, mock_client) = create_test_core(
+                HfRepoType::Model,
+                "test-user/test-repo",
+                "main",
+                "https://huggingface.co",
+            );
+            core.enable_resolve_cache = enabled;
+            let reader = hf_reader(core, ctx, "plain.txt");
+
+            let (r1, r2, r3) = futures::join!(
+                reader.open(BytesRange::new(0, Some(1))),
+                reader.open(BytesRange::new(1, Some(1))),
+                reader.open(BytesRange::new(2, Some(1))),
+            );
+            for result in [r1, r2, r3] {
+                assert_eq!(result?.1.read().await?.to_vec(), b"hello");
+            }
+            // Each range fetches its bytes once. Only the backend cache's
+            // optional classification adds a one-byte probe.
+            assert_eq!(mock_client.request_count(), if enabled { 4 } else { 3 });
+        }
+        Ok(())
+    }
+
+    /// Regression test for #8107 against the live API: a repo id whose case
+    /// differs from the canonical one.
+    ///
+    /// `stat` is the operation that matters here. It posts to `paths-info`,
+    /// and HF answers a miscased id with a `307` carrying a path-only
+    /// `Location`. A transport will follow that for a `GET` but hands a
+    /// bodied `POST` back unfollowed, which is exactly the failure #8107
+    /// reported, so this only passes if `HfCore::send` re-issues the request.
+    /// The read then covers the `resolve` path through the same repo. Both
+    /// use a public dataset, so no token is needed.
+    #[tokio::test]
+    #[ignore = "requires network access"]
+    async fn test_miscased_repo_id_follows_redirects() {
+        let path = "full/train-00000-of-00001.parquet";
+        let op = miscased_mbpp_operator();
+
+        let meta = op
+            .stat(path)
+            .await
+            .expect("stat must follow the case redirect on its paths-info POST");
+        assert!(meta.content_length() > 0);
+
+        let bytes = op
+            .read_with(path)
+            .range(0..4)
+            .await
+            .expect("read must succeed against a miscased repo id")
+            .to_vec();
+        assert_eq!(bytes, PARQUET_MAGIC);
     }
 
     /// Exercises the XET download code path against a public dataset known to
@@ -571,25 +616,63 @@ mod tests {
         assert_eq!(&bytes, PARQUET_MAGIC);
     }
 
-    /// Exercises the group-reuse path for real: two ranges fetched through
-    /// the same `Reader` (mirroring `object_store::get_ranges`) must both
-    /// return correct bytes even though only the first call resolves the
-    /// XET hash and builds the CAS download group.
+    /// Read separated ranges through one Reader against a public XET file.
     #[tokio::test]
     #[ignore = "requires network access"]
     async fn test_read_xet_multiple_ranges_on_one_reader() {
-        let op = mbpp_operator();
-        let reader = op
-            .reader_with("full/train-00000-of-00001.parquet")
-            .await
-            .expect("opening a reader should succeed");
+        use std::sync::atomic::{AtomicUsize, Ordering};
 
-        let bufs = reader
-            .fetch(vec![0..4, 4..8])
-            .await
-            .expect("fetching two ranges on one reader should succeed");
-        assert_eq!(bufs.len(), 2);
+        #[derive(Debug, Clone, Default)]
+        struct CountingTransport {
+            inner: opendal_http_transport_reqwest::ReqwestTransport,
+            resolves: Arc<AtomicUsize>,
+        }
+
+        impl HttpTransport for CountingTransport {
+            async fn fetch(&self, req: http::Request<Buffer>) -> Result<Response<HttpBody>> {
+                if req.uri().path().contains("/resolve/") {
+                    self.resolves.fetch_add(1, Ordering::SeqCst);
+                }
+                self.inner.fetch(req).await
+            }
+        }
+
+        let transport = CountingTransport::default();
+        let op = Operator::new(
+            super::super::backend::HfBuilder::default()
+                .repo_type("dataset")
+                .repo_id("google-research-datasets/mbpp")
+                .download_mode("xet"),
+        )
+        .unwrap()
+        .with_context(
+            OperationContext::new().with_http_transport(HttpTransporter::new(transport.clone())),
+        );
+        let path = "full/train-00000-of-00001.parquet";
+        let reader = op.reader_with(path).concurrent(3).gap(0).await.unwrap();
+        let ranges = vec![0..4, 16..20, 32..36];
+        let bufs = reader.fetch(ranges.clone()).await.unwrap();
         assert_eq!(bufs[0].to_vec(), PARQUET_MAGIC);
-        assert_eq!(bufs[1].len(), 4);
+        assert!(bufs.iter().all(|buf| buf.len() == 4));
+        let first_resolves = transport.resolves.load(Ordering::SeqCst);
+        let repeated = reader.fetch(ranges.clone()).await.unwrap();
+        for (first, second) in bufs.iter().zip(repeated) {
+            assert_eq!(first.to_vec(), second.to_vec());
+        }
+        let repeated_resolves = transport.resolves.load(Ordering::SeqCst);
+        let fresh = op.read_with(path).range(0..36).await.unwrap().to_vec();
+        for (range, buf) in ranges.iter().zip(&bufs) {
+            assert_eq!(
+                buf.to_vec(),
+                fresh[range.start as usize..range.end as usize]
+            );
+        }
+        let fresh_resolves = transport.resolves.load(Ordering::SeqCst);
+        eprintln!(
+            "resolve counts: first batch={first_resolves}, repeated batch={repeated_resolves}, fresh reader={fresh_resolves}"
+        );
+        assert_eq!(first_resolves, 1);
+        assert_eq!(repeated_resolves, 1);
+        assert_eq!(fresh_resolves, 2);
     }
 }

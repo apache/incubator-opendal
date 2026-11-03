@@ -21,6 +21,10 @@
 #[doc = include_str!("0000_example.md")]
 pub mod rfc_0000_example {}
 
+/// Compact metadata and operation arguments
+#[doc = include_str!("8194_compact_metadata_and_operation_args.md")]
+pub mod rfc_8194_compact_metadata_and_operation_args {}
+
 /// Write if not changed
 #[doc = include_str!("8147_write_if_not_changed.md")]
 pub mod rfc_8147_write_if_not_changed {}

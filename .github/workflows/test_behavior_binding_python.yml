@@ -28,7 +28,7 @@ on:
         type: string
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
+  group: binding_python-${{ inputs.os }}-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -47,7 +47,7 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           # params must be in sync with `test` job
           working-directory: bindings/python
@@ -79,10 +79,17 @@ jobs:
           echo "OP_CONNECT_TOKEN=${{ secrets.OP_CONNECT_TOKEN }}" >> "$GITHUB_ENV"
 
       - name: Setup uv
-        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           # params must be in sync with `python-cache` job
           working-directory: bindings/python
+
+      - name: Setup Java for HDFS build
+        if: matrix.cases.feature == 'services-hdfs'
+        uses: actions/setup-java@v5
+        with:
+          distribution: zulu
+          java-version: 11
 
       - name: Build with maturin
         shell: bash

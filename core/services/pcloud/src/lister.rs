@@ -90,7 +90,10 @@ impl oio::PageList for PcloudLister {
                     String::from_utf8_lossy(&bs.to_bytes()),
                 ))
             }
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListFolder")),
+                resp,
+            )),
         }
     }
 }

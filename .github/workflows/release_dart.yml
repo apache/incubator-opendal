@@ -83,9 +83,9 @@ jobs:
 
       - name: Build on cross linux
         if: runner.os == 'Linux' && matrix.target != 'x86_64-unknown-linux-gnu'
+        # Run from the repository root so cross mounts the changelog symlink target.
         run: |
-          cd bindings/dart/rust
-          cross build --release --target ${{ matrix.target }}
+          cross build --release --manifest-path bindings/dart/rust/Cargo.toml --target ${{ matrix.target }}
 
       - name: Build not on linux
         if: runner.os != 'Linux'

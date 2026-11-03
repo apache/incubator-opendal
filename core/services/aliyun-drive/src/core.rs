@@ -85,7 +85,7 @@ impl AliyunDriveCore {
         ctx: &OperationContext,
         mut req: Request<Buffer>,
         token: Option<&str>,
-    ) -> Result<Buffer> {
+    ) -> Result<Response<Buffer>> {
         // AliyunDrive raise NullPointerException if you haven't set a user-agent.
         req.headers_mut().insert(
             header::USER_AGENT,
@@ -105,11 +105,7 @@ impl AliyunDriveCore {
                     .expect("access token must be valid header value"),
             );
         }
-        let res = ctx.http_transport().send(req).await?;
-        if !res.status().is_success() {
-            return Err(parse_error(res));
-        }
-        Ok(res.into_body())
+        ctx.http_transport().send(req).await
     }
 
     async fn get_access_token(
@@ -129,14 +125,28 @@ impl AliyunDriveCore {
         let req = Request::post(format!("{}/oauth/access_token", self.endpoint))
             .body(Buffer::from(body))
             .map_err(new_request_build_error)?;
-        self.send(ctx, req, None).await
+        let res = self.send(ctx, req, None).await?;
+        if !res.status().is_success() {
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetAccessToken")),
+                res,
+            ));
+        }
+        Ok(res.into_body())
     }
 
     async fn get_drive_id(&self, ctx: &OperationContext, token: Option<&str>) -> Result<Buffer> {
         let req = Request::post(format!("{}/adrive/v1.0/user/getDriveInfo", self.endpoint))
             .body(Buffer::new())
             .map_err(new_request_build_error)?;
-        self.send(ctx, req, token).await
+        let res = self.send(ctx, req, token).await?;
+        if !res.status().is_success() {
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetDriveInfo")),
+                res,
+            ));
+        }
+        Ok(res.into_body())
     }
 
     pub async fn get_token_and_drive(
@@ -212,7 +222,14 @@ impl AliyunDriveCore {
             .extension(ServiceOperation("GetFileByPath"))
             .body(Buffer::from(body))
             .map_err(new_request_build_error)?;
-        self.send(ctx, req, token.as_deref()).await
+        let res = self.send(ctx, req, token.as_deref()).await?;
+        if !res.status().is_success() {
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetFileByPath")),
+                res,
+            ));
+        }
+        Ok(res.into_body())
     }
 
     pub async fn ensure_dir_exists(&self, ctx: &OperationContext, path: &str) -> Result<String> {
@@ -281,7 +298,14 @@ impl AliyunDriveCore {
             .extension(ServiceOperation("CreateFile"))
             .body(Buffer::from(body))
             .map_err(new_request_build_error)?;
-        self.send(ctx, req, token.as_deref()).await
+        let res = self.send(ctx, req, token.as_deref()).await?;
+        if !res.status().is_success() {
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("CreateFile")),
+                res,
+            ));
+        }
+        Ok(res.into_body())
     }
 
     pub async fn create(
@@ -314,6 +338,13 @@ impl AliyunDriveCore {
         .map_err(new_request_build_error)?;
 
         let res = self.send(ctx, req, token.as_deref()).await?;
+        if !res.status().is_success() {
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetDownloadUrl")),
+                res,
+            ));
+        }
+        let res = res.into_body();
 
         let output: GetDownloadUrlResponse =
             serde_json::from_reader(res.reader()).map_err(new_json_serialize_error)?;
@@ -356,7 +387,13 @@ impl AliyunDriveCore {
             .extension(ServiceOperation("MoveFile"))
             .body(Buffer::from(body))
             .map_err(new_request_build_error)?;
-        self.send(ctx, req, token.as_deref()).await?;
+        let res = self.send(ctx, req, token.as_deref()).await?;
+        if !res.status().is_success() {
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("MoveFile")),
+                res,
+            ));
+        }
         Ok(())
     }
 
@@ -379,7 +416,13 @@ impl AliyunDriveCore {
             .extension(ServiceOperation("UpdateFile"))
             .body(Buffer::from(body))
             .map_err(new_request_build_error)?;
-        self.send(ctx, req, token.as_deref()).await?;
+        let res = self.send(ctx, req, token.as_deref()).await?;
+        if !res.status().is_success() {
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("UpdateFile")),
+                res,
+            ));
+        }
         Ok(())
     }
 
@@ -403,7 +446,14 @@ impl AliyunDriveCore {
             .extension(ServiceOperation("CopyFile"))
             .body(Buffer::from(body))
             .map_err(new_request_build_error)?;
-        self.send(ctx, req, token.as_deref()).await
+        let res = self.send(ctx, req, token.as_deref()).await?;
+        if !res.status().is_success() {
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("CopyFile")),
+                res,
+            ));
+        }
+        Ok(res.into_body())
     }
 
     pub async fn delete_path(&self, ctx: &OperationContext, file_id: &str) -> Result<()> {
@@ -418,7 +468,13 @@ impl AliyunDriveCore {
             .extension(ServiceOperation("DeleteFile"))
             .body(Buffer::from(body))
             .map_err(new_request_build_error)?;
-        self.send(ctx, req, token.as_deref()).await?;
+        let res = self.send(ctx, req, token.as_deref()).await?;
+        if !res.status().is_success() {
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("DeleteFile")),
+                res,
+            ));
+        }
         Ok(())
     }
 
@@ -442,7 +498,14 @@ impl AliyunDriveCore {
             .extension(ServiceOperation("ListFiles"))
             .body(Buffer::from(body))
             .map_err(new_request_build_error)?;
-        self.send(ctx, req, token.as_deref()).await
+        let res = self.send(ctx, req, token.as_deref()).await?;
+        if !res.status().is_success() {
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListFiles")),
+                res,
+            ));
+        }
+        Ok(res.into_body())
     }
 
     pub async fn complete(
@@ -463,7 +526,14 @@ impl AliyunDriveCore {
             .extension(ServiceOperation("CompleteUpload"))
             .body(Buffer::from(body))
             .map_err(new_request_build_error)?;
-        self.send(ctx, req, token.as_deref()).await
+        let res = self.send(ctx, req, token.as_deref()).await?;
+        if !res.status().is_success() {
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("CompleteUpload")),
+                res,
+            ));
+        }
+        Ok(res.into_body())
     }
 
     async fn get_upload_url(
@@ -495,6 +565,13 @@ impl AliyunDriveCore {
         .map_err(new_request_build_error)?;
 
         let res = self.send(ctx, req, token.as_deref()).await?;
+        if !res.status().is_success() {
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetUploadUrl")),
+                res,
+            ));
+        }
+        let res = res.into_body();
 
         let mut output: UploadUrlResponse =
             serde_json::from_reader(res.reader()).map_err(new_json_deserialize_error)?;
@@ -526,7 +603,14 @@ impl AliyunDriveCore {
             .extension(ServiceOperation("UploadPart"))
             .body(body)
             .map_err(new_request_build_error)?;
-        self.send(ctx, req, None).await
+        let res = self.send(ctx, req, None).await?;
+        if !res.status().is_success() {
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("UploadPart")),
+                res,
+            ));
+        }
+        Ok(res.into_body())
     }
 }
 
@@ -701,46 +785,51 @@ pub struct PartInfoItem {
     part_number: Option<usize>,
 }
 
-mod error {
-    use bytes::Buf;
-    use http::Response;
-    use serde::Deserialize;
+#[derive(Default, Debug, Deserialize)]
+struct AliyunDriveError {
+    code: String,
+    message: String,
+}
 
-    use opendal_core::*;
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+}
 
-    #[derive(Default, Debug, Deserialize)]
-    struct AliyunDriveError {
-        code: String,
-        message: String,
-    }
-
-    pub(crate) fn parse_error(res: Response<Buffer>) -> Error {
-        let (parts, body) = res.into_parts();
-        let bs = body.to_bytes();
-        let (code, message) = serde_json::from_reader::<_, AliyunDriveError>(bs.clone().reader())
-            .map(|err| (Some(err.code), err.message))
-            .unwrap_or((None, String::from_utf8_lossy(&bs).into_owned()));
-        let (kind, retryable) = match parts.status.as_u16() {
-            403 => (ErrorKind::PermissionDenied, false),
-            400 => match code {
-                Some(code) if code == "NotFound.File" => (ErrorKind::NotFound, false),
-                Some(code) if code == "AlreadyExist.File" => (ErrorKind::AlreadyExists, false),
-                Some(code) if code == "PreHashMatched" => (ErrorKind::IsSameFile, false),
-                _ => (ErrorKind::Unexpected, false),
-            },
-            409 => (ErrorKind::AlreadyExists, false),
-            429 => match code {
-                Some(code) if code == "TooManyRequests" => (ErrorKind::RateLimited, true),
-                _ => (ErrorKind::Unexpected, false),
-            },
-            _ => (ErrorKind::Unexpected, false),
-        };
-        let mut err = Error::new(kind, message);
-        if retryable {
-            err = err.set_temporary();
-        }
-        err
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self { service_operation }
     }
 }
 
-pub(super) use error::*;
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, res: Response<Buffer>) -> Error {
+    let (parts, body) = res.into_parts();
+    let bs = body.to_bytes();
+    let (code, message) = serde_json::from_reader::<_, AliyunDriveError>(bs.clone().reader())
+        .map(|err| (Some(err.code), err.message))
+        .unwrap_or((None, String::from_utf8_lossy(&bs).into_owned()));
+    let (kind, retryable) = match parts.status.as_u16() {
+        403 => (ErrorKind::PermissionDenied, false),
+        400 => match code {
+            Some(code) if code == "NotFound.File" => (ErrorKind::NotFound, false),
+            Some(code) if code == "AlreadyExist.File" => (ErrorKind::AlreadyExists, false),
+            Some(code) if code == "PreHashMatched" => (ErrorKind::IsSameFile, false),
+            _ => (ErrorKind::Unexpected, false),
+        },
+        409 => (ErrorKind::AlreadyExists, false),
+        429 => match code {
+            Some(code) if code == "TooManyRequests" => (ErrorKind::RateLimited, true),
+            _ => (ErrorKind::Unexpected, false),
+        },
+        _ => (ErrorKind::Unexpected, false),
+    };
+    let mut err =
+        Error::new(kind, message).with_context("service_operation", ctx.service_operation.0);
+    err = with_error_response_context(err, parts);
+    if retryable {
+        err = err.set_temporary();
+    }
+    err
+}

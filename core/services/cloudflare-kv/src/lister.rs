@@ -21,8 +21,8 @@ use bytes::Buf;
 use opendal_core::raw::*;
 use opendal_core::*;
 
-use super::core::CloudflareKvCore;
 use super::core::parse_error;
+use super::core::{CloudflareKvCore, ErrorContext};
 use super::model::{CfKvListKey, CfKvListResponse};
 
 pub struct CloudflareKvLister {
@@ -84,14 +84,15 @@ impl CloudflareKvLister {
         }
 
         let entry_metadata = if name.ends_with('/') {
-            Metadata::new(EntryMode::DIR)
-                .with_etag(build_tmp_path_of(&name))
-                .with_content_length(0)
+            let mut metadata = MetadataBuilder::dir();
+            metadata.etag(build_tmp_path_of(&name));
+            metadata.build()
         } else {
-            Metadata::new(EntryMode::FILE)
-                .with_etag(metadata.etag)
-                .with_content_length(metadata.content_length as u64)
-                .with_last_modified(metadata.last_modified.parse::<Timestamp>()?)
+            let mut result = MetadataBuilder::file(metadata.content_length as u64);
+            result
+                .etag(&metadata.etag)
+                .last_modified(metadata.last_modified.parse::<Timestamp>()?);
+            result.build()
         };
 
         Ok(oio::Entry::new(&name, entry_metadata))
@@ -108,12 +109,11 @@ impl CloudflareKvLister {
             ctx.entries.push_back(entry);
         } else if !result.is_empty() {
             let path_name = relative_to_root(root, &self.path);
-            let entry = oio::Entry::new(
-                &format!("{path_name}/"),
-                Metadata::new(EntryMode::DIR)
-                    .with_etag(build_tmp_path_of(&path_name))
-                    .with_content_length(0),
-            );
+            let entry = oio::Entry::new(&format!("{path_name}/"), {
+                let mut metadata = MetadataBuilder::dir();
+                metadata.etag(build_tmp_path_of(&path_name));
+                metadata.build()
+            });
             ctx.entries.push_back(entry);
         }
         ctx.done = true;
@@ -130,7 +130,10 @@ impl oio::PageList for CloudflareKvLister {
             .await?;
 
         if resp.status() != http::StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("ListKeys")),
+                resp,
+            ));
         }
 
         let bs = resp.into_body();

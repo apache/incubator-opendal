@@ -18,8 +18,9 @@
  */
 
 // The four-step mental model — service, operator, layer, operation — written
-// out in each binding's real API so the concepts page never drifts from the
-// libraries it describes.
+// out in bindings whose public API exposes the operator and layers directly,
+// so the concepts page never drifts from the libraries it describes. Bindings
+// with a different surface (for example Dart) are covered by the page prose.
 export const conceptSamples = [
   {
     id: "rust",

@@ -1,0 +1,182 @@
+# Licensed to the Apache Software Foundation (ASF) under one
+# or more contributor license agreements.  See the NOTICE file
+# distributed with this work for additional information
+# regarding copyright ownership.  The ASF licenses this file
+# to you under the Apache License, Version 2.0 (the
+# "License"); you may not use this file except in compliance
+# with the License.  You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing,
+# software distributed under the License is distributed on an
+# "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+# KIND, either express or implied.  See the License for the
+# specific language governing permissions and limitations
+# under the License.
+
+name: Weekly source release
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 0 * * 4'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: weekly-source-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.repository == 'apache/opendal' && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    outputs:
+      sha: ${{ steps.candidate.outputs.sha }}
+      rc: ${{ steps.candidate.outputs.rc }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup
+        with:
+          need-deny: true
+      - name: Select source commit and release baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          sha="$GITHUB_SHA"
+          if [ "$GITHUB_EVENT_NAME" = schedule ]; then
+            cutoff=$(python3 - <<'PYTHON'
+          import datetime as d
+          now = d.datetime.now(d.timezone.utc)
+          thursday = (now - d.timedelta(days=(now.weekday() - 3) % 7)).replace(hour=0, minute=0, second=0, microsecond=0)
+          print(thursday.strftime("%Y-%m-%dT%H:%M:%SZ"))
+          PYTHON
+            )
+            # Push run timestamps record arrival on main, unlike commit dates.
+            sha=$(gh api --paginate --slurp 'repos/apache/opendal/actions/workflows/weekly_release.yml/runs?event=push&branch=main&per_page=100' |
+              jq -er --arg cutoff "$cutoff" '[.[].workflow_runs[] | select(.created_at <= $cutoff)] | max_by(.created_at, .id).head_sha // error("no push recorded before cutoff")')
+          fi
+          baseline=$(python3 scripts/release_lifecycle.py baseline)
+          git checkout --detach "$sha"
+          {
+            echo "SOURCE_SHA=$sha"
+            echo "BASELINE=$baseline"
+          } >> "$GITHUB_ENV"
+      - name: Prepare versions from breaking change declarations
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/release_impact.py prepare --baseline "$BASELINE" --source "$SOURCE_SHA"
+          while IFS= read -r lock; do
+            cargo update --workspace --manifest-path "${lock%Cargo.lock}Cargo.toml"
+          done < <(git ls-files '*Cargo.lock')
+          python3 scripts/dependencies.py generate
+          version=$(cargo run --quiet --manifest-path dev/Cargo.toml -- release-packages | jq -er '.[] | select(.path == "core") | .version')
+          # Choose the first unused RC number, including manually prepared tags.
+          rc_number=1
+          while git show-ref --verify --quiet "refs/tags/v$version-rc.$rc_number"; do
+            rc_number=$((rc_number + 1))
+          done
+          export RC="$version-rc.$rc_number"
+          echo "RC=$RC" >> "$GITHUB_ENV"
+          echo "CANDIDATE_BRANCH=releases/$RC" >> "$GITHUB_ENV"
+          python3 - <<'PYTHON'
+          import os
+          from pathlib import Path
+          p = Path("CHANGELOG.md")
+          p.write_text(f"# v{os.environ['RC'].split('-rc.')[0]}\n\n- [Changes since {os.environ['BASELINE']}](https://github.com/apache/opendal/compare/{os.environ['BASELINE']}...{os.environ['SOURCE_SHA']})\n\n" + p.read_text())
+          PYTHON
+      - name: Push prepared candidate
+        id: candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git config user.name 'OpenDAL Release'
+          git config user.email 'dev@opendal.apache.org'
+          git add --all
+          git -c commit.gpgsign=false commit -m "Prepare $RC"
+          git -c tag.gpgsign=false tag "v$RC"
+          git -c 'credential.helper=!gh auth git-credential' push --atomic origin "HEAD:refs/heads/$CANDIDATE_BRANCH" "refs/tags/v$RC"
+          {
+            echo "sha=$(git rev-parse HEAD)"
+            echo "rc=$RC"
+          } >> "$GITHUB_OUTPUT"
+          echo "Prepared $RC on $CANDIDATE_BRANCH from source $SOURCE_SHA. Continuing to ATR compose." >> "$GITHUB_STEP_SUMMARY"
+
+  compose:
+    needs: prepare
+    permissions:
+      contents: read
+      id-token: write
+    uses: ./.github/workflows/release-compose.yml
+    with:
+      candidate: ${{ needs.prepare.outputs.sha }}
+      rc: ${{ needs.prepare.outputs.rc }}
+    secrets:
+      GPG_SECRET_KEY: ${{ secrets.GPG_SECRET_KEY }}
+
+  builds:
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+      contents: read
+    steps:
+      - name: Dispatch existing RC workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RC: ${{ needs.prepare.outputs.rc }}
+          SHA: ${{ needs.prepare.outputs.sha }}
+        run: |
+          # GITHUB_TOKEN pushes do not trigger the existing tag workflows.
+          for workflow in ci_bindings_{c,cpp,d,dart,dotnet,go,haskell,java,lua,moonbit,nodejs,ocaml,php,ruby,swift,zig}.yml release_{dart,dotnet,java,nodejs,python,ruby,rust}.yml docs.yml; do
+            state=$(gh api "repos/apache/opendal/actions/workflows/$workflow" --jq .state)
+            case "$state" in
+              disabled_*)
+                echo "Skipped $workflow ($state)." >> "$GITHUB_STEP_SUMMARY"
+                continue
+                ;;
+            esac
+            # Reuse runs already accepted before a partial dispatch failure.
+            count=$(gh run list --repo apache/opendal --workflow "$workflow" --commit "$SHA" --event workflow_dispatch --limit 1 --json databaseId --jq length)
+            if [ "$count" -gt 0 ]; then continue; fi
+            args=()
+            case "$workflow" in
+              release_nodejs.yml) args=(-f nodejs-publish=false -f nodejs-publish-dry-run=false) ;;
+              docs.yml) args=(-f release_version="v$RC" -f deploy-nightlies=false) ;;
+            esac
+            gh workflow run "$workflow" --repo apache/opendal --ref "v$RC" "${args[@]}"
+          done
+
+  notify:
+    concurrency:
+      group: release-lifecycle-mutations
+      cancel-in-progress: false
+    needs: [prepare, compose, builds]
+    runs-on: ubuntu-latest
+    permissions:
+      discussions: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Publish candidate instructions
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RC: ${{ needs.prepare.outputs.rc }}
+        run: python3 scripts/release_lifecycle.py notify --rc "$RC"

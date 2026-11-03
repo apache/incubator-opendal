@@ -1,10 +1,29 @@
+<!--
+    Licensed to the Apache Software Foundation (ASF) under one
+    or more contributor license agreements.  See the NOTICE file
+    distributed with this work for additional information
+    regarding copyright ownership.  The ASF licenses this file
+    to you under the Apache License, Version 2.0 (the
+    "License"); you may not use this file except in compliance
+    with the License.  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+    Unless required by applicable law or agreed to in writing,
+    software distributed under the License is distributed on an
+    "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+    KIND, either express or implied.  See the License for the
+    specific language governing permissions and limitations
+    under the License.
+-->
+
 <Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
         <Title>Apache OpenDAL .NET</Title>
         <PackageId>Apache.OpenDAL</PackageId>
         <Description>The official .NET binding for Apache OpenDAL™</Description>
-        <VersionPrefix>0.1.2</VersionPrefix>
+        <VersionPrefix>0.3.1</VersionPrefix>
         <AssemblyVersion>$(VersionPrefix)</AssemblyVersion>
         <FileVersion>$(VersionPrefix)</FileVersion>
         <Authors>Apache OpenDAL™</Authors>
@@ -25,6 +44,7 @@
         <None Include="../README.md" Pack="true" PackagePath="" />
         <None Include="../LICENSE" Pack="true" PackagePath="" />
         <None Include="../LICENSE-MPL-2.0.txt" Pack="true" PackagePath="" />
+        <None Include="../LICENSE-CC0-1.0.txt" Pack="true" PackagePath="" />
         <None Include="../NOTICE" Pack="true" PackagePath="" />
         <None Include="runtimes\win-x64\native\opendal_dotnet.dll"
             Pack="true"
@@ -32,6 +52,9 @@
         <None Include="runtimes\linux-x64\native\libopendal_dotnet.so"
             Pack="true"
             PackagePath="runtimes/linux-x64/native/" />
+        <None Include="runtimes\linux-arm64\native\libopendal_dotnet.so"
+            Pack="true"
+            PackagePath="runtimes/linux-arm64/native/" />
         <None Include="runtimes\osx-arm64\native\libopendal_dotnet.dylib"
             Pack="true"
             PackagePath="runtimes/osx-arm64/native/" />

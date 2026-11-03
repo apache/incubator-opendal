@@ -20,10 +20,10 @@ use std::sync::Arc;
 use asyncband::once::OnceCell;
 use http::StatusCode;
 
-use super::core::AzdlsCore;
 use super::core::FILE;
 use super::core::X_MS_VERSION_ID;
 use super::core::parse_error;
+use super::core::{AzdlsCore, ErrorContext};
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -77,30 +77,39 @@ impl AzdlsWriter {
             .await?;
         match resp.status() {
             StatusCode::CREATED | StatusCode::OK => Ok(()),
-            StatusCode::CONFLICT if self.op.if_not_exists() => {
-                Err(parse_error(resp).with_operation("Backend::azdls_create_request"))
+            _ => {
+                let err = parse_error(
+                    ErrorContext::new(ServiceOperation("CreateFile"))
+                        .with_caller_condition(self.op.is_conditional())
+                        .with_if_not_exists(self.op.if_not_exists()),
+                    resp,
+                )
+                .with_operation("Backend::azdls_create_request");
+                if err.kind() == ErrorKind::AlreadyExists {
+                    Ok(())
+                } else {
+                    Err(err)
+                }
             }
-            StatusCode::CONFLICT => Ok(()),
-            _ => Err(parse_error(resp).with_operation("Backend::azdls_create_request")),
         }
     }
 
     fn parse_metadata(headers: &http::HeaderMap) -> Result<Metadata> {
-        let mut metadata = Metadata::default();
+        let mut metadata = MetadataBuilder::unknown();
 
         if let Some(last_modified) = parse_last_modified(headers)? {
-            metadata.set_last_modified(last_modified);
+            metadata.last_modified(last_modified);
         }
         let etag = parse_etag(headers)?;
         if let Some(etag) = etag {
-            metadata.set_etag(etag);
+            metadata.etag(etag);
         }
         let version_id = parse_header_to_str(headers, X_MS_VERSION_ID)?;
         if let Some(version_id) = version_id {
-            metadata.set_version(version_id);
+            metadata.version(version_id);
         }
 
-        Ok(metadata)
+        Ok(metadata.build())
     }
 }
 
@@ -114,7 +123,10 @@ impl oio::PositionWrite for AzdlsWriter {
 
         match resp.status() {
             StatusCode::OK | StatusCode::ACCEPTED => Ok(()),
-            _ => Err(parse_error(resp).with_operation("Backend::azdls_append_request")),
+            _ => Err(
+                parse_error(ErrorContext::new(ServiceOperation("AppendData")), resp)
+                    .with_operation("Backend::azdls_append_request"),
+            ),
         }
     }
 
@@ -125,12 +137,15 @@ impl oio::PositionWrite for AzdlsWriter {
             .azdls_flush(&self.ctx, &self.path, size, true)
             .await?;
 
-        let mut meta = AzdlsWriter::parse_metadata(resp.headers())?;
-        meta.set_content_length(size);
+        let mut meta = AzdlsWriter::parse_metadata(resp.headers())?.into_builder();
+        meta.set_file(size);
 
         match resp.status() {
-            StatusCode::OK | StatusCode::ACCEPTED => Ok(meta),
-            _ => Err(parse_error(resp).with_operation("Backend::azdls_flush_request")),
+            StatusCode::OK | StatusCode::ACCEPTED => Ok(meta.build()),
+            _ => Err(
+                parse_error(ErrorContext::new(ServiceOperation("FlushData")), resp)
+                    .with_operation("Backend::azdls_flush_request"),
+            ),
         }
     }
 
@@ -162,7 +177,7 @@ impl oio::AppendWrite for AzdlsWriter {
     async fn offset(&self) -> Result<u64> {
         let resp = self
             .core
-            .azdls_get_properties(&self.ctx, &self.path)
+            .azdls_get_properties(&self.ctx, &self.path, &OpStat::default())
             .await?;
 
         let status = resp.status();
@@ -171,7 +186,10 @@ impl oio::AppendWrite for AzdlsWriter {
         match status {
             StatusCode::OK => Ok(parse_content_length(headers)?.unwrap_or_default()),
             StatusCode::NOT_FOUND => Ok(0),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetPathProperties")),
+                resp,
+            )),
         }
     }
 
@@ -187,16 +205,19 @@ impl oio::AppendWrite for AzdlsWriter {
             .azdls_append(&self.ctx, &self.path, Some(size), offset, true, false, body)
             .await?;
 
-        let mut meta = AzdlsWriter::parse_metadata(resp.headers())?;
+        let mut meta = AzdlsWriter::parse_metadata(resp.headers())?.into_builder();
         let md5 = parse_content_md5(resp.headers())?;
         if let Some(md5) = md5 {
-            meta.set_content_md5(md5);
+            meta.content_md5(md5);
         }
-        meta.set_content_length(offset + size);
+        meta.set_file(offset + size);
 
         match resp.status() {
-            StatusCode::OK | StatusCode::ACCEPTED => Ok(meta),
-            _ => Err(parse_error(resp).with_operation("Backend::azdls_append_request")),
+            StatusCode::OK | StatusCode::ACCEPTED => Ok(meta.build()),
+            _ => Err(
+                parse_error(ErrorContext::new(ServiceOperation("AppendData")), resp)
+                    .with_operation("Backend::azdls_append_request"),
+            ),
         }
     }
 }

@@ -20,9 +20,9 @@ use std::sync::Arc;
 use bytes::Buf;
 use http::StatusCode;
 
-use super::core::GdriveCore;
 use super::core::GdriveFile;
 use super::core::parse_error;
+use super::core::{ErrorContext, GdriveCore};
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -87,18 +87,19 @@ impl oio::OneShotWrite for GdriveWriter {
 
             match resp.status() {
                 StatusCode::OK | StatusCode::CREATED => {
-                    let mut metadata =
-                        Metadata::new(EntryMode::FILE).with_content_length(size as u64);
+                    let mut metadata = MetadataBuilder::file(size as u64);
 
                     if current_file_id.is_none() {
                         let bs = resp.into_body();
                         let file: GdriveFile = serde_json::from_reader(bs.reader())
                             .map_err(new_json_deserialize_error)?;
-                        metadata = metadata.with_content_type(file.mime_type);
+                        metadata.content_type(file.mime_type);
                         self.core.cache_file_id(&self.path, &file.id).await;
                     }
-                    self.core.record_recent_upsert(&self.path, metadata).await;
-                    return Ok(Metadata::default());
+                    self.core
+                        .record_recent_upsert(&self.path, metadata.build())
+                        .await;
+                    return Ok(MetadataBuilder::unknown().build());
                 }
                 StatusCode::NOT_FOUND if !retried && current_file_id.is_some() => {
                     retried = true;
@@ -106,7 +107,12 @@ impl oio::OneShotWrite for GdriveWriter {
                     current_file_id = self.core.resolve_path(&self.ctx, &self.path).await?;
                     continue;
                 }
-                _ => return Err(parse_error(resp)),
+                _ => {
+                    return Err(parse_error(
+                        ErrorContext::new(ServiceOperation("UploadFile")),
+                        resp,
+                    ));
+                }
             }
         }
     }

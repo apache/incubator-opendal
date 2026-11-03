@@ -19,8 +19,8 @@ use std::sync::Arc;
 
 use http::StatusCode;
 
-use super::core::VercelArtifactsCore;
 use super::core::parse_error;
+use super::core::{ErrorContext, VercelArtifactsCore};
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -58,8 +58,11 @@ impl oio::OneShotWrite for VercelArtifactsWriter {
         let status = response.status();
 
         match status {
-            StatusCode::OK | StatusCode::ACCEPTED => Ok(Metadata::default()),
-            _ => Err(parse_error(response)),
+            StatusCode::OK | StatusCode::ACCEPTED => Ok(MetadataBuilder::unknown().build()),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("PutArtifact")),
+                response,
+            )),
         }
     }
 }

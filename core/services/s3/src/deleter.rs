@@ -46,7 +46,7 @@ impl oio::BatchDelete for S3Deleter {
         }
 
         let error_ctx = ErrorContext::new(ServiceOperation("DeleteObject"))
-            .with_if_match(args.if_match().is_some());
+            .with_caller_condition(args.is_conditional());
         let resp = self.core.s3_delete_object(&self.ctx, &path, &args).await?;
 
         let status = resp.status();
@@ -113,7 +113,8 @@ impl oio::BatchDelete for S3Deleter {
 }
 
 fn parse_delete_objects_result_error(err: DeleteObjectsResultError, conditional: bool) -> Error {
-    let error_ctx = ErrorContext::new(ServiceOperation("DeleteObjects")).with_if_match(conditional);
+    let error_ctx =
+        ErrorContext::new(ServiceOperation("DeleteObjects")).with_caller_condition(conditional);
     let (kind, retryable) =
         parse_s3_error_code(error_ctx, err.code.as_str()).unwrap_or((ErrorKind::Unexpected, false));
     let kind = if conditional && kind == ErrorKind::NotFound {

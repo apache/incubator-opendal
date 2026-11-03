@@ -57,7 +57,10 @@ pub struct AzblobConfig {
     )]
     pub account_key: Option<String>,
 
-    /// The encryption key of Azblob service backend.
+    /// The Base64-encoded AES-256 customer-provided encryption key.
+    ///
+    /// The key must decode to exactly 32 bytes. Building an operator returns
+    /// `ConfigInvalid` for invalid Base64 or a different decoded length.
     pub encryption_key: Option<String>,
 
     /// The encryption key sha256 of Azblob service backend.
@@ -115,7 +118,10 @@ impl opendal_core::Configurator for AzblobConfig {
 
     #[allow(deprecated)]
     fn into_builder(self) -> Self::Builder {
-        AzblobBuilder { config: self }
+        AzblobBuilder {
+            config: self,
+            credential_providers: None,
+        }
     }
 }
 

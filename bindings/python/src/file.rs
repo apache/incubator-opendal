@@ -19,41 +19,54 @@ use std::io::BufRead;
 use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
-use std::io::Write;
 use std::ops::DerefMut;
 use std::sync::Arc;
 
 use asyncband::mutex::Mutex;
-use futures::AsyncReadExt;
 use futures::AsyncSeekExt;
-use futures::AsyncWriteExt;
+use futures::SinkExt;
 use pyo3::IntoPyObjectExt;
 use pyo3::buffer::PyBuffer;
 use pyo3::exceptions::PyIOError;
 use pyo3::exceptions::PyValueError;
+use pyo3::types::PyBytes;
 use pyo3_async_runtimes::tokio::future_into_py;
+use pyo3_async_runtimes::tokio::get_runtime;
 
 use crate::*;
 
 /// A file-like object for reading and writing data.
 ///
 /// Created by the `open` method of the `Operator` class.
+///
+/// Storage I/O releases the Python GIL while waiting. Concurrent operations on
+/// the same file are rejected; use separate files for I/O from multiple threads.
 #[pyclass(module = "opendal.file")]
 pub struct File(FileState);
 
 enum FileState {
-    Reader(ocore::blocking::StdReader),
-    Writer(ocore::blocking::StdWriter),
+    Reader(Box<ocore::blocking::StdReader>),
+    Writer(ocore::BufferSink),
     Closed,
 }
 
 impl File {
     pub fn new_reader(reader: ocore::blocking::StdReader) -> Self {
-        Self(FileState::Reader(reader))
+        Self(FileState::Reader(Box::new(reader)))
     }
 
-    pub fn new_writer(writer: ocore::blocking::Writer) -> Self {
-        Self(FileState::Writer(writer.into_std_write()))
+    pub fn new_writer(writer: ocore::Writer) -> Self {
+        Self(FileState::Writer(writer.into_sink()))
+    }
+}
+
+impl Drop for File {
+    fn drop(&mut self) {
+        if matches!(self.0, FileState::Writer(_)) {
+            // Pending operations can own runtime resources even without close.
+            let _guard = get_runtime().enter();
+            drop(std::mem::replace(&mut self.0, FileState::Closed));
+        }
     }
 }
 #[pymethods]
@@ -96,25 +109,14 @@ impl File {
             }
         };
 
-        let buffer = match size {
-            Some(size) => {
-                let mut bs = vec![0; size];
-                let n = reader
-                    .read(&mut bs)
-                    .map_err(|err| PyIOError::new_err(err.to_string()))?;
-                bs.truncate(n);
-                bs
-            }
-            None => {
-                let mut buffer = Vec::new();
-                reader
-                    .read_to_end(&mut buffer)
-                    .map_err(|err| PyIOError::new_err(err.to_string()))?;
-                buffer
-            }
-        };
+        let buffer = py
+            .detach(|| match size {
+                Some(size) => reader.read_buffer(size),
+                None => reader.read_to_end_buffer(),
+            })
+            .map_err(|err| PyIOError::new_err(err.to_string()))?;
 
-        Buffer::new(buffer).into_bytes_ref(py)
+        buffer_into_py_bytes(py, buffer).map(Bound::into_any)
     }
 
     /// Read one line from this file.
@@ -155,26 +157,18 @@ impl File {
             }
         };
 
-        let buffer = match size {
-            None => {
+        let buffer = py
+            .detach(|| -> std::io::Result<Vec<u8>> {
                 let mut buffer = Vec::new();
-                reader
-                    .read_until(b'\n', &mut buffer)
-                    .map_err(|err| PyIOError::new_err(err.to_string()))?;
-                buffer
-            }
-            Some(size) => {
-                let mut bs = vec![0; size];
-                let mut reader = reader.take(size as u64);
-                let n = reader
-                    .read_until(b'\n', &mut bs)
-                    .map_err(|err| PyIOError::new_err(err.to_string()))?;
-                bs.truncate(n);
-                bs
-            }
-        };
+                match size {
+                    None => reader.read_until(b'\n', &mut buffer)?,
+                    Some(size) => reader.take(size as u64).read_until(b'\n', &mut buffer)?,
+                };
+                Ok(buffer)
+            })
+            .map_err(|err| PyIOError::new_err(err.to_string()))?;
 
-        Buffer::new(buffer).into_bytes_ref(py)
+        buffer_into_py_bytes(py, buffer.into()).map(Bound::into_any)
     }
 
     /// Read bytes into a pre-allocated buffer.
@@ -189,7 +183,7 @@ impl File {
     /// int
     ///     The number of bytes read.
     #[pyo3(signature = (buffer: "bytearray | memoryview"))]
-    pub fn readinto(&mut self, buffer: PyBuffer<u8>) -> PyResult<usize> {
+    pub fn readinto(&mut self, py: Python<'_>, buffer: PyBuffer<u8>) -> PyResult<usize> {
         let reader = match &mut self.0 {
             FileState::Reader(r) => r,
             FileState::Writer(_) => {
@@ -212,15 +206,22 @@ impl File {
             return Err(PyIOError::new_err("Buffer is not C contiguous."));
         }
 
-        Python::attach(|_py| {
-            let ptr = buffer.buf_ptr();
-            let nbytes = buffer.len_bytes();
-            unsafe {
-                let view: &mut [u8] = std::slice::from_raw_parts_mut(ptr as *mut u8, nbytes);
-                let z = Read::read(reader, view)?;
-                Ok(z)
+        let size = buffer.len_bytes();
+        // Wait using owned storage, without exposing the Python buffer to I/O.
+        let data = py.detach(|| reader.read_buffer(size))?;
+        let len = data.len();
+        let target = buffer.as_mut_slice(py).expect("buffer was validated above");
+        let mut offset = 0;
+        for chunk in data {
+            for (dst, src) in target[offset..offset + chunk.len()]
+                .iter()
+                .zip(chunk.iter())
+            {
+                dst.set(*src);
             }
-        })
+            offset += chunk.len();
+        }
+        Ok(len)
     }
 
     /// Write bytes to this file.
@@ -235,7 +236,7 @@ impl File {
     /// int
     ///     The number of bytes written.
     #[pyo3(signature = (bs: "bytes"))]
-    pub fn write(&mut self, bs: &[u8]) -> PyResult<usize> {
+    pub fn write(&mut self, py: Python<'_>, bs: &Bound<PyBytes>) -> PyResult<usize> {
         let writer = match &mut self.0 {
             FileState::Reader(_) => {
                 return Err(PyIOError::new_err(
@@ -250,9 +251,13 @@ impl File {
             }
         };
 
-        writer
-            .write_all(bs)
-            .map(|_| bs.len())
+        let bs = py_bytes_like_into_buffer(bs.as_any())?;
+        let len = bs.len();
+        if len == 0 {
+            return Ok(0);
+        }
+        py.detach(|| get_runtime().handle().block_on(writer.send(bs)))
+            .map(|_| len)
             .map_err(|err| PyIOError::new_err(err.to_string()))
     }
 
@@ -266,12 +271,19 @@ impl File {
     ///     The reference point for the offset.
     ///     0: start of file (default); 1: current position; 2: end of file.
     ///
+    /// Notes
+    /// -----
+    /// Unbounded readable files allow non-negative positions beyond EOF. Reads
+    /// from those positions return empty bytes when the backing service reports
+    /// an unsatisfied unbounded range. Other service errors propagate. Explicit
+    /// bounded views reject positions beyond their range.
+    ///
     /// Returns
     /// -------
     /// int
     ///     The new absolute position.
     #[pyo3(signature = (pos, whence = 0))]
-    pub fn seek(&mut self, pos: i64, whence: u8) -> PyResult<u64> {
+    pub fn seek(&mut self, py: Python<'_>, pos: i64, whence: u8) -> PyResult<u64> {
         if !self.seekable()? {
             return Err(PyIOError::new_err(
                 "Seek operation is not supported by the backing service.",
@@ -298,8 +310,7 @@ impl File {
             _ => return Err(PyValueError::new_err("invalid whence")),
         };
 
-        reader
-            .seek(whence)
+        py.detach(|| reader.seek(whence))
             .map_err(|err| PyIOError::new_err(err.to_string()))
     }
 
@@ -309,7 +320,7 @@ impl File {
     /// -------
     /// int
     ///     The current absolute position.
-    pub fn tell(&mut self) -> PyResult<u64> {
+    pub fn tell(&mut self, py: Python<'_>) -> PyResult<u64> {
         let reader = match &mut self.0 {
             FileState::Reader(r) => r,
             FileState::Writer(_) => {
@@ -324,8 +335,7 @@ impl File {
             }
         };
 
-        reader
-            .stream_position()
+        py.detach(|| reader.stream_position())
             .map_err(|err| PyIOError::new_err(err.to_string()))
     }
 
@@ -336,12 +346,16 @@ impl File {
     /// Notes
     /// -----
     /// A closed file cannot be used for further I/O operations.
-    fn close(&mut self) -> PyResult<()> {
-        if let FileState::Writer(w) = &mut self.0 {
-            w.close().map_err(format_pyerr_from_io_error)?;
-        };
-        self.0 = FileState::Closed;
-        Ok(())
+    fn close(&mut self, py: Python<'_>) -> PyResult<()> {
+        py.detach(|| {
+            let _guard = get_runtime().enter();
+            if let FileState::Writer(w) = &mut self.0 {
+                get_runtime().handle().block_on(w.close())?;
+            }
+            self.0 = FileState::Closed;
+            Ok(())
+        })
+        .map_err(format_pyerr)
     }
 
     pub fn __enter__(slf: PyRef<'_, Self>) -> Py<Self> {
@@ -355,25 +369,28 @@ impl File {
         traceback: "types.TracebackType | None"))]
     pub fn __exit__(
         &mut self,
+        py: Python<'_>,
         exc_type: Py<PyAny>,
         exc_value: Py<PyAny>,
         traceback: Py<PyAny>,
     ) -> PyResult<()> {
-        self.close()
+        self.close(py)
     }
 
     /// Flush the underlying writer.
     ///
     /// Notes
     /// -----
+    /// Passes pending input to the core writer. Storage chunks can remain
+    /// buffered until more data arrives or `close()` completes the write.
     /// Is a no-op if the file is not `writable`.
-    pub fn flush(&mut self) -> PyResult<()> {
+    pub fn flush(&mut self, py: Python<'_>) -> PyResult<()> {
         if matches!(self.0, FileState::Reader(_)) {
             Ok(())
         } else if let FileState::Writer(w) = &mut self.0 {
-            match w.flush() {
+            match py.detach(|| get_runtime().handle().block_on(w.flush())) {
                 Ok(_) => Ok(()),
-                Err(e) => Err(e.into()),
+                Err(e) => Err(std::io::Error::from(e).into()),
             }
         } else {
             Ok(())
@@ -436,18 +453,22 @@ impl File {
 pub struct AsyncFile(Arc<Mutex<AsyncFileState>>);
 
 enum AsyncFileState {
-    Reader(ocore::FuturesAsyncReader),
-    Writer(ocore::FuturesAsyncWriter),
+    Reader(Box<ocore::FuturesAsyncReader>),
+    Writer(ocore::BufferSink),
     Closed,
 }
 
 impl AsyncFile {
     pub fn new_reader(reader: ocore::FuturesAsyncReader) -> Self {
-        Self(Arc::new(Mutex::new(AsyncFileState::Reader(reader))))
+        Self(Arc::new(Mutex::new(AsyncFileState::Reader(Box::new(
+            reader,
+        )))))
     }
 
-    pub fn new_writer(writer: ocore::FuturesAsyncWriter) -> Self {
-        Self(Arc::new(Mutex::new(AsyncFileState::Writer(writer))))
+    pub fn new_writer(writer: ocore::Writer) -> Self {
+        Self(Arc::new(Mutex::new(AsyncFileState::Writer(
+            writer.into_sink(),
+        ))))
     }
 }
 #[pymethods]
@@ -491,27 +512,12 @@ impl AsyncFile {
             };
 
             let buffer = match size {
-                Some(size) => {
-                    // TODO: optimize here by using uninit slice.
-                    let mut bs = vec![0; size];
-                    let n = reader
-                        .read(&mut bs)
-                        .await
-                        .map_err(|err| PyIOError::new_err(err.to_string()))?;
-                    bs.truncate(n);
-                    bs
-                }
-                None => {
-                    let mut buffer = Vec::new();
-                    reader
-                        .read_to_end(&mut buffer)
-                        .await
-                        .map_err(|err| PyIOError::new_err(err.to_string()))?;
-                    buffer
-                }
-            };
+                Some(size) => reader.read_buffer(size).await,
+                None => reader.read_to_end_buffer().await,
+            }
+            .map_err(|err| PyIOError::new_err(err.to_string()))?;
 
-            Python::attach(|py| Buffer::new(buffer).into_bytes(py))
+            Python::attach(|py| buffer_into_py_bytes(py, buffer).map(Bound::unbind))
         })
     }
 
@@ -527,11 +533,13 @@ impl AsyncFile {
     /// coroutine
     ///     An awaitable that returns the number of bytes written.
     #[pyo3(signature = (bs: "bytes") -> "collections.abc.Awaitable[int]")]
-    pub fn write<'p>(&'p mut self, py: Python<'p>, bs: &'p [u8]) -> PyResult<Bound<'p, PyAny>> {
+    pub fn write<'p>(
+        &'p mut self,
+        py: Python<'p>,
+        bs: &Bound<PyBytes>,
+    ) -> PyResult<Bound<'p, PyAny>> {
         let state = self.0.clone();
-
-        // FIXME: can we avoid this clone?
-        let bs = bs.to_vec();
+        let bs = py_bytes_like_into_buffer(bs.as_any())?;
 
         future_into_py(py, async move {
             let mut guard = state.lock().await;
@@ -550,8 +558,11 @@ impl AsyncFile {
             };
 
             let len = bs.len();
+            if len == 0 {
+                return Ok(0);
+            }
             writer
-                .write_all(&bs)
+                .send(bs)
                 .await
                 .map(|_| len)
                 .map_err(|err| PyIOError::new_err(err.to_string()))
@@ -567,6 +578,13 @@ impl AsyncFile {
     /// whence : int, optional
     ///     The reference point for the offset.
     ///     0: start of file (default); 1: current position; 2: end of file.
+    ///
+    /// Notes
+    /// -----
+    /// Unbounded readable files allow non-negative positions beyond EOF. Reads
+    /// from those positions return empty bytes when the backing service reports
+    /// an unsatisfied unbounded range. Other service errors propagate. Explicit
+    /// bounded views reject positions beyond their range.
     ///
     /// Returns
     /// -------
@@ -661,7 +679,7 @@ impl AsyncFile {
         future_into_py(py, async move {
             let mut state = state.lock().await;
             if let AsyncFileState::Writer(w) = &mut *state {
-                w.close().await.map_err(format_pyerr_from_io_error)?;
+                w.close().await.map_err(format_pyerr)?;
             }
             *state = AsyncFileState::Closed;
             Ok(())
@@ -752,5 +770,88 @@ impl AsyncFile {
             let state = state.lock().await;
             Ok(matches!(*state, AsyncFileState::Closed))
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use asyncband::semaphore::Semaphore;
+    use futures::poll;
+    use ocore::layers::ConcurrentLimitLayer;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_cancelled_send_keeps_owned_buffer() {
+        Python::initialize();
+        let (buffer, source_ptr) = Python::attach(|py| {
+            let source = PyBytes::new(py, b"owned Python bytes");
+            let source_ptr = source.as_bytes().as_ptr();
+            let buffer = py_bytes_like_into_buffer(source.as_any()).unwrap();
+            (buffer, source_ptr)
+        });
+        let semaphore = Arc::new(Semaphore::new(0));
+        let op = ocore::Operator::via_iter("memory", [])
+            .unwrap()
+            .layer(ConcurrentLimitLayer::with_semaphore(semaphore.clone()));
+        let file = AsyncFile::new_writer(op.writer_with("cancelled").chunk(4).await.unwrap());
+        let mut state = file.0.lock().await;
+        let AsyncFileState::Writer(sink) = &mut *state else {
+            unreachable!();
+        };
+
+        // Poll into an underlying write blocked on the semaphore, then drop
+        // the caller's future. The sink must retain both the future and input.
+        {
+            let send = sink.send(buffer);
+            futures::pin_mut!(send);
+            assert!(poll!(send).is_pending());
+        }
+        semaphore.release(1);
+        sink.close().await.unwrap();
+        drop(state);
+        drop(file);
+
+        let result = op.read("cancelled").await.unwrap();
+        assert_eq!(result.to_vec(), b"owned Python bytes");
+        assert_eq!(result.current().as_ptr(), source_ptr);
+    }
+
+    struct RuntimeOwnedBytes(Arc<AtomicBool>);
+
+    impl AsRef<[u8]> for RuntimeOwnedBytes {
+        fn as_ref(&self) -> &[u8] {
+            b"pending input"
+        }
+    }
+
+    impl Drop for RuntimeOwnedBytes {
+        fn drop(&mut self) {
+            self.0.store(
+                tokio::runtime::Handle::try_current().is_ok(),
+                Ordering::SeqCst,
+            );
+        }
+    }
+
+    #[test]
+    fn test_unclosed_file_drops_pending_input_in_runtime() {
+        let op = ocore::Operator::via_iter("memory", []).unwrap();
+        let writer = get_runtime()
+            .block_on(async { op.writer_with("pending").chunk(256 * 1024).await })
+            .unwrap();
+        let dropped_in_runtime = Arc::new(AtomicBool::new(false));
+        let data = bytes::Bytes::from_owner(RuntimeOwnedBytes(dropped_in_runtime.clone()));
+        let mut file = File::new_writer(writer);
+        let FileState::Writer(sink) = &mut file.0 else {
+            unreachable!();
+        };
+        get_runtime().block_on(sink.send(data.into())).unwrap();
+        assert!(!dropped_in_runtime.load(Ordering::SeqCst));
+        assert!(tokio::runtime::Handle::try_current().is_err());
+        drop(file);
+        assert!(dropped_in_runtime.load(Ordering::SeqCst));
     }
 }

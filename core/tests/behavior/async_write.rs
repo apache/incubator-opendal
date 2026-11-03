@@ -249,7 +249,10 @@ pub async fn test_write_with_user_metadata(op: Operator) -> Result<()> {
     let resp_meta = meta.user_metadata().expect("meta data must exist");
 
     assert_eq!(
-        *resp_meta,
+        resp_meta
+            .into_iter()
+            .map(|(key, value)| (key.to_owned(), value.to_owned()))
+            .collect::<HashMap<_, _>>(),
         target_user_metadata.into_iter().collect::<HashMap<_, _>>()
     );
 

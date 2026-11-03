@@ -4,7 +4,7 @@
 [![npm](https://img.shields.io/npm/v/opendal.svg?logo=npm)](https://www.npmjs.com/package/opendal)
 [![Website](https://img.shields.io/badge/opendal-OpenDAL_Website-red?logo=Apache&logoColor=red)](https://opendal.apache.org/docs/nodejs/)
 
-![](https://github.com/apache/opendal/assets/5351546/87bbf6e5-f19e-449a-b368-3e283016c887)
+![OpenDAL Architecture](https://opendal.apache.org/img/architectural.png)
 
 A native Node.js binding for Apache OpenDAL: access S3, GCS, Azure Blob, HDFS, the local filesystem, and 50+ more services through one API.
 

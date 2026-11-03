@@ -46,7 +46,14 @@ impl oio::OneShotDelete for AzfileDeleter {
         let status = resp.status();
         match status {
             StatusCode::ACCEPTED | StatusCode::NOT_FOUND => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(if path.ends_with('/') {
+                    ServiceOperation("DeleteDirectory")
+                } else {
+                    ServiceOperation("DeleteFile")
+                }),
+                resp,
+            )),
         }
     }
 }

@@ -30,16 +30,6 @@ on:
       - "bindings/dotnet/build.py"
       - "bindings/dotnet/OpenDAL/OpenDAL.csproj"
   workflow_dispatch:
-    inputs:
-      release_type:
-        description: "Release type"
-        required: true
-        type: choice
-        default: none
-        options:
-          - none
-          - preview
-          - rc
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}
@@ -61,6 +51,9 @@ jobs:
         include:
           - os: ubuntu-latest
             classifier: linux-x86_64
+            artifact: libopendal_dotnet.so
+          - os: ubuntu-24.04-arm
+            classifier: linux-aarch_64
             artifact: libopendal_dotnet.so
           - os: windows-latest
             classifier: windows-x86_64
@@ -108,11 +101,13 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
+      # Keep one directory per artifact: the Linux x64 and Linux arm64 builds
+      # share the libopendal_dotnet.so file name, so merging them into a single
+      # directory would drop one of the two libraries.
       - name: Download native artifacts
         uses: actions/download-artifact@v8
         with:
           pattern: native-*
-          merge-multiple: true
           path: bindings/dotnet/target/release-assets
 
       - name: Prepare runtime assets
@@ -120,11 +115,13 @@ jobs:
         run: |
           mkdir -p OpenDAL/runtimes/win-x64/native
           mkdir -p OpenDAL/runtimes/linux-x64/native
+          mkdir -p OpenDAL/runtimes/linux-arm64/native
           mkdir -p OpenDAL/runtimes/osx-arm64/native
 
-          cp target/release-assets/opendal_dotnet.dll OpenDAL/runtimes/win-x64/native/
-          cp target/release-assets/libopendal_dotnet.so OpenDAL/runtimes/linux-x64/native/
-          cp target/release-assets/libopendal_dotnet.dylib OpenDAL/runtimes/osx-arm64/native/
+          cp target/release-assets/native-windows-x86_64/opendal_dotnet.dll OpenDAL/runtimes/win-x64/native/
+          cp target/release-assets/native-linux-x86_64/libopendal_dotnet.so OpenDAL/runtimes/linux-x64/native/
+          cp target/release-assets/native-linux-aarch_64/libopendal_dotnet.so OpenDAL/runtimes/linux-arm64/native/
+          cp target/release-assets/native-osx-aarch_64/libopendal_dotnet.dylib OpenDAL/runtimes/osx-arm64/native/
 
       - name: Determine version suffix
         id: version
@@ -132,20 +129,18 @@ jobs:
         run: |
           set -euo pipefail
 
+          # Release tags decide the suffix regardless of how the run was
+          # started: the release automation pushes final tags with
+          # GITHUB_TOKEN and then dispatches this workflow on the tag, so a
+          # final release can arrive as a workflow_dispatch event. Any other
+          # ref packs a preview build that is only kept as an artifact.
           suffix=""
-          if [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.([0-9]+)$ ]]; then
+          if [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-rc\.([0-9]+)$ ]]; then
             suffix="rc.${BASH_REMATCH[1]}"
-          elif [[ "${GITHUB_EVENT_NAME}" == "push" && "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          elif [[ "${GITHUB_REF_NAME}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             suffix=""
           else
-            case "${{ inputs.release_type }}" in
-              rc)
-                suffix="rc"
-                ;;
-              *)
-                suffix="preview.${GITHUB_RUN_NUMBER}"
-                ;;
-            esac
+            suffix="preview.${GITHUB_RUN_NUMBER}"
           fi
 
           echo "version_suffix=${suffix}" >> "$GITHUB_OUTPUT"
@@ -175,7 +170,7 @@ jobs:
 
   publish:
     name: Publish
-    if: ${{ (github.event_name == 'workflow_dispatch' && inputs.release_type != 'none') || (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-')) }}
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-') }}
     runs-on: ubuntu-latest
     needs:
       - package

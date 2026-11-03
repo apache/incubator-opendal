@@ -21,16 +21,16 @@ use super::core::Manager;
 use super::core::format_ftp_error;
 use super::lister::FtpLister;
 use super::writer::FtpWriter;
+use asyncband::pool::bounded;
 use bytes::BytesMut;
-use fastpool::bounded;
-use futures::AsyncRead;
-use futures::AsyncReadExt;
 use opendal_core::raw::*;
 use opendal_core::*;
 use std::sync::Arc;
 use suppaftp::FtpError;
 use suppaftp::Status;
 use suppaftp::types::Response;
+use tokio::io::AsyncRead;
+use tokio::io::AsyncReadExt;
 
 pub struct FtpReadStream {
     /// Keep the connection alive while data stream is alive.
@@ -164,7 +164,7 @@ impl oio::Write for FtpLazyWriter {
     async fn close(&mut self) -> Result<Metadata> {
         match &mut self.inner {
             Some(w) => w.close().await,
-            None => Ok(Metadata::default()),
+            None => Ok(MetadataBuilder::unknown().build()),
         }
     }
 

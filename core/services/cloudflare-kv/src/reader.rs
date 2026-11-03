@@ -16,7 +16,7 @@
 // under the License.
 
 use super::backend::*;
-use super::core::parse_error;
+use super::core::{ErrorContext, parse_error};
 use super::model::*;
 use bytes::Buf;
 use http::StatusCode;
@@ -58,20 +58,22 @@ impl oio::StreamRead for CloudflareKvReader {
         let status = resp.status();
 
         if status != StatusCode::OK {
-            return Err(parse_error(resp));
+            return Err(parse_error(
+                ErrorContext::new(ServiceOperation("GetValue")),
+                resp,
+            ));
         }
 
         let resp_body = resp.into_body();
 
-        if args.if_match().is_some()
-            || args.if_none_match().is_some()
-            || args.if_modified_since().is_some()
-            || args.if_unmodified_since().is_some()
-        {
+        if args.is_conditional() {
             let meta_resp = backend.core.metadata(&self.ctx, &path).await?;
 
             if meta_resp.status() != StatusCode::OK {
-                return Err(parse_error(meta_resp));
+                return Err(parse_error(
+                    ErrorContext::new(ServiceOperation("GetMetadata")),
+                    meta_resp,
+                ));
             }
 
             let cf_response: CfKvStatResponse =
@@ -133,7 +135,10 @@ impl oio::StreamRead for CloudflareKvReader {
 
         let total_size = resp_body.len() as u64;
         let buffer = resp_body.slice(range.to_content_range(resp_body.len())?);
-        let metadata = Metadata::new(EntryMode::FILE).with_content_length(total_size);
+        let metadata = {
+            let metadata = MetadataBuilder::file(total_size);
+            metadata.build()
+        };
         Ok((
             RpRead::new(metadata),
             Box::new(buffer) as Box<dyn oio::ReadStreamDyn>,

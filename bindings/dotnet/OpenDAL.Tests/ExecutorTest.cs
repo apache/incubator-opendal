@@ -49,8 +49,8 @@ public class ExecutorTest
         using var op = new Operator("memory", executor: executor);
         var content = System.Text.Encoding.UTF8.GetBytes("executor-async-content");
 
-        await op.WriteAsync("executor-async", content, CT);
-        var read = await op.ReadAsync("executor-async", CT);
+        await op.WriteAsync("executor-async", content, cancellationToken: CT);
+        var read = await op.ReadAsync("executor-async", cancellationToken: CT);
 
         Assert.Equal(content, read);
     }
@@ -78,8 +78,8 @@ public class ExecutorTest
         op.Write("outlives-executor-sync", content);
         Assert.Equal(content, op.Read("outlives-executor-sync"));
 
-        await op.WriteAsync("outlives-executor-async", content, CT);
-        Assert.Equal(content, await op.ReadAsync("outlives-executor-async", CT));
+        await op.WriteAsync("outlives-executor-async", content, cancellationToken: CT);
+        Assert.Equal(content, await op.ReadAsync("outlives-executor-async", cancellationToken: CT));
     }
 
     [Fact]
@@ -110,8 +110,8 @@ public class ExecutorTest
             var path = $"executor-processor-async-{i}";
             var content = System.Text.Encoding.UTF8.GetBytes($"executor-content-{i}");
 
-            await op.WriteAsync(path, content, CT);
-            var read = await op.ReadAsync(path, CT);
+            await op.WriteAsync(path, content, cancellationToken: CT);
+            var read = await op.ReadAsync(path, cancellationToken: CT);
 
             Assert.Equal(content, read);
         });

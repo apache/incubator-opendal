@@ -322,6 +322,7 @@ impl Service for RedisBackend {
     type Lister = ();
     type Deleter = oio::OneShotDeleter<RedisDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.info.clone()
@@ -347,12 +348,13 @@ impl Service for RedisBackend {
         let p = build_abs_path(&self.root, path);
 
         if p == build_abs_path(&self.root, "") {
-            Ok(RpStat::new(Metadata::new(EntryMode::DIR)))
+            Ok(RpStat::new(MetadataBuilder::dir().build()))
         } else {
             match self.core.len(&p).await? {
-                Some(len) => Ok(RpStat::new(
-                    Metadata::new(EntryMode::FILE).with_content_length(len as u64),
-                )),
+                Some(len) => Ok(RpStat::new({
+                    let metadata = MetadataBuilder::file(len as u64);
+                    metadata.build()
+                })),
                 None => Err(Error::new(ErrorKind::NotFound, "key not found in redis")),
             }
         }
@@ -403,7 +405,6 @@ impl Service for RedisBackend {
         _from: &str,
         _to: &str,
         _args: OpCopy,
-        _opts: OpCopier,
     ) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,

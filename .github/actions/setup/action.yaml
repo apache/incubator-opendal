@@ -55,7 +55,9 @@ runs:
     - name: Setup Linux
       if: runner.os == 'Linux'
       shell: bash
-      run: sudo apt-get install libclang-dev libgflags-dev libsnappy-dev zlib1g-dev libbz2-dev liblz4-dev libzstd-dev
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libclang-dev libgflags-dev libsnappy-dev zlib1g-dev libbz2-dev liblz4-dev libzstd-dev
 
     - name: Setup Protoc
       if: inputs.need-protoc == 'true'

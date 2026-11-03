@@ -100,69 +100,17 @@ impl Deleter {
         })
     }
 
-    /// Delete a path.
+    /// Delete a path with default or per-entry options.
+    ///
+    /// Pass a path directly to use [`options::DeleteOptions::default`]. Pass
+    /// `(String, DeleteOptions)` when this entry needs version or condition
+    /// options.
     pub async fn delete(&mut self, input: impl IntoDeleteInput) -> Result<()> {
-        let input = input.into_delete_input();
-        let mut opts = options::DeleteOptions {
-            version: input.version,
-            recursive: input.recursive,
-            if_match: input.if_match,
-            if_none_match: input.if_none_match,
-            if_version_match: input.if_version_match,
-            if_version_not_match: input.if_version_not_match,
-            if_not_changed: input.if_not_changed,
-        };
-        if let Some(metadata) = opts.if_not_changed.take() {
-            if self.capability.delete_with_if_version_match
-                && let Some(version) = metadata.version()
-            {
-                if let Some(explicit) = opts.if_version_match.as_deref() {
-                    if explicit != version {
-                        return Err(Error::new(
-                            ErrorKind::ConditionNotMatch,
-                            "if_not_changed conflicts with if_version_match",
-                        )
-                        .with_operation(Operation::Delete.into_static()));
-                    }
-                } else {
-                    opts.if_version_match = Some(version.to_string());
-                }
-            } else if self.capability.delete_with_if_match
-                && let Some(etag) = metadata.etag()
-            {
-                if let Some(explicit) = opts.if_match.as_deref() {
-                    if explicit != etag {
-                        return Err(Error::new(
-                            ErrorKind::ConditionNotMatch,
-                            "if_not_changed conflicts with if_match",
-                        )
-                        .with_operation(Operation::Delete.into_static()));
-                    }
-                } else {
-                    opts.if_match = Some(etag.to_string());
-                }
-            } else if !self.capability.delete_with_if_version_match
-                && !self.capability.delete_with_if_match
-            {
-                return Err(Error::new(
-                    ErrorKind::Unsupported,
-                    format!(
-                        "The service {} does not support the operation delete with if_not_changed",
-                        self.scheme
-                    ),
-                )
-                .with_operation(Operation::Delete.into_static()));
-            } else {
-                return Err(Error::new(
-                    ErrorKind::ConfigInvalid,
-                    "if_not_changed metadata does not contain an identity supported by delete",
-                )
-                .with_operation(Operation::Delete.into_static()));
-            }
-        }
-        let op = opts.into();
-
-        self.deleter.delete(&input.path, op).await?;
+        let (path, options) = input.into_delete_input();
+        let path = normalize_path(&path);
+        let op = OpDelete::from_options(&self.capability, options)
+            .map_err(|err| err.with_context("service", self.scheme))?;
+        self.deleter.delete(&path, op).await?;
         Ok(())
     }
 
@@ -294,7 +242,7 @@ mod tests {
 
         let deleter = Deleter {
             deleter: Box::new(mock),
-            scheme: "test",
+            scheme: "memory",
             capability: Capability::default(),
         };
         let mut sink = deleter.into_sink::<String>();
@@ -314,5 +262,17 @@ mod tests {
             "file_b should have been flushed by close, got: {:?}",
             *flushed
         );
+    }
+
+    #[tokio::test]
+    async fn test_delete_normalizes_path() {
+        let op = Operator::new(services::Memory::default()).unwrap();
+        op.write("dir/file", "data").await.unwrap();
+
+        let mut deleter = op.deleter().await.unwrap();
+        deleter.delete("/dir/file").await.unwrap();
+        deleter.close().await.unwrap();
+
+        assert!(!op.exists("dir/file").await.unwrap());
     }
 }

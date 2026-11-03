@@ -45,7 +45,10 @@ impl oio::OneShotDelete for KoofrDeleter {
             StatusCode::OK => Ok(()),
             // Allow 404 when deleting a non-existing object
             StatusCode::NOT_FOUND => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("FilesRemove")),
+                resp,
+            )),
         }
     }
 }

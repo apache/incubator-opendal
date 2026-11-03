@@ -31,7 +31,11 @@ impl Deleter {
         Ok(Self { handle, inner })
     }
 
-    /// Delete a path.
+    /// Delete a path with default or per-entry options.
+    ///
+    /// Pass a path directly to use [`options::DeleteOptions::default`]. Pass
+    /// `(String, DeleteOptions)` when this entry needs version or condition
+    /// options.
     pub fn delete(&mut self, input: impl IntoDeleteInput) -> Result<()> {
         self.handle.block_on(self.inner.delete(input))
     }

@@ -19,10 +19,10 @@ use std::sync::Arc;
 
 use opendal_core::Buffer;
 use opendal_core::BytesRange;
-use opendal_core::EntryMode;
 use opendal_core::Error;
-use opendal_core::Metadata;
+use opendal_core::MetadataBuilder;
 use opendal_core::Result;
+use opendal_core::options;
 use opendal_core::raw::OpRead;
 use opendal_core::raw::OpStat;
 use opendal_core::raw::RpRead;
@@ -66,7 +66,10 @@ impl FullReader {
     }
 
     fn full_object_rp(buffer: &Buffer) -> RpRead {
-        RpRead::new(Metadata::new(EntryMode::FILE).with_content_length(buffer.len() as _))
+        RpRead::new({
+            let metadata = MetadataBuilder::file(buffer.len() as _);
+            metadata.build()
+        })
     }
 
     fn slice_full_object(buffer: &Buffer, range: BytesRange) -> Buffer {
@@ -84,23 +87,17 @@ impl FullReader {
     /// Derive the `OpStat` used for cache fill from the reader's `OpRead`, so the
     /// stat observes the same conditions (version, if-match, ...) as the request.
     fn stat_args(&self) -> OpStat {
-        let mut op = OpStat::new();
-        if let Some(v) = self.args.version() {
-            op = op.with_version(v);
+        options::StatOptions {
+            version: self.args.version().map(str::to_owned),
+            if_match: self.args.if_match().map(str::to_owned),
+            if_none_match: self.args.if_none_match().map(str::to_owned),
+            if_version_match: self.args.if_version_match().map(str::to_owned),
+            if_version_not_match: self.args.if_version_not_match().map(str::to_owned),
+            if_modified_since: self.args.if_modified_since(),
+            if_unmodified_since: self.args.if_unmodified_since(),
+            ..Default::default()
         }
-        if let Some(v) = self.args.if_match() {
-            op = op.with_if_match(v);
-        }
-        if let Some(v) = self.args.if_none_match() {
-            op = op.with_if_none_match(v);
-        }
-        if let Some(v) = self.args.if_modified_since() {
-            op = op.with_if_modified_since(v);
-        }
-        if let Some(v) = self.args.if_unmodified_since() {
-            op = op.with_if_unmodified_since(v);
-        }
-        op
+        .into()
     }
 
     async fn fallback_open(

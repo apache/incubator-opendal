@@ -52,21 +52,22 @@ impl oio::Write for MemoryWriter {
         let buf = self.buf.take().unwrap_or_default();
         let content = buf.collect();
 
-        let mut metadata = Metadata::new(EntryMode::FILE);
-        metadata.set_content_length(content.len() as u64);
+        let mut metadata = MetadataBuilder::file(content.len() as u64);
 
         if let Some(v) = self.op.cache_control() {
-            metadata.set_cache_control(v);
+            metadata.cache_control(v);
         }
         if let Some(v) = self.op.content_disposition() {
-            metadata.set_content_disposition(v);
+            metadata.content_disposition(v);
         }
         if let Some(v) = self.op.content_type() {
-            metadata.set_content_type(v);
+            metadata.content_type(v);
         }
         if let Some(v) = self.op.content_encoding() {
-            metadata.set_content_encoding(v);
+            metadata.content_encoding(v);
         }
+
+        let metadata = metadata.build();
 
         let value = MemoryValue {
             metadata: metadata.clone(),

@@ -115,6 +115,7 @@ impl Service for ObjectStoreService {
     type Lister = ObjectStoreLister;
     type Deleter = BatchDeleter<ObjectStoreDeleter>;
     type Copier = ();
+    type Composer = ();
 
     fn info(&self) -> ServiceInfo {
         self.info.clone()
@@ -171,14 +172,7 @@ impl Service for ObjectStoreService {
         Ok(lister)
     }
 
-    fn copy(
-        &self,
-        _: &OperationContext,
-        _: &str,
-        _: &str,
-        _: OpCopy,
-        _: OpCopier,
-    ) -> Result<Self::Copier> {
+    fn copy(&self, _: &OperationContext, _: &str, _: &str, _: OpCopy) -> Result<Self::Copier> {
         Err(Error::new(
             ErrorKind::Unsupported,
             "operation is not supported",

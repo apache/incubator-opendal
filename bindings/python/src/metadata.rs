@@ -154,8 +154,13 @@ impl Metadata {
 
     /// The user-defined metadata of this entry.
     #[getter]
-    pub fn user_metadata(&self) -> Option<&HashMap<String, String>> {
-        self.0.user_metadata()
+    pub fn user_metadata(&self) -> Option<HashMap<String, String>> {
+        self.0.user_metadata().map(|metadata| {
+            metadata
+                .into_iter()
+                .map(|(key, value)| (key.to_string(), value.to_string()))
+                .collect()
+        })
     }
     pub fn __repr__(&self) -> String {
         let mut parts = vec![];

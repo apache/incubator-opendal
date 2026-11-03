@@ -49,7 +49,11 @@ impl oio::Write for HdfsNativeWriter {
     async fn close(&mut self) -> Result<Metadata> {
         self.f.close().await.map_err(parse_hdfs_error)?;
 
-        Ok(Metadata::default().with_content_length(self.size))
+        Ok({
+            let mut metadata = MetadataBuilder::unknown();
+            metadata.set_file(self.size);
+            metadata.build()
+        })
     }
 
     async fn abort(&mut self) -> Result<()> {

@@ -255,6 +255,7 @@ where
     type Lister = ConcurrentLimitWrapper<oio::Lister, S>;
     type Deleter = ConcurrentLimitWrapper<oio::Deleter, S>;
     type Copier = ConcurrentLimitWrapper<oio::Copier, S>;
+    type Composer = ConcurrentLimitWrapper<oio::Composer, S>;
 
     fn info(&self) -> ServiceInfo {
         self.inner.info()
@@ -292,10 +293,15 @@ where
         from: &str,
         to: &str,
         args: OpCopy,
-        opts: OpCopier,
     ) -> Result<Self::Copier> {
         self.inner
-            .copy(ctx, from, to, args, opts)
+            .copy(ctx, from, to, args)
+            .map(|c| ConcurrentLimitWrapper::new(c, self.semaphore.clone()))
+    }
+
+    fn compose(&self, ctx: &OperationContext, to: &str, args: OpCompose) -> Result<Self::Composer> {
+        self.inner
+            .compose(ctx, to, args)
             .map(|c| ConcurrentLimitWrapper::new(c, self.semaphore.clone()))
     }
 
@@ -509,6 +515,21 @@ where
     }
 }
 
+impl<C: oio::Compose, S: ConcurrentLimitSemaphore> oio::Compose for ConcurrentLimitWrapper<C, S>
+where
+    S::Permit: Send + Sync + 'static + Unpin,
+{
+    async fn compose(&mut self, path: &str, args: OpRead) -> Result<()> {
+        self.acquire().await;
+        self.inner.compose(path, args).await
+    }
+
+    async fn close(&mut self) -> Result<Metadata> {
+        self.acquire().await;
+        self.inner.close().await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -562,6 +583,7 @@ mod tests {
             type Lister = ();
             type Deleter = ();
             type Copier = ();
+            type Composer = ();
 
             fn info(&self) -> ServiceInfo {
                 self.info.clone()
@@ -624,7 +646,6 @@ mod tests {
                 _: &str,
                 _: &str,
                 _: OpCopy,
-                _: OpCopier,
             ) -> Result<Self::Copier> {
                 Ok(())
             }
@@ -722,6 +743,7 @@ mod tests {
             type Lister = ();
             type Deleter = ();
             type Copier = PendingCopier;
+            type Composer = ();
 
             fn info(&self) -> ServiceInfo {
                 self.info.clone()
@@ -777,13 +799,12 @@ mod tests {
                 _: &str,
                 _: &str,
                 _: OpCopy,
-                _: OpCopier,
             ) -> Result<Self::Copier> {
                 Ok(PendingCopier)
             }
 
             async fn stat(&self, _: &OperationContext, _: &str, _: OpStat) -> Result<RpStat> {
-                Ok(RpStat::new(Metadata::new(EntryMode::FILE)))
+                Ok(RpStat::new(MetadataBuilder::file(0).build()))
             }
 
             async fn rename(
@@ -903,7 +924,10 @@ mod tests {
                 };
                 let req = http::Request::get("http://fake").body(data).unwrap();
                 let resp = self.ctx.http_transport().fetch(req).await?;
-                let rp = RpRead::new(Metadata::new(EntryMode::FILE).with_content_length(0));
+                let rp = RpRead::new({
+                    let metadata = MetadataBuilder::file(backend.content.len() as u64);
+                    metadata.build()
+                });
                 let stream = resp.into_body();
 
                 Ok((rp, Box::new(stream) as Box<dyn oio::ReadStreamDyn>))
@@ -916,6 +940,7 @@ mod tests {
             type Lister = ();
             type Deleter = ();
             type Copier = ();
+            type Composer = ();
 
             fn info(&self) -> ServiceInfo {
                 self.info.clone()
@@ -952,9 +977,10 @@ mod tests {
             }
 
             async fn stat(&self, _: &OperationContext, _: &str, _: OpStat) -> Result<RpStat> {
-                Ok(RpStat::new(
-                    Metadata::new(EntryMode::FILE).with_content_length(self.content.len() as u64),
-                ))
+                Ok(RpStat::new({
+                    let metadata = MetadataBuilder::file(self.content.len() as u64);
+                    metadata.build()
+                }))
             }
 
             fn write(&self, _: &OperationContext, _: &str, _: OpWrite) -> Result<Self::Writer> {
@@ -984,7 +1010,6 @@ mod tests {
                 _: &str,
                 _: &str,
                 _: OpCopy,
-                _: OpCopier,
             ) -> Result<Self::Copier> {
                 Err(Error::new(
                     ErrorKind::Unsupported,

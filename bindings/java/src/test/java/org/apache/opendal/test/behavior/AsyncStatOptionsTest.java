@@ -87,6 +87,66 @@ public class AsyncStatOptionsTest extends BehaviorTestBase {
     }
 
     @Test
+    void testStatWithIfVersionMatch() {
+        assumeTrue(asyncOp().info.capability.statWithIfVersionMatch);
+
+        String path = UUID.randomUUID().toString();
+        asyncOp().write(path, generateBytes()).join();
+        String staleVersion = asyncOp().stat(path).join().getVersion();
+        asyncOp().write(path, generateBytes()).join();
+        String currentVersion = asyncOp().stat(path).join().getVersion();
+
+        assertThat(staleVersion).isNotNull();
+        assertThat(currentVersion).isNotNull().isNotEqualTo(staleVersion);
+
+        StatOptions currentOptions =
+                StatOptions.builder().ifVersionMatch(currentVersion).build();
+        Metadata result = asyncOp().stat(path, currentOptions).join();
+        assertThat(result.getVersion()).isEqualTo(currentVersion);
+
+        StatOptions staleOptions =
+                StatOptions.builder().ifVersionMatch(staleVersion).build();
+        assertThatThrownBy(() -> asyncOp().stat(path, staleOptions).join())
+                .is(OpenDALExceptionCondition.ofAsync(OpenDALException.Code.ConditionNotMatch));
+
+        String missingPath = UUID.randomUUID().toString();
+        assertThatThrownBy(() -> asyncOp().stat(missingPath, currentOptions).join())
+                .is(OpenDALExceptionCondition.ofAsync(OpenDALException.Code.NotFound));
+
+        asyncOp().delete(path).join();
+    }
+
+    @Test
+    void testStatWithIfVersionNotMatch() {
+        assumeTrue(asyncOp().info.capability.statWithIfVersionNotMatch);
+
+        String path = UUID.randomUUID().toString();
+        asyncOp().write(path, generateBytes()).join();
+        String staleVersion = asyncOp().stat(path).join().getVersion();
+        asyncOp().write(path, generateBytes()).join();
+        String currentVersion = asyncOp().stat(path).join().getVersion();
+
+        assertThat(staleVersion).isNotNull();
+        assertThat(currentVersion).isNotNull().isNotEqualTo(staleVersion);
+
+        StatOptions staleOptions =
+                StatOptions.builder().ifVersionNotMatch(staleVersion).build();
+        Metadata result = asyncOp().stat(path, staleOptions).join();
+        assertThat(result.getVersion()).isEqualTo(currentVersion);
+
+        StatOptions currentOptions =
+                StatOptions.builder().ifVersionNotMatch(currentVersion).build();
+        assertThatThrownBy(() -> asyncOp().stat(path, currentOptions).join())
+                .is(OpenDALExceptionCondition.ofAsync(OpenDALException.Code.ConditionNotMatch));
+
+        String missingPath = UUID.randomUUID().toString();
+        assertThatThrownBy(() -> asyncOp().stat(missingPath, currentOptions).join())
+                .is(OpenDALExceptionCondition.ofAsync(OpenDALException.Code.NotFound));
+
+        asyncOp().delete(path).join();
+    }
+
+    @Test
     void testStatWithIfModifiedSince() {
         assumeTrue(asyncOp().info.capability.statWithIfModifiedSince);
 

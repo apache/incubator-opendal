@@ -53,6 +53,22 @@ guides the work and remains accountable for it.
 The contributor, not the AI tool, is responsible for the accuracy, relevance,
 and quality of every submission.
 
+### AI Usage Statement
+
+If AI materially assisted a Pull Request, include the following in its AI Usage
+Statement:
+
+- **Harness:** The application or agent framework used to run the model.
+- **Model:** The model name or identifier shown by the harness, including its
+  version when available.
+- **Effort:** The reasoning effort setting used, as named by the harness.
+- **Role:** How AI contributed, and any assumptions or unknowns that affect
+  review.
+
+List each harness, model, and effort combination that materially contributed.
+Keep the statement brief and omit routine command output or information already
+provided elsewhere. If AI did not materially assist the PR, write `None`.
+
 ### Bug Reports
 
 OpenDAL welcomes the use of AI tools to analyze source code and find bugs. A

@@ -56,7 +56,7 @@ public sealed class CreateDirBehaviorTest : BehaviorTestBase
         var dirPath = NewPath("mkdir-async") + "/";
 
         await Op.CreateDirAsync(dirPath, CT);
-        var meta = await Op.StatAsync(dirPath, null, CT);
+        var meta = await Op.StatAsync(dirPath, null, cancellationToken: CT);
 
         Assert.True(meta.IsDir);
     }

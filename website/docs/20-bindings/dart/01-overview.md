@@ -15,7 +15,8 @@ The API follows the `dart:io` stdlib style — `Storage`, `File`, and `Directory
 objects that should feel familiar to any Dart developer.
 
 New to the model behind the API? Read [Concepts](../../03-concepts.mdx) first —
-service, operator, layer, and operation are the same four ideas in every language.
+the shared storage semantics and path and operation concepts every binding
+expresses through its own native API.
 
 :::caution Experimental
 This binding is a work in progress. The public API may change between releases.

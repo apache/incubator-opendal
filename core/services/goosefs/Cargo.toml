@@ -31,16 +31,25 @@ version = { workspace = true }
 [package.metadata.docs.rs]
 all-features = true
 
+[features]
+# Keep the default GooseFS client graph to gRPC. Cache backends are opt-in so
+# applications that only need the data plane do not pull `lru`, foyer, or
+# io_uring.
+default = []
+metadata-cache = ["goosefs-sdk/metadata-cache"]
+page-cache = ["goosefs-sdk/page-cache"]
+page-cache-io-uring = ["goosefs-sdk/page-cache-io-uring"]
+
 [dependencies]
+asyncband = { workspace = true, features = ["rwlock"] }
 bytes = { workspace = true }
-goosefs-sdk = "0.1.8"
+goosefs-sdk = { version = "0.2.1", default-features = false }
 log = { workspace = true }
-opendal-core = { path = "../../core", version = "0.58.2", default-features = false }
+opendal-core = { path = "../../core", version = "0.59.5", default-features = false }
 serde = { workspace = true, features = ["derive"] }
-tokio = { workspace = true }
 
 [dev-dependencies]
-opendal = { path = "../..", version = "0.58.2", features = [
+opendal = { path = "../..", version = "0.59.5", features = [
   "services-goosefs",
 ] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

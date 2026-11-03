@@ -19,7 +19,7 @@ use std::path::Path;
 use std::path::PathBuf;
 
 use opendal_core::EntryMode;
-use opendal_core::Metadata;
+use opendal_core::MetadataBuilder;
 use opendal_core::Result;
 use opendal_core::raw::*;
 
@@ -51,7 +51,7 @@ impl oio::List for FsLister<tokio::fs::ReadDir> {
         loop {
             // since list should return path itself, we return it first
             if let Some(path) = self.current_path.take() {
-                let e = oio::Entry::new(path.as_str(), Metadata::new(EntryMode::DIR));
+                let e = oio::Entry::new(path.as_str(), MetadataBuilder::dir().build());
                 return Ok(Some(e));
             }
 
@@ -106,11 +106,14 @@ impl oio::List for FsLister<tokio::fs::ReadDir> {
                 }
                 Err(e) => return Err(new_std_io_error(e)),
             };
-            let metadata = Metadata::new(mode)
-                .with_content_length(de_metadata.len())
-                .with_last_modified(Timestamp::try_from(last_modified)?);
+            let mut metadata = match mode {
+                EntryMode::FILE => MetadataBuilder::file(de_metadata.len()),
+                EntryMode::DIR => MetadataBuilder::dir(),
+                EntryMode::Unknown => MetadataBuilder::unknown(),
+            };
+            metadata.last_modified(Timestamp::try_from(last_modified)?);
 
-            return Ok(Some(oio::Entry::new(path, metadata)));
+            return Ok(Some(oio::Entry::new(path, metadata.build())));
         }
     }
 }

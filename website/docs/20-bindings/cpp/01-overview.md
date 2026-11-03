@@ -12,7 +12,8 @@ filesystem, and [50+ more services](/services) through one API, backed by the
 Rust core.
 
 New to the model behind the API? Read [Concepts](../../03-concepts.mdx) first —
-service, operator, layer, and operation are the same four ideas in every language.
+the shared storage semantics and path and operation concepts every binding
+expresses through its own native API.
 
 :::warning Experimental
 This binding is **experimental and a work in progress**. There is no published

@@ -133,7 +133,7 @@ impl<C: BlockCopy> BlockCopier<C> {
             completed: false,
             metadata: None,
 
-            tasks: ConcurrentTasks::new(executor, concurrent, 8192, |input| {
+            tasks: ConcurrentTasks::new(executor, concurrent, 0, |input| {
                 Box::pin(async move {
                     let size = input.range.size().expect("block copy range must be sized");
                     let fut = input.copier.copy_block(input.block_id, input.range);
@@ -280,7 +280,28 @@ where
             self.next().await?;
         }
 
-        Ok(self.metadata.clone().unwrap_or_default())
+        let metadata = self
+            .metadata
+            .clone()
+            .unwrap_or_else(|| MetadataBuilder::unknown().build());
+        let Some(source_size) = self.source_size else {
+            return Ok(metadata);
+        };
+        if metadata.is_file() {
+            if metadata.content_length() != source_size {
+                return Err(Error::new(
+                    ErrorKind::Unexpected,
+                    "block copy result content length does not match source",
+                )
+                .with_context("expected", source_size)
+                .with_context("actual", metadata.content_length()));
+            }
+            return Ok(metadata);
+        }
+
+        let mut builder = metadata.into_builder();
+        builder.set_file(source_size);
+        Ok(builder.build())
     }
 
     async fn abort(&mut self) -> Result<()> {
@@ -323,11 +344,15 @@ mod tests {
 
     impl BlockCopy for TestCopy {
         async fn source_metadata(&self) -> Result<Metadata> {
-            Ok(Metadata::default().with_content_length(4))
+            Ok({
+                let mut metadata = MetadataBuilder::unknown();
+                metadata.set_file(4);
+                metadata.build()
+            })
         }
 
         async fn copy_once(&self) -> Result<Metadata> {
-            Ok(Metadata::default())
+            Ok(MetadataBuilder::unknown().build())
         }
 
         async fn copy_block(&self, block_id: Uuid, range: BytesRange) -> Result<()> {
@@ -350,7 +375,7 @@ mod tests {
                 .into_iter()
                 .map(|block_id| state.ranges[&block_id])
                 .collect();
-            Ok(Metadata::default())
+            Ok(MetadataBuilder::unknown().build())
         }
 
         async fn abort_block(&self, _: Vec<Uuid>) -> Result<()> {
@@ -377,6 +402,9 @@ mod tests {
             completed_ranges,
             vec![BytesRange::new(0, Some(2)), BytesRange::new(2, Some(2))]
         );
+        let metadata = copier.close().await?;
+        assert!(metadata.is_file());
+        assert_eq!(metadata.content_length(), 4);
 
         Ok(())
     }

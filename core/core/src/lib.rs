@@ -15,9 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![doc(
-    html_logo_url = "https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg"
-)]
+#![doc(html_logo_url = "https://opendal.apache.org/img/logo.svg")]
 #![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(docsrs, doc(auto_cfg))]
@@ -31,9 +29,20 @@ pub use types::*;
 // Public modules, they will be accessed like `opendal::layers::Xxxx`
 #[cfg(feature = "blocking")]
 pub mod blocking;
+pub mod docs;
 pub mod layers;
 pub mod raw;
 pub mod services;
+
+/// Re-export of the [`reqsign_core`] crate that services sign requests with.
+///
+/// Service builders that accept credentials from the application take `reqsign`
+/// types in their signatures, such as `ProvideCredentialChain` in
+/// `opendal_service_s3::S3::credential_provider_chain`. Implement providers
+/// against this re-export rather than depending on `reqsign-core` directly, so
+/// that the types always match the ones the services are built with.
+#[cfg(feature = "reqsign")]
+pub use reqsign_core;
 
 #[cfg(test)]
 mod tests {

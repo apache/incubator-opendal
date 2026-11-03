@@ -57,8 +57,8 @@ public sealed class RemoveAllBehaviorTest : BehaviorTestBase
 
         var dir = NewPath("remove-all-async") + "/";
 
-        await Op.WriteAsync($"{dir}a.txt", RandomBytes(16), CT);
-        await Op.WriteAsync($"{dir}nested/b.txt", RandomBytes(16), CT);
+        await Op.WriteAsync($"{dir}a.txt", RandomBytes(16), cancellationToken: CT);
+        await Op.WriteAsync($"{dir}nested/b.txt", RandomBytes(16), cancellationToken: CT);
         await Op.RemoveAllAsync(dir, CT);
 
         var entries = await Op.ListAsync(dir, new Options.ListOptions { Recursive = true }, CT);

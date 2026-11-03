@@ -15,9 +15,7 @@
 // specific language governing permissions and limitations
 // under the License.
 
-#![doc(
-    html_logo_url = "https://raw.githubusercontent.com/apache/opendal/main/website/static/img/logo.svg"
-)]
+#![doc(html_logo_url = "https://opendal.apache.org/img/logo.svg")]
 #![doc = include_str!("../README.md")]
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(docsrs, doc(auto_cfg))]
@@ -48,7 +46,12 @@ pub extern crate opendal_testkit as tests;
 pub fn install_default() {
     init_default_registry();
 
-    #[cfg(feature = "http-transport-reqwest")]
+    #[cfg(any(
+        feature = "http-transport-reqwest",
+        feature = "http-transport-reqwest-native-tls",
+        feature = "http-transport-reqwest-rustls",
+        feature = "http-transport-reqwest-rustls-no-provider"
+    ))]
     opendal_http_transport_reqwest::install_default();
 }
 
@@ -131,11 +134,17 @@ fn init_default_registry_inner(registry: &OperatorRegistry) {
     #[cfg(feature = "services-gcs")]
     opendal_service_gcs::register_gcs_service(registry);
 
+    #[cfg(feature = "services-gcs-grpc")]
+    opendal_service_gcs_grpc::register_gcs_grpc_service(registry);
+
     #[cfg(feature = "services-gdrive")]
     opendal_service_gdrive::register_gdrive_service(registry);
 
     #[cfg(feature = "services-ghac")]
     opendal_service_ghac::register_ghac_service(registry);
+
+    #[cfg(feature = "services-git")]
+    opendal_service_git::register_git_service(registry);
 
     #[cfg(feature = "services-github")]
     opendal_service_github::register_github_service(registry);
@@ -223,6 +232,9 @@ fn init_default_registry_inner(registry: &OperatorRegistry) {
 
     #[cfg(feature = "services-sled")]
     opendal_service_sled::register_sled_service(registry);
+
+    #[cfg(feature = "services-smb")]
+    opendal_service_smb::register_smb_service(registry);
 
     #[cfg(feature = "services-sqlite")]
     opendal_service_sqlite::register_sqlite_service(registry);
@@ -321,10 +333,14 @@ pub mod services {
     pub use opendal_service_ftp::*;
     #[cfg(feature = "services-gcs")]
     pub use opendal_service_gcs::*;
+    #[cfg(feature = "services-gcs-grpc")]
+    pub use opendal_service_gcs_grpc::*;
     #[cfg(feature = "services-gdrive")]
     pub use opendal_service_gdrive::*;
     #[cfg(feature = "services-ghac")]
     pub use opendal_service_ghac::*;
+    #[cfg(feature = "services-git")]
+    pub use opendal_service_git::*;
     #[cfg(feature = "services-github")]
     pub use opendal_service_github::*;
     #[cfg(feature = "services-goosefs")]
@@ -387,6 +403,8 @@ pub mod services {
     pub use opendal_service_sftp::*;
     #[cfg(feature = "services-sled")]
     pub use opendal_service_sled::*;
+    #[cfg(feature = "services-smb")]
+    pub use opendal_service_smb::*;
     #[cfg(feature = "services-sqlite")]
     pub use opendal_service_sqlite::*;
     #[cfg(feature = "services-surrealdb")]

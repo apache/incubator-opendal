@@ -44,7 +44,10 @@ impl oio::OneShotDelete for DbfsDeleter {
         match status {
             // NOTE: Server will return 200 even if the path doesn't exist.
             StatusCode::OK => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("Delete")),
+                resp,
+            )),
         }
     }
 }

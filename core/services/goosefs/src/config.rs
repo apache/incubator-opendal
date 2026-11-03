@@ -46,12 +46,18 @@ pub struct GoosefsConfig {
     ///
     /// Resolution precedence at `build()` time (highest → lowest), following
     /// [goosefs-sdk `docs/CLIENT_CONFIGURATION.md`](https://github.com/Tencent/tencent-goosefs-rust-sdk/blob/main/docs/CLIENT_CONFIGURATION.md) §1:
-    ///   1. This field (when set on the builder / OpenDAL config map)
-    ///   2. `GOOSEFS_MASTER_ADDR` environment variable
-    ///   3. `goosefs.master.rpc.addresses` / `goosefs.master.hostname` in
+    ///   1. `GOOSEFS_MASTER_ADDR` environment variable
+    ///   2. `goosefs.master.rpc.addresses` / `goosefs.master.hostname` in
     ///      `goosefs-site.properties`
+    ///   3. This field (from the builder, the OpenDAL config map, or the URI
+    ///      authority of `goosefs://host:port/path`)
     ///
-    /// `build()` fails with `ConfigInvalid` only when **none** of the above
+    /// A site file that declares masters therefore outranks this field: the
+    /// file carries the deployment's whole HA master list, which a single URI
+    /// authority cannot express. Set `GOOSEFS_MASTER_ADDR` to override a
+    /// deployed site file for one process.
+    ///
+    /// `build()` fails with `ConfigInvalid` when **none** of the above
     /// supplies a master address.
     pub master_addr: Option<String>,
 
@@ -63,7 +69,10 @@ pub struct GoosefsConfig {
 
     /// Default write type for new files.
     ///
-    /// Supported values: `"must_cache"`, `"cache_through"`, `"through"`, `"async_through"`.
+    /// Supported values: `"must_cache"`, `"try_cache"`, `"cache_through"`,
+    /// `"through"`, `"async_through"`. Matching is case-insensitive.
+    /// `build()` fails with `ConfigInvalid` when the value is not one of
+    /// these.
     /// Default: `"must_cache"`.
     pub write_type: Option<String>,
 
@@ -164,12 +173,14 @@ mod tests {
 
     /// HA note: since URIs don't allow commas in `host`, HA mode is
     /// expressed through the extra-option/env-var pathway, not through the
-    /// URI authority. When both are present the URI authority **wins** —
-    /// this is the deliberate contract of `from_uri` (it ensures a user who
-    /// typed `goosefs://host:port/` can't be silently overridden by a stale
-    /// env var). The full HA list therefore reaches `build()` only when the
-    /// caller goes through `from_iter` / `Operator::via_iter` without the
-    /// URI authority, which is covered by [`from_iter_picks_up_every_known_field`].
+    /// URI authority. When both are present the URI authority **wins** the
+    /// `master_addr` slot — a user who typed `goosefs://host:port/` must not
+    /// be silently redirected by a stale option map. The full HA list
+    /// therefore reaches `build()` only when the caller goes through
+    /// `from_iter` / `Operator::via_iter` without the URI authority, which is
+    /// covered by [`from_iter_picks_up_every_known_field`], or through
+    /// `goosefs-site.properties` / `GOOSEFS_MASTER_ADDR`, which outrank
+    /// `master_addr` inside `build()`.
     #[test]
     fn from_uri_authority_overrides_extra_master_addr() {
         let uri = OperatorUri::new(

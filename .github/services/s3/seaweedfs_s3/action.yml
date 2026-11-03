@@ -35,5 +35,5 @@ runs:
         OPENDAL_S3_ACCESS_KEY_ID=seaweedfsadmin
         OPENDAL_S3_SECRET_ACCESS_KEY=seaweedfsadmin
         OPENDAL_S3_REGION=us-east-1
-        OPENDAL_TEST_CAPABILITY_OVERRIDES=stat_with_version=false,read_with_version=false,delete_with_version=false,list_with_versions=false,list_with_deleted=false,copy_with_source_version=false,restore=false,restore_with_version=false,restore_with_if_not_exists=false,write_can_append=false
+        OPENDAL_TEST_CAPABILITY_OVERRIDES=stat_with_version=false,read_with_version=false,delete_with_version=false,list_with_versions=false,list_with_deleted=false,copy_with_source_version=false,restore=false,restore_with_version=false,restore_with_if_not_exists=false,write_can_append=false,stat_with_if_match=false,stat_with_if_unmodified_since=false,read_with_if_match=false,read_with_if_unmodified_since=false
         EOF

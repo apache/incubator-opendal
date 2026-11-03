@@ -37,6 +37,7 @@ use crate::EntryMode;
 use crate::Error;
 use crate::ErrorKind;
 use crate::Metadata;
+use crate::MetadataBuilder;
 use crate::Result;
 use crate::raw::*;
 
@@ -157,45 +158,49 @@ pub fn parse_into_metadata(path: &str, headers: &HeaderMap) -> Result<Metadata> 
     } else {
         EntryMode::FILE
     };
-    let mut m = Metadata::new(mode);
+    let content_length = parse_content_range(headers)?
+        .and_then(|value| value.size())
+        .or(parse_content_length(headers)?);
+    let mut m = if mode == EntryMode::FILE {
+        MetadataBuilder::file(content_length.ok_or_else(|| {
+            Error::new(
+                ErrorKind::Unexpected,
+                "HTTP response does not contain file content length",
+            )
+        })?)
+    } else {
+        MetadataBuilder::dir()
+    };
 
     if let Some(v) = parse_cache_control(headers)? {
-        m.set_cache_control(v);
-    }
-
-    if let Some(v) = parse_content_length(headers)? {
-        m.set_content_length(v);
+        m.cache_control(v);
     }
 
     if let Some(v) = parse_content_type(headers)? {
-        m.set_content_type(v);
+        m.content_type(v);
     }
 
     if let Some(v) = parse_content_encoding(headers)? {
-        m.set_content_encoding(v);
-    }
-
-    if let Some(v) = parse_content_range(headers)?.and_then(|v| v.size()) {
-        m.set_content_length(v);
+        m.content_encoding(v);
     }
 
     if let Some(v) = parse_etag(headers)? {
-        m.set_etag(v);
+        m.etag(v);
     }
 
     if let Some(v) = parse_content_md5(headers)? {
-        m.set_content_md5(v);
+        m.content_md5(v);
     }
 
     if let Some(v) = parse_last_modified(headers)? {
-        m.set_last_modified(v);
+        m.last_modified(v);
     }
 
     if let Some(v) = parse_content_disposition(headers)? {
-        m.set_content_disposition(v);
+        m.content_disposition(v);
     }
 
-    Ok(m)
+    Ok(m.build())
 }
 
 /// Parse prefixed headers and return a map with the prefix of each header removed.

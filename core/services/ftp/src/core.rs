@@ -16,16 +16,17 @@
 // under the License.
 
 use std::sync::Arc;
+use std::time::Duration;
 
-use fastpool::{ManageObject, ObjectStatus, bounded};
-use futures_rustls::TlsConnector;
-use futures_rustls::rustls::ClientConfig;
-use futures_rustls::rustls::RootCertStore;
+use asyncband::pool::{ManageObject, ObjectStatus, bounded};
 use suppaftp::FtpError;
 use suppaftp::Status;
-use suppaftp::async_std::AsyncRustlsConnector;
-use suppaftp::async_std::AsyncRustlsFtpStream;
-use suppaftp::async_std::ImplAsyncFtpStream;
+use suppaftp::tokio::AsyncRustlsConnector;
+use suppaftp::tokio::AsyncRustlsFtpStream;
+use suppaftp::tokio::ImplAsyncFtpStream;
+use suppaftp::tokio_rustls::TlsConnector;
+use suppaftp::tokio_rustls::rustls::ClientConfig;
+use suppaftp::tokio_rustls::rustls::RootCertStore;
 use suppaftp::types::FileType;
 
 use opendal_core::raw::*;
@@ -73,6 +74,7 @@ impl FtpCore {
 #[derive(Clone)]
 pub struct Manager {
     pub endpoint: String,
+    pub host: String,
     pub root: String,
     pub user: String,
     pub password: String,
@@ -100,7 +102,7 @@ impl ManageObject for Manager {
             stream
                 .into_secure(
                     AsyncRustlsConnector::from(TlsConnector::from(Arc::new(cfg))),
-                    &self.endpoint,
+                    &self.host,
                 )
                 .await?
         } else {

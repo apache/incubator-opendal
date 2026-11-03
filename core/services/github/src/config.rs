@@ -63,36 +63,46 @@ impl Configurator for GithubConfig {
     type Builder = GithubBuilder;
 
     fn from_uri(uri: &OperatorUri) -> Result<Self> {
-        let owner = uri.name().ok_or_else(|| {
-            Error::new(ErrorKind::ConfigInvalid, "uri host must contain owner")
-                .with_context("service", GITHUB_SCHEME)
-        })?;
+        let mut map = uri.options().clone();
 
-        let raw_path = uri.root().ok_or_else(|| {
-            Error::new(ErrorKind::ConfigInvalid, "uri path must contain repository")
-                .with_context("service", GITHUB_SCHEME)
-        })?;
-
-        let (repo, remainder) = match raw_path.split_once('/') {
-            Some((repo, rest)) => (repo, Some(rest)),
-            None => (raw_path, None),
-        };
-
-        if repo.is_empty() {
-            return Err(
-                Error::new(ErrorKind::ConfigInvalid, "repository name is required")
-                    .with_context("service", GITHUB_SCHEME),
-            );
+        // `github://<owner>/<repo>/<root>` URIs provide owner, repo and root
+        // through the URI itself. A bare scheme like `github` (used by
+        // `Operator::via_iter`) must fall back to the options so that
+        // `OPENDAL_GITHUB_OWNER` / `OPENDAL_GITHUB_REPO` environment variables
+        // work like they do for other services.
+        if let Some(owner) = uri.name() {
+            map.insert("owner".to_string(), owner.to_string());
         }
 
-        let mut map = uri.options().clone();
-        map.insert("owner".to_string(), owner.to_string());
-        map.insert("repo".to_string(), repo.to_string());
+        if let Some(raw_path) = uri.root() {
+            let (repo, remainder) = match raw_path.split_once('/') {
+                Some((repo, rest)) => (repo, Some(rest)),
+                None => (raw_path, None),
+            };
 
-        if let Some(rest) = remainder
-            && !rest.is_empty()
-        {
-            map.insert("root".to_string(), rest.to_string());
+            if !repo.is_empty() {
+                map.insert("repo".to_string(), repo.to_string());
+            }
+
+            if let Some(rest) = remainder
+                && !rest.is_empty()
+            {
+                map.insert("root".to_string(), rest.to_string());
+            }
+        }
+
+        // Owner and repository must be provided either via the URI or the
+        // options; `#[serde(default)]` would otherwise silently turn a missing
+        // field into an empty string.
+        if map.get("owner").is_none_or(String::is_empty) {
+            return Err(Error::new(ErrorKind::ConfigInvalid, "owner is required")
+                .with_context("service", GITHUB_SCHEME));
+        }
+        if map.get("repo").is_none_or(String::is_empty) {
+            return Err(
+                Error::new(ErrorKind::ConfigInvalid, "repository is required")
+                    .with_context("service", GITHUB_SCHEME),
+            );
         }
 
         Self::from_iter(map)
@@ -128,5 +138,23 @@ mod tests {
         let uri = OperatorUri::new("github://apache", Vec::<(String, String)>::new()).unwrap();
 
         assert!(GithubConfig::from_uri(&uri).is_err());
+    }
+
+    #[test]
+    fn from_uri_sets_owner_repo_and_root_from_options() {
+        let uri = OperatorUri::new(
+            "github",
+            vec![
+                ("owner".to_string(), "apache".to_string()),
+                ("repo".to_string(), "opendal".to_string()),
+                ("root".to_string(), "core/tests/data".to_string()),
+            ],
+        )
+        .unwrap();
+
+        let cfg = GithubConfig::from_uri(&uri).unwrap();
+        assert_eq!(cfg.owner, "apache".to_string());
+        assert_eq!(cfg.repo, "opendal".to_string());
+        assert_eq!(cfg.root.as_deref(), Some("core/tests/data"));
     }
 }

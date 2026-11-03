@@ -26,16 +26,34 @@ There is no need to duplicate the description in the issue here but it is someti
 If there are user-facing changes then we may require documentation to be updated before approving the PR.
 -->
 
-<!---
-If there are any breaking changes to public APIs, please add the `breaking-changes` label.
+# Breaking changes
+
+<!--
+Leave this section empty for compatible changes. For breaking changes, add the
+breaking-changes label and use the following format outside this comment:
+
+Affected packages: core, bindings/java
+
+Migration:
+- Replace `old_api()` with `new_api()`.
+
+Use package names from dev/src/release/package.rs. Include bindings affected by
+behavior changes even when their source files are unchanged. Explain how users
+can migrate, or explain the removal and available alternatives.
 -->
 
 # AI Usage Statement
 
 <!--
-If AI materially assisted this PR, briefly describe its role and disclose any
-assumptions or unknowns that affect review. Do not include routine command output
-or repeat information provided elsewhere.
+If AI materially assisted this PR, list each harness/model/effort combination
+that materially contributed, and briefly describe its role:
+
+- Harness: Application or agent framework used to run the model.
+- Model: Model name or identifier shown by the harness, with version if available.
+- Effort: Reasoning effort setting as named by the harness.
+- Role: AI's contribution and any assumptions or unknowns that affect review.
+
+Do not include routine command output or repeat information provided elsewhere.
 
 The author remains responsible for every submitted claim and change. If AI did
 not materially assist this PR, write "None".

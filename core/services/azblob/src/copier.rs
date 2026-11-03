@@ -39,8 +39,10 @@ pub fn new_azblob_copier(
     from: &str,
     to: &str,
     args: OpCopy,
-    opts: OpCopier,
 ) -> Result<AzblobCopiers> {
+    let chunk = args.chunk();
+    let source_content_length_hint = args.source_content_length_hint();
+    let concurrent = args.concurrent();
     let copier = AzblobCopier {
         core,
         ctx: ctx.clone(),
@@ -49,9 +51,15 @@ pub fn new_azblob_copier(
         args,
     };
 
-    let Some(chunk) = opts.chunk() else {
+    let Some(chunk) = chunk else {
         return Ok(TwoWays::One(oio::OneShotCopier::new(async move {
-            copier.copy_once().await
+            let source_size = match source_content_length_hint {
+                Some(size) => size,
+                None => copier.source_metadata().await?.content_length(),
+            };
+            let mut metadata = copier.copy_once().await?.into_builder();
+            metadata.set_file(source_size);
+            Ok(metadata.build())
         })));
     };
 
@@ -60,10 +68,10 @@ pub fn new_azblob_copier(
     Ok(TwoWays::Two(oio::BlockCopier::new(
         ctx.executor().clone(),
         copier,
-        opts.source_content_length_hint(),
+        source_content_length_hint,
         block_size.saturating_sub(1),
         block_size,
-        opts.concurrent(),
+        concurrent,
     )))
 }
 
@@ -77,10 +85,11 @@ pub struct AzblobCopier {
 
 impl oio::BlockCopy for AzblobCopier {
     async fn source_metadata(&self) -> Result<Metadata> {
-        let mut args = OpStat::default();
-        if let Some(version) = self.args.source_version() {
-            args = args.with_version(version);
+        let args = options::StatOptions {
+            version: self.args.source_version().map(str::to_owned),
+            ..Default::default()
         }
+        .into();
 
         let resp = self
             .core
@@ -90,11 +99,11 @@ impl oio::BlockCopy for AzblobCopier {
         match resp.status() {
             StatusCode::OK => {
                 let headers = resp.headers();
-                let mut meta = parse_into_metadata(&self.from, headers)?;
+                let mut meta = parse_into_metadata(&self.from, headers)?.into_builder();
                 if let Some(version_id) = parse_header_to_str(headers, X_MS_VERSION_ID)? {
-                    meta.set_version(version_id);
+                    meta.version(version_id);
                 }
-                Ok(meta)
+                Ok(meta.build())
             }
             _ => Err(parse_error(
                 ErrorContext::new(ServiceOperation("GetBlobProperties")),
@@ -113,6 +122,7 @@ impl oio::BlockCopy for AzblobCopier {
             StatusCode::ACCEPTED => AzblobWriter::parse_metadata(resp.headers()),
             _ => Err(parse_error(
                 ErrorContext::new(ServiceOperation("CopyBlob"))
+                    .with_caller_condition(self.args.is_conditional())
                     .with_if_not_exists(self.args.if_not_exists()),
                 resp,
             )),
@@ -152,6 +162,7 @@ impl oio::BlockCopy for AzblobCopier {
             StatusCode::CREATED | StatusCode::OK => Ok(meta),
             _ => Err(parse_error(
                 ErrorContext::new(ServiceOperation("PutBlockList"))
+                    .with_caller_condition(self.args.is_conditional())
                     .with_if_not_exists(self.args.if_not_exists()),
                 resp,
             )),

@@ -55,11 +55,11 @@ public sealed class OperatorBehaviorTest : BehaviorTestBase
         }
 
         var path = NewPath("cancel-seed");
-        await Op.WriteAsync(path, System.Text.Encoding.UTF8.GetBytes("seed-content"), CT);
+        await Op.WriteAsync(path, System.Text.Encoding.UTF8.GetBytes("seed-content"), cancellationToken: CT);
 
         using (var writeCts = new CancellationTokenSource())
         {
-            var writeTask = Op.WriteAsync(NewPath("cancel-write"), [1, 2, 3, 4], writeCts.Token);
+            var writeTask = Op.WriteAsync(NewPath("cancel-write"), [1, 2, 3, 4], cancellationToken: writeCts.Token);
             writeCts.Cancel();
 
             try
@@ -73,7 +73,7 @@ public sealed class OperatorBehaviorTest : BehaviorTestBase
 
         using (var readCts = new CancellationTokenSource())
         {
-            var readTask = Op.ReadAsync(path, readCts.Token);
+            var readTask = Op.ReadAsync(path, cancellationToken: readCts.Token);
             readCts.Cancel();
 
             try
@@ -85,7 +85,7 @@ public sealed class OperatorBehaviorTest : BehaviorTestBase
             }
         }
 
-        var stableRead = await Op.ReadAsync(path, CT);
+        var stableRead = await Op.ReadAsync(path, cancellationToken: CT);
         Assert.Equal("seed-content", System.Text.Encoding.UTF8.GetString(stableRead));
     }
 }

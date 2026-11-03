@@ -65,8 +65,8 @@ fn format_object_attributes(meta: &opendal::Metadata) -> Attributes {
     if let Some(user_meta) = meta.user_metadata() {
         for (key, value) in user_meta {
             attributes.insert(
-                object_store::Attribute::Metadata(key.clone().into()),
-                value.clone().into(),
+                object_store::Attribute::Metadata(key.to_string().into()),
+                value.to_string().into(),
             );
         }
     }
@@ -1094,6 +1094,7 @@ mod tests {
             type Lister = opendal::raw::oio::Lister;
             type Deleter = opendal::raw::oio::Deleter;
             type Copier = opendal::raw::oio::Copier;
+            type Composer = opendal::raw::oio::Composer;
 
             fn info(&self) -> opendal::raw::ServiceInfo {
                 self.srv.info()
@@ -1166,9 +1167,8 @@ mod tests {
                 from: &str,
                 to: &str,
                 args: opendal::raw::OpCopy,
-                opts: opendal::raw::OpCopier,
             ) -> opendal::Result<Self::Copier> {
-                self.srv.copy(ctx, from, to, args, opts)
+                self.srv.copy(ctx, from, to, args)
             }
 
             async fn rename(

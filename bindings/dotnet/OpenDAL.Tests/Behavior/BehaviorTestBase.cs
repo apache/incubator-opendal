@@ -34,7 +34,14 @@ public abstract class BehaviorTestBase
 
     protected Operator Op => fixture.Op;
 
+    protected Capability CapabilityBeforeOverrides => fixture.CapabilityBeforeOverrides;
+
     protected Capability Capability => fixture.Capability;
+
+    protected bool IsService(string scheme)
+    {
+        return string.Equals(fixture.Scheme, scheme, StringComparison.OrdinalIgnoreCase);
+    }
 
     protected bool Supports(Func<Capability, bool> predicate)
     {

@@ -49,7 +49,10 @@ impl oio::OneShotDelete for YandexDiskDeleter {
             StatusCode::ACCEPTED => Ok(()),
             // Allow 404 when deleting a non-existing object
             StatusCode::NOT_FOUND => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("DeleteResource")),
+                resp,
+            )),
         }
     }
 }

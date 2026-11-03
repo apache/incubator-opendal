@@ -47,13 +47,9 @@ dependencies = [
 
 [[package]]
 name = "asyncband"
-version = "0.6.7"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "94a214ba60d6231afd0e805e3c27c45a1626d9debaa5a5061c45a1ea1b2f1ed0"
-dependencies = [
- "hashbrown 0.17.1",
- "slab",
-]
+checksum = "2e52766975a4f080528a898235c51e82e65df9db713419067b5368040eeb5659"
 
 [[package]]
 name = "atomic-waker"
@@ -538,7 +534,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1391,7 +1387,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "opendal"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "ctor",
  "opendal-core",
@@ -1419,7 +1415,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-core"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "anyhow",
  "asyncband",
@@ -1431,7 +1427,7 @@ dependencies = [
  "log",
  "md-5",
  "percent-encoding",
- "quick-xml",
+ "quick-xml 0.42.0",
  "reqsign-core",
  "serde",
  "serde_json",
@@ -1443,7 +1439,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-http-transport-reqwest"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "bytes",
  "futures",
@@ -1455,7 +1451,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-layer-concurrent-limit"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "asyncband",
  "futures",
@@ -1465,7 +1461,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-layer-logging"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "log",
  "opendal-core",
@@ -1473,7 +1469,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-layer-retry"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "backon",
  "log",
@@ -1482,7 +1478,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-layer-throttle"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "governor",
  "opendal-core",
@@ -1490,7 +1486,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-layer-timeout"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "opendal-core",
  "tokio",
@@ -1498,7 +1494,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-ruby"
-version = "0.1.10"
+version = "0.1.16"
 dependencies = [
  "bytes",
  "magnus",
@@ -1510,7 +1506,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-azblob"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "base64 0.23.0",
  "bytes",
@@ -1518,7 +1514,7 @@ dependencies = [
  "log",
  "opendal-core",
  "opendal-service-azure-common",
- "quick-xml",
+ "quick-xml 0.42.0",
  "reqsign-azure-storage",
  "reqsign-core",
  "reqsign-file-read-tokio",
@@ -1529,7 +1525,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-azdls"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "asyncband",
  "base64 0.23.0",
@@ -1538,7 +1534,7 @@ dependencies = [
  "log",
  "opendal-core",
  "opendal-service-azure-common",
- "quick-xml",
+ "quick-xml 0.42.0",
  "reqsign-azure-storage",
  "reqsign-core",
  "reqsign-file-read-tokio",
@@ -1548,14 +1544,14 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-azfile"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "bytes",
  "http",
  "log",
  "opendal-core",
  "opendal-service-azure-common",
- "quick-xml",
+ "quick-xml 0.42.0",
  "reqsign-azure-storage",
  "reqsign-core",
  "reqsign-file-read-tokio",
@@ -1564,7 +1560,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-azure-common"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "http",
  "opendal-core",
@@ -1572,13 +1568,13 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-cos"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "bytes",
  "http",
  "log",
  "opendal-core",
- "quick-xml",
+ "quick-xml 0.42.0",
  "reqsign-core",
  "reqsign-file-read-tokio",
  "reqsign-tencent-cos",
@@ -1587,7 +1583,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-fs"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "bytes",
  "log",
@@ -1599,7 +1595,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-gcs"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1607,18 +1603,19 @@ dependencies = [
  "log",
  "opendal-core",
  "percent-encoding",
- "quick-xml",
+ "quick-xml 0.42.0",
  "reqsign-core",
  "reqsign-file-read-tokio",
  "reqsign-google",
  "serde",
  "serde_json",
  "tokio",
+ "uuid",
 ]
 
 [[package]]
 name = "opendal-service-ghac"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "bytes",
  "ghac",
@@ -1636,7 +1633,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-http"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "http",
  "log",
@@ -1646,7 +1643,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-ipmfs"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "bytes",
  "http",
@@ -1658,13 +1655,13 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-obs"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "bytes",
  "http",
  "log",
  "opendal-core",
- "quick-xml",
+ "quick-xml 0.42.0",
  "reqsign-core",
  "reqsign-file-read-tokio",
  "reqsign-huaweicloud-obs",
@@ -1673,13 +1670,13 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-oss"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "bytes",
  "http",
  "log",
  "opendal-core",
- "quick-xml",
+ "quick-xml 0.42.0",
  "reqsign-aliyun-oss",
  "reqsign-core",
  "reqsign-file-read-tokio",
@@ -1688,7 +1685,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-s3"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "base64 0.23.0",
  "bytes",
@@ -1697,7 +1694,7 @@ dependencies = [
  "log",
  "md-5",
  "opendal-core",
- "quick-xml",
+ "quick-xml 0.42.0",
  "reqsign-aws-v4",
  "reqsign-core",
  "reqsign-file-read-tokio",
@@ -1707,21 +1704,20 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-webdav"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "anyhow",
- "asyncband",
  "bytes",
  "http",
  "log",
  "opendal-core",
- "quick-xml",
+ "quick-xml 0.42.0",
  "serde",
 ]
 
 [[package]]
 name = "opendal-service-webhdfs"
-version = "0.58.2"
+version = "0.59.5"
 dependencies = [
  "anyhow",
  "asyncband",
@@ -1949,6 +1945,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "quick-xml"
+version = "0.42.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "41b1177fdf999d2321d3fb46ff47159d9c1fb9ad66a4879f8c50a0b504615e9b"
+dependencies = [
+ "memchr",
+ "serde",
+]
+
+[[package]]
 name = "quinn"
 version = "0.11.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2002,7 +2008,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2216,7 +2222,7 @@ dependencies = [
  "http",
  "log",
  "percent-encoding",
- "quick-xml",
+ "quick-xml 0.41.0",
  "reqsign-core",
  "rust-ini",
  "serde",
@@ -2234,7 +2240,7 @@ dependencies = [
  "bytes",
  "http",
  "log",
- "quick-xml",
+ "quick-xml 0.41.0",
  "reqsign-aws-core",
  "reqsign-core",
  "serde",
@@ -2451,7 +2457,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -2508,7 +2514,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3251,7 +3257,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

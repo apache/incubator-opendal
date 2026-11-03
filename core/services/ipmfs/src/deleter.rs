@@ -19,8 +19,8 @@ use std::sync::Arc;
 
 use http::StatusCode;
 
-use super::core::IpmfsCore;
 use super::core::parse_error;
+use super::core::{ErrorContext, IpmfsCore};
 use opendal_core::raw::*;
 use opendal_core::*;
 
@@ -43,7 +43,10 @@ impl oio::OneShotDelete for IpmfsDeleter {
 
         match status {
             StatusCode::OK => Ok(()),
-            _ => Err(parse_error(resp)),
+            _ => Err(parse_error(
+                ErrorContext::new(ServiceOperation("FilesRm")),
+                resp,
+            )),
         }
     }
 }

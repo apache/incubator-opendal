@@ -17,38 +17,36 @@
 
 //! The internal implementation details of OpenDAL.
 //!
-//! OpenDAL provides unified abstraction via two-level API sets:
+//! This guide explains the extension boundaries used to implement OpenDAL
+//! storage services and layers. Application code should use the public
+//! [`Operator`] API; the raw APIs described here can change between minor
+//! releases.
 //!
-//! - Public API like [`Operator`] provides user-level API.
-//! - Raw API like [`Service`], [`Layer`] provides developer-level API.
-//!
-//! OpenDAL tries its best to keep the public API stable. But raw APIs
-//! may change between minor releases from time to time. So most users
-//! should only use the public API. Developers use raw APIs to implement
-//! storage services or their own [`Layer`].
-//!
-//! In this section, we will talk about the following components:
-//!
-//! - [`Service`][accessor]: to connect underlying storage services.
-//! - [`Layer`][layer]: middleware/interceptor between storage services.
-//!
-//! The relation between [`Service`], [`Layer`], [`Servicer`], [`OperationContext`],
-//! and [`Operator`] looks like the following:
+//! OpenDAL keeps service implementations typed until it composes them into an
+//! operator:
 //!
 //! ```text
-//! ┌──────────────┐     ┌──────────────────────────────┐     ┌──────────────┐
-//! │ Service      │     │ Servicer                     │     │ Operator     │
-//! │ builders     ├────►│ + Layer::apply_* replay      ├────►│ srv + ctx    │
-//! └──────────────┘     │ + OperationContext resources │     └──────────────┘
-//!                      └──────────────────────────────┘
+//! Builder -> Service -> ServiceDyn -> Servicer -> Layer stack -> Operator
+//!              ^                          |
+//!              +------ type erasure ------+
 //! ```
 //!
-//! [`Builder`]: crate::Builder
+//! - A [`Service`] implements storage operations and reports the capabilities
+//!   it provides.
+//! - [`ServiceDyn`] is the object-safe boundary that erases a typed service
+//!   and its operation bodies.
+//! - A [`Servicer`] is the shared, type-erased service handle stored by
+//!   operators and layers.
+//! - A [`Layer`] wraps the service stack, the operation context, or both.
+//!
+//! Continue with [implementing a service][service] or
+//! [implementing a layer][layer].
+//!
 //! [`Operator`]: crate::Operator
 //! [`Service`]: crate::raw::Service
+//! [`ServiceDyn`]: crate::raw::ServiceDyn
 //! [`Servicer`]: crate::raw::Servicer
-//! [`OperationContext`]: crate::raw::OperationContext
 //! [`Layer`]: crate::raw::Layer
 
-pub mod accessor;
 pub mod layer;
+pub mod service;

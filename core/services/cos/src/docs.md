@@ -7,6 +7,7 @@ Depending on its configuration and the backing system, this service can expose:
 - [x] read
 - [x] write
 - [x] delete
+- [x] restore
 - [x] list
 - [x] copy
 - [ ] rename
@@ -51,3 +52,20 @@ async fn main() -> Result<()> {
     Ok(())
 }
 ```
+
+## Restore
+
+Restore requires a bucket with versioning enabled. `Operator::restore` lists
+object versions and removes the current delete marker, requiring permission to
+list versions and delete specific versions. It succeeds without changing an
+already-live object. Each call removes only one current marker; repeated
+deletions can require repeated restore calls. An unknown path returns `NotFound`.
+
+`Operator::restore_with(...).version(...)` copies the selected historical version
+to the same path as a new current version. It requires read access to the source
+version and write access to the destination. Conditional restore with
+`if_not_exists` is not supported.
+
+COS version listings can briefly retain a deleted marker. If the listed marker
+no longer exists, restore returns a temporary error rather than reporting that
+another deletion was restored. Use `RetryLayer` to retry after the listing updates.

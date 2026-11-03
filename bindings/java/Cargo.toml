@@ -35,7 +35,7 @@ jni = { version = "0.22.4" }
 # opendal-java won't be published to crates.io, we always use the local version
 opendal = { version = ">=0", path = "../../core", default-features = false, features = [
   "blocking",
-  "http-transport-reqwest-rustls",
+  "http-transport-reqwest",
   "executors-tokio",
 
   # enabled layers
@@ -50,6 +50,7 @@ opendal = { version = ">=0", path = "../../core", default-features = false, feat
   "services-cos",
   "services-fs",
   "services-gcs",
+  "services-gcs-grpc",
   "services-ghac",
   "services-http",
   "services-ipmfs",
@@ -107,6 +108,7 @@ tokio = { version = "1.49.0", features = ["full"] }
 # This is not optimal. See also the Cargo issue:
 # https://github.com/rust-lang/cargo/issues/1197#issuecomment-1641086954
 [target.'cfg(unix)'.dependencies.opendal]
+default-features = false
 features = [
   # Depend on "openssh" which depends on "tokio-pipe" that is unavailable on Windows.
   "services-sftp",

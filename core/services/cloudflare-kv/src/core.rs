@@ -174,69 +174,75 @@ impl CloudflareKvCore {
     }
 }
 
-mod error {
-    use bytes::Buf;
-    use http::Response;
-    use http::StatusCode;
-    use opendal_core::raw::*;
-    use opendal_core::*;
-    use serde_json::de;
+use bytes::Buf;
+use http::StatusCode;
+use serde_json::de;
 
-    use crate::model::CfKvError;
-    use crate::model::CfKvResponse;
+use crate::model::CfKvError;
+use crate::model::CfKvResponse;
 
-    /// Parse error response into Error.
-    pub(crate) fn parse_error(resp: Response<Buffer>) -> Error {
-        let (parts, body) = resp.into_parts();
-        let bs = body.to_bytes();
+/// Context needed to classify an error from this service.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct ErrorContext {
+    service_operation: ServiceOperation,
+}
 
-        let (mut kind, mut retryable) = match parts.status {
-            StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
-            // Some services (like owncloud) return 403 while file locked.
-            StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, true),
-            // Allowing retry for resource locked.
-            StatusCode::LOCKED => (ErrorKind::Unexpected, true),
-            StatusCode::INTERNAL_SERVER_ERROR
-            | StatusCode::BAD_GATEWAY
-            | StatusCode::SERVICE_UNAVAILABLE
-            | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
-            _ => (ErrorKind::Unexpected, false),
-        };
-
-        let (message, err) = de::from_reader::<_, CfKvResponse>(bs.clone().reader())
-            .map(|err| (format!("{err:?}"), Some(err)))
-            .unwrap_or_else(|_| (String::from_utf8_lossy(&bs).into_owned(), None));
-
-        if let Some(err) = err {
-            (kind, retryable) = parse_cfkv_error_code(err.errors).unwrap_or((kind, retryable));
-        }
-
-        let mut err = Error::new(kind, message);
-
-        err = with_error_response_context(err, parts);
-
-        if retryable {
-            err = err.set_temporary();
-        }
-
-        err
-    }
-
-    pub(crate) fn parse_cfkv_error_code(errors: Vec<CfKvError>) -> Option<(ErrorKind, bool)> {
-        if errors.is_empty() {
-            return None;
-        }
-
-        match errors[0].code {
-            // The request is malformed: failed to decode id.
-            7400 => Some((ErrorKind::Unexpected, false)),
-            // no such column: Xxxx.
-            7500 => Some((ErrorKind::NotFound, false)),
-            // Authentication error.
-            10000 => Some((ErrorKind::PermissionDenied, false)),
-            _ => None,
-        }
+impl ErrorContext {
+    pub(crate) const fn new(service_operation: ServiceOperation) -> Self {
+        Self { service_operation }
     }
 }
 
-pub(super) use error::*;
+/// Parse an error response using its service request context.
+pub(crate) fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
+    let (parts, body) = resp.into_parts();
+    let bs = body.to_bytes();
+
+    let (mut kind, mut retryable) = match parts.status {
+        StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
+        // Some services (like owncloud) return 403 while file locked.
+        StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, true),
+        // Allowing retry for resource locked.
+        StatusCode::LOCKED => (ErrorKind::Unexpected, true),
+        StatusCode::INTERNAL_SERVER_ERROR
+        | StatusCode::BAD_GATEWAY
+        | StatusCode::SERVICE_UNAVAILABLE
+        | StatusCode::GATEWAY_TIMEOUT => (ErrorKind::Unexpected, true),
+        _ => (ErrorKind::Unexpected, false),
+    };
+
+    let (message, err) = de::from_reader::<_, CfKvResponse>(bs.clone().reader())
+        .map(|err| (format!("{err:?}"), Some(err)))
+        .unwrap_or_else(|_| (String::from_utf8_lossy(&bs).into_owned(), None));
+
+    if let Some(err) = err {
+        (kind, retryable) = parse_cfkv_error_code(err.errors).unwrap_or((kind, retryable));
+    }
+
+    let mut err = Error::new(kind, message);
+
+    err = err.with_context("service_operation", ctx.service_operation.0);
+    err = with_error_response_context(err, parts);
+
+    if retryable {
+        err = err.set_temporary();
+    }
+
+    err
+}
+
+pub(crate) fn parse_cfkv_error_code(errors: Vec<CfKvError>) -> Option<(ErrorKind, bool)> {
+    if errors.is_empty() {
+        return None;
+    }
+
+    match errors[0].code {
+        // The request is malformed: failed to decode id.
+        7400 => Some((ErrorKind::Unexpected, false)),
+        // no such column: Xxxx.
+        7500 => Some((ErrorKind::NotFound, false)),
+        // Authentication error.
+        10000 => Some((ErrorKind::PermissionDenied, false)),
+        _ => None,
+    }
+}
