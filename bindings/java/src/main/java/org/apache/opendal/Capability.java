@@ -298,7 +298,12 @@ public class Capability {
             boolean presignRead,
             boolean presignStat,
             boolean presignWrite,
-            boolean shared) {
+            boolean shared,
+            boolean readWithVersion,
+            boolean readWithIfVersionMatch,
+            boolean readWithIfVersionNotMatch,
+            boolean readWithIfModifiedSince,
+            boolean readWithIfUnmodifiedSince) {
         this.stat = stat;
         this.statWithIfMatch = statWithIfMatch;
         this.statWithIfNoneMatch = statWithIfNoneMatch;
@@ -340,5 +345,10 @@ public class Capability {
         this.presignStat = presignStat;
         this.presignWrite = presignWrite;
         this.shared = shared;
+        this.readWithVersion = readWithVersion;
+        this.readWithIfVersionMatch = readWithIfVersionMatch;
+        this.readWithIfVersionNotMatch = readWithIfVersionNotMatch;
+        this.readWithIfModifiedSince = readWithIfModifiedSince;
+        this.readWithIfUnmodifiedSince = readWithIfUnmodifiedSince;
     }
 }
