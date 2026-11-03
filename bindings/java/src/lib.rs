@@ -292,17 +292,11 @@ fn make_stat_options(env: &mut Env, options: &JObject) -> Result<opendal::option
     })
 }
 
-fn make_read_options<'a>(
-    env: &mut Env<'a>,
-    options: &JObject,
-) -> Result<opendal::options::ReadOptions> {
-    let offset = convert::read_int64_field(env, options, "offset")?;
-    let length = convert::read_int64_field(env, options, "length")?;
-
-    let concurrent = convert::read_int_field(env, options, "concurrent")?;
-    let chunk = convert::read_int64_field(env, options, "chunk")?;
-    let content_length_hint = convert::read_int64_field(env, options, "contentLengthHint")?;
-
+fn validate_read_execution_options(
+    concurrent: i32,
+    chunk: i64,
+    content_length_hint: i64,
+) -> Result<(usize, Option<usize>, Option<u64>)> {
     if concurrent <= 0 {
         return Err(Error::new(ErrorKind::ConfigInvalid, "concurrent must be positive").into());
     }
@@ -329,6 +323,23 @@ fn make_read_options<'a>(
             )
         })?),
     };
+
+    Ok((concurrent, chunk, content_length_hint))
+}
+
+fn make_read_options<'a>(
+    env: &mut Env<'a>,
+    options: &JObject,
+) -> Result<opendal::options::ReadOptions> {
+    let offset = convert::read_int64_field(env, options, "offset")?;
+    let length = convert::read_int64_field(env, options, "length")?;
+
+    let concurrent = convert::read_int_field(env, options, "concurrent")?;
+    let chunk = convert::read_int64_field(env, options, "chunk")?;
+    let content_length_hint = convert::read_int64_field(env, options, "contentLengthHint")?;
+
+    let (concurrent, chunk, content_length_hint) =
+        validate_read_execution_options(concurrent, chunk, content_length_hint)?;
 
     Ok(opendal::options::ReadOptions {
         range: convert::offset_length_to_range(offset, length)?.into(),
@@ -349,6 +360,7 @@ fn make_read_options<'a>(
         )?,
         concurrent,
         chunk,
+        gap: None,
         content_length_hint,
         override_content_type: convert::read_string_field(env, options, "overrideContentType")?,
         override_cache_control: convert::read_string_field(env, options, "overrideCacheControl")?,
@@ -357,7 +369,6 @@ fn make_read_options<'a>(
             options,
             "overrideContentDisposition",
         )?,
-        ..Default::default()
     })
 }
 
@@ -370,34 +381,11 @@ fn make_reader_options(
     let prefetch = convert::read_int_field(env, options, "prefetch")?;
     let content_length_hint = convert::read_int64_field(env, options, "contentLengthHint")?;
 
-    if concurrent <= 0 {
-        return Err(Error::new(ErrorKind::ConfigInvalid, "concurrent must be positive").into());
-    }
-    let concurrent = usize::try_from(concurrent)
-        .map_err(|_| Error::new(ErrorKind::ConfigInvalid, "concurrent is too large"))?;
-    let chunk = match chunk {
-        -1 => None,
-        value if value > 0 => Some(
-            usize::try_from(value)
-                .map_err(|_| Error::new(ErrorKind::ConfigInvalid, "chunk is too large"))?,
-        ),
-        _ => {
-            return Err(
-                Error::new(ErrorKind::ConfigInvalid, "chunk must be -1 or positive").into(),
-            );
-        }
-    };
+    let (concurrent, chunk, content_length_hint) =
+        validate_read_execution_options(concurrent, chunk, content_length_hint)?;
+
     let prefetch = usize::try_from(prefetch)
         .map_err(|_| Error::new(ErrorKind::ConfigInvalid, "prefetch must be non-negative"))?;
-    let content_length_hint = match content_length_hint {
-        -1 => None,
-        value => Some(u64::try_from(value).map_err(|_| {
-            Error::new(
-                ErrorKind::ConfigInvalid,
-                "contentLengthHint must be -1 or non-negative",
-            )
-        })?),
-    };
 
     Ok(opendal::options::ReaderOptions {
         version: convert::read_string_field(env, options, "version")?,
