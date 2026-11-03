@@ -79,6 +79,10 @@ namespace OpenDAL.ServiceConfig
         /// </summary>
         public string? DefaultAcl { get; init; }
         /// <summary>
+        /// Fallback signing region when neither `region`, `AWS_REGION`, nor `AWS_DEFAULT_REGION` supplies one.
+        /// </summary>
+        public string? DefaultRegion { get; init; }
+        /// <summary>
         /// default storage_class for this backend. Available values: - `DEEP_ARCHIVE` - `GLACIER` - `GLACIER_IR` - `INTELLIGENT_TIERING` - `ONEZONE_IA` - `EXPRESS_ONEZONE` - `OUTPOSTS` - `REDUCED_REDUNDANCY` - `STANDARD` - `STANDARD_IA` S3 compatible services don't support all of them
         /// </summary>
         public string? DefaultStorageClass { get; init; }
@@ -168,6 +172,10 @@ namespace OpenDAL.ServiceConfig
         /// </summary>
         public string? ServerSideEncryptionAwsKmsKeyId { get; init; }
         /// <summary>
+        /// Control S3 Bucket Keys for SSE-KMS writes and copies. Omit this option to inherit the bucket setting. `false` disables Bucket Keys for destination objects, and `true` enables them.
+        /// </summary>
+        public bool? ServerSideEncryptionBucketKeyEnabled { get; init; }
+        /// <summary>
         /// server_side_encryption_customer_algorithm for this backend. Available values: `AES256`.
         /// </summary>
         public string? ServerSideEncryptionCustomerAlgorithm { get; init; }
@@ -244,6 +252,10 @@ namespace OpenDAL.ServiceConfig
             if (DefaultAcl is not null)
             {
                 map["default_acl"] = Utilities.ToOptionString(DefaultAcl);
+            }
+            if (DefaultRegion is not null)
+            {
+                map["default_region"] = Utilities.ToOptionString(DefaultRegion);
             }
             if (DefaultStorageClass is not null)
             {
@@ -338,6 +350,10 @@ namespace OpenDAL.ServiceConfig
             if (ServerSideEncryptionAwsKmsKeyId is not null)
             {
                 map["server_side_encryption_aws_kms_key_id"] = Utilities.ToOptionString(ServerSideEncryptionAwsKmsKeyId);
+            }
+            if (ServerSideEncryptionBucketKeyEnabled is not null)
+            {
+                map["server_side_encryption_bucket_key_enabled"] = Utilities.ToOptionString(ServerSideEncryptionBucketKeyEnabled);
             }
             if (ServerSideEncryptionCustomerAlgorithm is not null)
             {

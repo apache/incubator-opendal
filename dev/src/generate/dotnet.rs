@@ -324,7 +324,7 @@ fn metadata_field(f: metadata::MetadataField) -> MetadataField {
 fn enabled_service(srv: &str) -> bool {
     match srv {
         // not enabled in bindings/dotnet/Cargo.toml
-        "foundationdb" | "foyer" | "ftp" | "hdfs" | "rocksdb" => false,
+        "foundationdb" | "foyer" | "ftp" | "git" | "hdfs" | "rocksdb" => false,
         _ => true,
     }
 }

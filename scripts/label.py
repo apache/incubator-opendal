@@ -166,7 +166,7 @@ def model_request(item, files):
         },
         "components": {
             "type": "array",
-            "items": {"type": "string", "enum": list(components)},
+            "items": {"type": "string"},
         },
     }
     if is_pr:
@@ -249,10 +249,13 @@ def selected_labels(result, item, files):
     components = result["components"]
     allowed_components = component_labels()
     if not isinstance(components, list) or any(
-        not isinstance(c, str) or c not in allowed_components for c in components
+        not isinstance(c, str) for c in components
     ):
         raise ValueError("Invalid component labels")
-    labels = set(components)
+    labels = set(components).intersection(allowed_components)
+    omitted = sorted(set(components) - labels)
+    if omitted:
+        print(json.dumps({"omitted_components": omitted}))
     existing = {label["name"] for label in item["labels"]}
     category_labels = (
         {f"releases-note/{c}" for c in categories} if is_pr else set(categories)
