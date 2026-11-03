@@ -21,10 +21,6 @@ package org.apache.opendal;
 
 import lombok.Data;
 
-/**
- * Describes the operations and options supported by an operator.
- * Read version and condition flags apply to both {@link ReadOptions} and {@link ReaderOptions}.
- */
 @Data
 public class Capability {
 
@@ -302,12 +298,7 @@ public class Capability {
             boolean presignRead,
             boolean presignStat,
             boolean presignWrite,
-            boolean shared,
-            boolean readWithVersion,
-            boolean readWithIfVersionMatch,
-            boolean readWithIfVersionNotMatch,
-            boolean readWithIfModifiedSince,
-            boolean readWithIfUnmodifiedSince) {
+            boolean shared) {
         this.stat = stat;
         this.statWithIfMatch = statWithIfMatch;
         this.statWithIfNoneMatch = statWithIfNoneMatch;
@@ -349,10 +340,5 @@ public class Capability {
         this.presignStat = presignStat;
         this.presignWrite = presignWrite;
         this.shared = shared;
-        this.readWithVersion = readWithVersion;
-        this.readWithIfVersionMatch = readWithIfVersionMatch;
-        this.readWithIfVersionNotMatch = readWithIfVersionNotMatch;
-        this.readWithIfModifiedSince = readWithIfModifiedSince;
-        this.readWithIfUnmodifiedSince = readWithIfUnmodifiedSince;
     }
 }
