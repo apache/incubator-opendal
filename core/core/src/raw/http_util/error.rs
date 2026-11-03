@@ -39,11 +39,15 @@ pub fn new_request_credential_error(err: anyhow::Error) -> Error {
     .set_source(err)
 }
 
-/// Create a new error happened during signing request.
+/// Wrap a signing failure, preserving reqsign's retryability when available.
 pub fn new_request_sign_error(err: anyhow::Error) -> Error {
-    Error::new(ErrorKind::Unexpected, "signing http request")
-        .with_operation("reqsign::Sign")
-        .set_source(err)
+    let error = Error::new(ErrorKind::Unexpected, "signing http request");
+    #[cfg(feature = "reqsign")]
+    let error = error.with_temporary(
+        err.downcast_ref::<reqsign_core::Error>()
+            .is_some_and(reqsign_core::Error::is_retryable),
+    );
+    error.with_operation("reqsign::Sign").set_source(err)
 }
 
 /// Add response context to error.
