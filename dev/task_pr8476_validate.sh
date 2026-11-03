@@ -42,6 +42,8 @@ task_run baseline cargo test --locked -p opendal --features services-gcs --test 
 test "$?" -eq 101 || exit 1
 rg -Fq 'temporary token failure must retry' "$task_logs/baseline.log" || exit 1
 rg -Fq 'test result: FAILED. 0 passed; 1 failed;' "$task_logs/baseline.log" || exit 1
+rg -Fq 'signing http request' "$task_logs/baseline.log" || exit 1
+rg -Fq 'controlled token connection reset' "$task_logs/baseline.log" || exit 1
 cd "$task_root" || exit 1
 rm -- "$task_probe"
 
