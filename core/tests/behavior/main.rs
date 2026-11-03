@@ -39,7 +39,6 @@ use logforth::append::Testing;
 use logforth::filter::rustlog::RustLogFilterBuilder;
 use logforth::layout::TextLayout;
 use opendal::tests::TEST_RUNTIME;
-use opendal::tests::init_test_service;
 use opendal::*;
 
 pub static TEST_FIXTURE: Fixture = Fixture::new();
@@ -47,11 +46,13 @@ pub static TEST_FIXTURE: Fixture = Fixture::new();
 fn main() -> anyhow::Result<()> {
     let args = Arguments::from_args();
 
-    let op = if let Some(op) = init_test_service()? {
-        op
-    } else {
-        return Ok(());
-    };
+    let op = Operator::new(
+        opendal::services::Github::default()
+            .owner("Xuanwo")
+            .repo("opendal-pr-8165-fixture-20261103")
+            .root(&std::env::var("OPENDAL_GITHUB_ROOT")?)
+            .token(&std::env::var("OPENDAL_GITHUB_TOKEN")?),
+    )?;
 
     let mut tests = Vec::new();
 
