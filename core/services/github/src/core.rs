@@ -214,7 +214,7 @@ impl GithubCore {
         self.send(ctx, req).await
     }
 
-    pub async fn delete(&self, ctx: &OperationContext, path: &str) -> Result<()> {
+    pub async fn delete(&self, ctx: &OperationContext, path: &str, args: &OpDelete) -> Result<()> {
         // If path is a directory, we should delete path/.gitkeep
         let formatted_path = format!("{path}.gitkeep");
         let p = if path.ends_with('/') {
@@ -223,8 +223,12 @@ impl GithubCore {
             path
         };
 
-        let Some(sha) = self.get_file_sha(ctx, p).await? else {
-            return Ok(());
+        let sha = match args.if_match() {
+            Some(sha) => sha.to_string(),
+            None => match self.get_file_sha(ctx, p).await? {
+                Some(sha) => sha,
+                None => return Ok(()),
+            },
         };
 
         let path = build_abs_path(&self.root, p);
@@ -260,7 +264,15 @@ impl GithubCore {
 
         match resp.status() {
             StatusCode::OK => Ok(()),
+            StatusCode::NOT_FOUND if args.if_match().is_some() => Err(Error::new(
+                ErrorKind::ConditionNotMatch,
+                "delete precondition requires a live target",
+            )),
             StatusCode::NOT_FOUND => Ok(()),
+            StatusCode::CONFLICT if args.if_match().is_some() => Err(Error::new(
+                ErrorKind::ConditionNotMatch,
+                "delete sha does not match the current blob",
+            )),
             _ => Err(parse_error(
                 ErrorContext::new(ServiceOperation("DeleteFile")),
                 resp,
