@@ -33,10 +33,7 @@ impl GithubDeleter {
 }
 
 impl oio::OneShotDelete for GithubDeleter {
-    async fn delete_once(&self, path: String, _: OpDelete) -> Result<()> {
-        match self.core.delete(&self.ctx, &path).await {
-            Ok(_) => Ok(()),
-            Err(err) => Err(err),
-        }
+    async fn delete_once(&self, path: String, args: OpDelete) -> Result<()> {
+        self.core.delete(&self.ctx, &path, &args).await
     }
 }

@@ -15,6 +15,14 @@ Depending on its configuration and the backing system, this service can expose:
 Inspect the effective capability set with [`opendal_core::Operator::info`] and
 [`opendal_core::OperatorInfo::capability`] after building an operator.
 
+Conditional delete with `if_match` sends the blob SHA from
+`Metadata::etag` as the Contents API `sha`. A mismatched SHA returns
+`ErrorKind::ConditionNotMatch` and leaves the file in place. Unconditional
+delete still looks up the current SHA first.
+
+For a directory path, `if_match` refers to the directory's `.gitkeep` blob SHA.
+Directory metadata does not expose that SHA.
+
 ## Configuration
 
 Use [`crate::GithubConfig`] for serializable configuration and this builder's

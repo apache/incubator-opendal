@@ -132,6 +132,7 @@ impl Builder for GithubBuilder {
                     write_can_empty: true,
 
                     delete: true,
+                    delete_with_if_match: true,
 
                     list: true,
                     list_with_recursive: true,
