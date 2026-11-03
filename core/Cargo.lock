@@ -61,7 +61,7 @@ dependencies = [
  "aes 0.9.1",
  "cipher 0.5.1",
  "ctr",
- "ctutils 0.4.7",
+ "ctutils",
  "ghash",
 ]
 
@@ -432,12 +432,6 @@ dependencies = [
  "quote",
  "syn 2.0.118",
 ]
-
-[[package]]
-name = "autocfg"
-version = "1.5.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "autocfg"
@@ -1164,8 +1158,7 @@ version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdd35008169921d80bc60d3d0ab416eecb028c4cd653352907921d95084790be"
 dependencies = [
- "hybrid-array 0.4.12",
- "hybrid-array 0.4.15",
+ "hybrid-array",
 ]
 
 [[package]]
@@ -1183,8 +1176,7 @@ version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "710f1dd022ef4e93f8a438b4ba958de7f64308434fa6a87104481645cc30068b"
 dependencies = [
- "hybrid-array 0.4.12",
- "hybrid-array 0.4.15",
+ "hybrid-array",
 ]
 
 [[package]]
@@ -1457,7 +1449,7 @@ dependencies = [
  "aead",
  "cipher 0.5.1",
  "ctr",
- "ctutils 0.4.7",
+ "ctutils",
 ]
 
 [[package]]
@@ -1640,12 +1632,6 @@ checksum = "c0f78a02292a74a88ac736019ab962ece0bc380e3f977bf72e376c5d78ff0678"
 dependencies = [
  "cc",
 ]
-
-[[package]]
-name = "cmov"
-version = "0.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f88a43d011fc4a6876cb7344703e297c71dda42494fee094d5f7c76bf13f746"
 
 [[package]]
 name = "cmov"
@@ -2219,9 +2205,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9c035cb64cba03dad2fb921f3e218785e8cf9a41790da5eb3a1400f62fa2be11"
 dependencies = [
  "cpubits",
- "ctutils 0.4.7",
+ "ctutils",
  "getrandom 0.4.2",
- "hybrid-array 0.4.15",
+ "hybrid-array",
  "num-traits",
  "rand_core 0.10.1",
  "serdect",
@@ -2246,8 +2232,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77727bb15fa921304124b128af125e7e3b968275d1b108b379190264f4423710"
 dependencies = [
  "getrandom 0.4.2",
- "hybrid-array 0.4.12",
- "hybrid-array 0.4.15",
+ "hybrid-array",
  "rand_core 0.10.1",
 ]
 
@@ -2292,20 +2277,11 @@ dependencies = [
 
 [[package]]
 name = "ctutils"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d5515a3834141de9eafb9717ad39eea8247b5674e6066c404e8c4b365d2a29e"
-dependencies = [
- "cmov 0.5.3",
-]
-
-[[package]]
-name = "ctutils"
 version = "0.4.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2376ffd6f96d8a9db59875b4b6b0237d6900b5baf64279714e05493ce64828a"
 dependencies = [
- "cmov 0.5.4",
+ "cmov",
  "subtle",
 ]
 
@@ -2445,7 +2421,7 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f0d7a944e61df464668c5f51f56cc667396a8821434273112948ea0b66e405d7"
 dependencies = [
- "hybrid-array 0.4.15",
+ "hybrid-array",
 ]
 
 [[package]]
@@ -2675,8 +2651,7 @@ dependencies = [
  "block-buffer 0.12.0",
  "const-oid 0.10.2",
  "crypto-common 0.2.1",
- "ctutils 0.4.2",
- "ctutils 0.4.7",
+ "ctutils",
 ]
 
 [[package]]
@@ -2914,7 +2889,7 @@ dependencies = [
  "ff 0.14.0",
  "group 0.14.0",
  "hkdf",
- "hybrid-array 0.4.15",
+ "hybrid-array",
  "pem-rfc7468 1.0.0",
  "pkcs8 0.11.0",
  "rand_core 0.10.1",
@@ -3051,7 +3026,7 @@ version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04839bdf9d8c10f66806fad16b852fc72aab80873aebc3cb69d85b4fa41543ed"
 dependencies = [
- "autocfg 1.5.1",
+ "autocfg",
  "defmt 0.3.101",
  "heapless 0.8.0",
  "serde",
@@ -5378,15 +5353,6 @@ checksum = "135b12329e5e3ce057a9f972339ea52bc954fe1e9358ef27f95e89716fbc5424"
 
 [[package]]
 name = "hybrid-array"
-version = "0.4.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9155a582abd142abc056962c29e3ce5ff2ad5469f4246b537ed42c5deba857da"
-dependencies = [
- "typenum",
-]
-
-[[package]]
-name = "hybrid-array"
 version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27f864f10dfb56725ce5ce5472bc52252c8f93a4ab86327122cebf62c5f59a17"
@@ -5726,8 +5692,7 @@ version = "1.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bd070e393353796e801d209ad339e89596eb4c8d430d18ede6a1cced8fafbd99"
 dependencies = [
- "autocfg 1.5.0",
- "autocfg 1.5.1",
+ "autocfg",
  "hashbrown 0.12.3",
 ]
 
@@ -5784,8 +5749,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4250ce6452e92010fdf7268ccc5d14faa80bb12fc741938534c58f16804e03c7"
 dependencies = [
  "block-padding 0.4.2",
- "hybrid-array 0.4.12",
- "hybrid-array 0.4.15",
+ "hybrid-array",
 ]
 
 [[package]]
@@ -6588,8 +6552,7 @@ version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5de893c32cde5f383baa4c04c5d6dbdd735cfd4a794b0debdb2bb1b421da5ff4"
 dependencies = [
- "autocfg 1.5.0",
- "autocfg 1.5.1",
+ "autocfg",
 ]
 
 [[package]]
@@ -6598,8 +6561,7 @@ version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a"
 dependencies = [
- "autocfg 1.5.0",
- "autocfg 1.5.1",
+ "autocfg",
 ]
 
 [[package]]
@@ -6979,7 +6941,7 @@ version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5f6f7833f2cbf2360a6cfd58cd41a53aa7a90bd4c202f5b1c7dd2ed73c57b2c3"
 dependencies = [
- "autocfg 1.5.0",
+ "autocfg",
  "num-integer",
  "num-traits",
 ]
@@ -7042,8 +7004,7 @@ version = "0.1.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1429034a0490724d0075ebb2bc9e875d6503c3cf69e235a8941aa757d83ef5bf"
 dependencies = [
- "autocfg 1.5.0",
- "autocfg 1.5.1",
+ "autocfg",
  "num-integer",
  "num-traits",
 ]
@@ -7054,8 +7015,7 @@ version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
- "autocfg 1.5.0",
- "autocfg 1.5.1",
+ "autocfg",
  "libm",
 ]
 
@@ -10493,7 +10453,7 @@ version = "0.6.0-pre.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9935425142ac6e252364413291d96c8bc9898d0876a801824c7af4eae397b689"
 dependencies = [
- "ctutils 0.4.7",
+ "ctutils",
  "hmac 0.13.0",
 ]
 
@@ -11028,9 +10988,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d56d437c2f19203ce5f7122e507831de96f3d2d4d3be5af44a0b0a09d8a80e4d"
 dependencies = [
  "base16ct 1.0.0",
- "ctutils 0.4.7",
+ "ctutils",
  "der 0.8.3",
- "hybrid-array 0.4.15",
+ "hybrid-array",
  "subtle",
  "zeroize",
 ]
@@ -13352,7 +13312,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4987bdc12753382e0bec4a65c50738ffaabc998b9cdd1f952fb5f39b0048a96"
 dependencies = [
  "crypto-common 0.2.1",
- "ctutils 0.4.7",
+ "ctutils",
 ]
 
 [[package]]
