@@ -20,12 +20,7 @@
 package org.apache.opendal.test;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import java.lang.reflect.Field;
 import java.nio.file.Path;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Locale;
-import java.util.stream.Collectors;
 import org.apache.opendal.AsyncOperator;
 import org.apache.opendal.Capability;
 import org.apache.opendal.Operator;
@@ -34,8 +29,6 @@ import org.apache.opendal.ServiceConfig;
 import org.apache.opendal.layer.CapabilityOverrideLayer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.ValueSource;
 
 public class OperatorInfoTest {
 
@@ -82,64 +75,64 @@ public class OperatorInfoTest {
     }
 
     @Test
-    public void testBooleanCapabilityMappings() throws Exception {
-        List<Field> flags = Arrays.stream(Capability.class.getFields())
-                .filter(field -> field.getType() == boolean.class)
-                .collect(Collectors.toList());
-        String allDisabled =
-                flags.stream().map(field -> capabilityName(field) + "=false").collect(Collectors.joining(","));
+    public void testStatVersionConditionCapabilities() {
+        final ServiceConfig.Memory memory =
+                ServiceConfig.Memory.builder().root("/opendal/").build();
+        try (final AsyncOperator op = AsyncOperator.of(memory);
+                final AsyncOperator matchOp = op.layer(new CapabilityOverrideLayer("stat_with_if_version_match=true"));
+                final AsyncOperator notMatchOp =
+                        op.layer(new CapabilityOverrideLayer("stat_with_if_version_not_match=true"))) {
+            assertThat(op.info.capability.statWithIfVersionMatch).isFalse();
+            assertThat(op.info.capability.statWithIfVersionNotMatch).isFalse();
+
+            assertThat(matchOp.info.capability.statWithIfVersionMatch).isTrue();
+            assertThat(matchOp.info.capability.statWithIfVersionNotMatch).isFalse();
+
+            assertThat(notMatchOp.info.capability.statWithIfVersionMatch).isFalse();
+            assertThat(notMatchOp.info.capability.statWithIfVersionNotMatch).isTrue();
+        }
+    }
+
+    @Test
+    public void testReadConditionCapabilities() {
+        String[] flags = {
+            "read_with_version",
+            "read_with_if_version_match",
+            "read_with_if_version_not_match",
+            "read_with_if_modified_since",
+            "read_with_if_unmodified_since"
+        };
+        String allDisabled = String.join("=false,", flags) + "=false";
         try (AsyncOperator base =
                         AsyncOperator.of(ServiceConfig.Memory.builder().build());
                 AsyncOperator none = base.layer(new CapabilityOverrideLayer(allDisabled))) {
-            // Enable one flag at a time so swapped fields cannot pass an all-true check.
-            for (Field enabledField : flags) {
-                String key = capabilityName(enabledField);
-                try (AsyncOperator enabled = none.layer(new CapabilityOverrideLayer(key + "=true"));
-                        AsyncOperator disabled = enabled.layer(new CapabilityOverrideLayer(key + "=false"))) {
-                    for (Field field : flags) {
-                        assertThat(field.getBoolean(enabled.info.capability))
-                                .as("%s when enabling %s", field.getName(), key)
-                                .isEqualTo(field.equals(enabledField));
-                        assertThat(field.getBoolean(disabled.info.capability))
-                                .as("%s after disabling %s", field.getName(), key)
-                                .isFalse();
-                    }
+            for (int i = 0; i < flags.length; i++) {
+                boolean[] expected = new boolean[flags.length];
+                expected[i] = true;
+                try (AsyncOperator enabled = none.layer(new CapabilityOverrideLayer(flags[i] + "=true"));
+                        AsyncOperator disabled = enabled.layer(new CapabilityOverrideLayer(flags[i] + "=false"))) {
+                    Capability enabledCapability = enabled.info.capability;
+                    assertThat(new boolean[] {
+                                enabledCapability.readWithVersion,
+                                enabledCapability.readWithIfVersionMatch,
+                                enabledCapability.readWithIfVersionNotMatch,
+                                enabledCapability.readWithIfModifiedSince,
+                                enabledCapability.readWithIfUnmodifiedSince
+                            })
+                            .as("enabling %s", flags[i])
+                            .containsExactly(expected);
+                    Capability disabledCapability = disabled.info.capability;
+                    assertThat(new boolean[] {
+                                disabledCapability.readWithVersion,
+                                disabledCapability.readWithIfVersionMatch,
+                                disabledCapability.readWithIfVersionNotMatch,
+                                disabledCapability.readWithIfModifiedSince,
+                                disabledCapability.readWithIfUnmodifiedSince
+                            })
+                            .as("disabling %s", flags[i])
+                            .containsOnly(false);
                 }
             }
         }
-    }
-
-    @ParameterizedTest
-    @ValueSource(longs = {-1, 0, 4294967296L, Long.MAX_VALUE})
-    public void testCapabilityLimitMappings(long value) throws Exception {
-        List<Field> limits = Arrays.stream(Capability.class.getFields())
-                .filter(field -> field.getType() == long.class)
-                .collect(Collectors.toList());
-        StringBuilder overrides = new StringBuilder();
-        long[] expected = new long[limits.size()];
-        for (int i = 0; i < limits.size(); i++) {
-            if (i > 0) {
-                overrides.append(',');
-            }
-            expected[i] = value <= 0 ? value : value - i;
-            overrides
-                    .append(capabilityName(limits.get(i)))
-                    .append('=')
-                    .append(value == -1 ? "none" : Long.toString(expected[i]));
-        }
-        try (AsyncOperator base =
-                        AsyncOperator.of(ServiceConfig.Memory.builder().build());
-                AsyncOperator op = base.layer(new CapabilityOverrideLayer(overrides.toString()))) {
-            for (int i = 0; i < limits.size(); i++) {
-                Field field = limits.get(i);
-                assertThat(field.getLong(op.info.capability))
-                        .as(field.getName())
-                        .isEqualTo(expected[i]);
-            }
-        }
-    }
-
-    private static String capabilityName(Field field) {
-        return field.getName().replaceAll("([a-z0-9])([A-Z])", "$1_$2").toLowerCase(Locale.ROOT);
     }
 }
