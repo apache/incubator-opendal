@@ -352,3 +352,7 @@ pub mod rfc_8109_writer_copy_from {}
 /// Conflict Error Kind
 #[doc = include_str!("8145_conflict_error_kind.md")]
 pub mod rfc_8145_conflict_error_kind {}
+
+/// FFI Plugin ABI
+#[doc = include_str!("8207_ffi_plugin_abi.md")]
+pub mod rfc_8207_ffi_plugin_abi {}
