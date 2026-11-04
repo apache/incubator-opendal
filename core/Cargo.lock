@@ -7716,6 +7716,7 @@ dependencies = [
  "opendal-core",
  "rand 0.10.1",
  "serde",
+ "tokio",
 ]
 
 [[package]]

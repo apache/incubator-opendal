@@ -88,10 +88,14 @@ fn next_entry(read_dir: &mut ReadDir, root: &Path) -> std::io::Result<Option<oio
 impl oio::List for CompfsLister {
     async fn next(&mut self) -> Result<Option<oio::Entry>> {
         if let Some(root) = self.root.take() {
-            return Ok(Some(oio::Entry::new(
-                &format!("{root}/"),
-                MetadataBuilder::dir().build(),
-            )));
+            // `normalize` maps the service root itself to `/`, which must not
+            // get a second trailing slash.
+            let path = if root.ends_with('/') {
+                root
+            } else {
+                format!("{root}/")
+            };
+            return Ok(Some(oio::Entry::new(&path, MetadataBuilder::dir().build())));
         }
         let Some(mut read_dir) = self.read_dir.take() else {
             return Ok(None);
@@ -108,5 +112,46 @@ impl oio::List for CompfsLister {
             self.read_dir = Some(read_dir);
         }
         entry
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use opendal_core::Operator;
+
+    use crate::Compfs;
+
+    #[tokio::test]
+    async fn test_list_root_returns_each_entry_once() {
+        let root = std::env::temp_dir().join("opendal-test-compfs-list-root");
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("dir")).unwrap();
+        std::fs::write(root.join("a.txt"), b"a").unwrap();
+        std::fs::write(root.join("dir/b.txt"), b"b").unwrap();
+
+        let op = Operator::new(Compfs::default().root(root.to_str().unwrap())).unwrap();
+
+        let mut paths = op
+            .list_with("/")
+            .recursive(true)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|e| e.path().to_string())
+            .collect::<Vec<_>>();
+        paths.sort();
+        assert_eq!(paths, ["/", "a.txt", "dir/", "dir/b.txt"]);
+
+        let mut paths = op
+            .list("/")
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|e| e.path().to_string())
+            .collect::<Vec<_>>();
+        paths.sort();
+        assert_eq!(paths, ["/", "a.txt", "dir/"]);
+
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }
