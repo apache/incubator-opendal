@@ -46,6 +46,26 @@ pub(super) struct LfsPointer {
     pub(super) size: u64,
 }
 
+/// Metadata of a tree entry at the resolved commit.
+pub(super) struct GitEntry {
+    pub(super) is_dir: bool,
+    pub(super) size: u64,
+    pub(super) last_modified: i64,
+    /// Blob oid, or the LFS oid when LFS is resolved; none for directories
+    pub(super) etag: Option<String>,
+}
+
+impl GitEntry {
+    fn dir(last_modified: i64) -> Self {
+        Self {
+            is_dir: true,
+            size: 0,
+            last_modified,
+            etag: None,
+        }
+    }
+}
+
 /// Repository and its temporary object database.
 #[derive(Clone)]
 struct RepoHolder {
@@ -257,7 +277,7 @@ impl GitCore {
         Ok((tree, commit_time))
     }
 
-    pub(super) fn stat_file_blocking(&self, path: &str) -> Result<(u64, bool, i64)> {
+    pub(super) fn stat_file_blocking(&self, path: &str) -> Result<GitEntry> {
         let repo = self.get_or_create_repo()?;
         let commit_oid = self.resolve_reference(&repo)?;
         let (tree, commit_time) = self.get_commit_tree(&repo, commit_oid)?;
@@ -265,7 +285,7 @@ impl GitCore {
         let rooted_path = build_rooted_abs_path(&self.root, path);
         let path = rooted_path.trim_matches('/');
         if path.is_empty() {
-            return Ok((0, true, commit_time));
+            return Ok(GitEntry::dir(commit_time));
         }
         let entry = tree
             .lookup_entry_by_path(path)
@@ -273,7 +293,7 @@ impl GitCore {
             .ok_or_else(|| Error::new(ErrorKind::NotFound, "path not found"))?;
 
         if entry.mode().is_tree() {
-            return Ok((0, true, commit_time));
+            return Ok(GitEntry::dir(commit_time));
         }
         if entry.mode().is_commit() {
             return Err(Error::new(
@@ -282,23 +302,34 @@ impl GitCore {
             ));
         }
 
+        let blob_oid = entry.oid().to_string();
         let blob = entry
             .object()
             .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to read git object"))?
             .try_into_blob()
             .map_err(|_| Error::new(ErrorKind::Unsupported, "git entry is not a blob"))?;
-        let mut size = blob.data.len() as u64;
-        if self.resolve_lfs
-            && Self::is_lfs_pointer(&blob.data)
-            && let Ok(pointer) = Self::parse_lfs_pointer(&blob.data)
-        {
-            size = pointer.size;
-        }
-
-        Ok((size, false, commit_time))
+        Ok(self.file_entry(&blob.data, blob_oid, commit_time))
     }
 
-    pub(super) fn list_dir_blocking(&self, path: &str) -> Result<Vec<(String, bool, u64, i64)>> {
+    /// Size and ETag come from the LFS pointer when LFS is resolved, else from the blob.
+    fn file_entry(&self, data: &[u8], blob_oid: String, last_modified: i64) -> GitEntry {
+        let (size, etag) = if self.resolve_lfs
+            && Self::is_lfs_pointer(data)
+            && let Ok(pointer) = Self::parse_lfs_pointer(data)
+        {
+            (pointer.size, pointer.oid)
+        } else {
+            (data.len() as u64, blob_oid)
+        };
+        GitEntry {
+            is_dir: false,
+            size,
+            last_modified,
+            etag: Some(etag),
+        }
+    }
+
+    pub(super) fn list_dir_blocking(&self, path: &str) -> Result<Vec<(String, GitEntry)>> {
         let repo = self.get_or_create_repo()?;
         let commit_oid = self.resolve_reference(&repo)?;
         let (mut tree, commit_time) = self.get_commit_tree(&repo, commit_oid)?;
@@ -332,7 +363,7 @@ impl GitCore {
             let name = entry.filename().to_string();
 
             if entry.mode().is_tree() {
-                entries.push((name, true, 0, commit_time));
+                entries.push((name, GitEntry::dir(commit_time)));
                 continue;
             }
             if entry.mode().is_commit() {
@@ -342,19 +373,13 @@ impl GitCore {
                 ));
             }
 
+            let blob_oid = entry.oid().to_string();
             let blob = entry
                 .object()
                 .map_err(|_| Error::new(ErrorKind::Unexpected, "failed to read git object"))?
                 .try_into_blob()
                 .map_err(|_| Error::new(ErrorKind::Unsupported, "git entry is not a blob"))?;
-            let mut size = blob.data.len() as u64;
-            if self.resolve_lfs
-                && Self::is_lfs_pointer(&blob.data)
-                && let Ok(pointer) = Self::parse_lfs_pointer(&blob.data)
-            {
-                size = pointer.size;
-            }
-            entries.push((name, false, size, commit_time));
+            entries.push((name, self.file_entry(&blob.data, blob_oid, commit_time)));
         }
 
         Ok(entries)

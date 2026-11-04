@@ -181,18 +181,20 @@ impl Service for GitBackend {
     async fn stat(&self, _ctx: &OperationContext, path: &str, _args: OpStat) -> Result<RpStat> {
         let core = self.core.clone();
         let path = path.to_string();
-        let (size, is_dir, last_modified) =
-            tokio::task::spawn_blocking(move || core.stat_file_blocking(&path))
-                .await
-                .map_err(join_error)??;
+        let entry = tokio::task::spawn_blocking(move || core.stat_file_blocking(&path))
+            .await
+            .map_err(join_error)??;
 
-        let mut builder = if is_dir {
+        let mut builder = if entry.is_dir {
             MetadataBuilder::dir()
         } else {
-            MetadataBuilder::file(size)
+            MetadataBuilder::file(entry.size)
         };
-        if let Ok(timestamp) = Timestamp::from_second(last_modified) {
+        if let Ok(timestamp) = Timestamp::from_second(entry.last_modified) {
             builder.last_modified(timestamp);
+        }
+        if let Some(etag) = entry.etag {
+            builder.etag(etag);
         }
         Ok(RpStat::new(builder.build()))
     }
@@ -475,5 +477,61 @@ mod tests {
             .await
             .unwrap_err();
         assert_eq!(err.kind(), ErrorKind::Unsupported);
+    }
+
+    async fn stat_etag(service: &impl Service, path: &str) -> Option<String> {
+        let ctx = OperationContext::new();
+        let stat = service.stat(&ctx, path, OpStat::default()).await.unwrap();
+        stat.into_metadata().etag().map(str::to_string)
+    }
+
+    #[tokio::test]
+    async fn etag_is_blob_oid_or_lfs_oid() {
+        let (_temp, dir) = init_repo();
+        let lfs_oid = "a".repeat(64);
+        let pointer =
+            format!("version https://git-lfs.github.com/spec/v1\noid sha256:{lfs_oid}\nsize 4\n");
+        std::fs::create_dir(dir.join("sub")).unwrap();
+        std::fs::write(dir.join("plain.txt"), b"hello").unwrap();
+        std::fs::write(dir.join("model.bin"), &pointer).unwrap();
+        std::fs::write(dir.join("sub/nested.txt"), b"x").unwrap();
+        commit_all(&dir, "initial");
+        let plain_oid = git(&dir, &["rev-parse", "HEAD:plain.txt"]);
+        let pointer_oid = git(&dir, &["rev-parse", "HEAD:model.bin"]);
+
+        let ctx = OperationContext::new();
+        let lfs = GitBuilder::default()
+            .repository(&file_url(&dir))
+            .build()
+            .unwrap();
+        assert_eq!(stat_etag(&lfs, "plain.txt").await, Some(plain_oid.clone()));
+        assert_eq!(stat_etag(&lfs, "model.bin").await, Some(lfs_oid.clone()));
+        assert_eq!(stat_etag(&lfs, "sub/").await, None);
+        assert_eq!(stat_etag(&lfs, "/").await, None);
+
+        let mut lister = lfs.list(&ctx, "/", OpList::default()).unwrap();
+        let mut listed = Vec::new();
+        while let Some(entry) = lister.next().await.unwrap() {
+            listed.push((
+                entry.path().to_string(),
+                entry.metadata().etag().map(str::to_string),
+            ));
+        }
+        listed.sort();
+        assert_eq!(
+            listed,
+            vec![
+                ("model.bin".to_string(), Some(lfs_oid.clone())),
+                ("plain.txt".to_string(), Some(plain_oid)),
+                ("sub/".to_string(), None),
+            ]
+        );
+
+        let raw = GitBuilder::default()
+            .repository(&file_url(&dir))
+            .resolve_lfs(false)
+            .build()
+            .unwrap();
+        assert_eq!(stat_etag(&raw, "model.bin").await, Some(pointer_oid));
     }
 }

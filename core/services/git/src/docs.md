@@ -36,6 +36,9 @@ This service can be used to:
 - A configured reference is resolved once. Later remote updates are not
   observed by the same operator; construct a new operator to resolve again.
 - `resolve_lfs=false` returns the pointer file itself.
+- `stat` and `list` set a file's ETag to its Git blob object ID. When LFS
+  resolution is enabled, an LFS file's ETag is its LFS sha256 object ID
+  instead. Directories have no ETag.
 - LFS resolution requires an HTTPS repository URL without userinfo, a query,
   or a fragment. Use the username and password options for authentication.
 - LFS payloads are streamed from the composed HTTP transport. The service does

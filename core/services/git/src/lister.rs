@@ -21,13 +21,14 @@ use opendal_core::raw::*;
 use opendal_core::*;
 
 use super::core::GitCore;
+use super::core::GitEntry;
 use super::core::join_error;
 
 /// Lister returned by the Git service.
 pub struct GitLister {
     core: Arc<GitCore>,
     base_path: String,
-    entries: Option<Vec<(String, bool, u64, i64)>>,
+    entries: Option<Vec<(String, GitEntry)>>,
     index: usize,
 }
 
@@ -61,7 +62,7 @@ impl oio::List for GitLister {
             return Ok(None);
         }
 
-        let (name, is_dir, size, last_modified) = &entries[self.index];
+        let (name, entry) = &entries[self.index];
         self.index += 1;
 
         let full_path = if self.base_path == "/" {
@@ -69,19 +70,22 @@ impl oio::List for GitLister {
         } else {
             format!("{}/{}", self.base_path.trim_end_matches('/'), name)
         };
-        let path = if *is_dir && !full_path.ends_with('/') {
+        let path = if entry.is_dir && !full_path.ends_with('/') {
             format!("{full_path}/")
         } else {
             full_path
         };
 
-        let mut builder = if *is_dir {
+        let mut builder = if entry.is_dir {
             MetadataBuilder::dir()
         } else {
-            MetadataBuilder::file(*size)
+            MetadataBuilder::file(entry.size)
         };
-        if let Ok(timestamp) = Timestamp::from_second(*last_modified) {
+        if let Ok(timestamp) = Timestamp::from_second(entry.last_modified) {
             builder.last_modified(timestamp);
+        }
+        if let Some(etag) = &entry.etag {
+            builder.etag(etag);
         }
 
         Ok(Some(oio::Entry::new(&path, builder.build())))
