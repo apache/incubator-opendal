@@ -20,9 +20,25 @@
 namespace OpenDAL.Options.Abstractions;
 
 /// <summary>
-/// Represents operation options that can build native option payload handles.
+/// Operation options that fill the native struct <typeparamref name="TNative"/>.
 /// </summary>
-public interface IOptions
+internal interface IOptions<TNative> where TNative : unmanaged
 {
-    NativeOptionsHandle BuildNativeOptionsHandle();
+    /// <summary>
+    /// Validates the options before anything crosses the FFI. Options with
+    /// nothing to validate keep this empty default.
+    /// </summary>
+    void Validate()
+    {
+    }
+
+    /// <summary>
+    /// Fills the native struct, writing everything it points to through
+    /// <paramref name="writer"/>.
+    /// </summary>
+    /// <remarks>
+    /// May run twice for one call, when the first buffer is too small, so it
+    /// must have no side effects beyond the writer.
+    /// </remarks>
+    TNative ToNative(ref NativeOptionsWriter writer);
 }

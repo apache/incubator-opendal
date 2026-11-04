@@ -16,6 +16,7 @@
 // under the License.
 
 mod capability;
+mod core_options;
 mod docs;
 mod dotnet;
 mod gcs_grpc;

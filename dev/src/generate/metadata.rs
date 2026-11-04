@@ -117,6 +117,44 @@ pub fn parse(path: &Path) -> Result<Vec<MetadataField>> {
     Ok(fields)
 }
 
+/// Parse the names of the public `impl MetadataBuilder` methods that take
+/// `&mut self`, which are the setters a metadata mirror can rebuild through.
+pub fn parse_builder_setters(path: &Path) -> Result<Vec<String>> {
+    let content =
+        fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?;
+    let ast = syn::parse_file(&content)?;
+
+    let mut setters = Vec::new();
+    for item in ast.items {
+        let Item::Impl(impl_) = item else {
+            continue;
+        };
+        let is_builder =
+            matches!(&*impl_.self_ty, Type::Path(path) if path.path.is_ident("MetadataBuilder"));
+        if impl_.trait_.is_some() || !is_builder {
+            continue;
+        }
+
+        for item in impl_.items {
+            if let ImplItem::Fn(func) = item
+                && matches!(func.vis, syn::Visibility::Public(_))
+                && matches!(
+                    func.sig.inputs.first(),
+                    Some(FnArg::Receiver(receiver)) if receiver.reference.is_some() && receiver.mutability.is_some()
+                )
+            {
+                setters.push(func.sig.ident.to_string());
+            }
+        }
+    }
+
+    if setters.is_empty() {
+        bail!("impl MetadataBuilder not found in {}", path.display());
+    }
+
+    Ok(setters)
+}
+
 fn is_metadata(ty: &Type) -> bool {
     matches!(ty, Type::Path(path) if path.path.is_ident("Metadata"))
 }
@@ -216,5 +254,22 @@ mod tests {
 
         let etag = fields.iter().find(|f| f.name == "etag").unwrap();
         assert_eq!(etag.kind, MetadataKind::OptionStr);
+    }
+
+    #[test]
+    fn test_parse_core_metadata_builder_setters() {
+        let path = crate::workspace_dir().join("core/core/src/types/metadata.rs");
+        let setters = parse_builder_setters(&path).expect("core metadata builder must parse");
+
+        assert!(setters.contains(&"etag".to_string()));
+        assert!(setters.contains(&"last_modified".to_string()));
+        assert!(
+            !setters.contains(&"build".to_string()),
+            "build consumes self"
+        );
+        assert!(
+            !setters.contains(&"file".to_string()),
+            "file is a constructor"
+        );
     }
 }

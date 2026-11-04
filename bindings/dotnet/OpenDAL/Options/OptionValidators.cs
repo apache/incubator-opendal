@@ -67,4 +67,17 @@ internal static class OptionValidators
             throw new ArgumentOutOfRangeException(paramName, $"{paramName} must be > 0 when provided.");
         }
     }
+
+    /// <summary>
+    /// Ensures a suffix range is not combined with an offset or a length.
+    /// </summary>
+    public static void RequireSuffixExclusive(long offset, long? length, long? suffixLength)
+    {
+        if (suffixLength is not null && (offset != 0 || length is not null))
+        {
+            throw new ArgumentException(
+                "SuffixLength cannot be combined with Offset or Length.",
+                "SuffixLength");
+        }
+    }
 }

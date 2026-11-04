@@ -192,4 +192,28 @@ public sealed class DeleteBehaviorTest : BehaviorTestBase
         var stat = await Op.StatAsync(path, cancellationToken: CT);
         Assert.Equal(etag, stat.ETag);
     }
+
+    [Fact]
+    public async Task DeleteBehavior_IfNotChanged_RejectsStaleMetadataAsync()
+    {
+        if (!Supports(c => c.Write && c.Stat && (c.DeleteWithIfMatch || c.DeleteWithIfVersionMatch)))
+        {
+            return;
+        }
+
+        var path = NewPath("delete-if-not-changed");
+        await Op.WriteAsync(path, RandomBytes(16), cancellationToken: CT);
+        var stale = await Op.StatAsync(path, cancellationToken: CT);
+        await Op.WriteAsync(path, RandomBytes(32), cancellationToken: CT);
+
+        var ex = await Assert.ThrowsAsync<OpenDALException>(
+            () => Op.DeleteAsync(path, new DeleteOptions { IfNotChanged = stale }, CT));
+        Assert.Equal(ErrorCode.ConditionNotMatch, ex.Code);
+
+        var current = await Op.StatAsync(path, cancellationToken: CT);
+        await Op.DeleteAsync(path, new DeleteOptions { IfNotChanged = current }, CT);
+
+        var missing = await Assert.ThrowsAsync<OpenDALException>(() => Op.StatAsync(path, cancellationToken: CT));
+        Assert.True(IsMissingError(missing));
+    }
 }

@@ -58,8 +58,5 @@ pub(crate) mod prelude {
         validate_concurrent_limit_options, validate_retry_options, validate_throttle_options,
         validate_timeout_options,
     };
-    pub(crate) use super::options::{
-        validate_list_limit, validate_read_chunk, validate_read_concurrent, validate_read_gap,
-        validate_read_range_end, validate_write_chunk, validate_write_concurrent,
-    };
+    pub(crate) use super::options::validate_read_range_end;
 }

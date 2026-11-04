@@ -419,4 +419,78 @@ public sealed class WriteBehaviorTest : BehaviorTestBase
         Assert.NotNull(meta.UserMetadata);
         Assert.Equal("everywhere", meta.UserMetadata["location"]);
     }
+
+    [Fact]
+    public async Task WriteBehavior_IfNotChanged_RejectsStaleMetadataAsync()
+    {
+        if (!Supports(c => c.Write && c.Stat && (c.WriteWithIfMatch || c.WriteWithIfVersionMatch)))
+        {
+            return;
+        }
+
+        var path = NewPath("write-if-not-changed");
+        await Op.WriteAsync(path, RandomBytes(64), cancellationToken: CT);
+        var expected = await Op.StatAsync(path, cancellationToken: CT);
+
+        var replacement = RandomBytes(96);
+        await Op.WriteAsync(path, replacement, new WriteOptions { IfNotChanged = expected }, CT);
+
+        var ex = await Assert.ThrowsAsync<OpenDALException>(
+            () => Op.WriteAsync(path, RandomBytes(32), new WriteOptions { IfNotChanged = expected }, CT));
+        Assert.Equal(ErrorCode.ConditionNotMatch, ex.Code);
+        Assert.Equal(replacement, await Op.ReadAsync(path, cancellationToken: CT));
+    }
+
+    [Fact]
+    public async Task WriteBehavior_OptionsLargerThanStackBuffer_RoundTripAsync()
+    {
+        if (!Supports(c => c.Write && c.Stat && c.WriteWithContentType))
+        {
+            return;
+        }
+
+        // Well past the stack buffer, so the options go through native memory
+        // instead. ASCII only, since it travels as an HTTP header.
+        var contentType = $"text/x-{new string('a', 1024)}";
+        var syncPath = NewPath("write-large-options");
+        var asyncPath = NewPath("write-large-options-async");
+
+        Op.Write(syncPath, new byte[] { 1 }, new WriteOptions { ContentType = contentType });
+        await Op.WriteAsync(asyncPath, new byte[] { 1 }, new WriteOptions { ContentType = contentType }, CT);
+
+        Assert.Equal(contentType, (await Op.StatAsync(syncPath, cancellationToken: CT)).ContentType);
+        Assert.Equal(contentType, (await Op.StatAsync(asyncPath, cancellationToken: CT)).ContentType);
+    }
+
+    [Fact]
+    public async Task WriteBehavior_ConcurrentWrites_KeepEachCallsOptionsAsync()
+    {
+        // The race this guards against is in the binding, not the service, and
+        // it needs many concurrent calls to show, so only memory runs it.
+        if (!IsService("memory") || !Supports(c => c.Write && c.Stat && c.WriteWithContentType))
+        {
+            return;
+        }
+
+        // Each call writes its options into a buffer of its own, so
+        // concurrent calls must never see each other's options.
+        var writes = Enumerable.Range(0, 1000).Select(i => Task.Run(async () =>
+        {
+            var path = NewPath($"write-concurrent-{i}");
+            var options = new WriteOptions { ContentType = $"text/x-{i}-{new string('a', i % 64)}" };
+            if (i % 2 == 0)
+            {
+                Op.Write(path, new byte[] { 1 }, options);
+            }
+            else
+            {
+                await Op.WriteAsync(path, new byte[] { 1 }, options, CT);
+            }
+
+            var meta = await Op.StatAsync(path, cancellationToken: CT);
+            Assert.Equal(options.ContentType, meta.ContentType);
+        }, CT));
+
+        await Task.WhenAll(writes);
+    }
 }

@@ -15,8 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::collections::HashMap;
 use std::os::raw::c_char;
-use std::{collections::HashMap, ffi::CStr};
 
 use crate::error::{ErrorCode, OpenDALError};
 
@@ -35,10 +35,6 @@ pub fn config_invalid_error(message: impl Into<String>) -> OpenDALError {
 
 pub fn invalid_utf8_message(field: &str) -> String {
     format!("{field} is null or invalid UTF-8")
-}
-
-pub fn invalid_utf8_message_at(field: &str, index: usize) -> String {
-    format!("{field} at index {index} is null or invalid UTF-8")
 }
 
 pub fn require_cstr<'a>(value: *const c_char, field: &str) -> Result<&'a str, OpenDALError> {
@@ -67,55 +63,6 @@ pub fn require_data_ptr(data: *const u8, len: usize) -> Result<(), OpenDALError>
     }
 
     Ok(())
-}
-
-/// # Safety
-///
-/// - When `len > 0`, `keys` and `values` must be non-null pointers to arrays
-///   containing at least `len` C-string pointers.
-/// - Each entry pointer must be non-null and valid UTF-8.
-pub unsafe fn collect_options(
-    keys: *const *const c_char,
-    values: *const *const c_char,
-    len: usize,
-) -> Result<HashMap<String, String>, OpenDALError> {
-    if len == 0 {
-        return Ok(HashMap::new());
-    }
-
-    if keys.is_null() {
-        return Err(config_invalid_error("keys pointer is null while len > 0"));
-    }
-
-    if values.is_null() {
-        return Err(config_invalid_error("values pointer is null while len > 0"));
-    }
-
-    let mut map = HashMap::with_capacity(len);
-    for index in 0..len {
-        let key_ptr = unsafe { *keys.add(index) };
-        let value_ptr = unsafe { *values.add(index) };
-
-        if key_ptr.is_null() {
-            return Err(config_invalid_error(invalid_utf8_message_at("key", index)));
-        }
-        if value_ptr.is_null() {
-            return Err(config_invalid_error(invalid_utf8_message_at(
-                "value", index,
-            )));
-        }
-
-        let key = unsafe { CStr::from_ptr(key_ptr) }
-            .to_str()
-            .map_err(|_| config_invalid_error(invalid_utf8_message_at("key", index)))?;
-        let value = unsafe { CStr::from_ptr(value_ptr) }
-            .to_str()
-            .map_err(|_| config_invalid_error(invalid_utf8_message_at("value", index)))?;
-
-        map.insert(key.to_string(), value.to_string());
-    }
-
-    Ok(map)
 }
 
 pub fn into_string_ptr(message: impl Into<String>) -> *mut c_char {
@@ -236,8 +183,90 @@ pub unsafe fn release_string_pairs(
     *len = 0;
 }
 
+/// Copy a borrowed C string into an owned `String`, where null is `None`.
+///
+/// `value` must be null or a valid null-terminated string.
+pub fn borrowed_string(value: *const c_char, field: &str) -> Result<Option<String>, OpenDALError> {
+    if value.is_null() {
+        return Ok(None);
+    }
+
+    cstr_to_str(value)
+        .map(|value| Some(value.to_owned()))
+        .ok_or_else(|| config_invalid_error(invalid_utf8_message(field)))
+}
+
+/// Rebuild a timestamp flattened by `optional_timestamp`.
+pub fn borrowed_timestamp(
+    has_value: u8,
+    second: i64,
+    nanosecond: i32,
+) -> Result<Option<opendal::raw::Timestamp>, OpenDALError> {
+    if has_value == 0 {
+        return Ok(None);
+    }
+
+    opendal::raw::Timestamp::new(second, nanosecond)
+        .map(Some)
+        .map_err(OpenDALError::from_opendal_error)
+}
+
+/// Copy borrowed parallel arrays of `len` key and value C strings into a map.
+///
+/// A null value is reported by key, so callers can tell which entry was
+/// unset. When `len > 0`, `keys` and `values` must be valid arrays of `len`
+/// pointers, each null or a valid null-terminated string.
+pub fn borrowed_string_map(
+    keys: *const *const c_char,
+    values: *const *const c_char,
+    len: usize,
+    field: &str,
+) -> Result<HashMap<String, String>, OpenDALError> {
+    if len == 0 {
+        return Ok(HashMap::new());
+    }
+    if keys.is_null() || values.is_null() {
+        return Err(config_invalid_error(format!(
+            "{field} arrays are null while len > 0"
+        )));
+    }
+
+    let keys = unsafe { std::slice::from_raw_parts(keys, len) };
+    let values = unsafe { std::slice::from_raw_parts(values, len) };
+    let mut map = HashMap::with_capacity(len);
+    for (&key, &value) in keys.iter().zip(values) {
+        let key = require_cstr(key, &format!("{field} key"))?;
+        if value.is_null() {
+            return Err(config_invalid_error(format!(
+                "value of {field} {key} is null"
+            )));
+        }
+        let value = require_cstr(value, &format!("value of {field} {key}"))?;
+        map.insert(key.to_owned(), value.to_owned());
+    }
+    Ok(map)
+}
+
+/// Rebuild optional string pairs flattened by `string_pairs`, borrowing the
+/// arrays as `borrowed_string_map` does.
+pub fn borrowed_string_pairs(
+    has_value: u8,
+    keys: *const *const c_char,
+    values: *const *const c_char,
+    len: usize,
+    field: &str,
+) -> Result<Option<HashMap<String, String>>, OpenDALError> {
+    if has_value == 0 {
+        return Ok(None);
+    }
+
+    borrowed_string_map(keys, values, len, field).map(Some)
+}
+
 #[cfg(test)]
 mod tests {
+    use std::ffi::CString;
+
     use super::*;
 
     #[test]
@@ -281,5 +310,20 @@ mod tests {
         let (has_value, keys, _, len) = string_pairs(Some(Vec::<(&str, &str)>::new()));
         assert_eq!((has_value, len), (1, 0));
         assert!(keys.is_null());
+    }
+
+    #[test]
+    fn borrowed_string_map_copies_and_names_null_values() {
+        let key = CString::new("root").unwrap();
+        let value = CString::new("/tmp").unwrap();
+        let keys = [key.as_ptr()];
+        let values = [value.as_ptr()];
+        let map = borrowed_string_map(keys.as_ptr(), values.as_ptr(), 1, "option").unwrap();
+        assert_eq!(map["root"], "/tmp");
+
+        let nulls = [std::ptr::null()];
+        let err = borrowed_string_map(keys.as_ptr(), nulls.as_ptr(), 1, "option").unwrap_err();
+        let message = cstr_to_str(err.message).unwrap();
+        assert!(message.contains("value of option root is null"));
     }
 }

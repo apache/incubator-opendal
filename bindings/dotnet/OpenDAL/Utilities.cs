@@ -81,6 +81,17 @@ public static class Utilities
 	}
 
 	/// <summary>
+	/// Splits a timestamp into whole Unix seconds and the nanoseconds within
+	/// that second, the inverse of <see cref="ToDateTimeOffset"/>.
+	/// </summary>
+	internal static (long Second, int Nanosecond) ToUnixSecondAndNanosecond(DateTimeOffset value)
+	{
+		var second = value.ToUnixTimeSeconds();
+		var nanosecond = (int)(value.UtcTicks % TimeSpan.TicksPerSecond * NanosecondsPerTick);
+		return (second, nanosecond);
+	}
+
+	/// <summary>
 	/// Reads two parallel native arrays of UTF-8 C strings into a dictionary.
 	/// </summary>
 	/// <param name="keysPtr">Pointer to an array of <paramref name="len"/> key string pointers.</param>

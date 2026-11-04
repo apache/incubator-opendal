@@ -19,6 +19,11 @@
 
 use std::ffi::c_char;
 
+use opendal::{EntryMode, MetadataBuilder};
+
+use crate::error::OpenDALError;
+use crate::utils::entry_mode_code;
+
 /// FFI representation of `opendal::Metadata`.
 ///
 /// Fields follow the accessor order of `opendal::Metadata`. Optional values
@@ -69,4 +74,41 @@ pub(crate) unsafe fn metadata_release_fields(metadata: &mut OpendalMetadata) {
 {%- endif %}
 {%- endfor %}
     }
+}
+
+impl OpendalMetadata {
+    /// Rebuild the metadata through `MetadataBuilder` from fields the caller
+    /// owns, as options such as `if_not_changed` pass them.
+    ///
+    /// Every pointer is only borrowed: strings are copied, and nothing is
+    /// released.
+    pub(crate) fn to_metadata(&self) -> Result<opendal::Metadata, OpenDALError> {
+        // `MetadataBuilder` takes the content length only through `file`.
+        let mut builder = match self.mode {
+            code if code == entry_mode_code(EntryMode::FILE) => {
+                MetadataBuilder::file(self.content_length)
+            }
+            code if code == entry_mode_code(EntryMode::DIR) => MetadataBuilder::dir(),
+            _ => MetadataBuilder::unknown(),
+        };
+{%- for f in fields %}
+{%- if f.rs_rebuild %}
+        {{ f.rs_rebuild }}
+{%- endif %}
+{%- endfor %}
+
+        Ok(builder.build())
+    }
+}
+
+/// Rebuild metadata passed by pointer, where null is `None`.
+///
+/// `metadata` must be null or point to a valid mirror whose pointers stay
+/// valid for the duration of the call.
+pub(crate) fn borrowed_metadata(
+    metadata: *const OpendalMetadata,
+) -> Result<Option<opendal::Metadata>, OpenDALError> {
+    unsafe { metadata.as_ref() }
+        .map(OpendalMetadata::to_metadata)
+        .transpose()
 }

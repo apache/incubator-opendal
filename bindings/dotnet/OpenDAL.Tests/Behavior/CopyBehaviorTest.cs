@@ -17,6 +17,8 @@
  * under the License.
  */
 
+using OpenDAL.Options;
+
 namespace OpenDAL.Tests;
 
 [Collection("BehaviorOperator")]
@@ -65,7 +67,7 @@ public sealed class CopyBehaviorTest : BehaviorTestBase
         var content = RandomBytes(256);
 
         await Op.WriteAsync(sourcePath, content, cancellationToken: CT);
-        var meta = await Op.CopyAsync(sourcePath, targetPath, CT);
+        var meta = await Op.CopyAsync(sourcePath, targetPath, cancellationToken: CT);
 
         if (meta.IsFile)
         {
@@ -73,5 +75,66 @@ public sealed class CopyBehaviorTest : BehaviorTestBase
         }
 
         Assert.Equal(content, await Op.ReadAsync(targetPath, cancellationToken: CT));
+    }
+
+    [Fact]
+    public void CopyBehavior_IfNotExists_CopiesToNewPath()
+    {
+        if (!Supports(c => c.Copy && c.Read && c.Write && c.CopyWithIfNotExists))
+        {
+            return;
+        }
+
+        var sourcePath = NewPath("copy-if-not-exists-source");
+        var targetPath = NewPath("copy-if-not-exists-target");
+        var content = RandomBytes(256);
+
+        Op.Write(sourcePath, content);
+        Op.Copy(sourcePath, targetPath, new CopyOptions { IfNotExists = true });
+
+        Assert.Equal(content, Op.Read(targetPath));
+    }
+
+    [Fact]
+    public async Task CopyBehavior_IfNotExists_RejectsExistingTargetAsync()
+    {
+        if (!Supports(c => c.Copy && c.Read && c.Write && c.CopyWithIfNotExists))
+        {
+            return;
+        }
+
+        var sourcePath = NewPath("copy-if-not-exists-existing-source");
+        var targetPath = NewPath("copy-if-not-exists-existing-target");
+        var targetContent = RandomBytes(128);
+
+        await Op.WriteAsync(sourcePath, RandomBytes(256), cancellationToken: CT);
+        await Op.WriteAsync(targetPath, targetContent, cancellationToken: CT);
+
+        var ex = await Assert.ThrowsAsync<OpenDALException>(
+            () => Op.CopyAsync(sourcePath, targetPath, new CopyOptions { IfNotExists = true }, CT));
+        Assert.Equal(ErrorCode.ConditionNotMatch, ex.Code);
+        Assert.Equal(targetContent, await Op.ReadAsync(targetPath, cancellationToken: CT));
+    }
+
+    [Fact]
+    public async Task CopyBehavior_IfNotChanged_RejectsStaleTargetMetadataAsync()
+    {
+        if (!Supports(c => c.Copy && c.Write && c.Stat && (c.CopyWithIfMatch || c.CopyWithIfVersionMatch)))
+        {
+            return;
+        }
+
+        var sourcePath = NewPath("copy-if-not-changed-source");
+        var targetPath = NewPath("copy-if-not-changed-target");
+
+        await Op.WriteAsync(sourcePath, RandomBytes(256), cancellationToken: CT);
+        await Op.WriteAsync(targetPath, RandomBytes(128), cancellationToken: CT);
+        var expected = await Op.StatAsync(targetPath, cancellationToken: CT);
+
+        await Op.CopyAsync(sourcePath, targetPath, new CopyOptions { IfNotChanged = expected }, CT);
+
+        var ex = await Assert.ThrowsAsync<OpenDALException>(
+            () => Op.CopyAsync(sourcePath, targetPath, new CopyOptions { IfNotChanged = expected }, CT));
+        Assert.Equal(ErrorCode.ConditionNotMatch, ex.Code);
     }
 }

@@ -53,6 +53,13 @@ using OpenDAL.Options;
 byte[] head = op.Read("path/to/file", new ReadOptions { Offset = 0, Length = 1024 });
 ```
 
+`SuffixLength` reads the end of a file instead, on services that report
+`Capability.ReadWithSuffix`:
+
+```csharp
+byte[] tail = op.Read("path/to/file", new ReadOptions { SuffixLength = 1024 });
+```
+
 ## Write a whole file
 
 ```csharp
@@ -193,6 +200,29 @@ op.Rename("old.txt", "new.txt");
 `Copy` returns the metadata of the new object.
 Both operate within a single operator and require a service that supports them;
 see [capability checks](./05-production.md#capability-checks).
+
+`CopyOptions` and `RenameOptions` add conditions, such as refusing to replace
+an existing target. A failed condition throws `OpenDALException` with
+`ErrorCode.ConditionNotMatch`:
+
+```csharp
+op.Rename("old.txt", "new.txt", new RenameOptions { IfNotExists = true });
+```
+
+## Write only if a file is unchanged
+
+Pass metadata from an earlier `Stat` as `IfNotChanged` to make a write,
+delete, or copy fail with `ErrorCode.ConditionNotMatch` when someone else
+changed the file in between:
+
+```csharp
+var meta = op.Stat("config.json");
+// ... compute the new content ...
+op.Write("config.json", content, new WriteOptions { IfNotChanged = meta });
+```
+
+The condition compares the version or the ETag, whichever the service
+supports.
 
 ## Generate a presigned URL
 

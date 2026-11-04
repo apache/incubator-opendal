@@ -65,13 +65,6 @@ pub struct OpendalOperatorResult {
 }
 
 #[repr(C)]
-/// Result for operations returning an options handle pointer.
-pub struct OpendalOptionsResult {
-    pub ptr: *mut c_void,
-    pub error: OpenDALError,
-}
-
-#[repr(C)]
 /// Result for operations returning an executor handle pointer.
 pub struct OpendalExecutorResult {
     pub ptr: *mut c_void,
@@ -172,12 +165,6 @@ define_result!(
 
 define_result!(
     OpendalOperatorResult,
-    field = ptr: *mut c_void,
-    error_value = std::ptr::null_mut()
-);
-
-define_result!(
-    OpendalOptionsResult,
     field = ptr: *mut c_void,
     error_value = std::ptr::null_mut()
 );

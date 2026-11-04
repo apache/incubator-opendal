@@ -17,6 +17,8 @@
  * under the License.
  */
 
+using OpenDAL.Options;
+
 namespace OpenDAL.Tests;
 
 [Collection("BehaviorOperator")]
@@ -62,10 +64,53 @@ public sealed class RenameBehaviorTest : BehaviorTestBase
         var content = RandomBytes(111);
 
         await Op.WriteAsync(sourcePath, content, cancellationToken: CT);
-        await Op.RenameAsync(sourcePath, targetPath, CT);
+        await Op.RenameAsync(sourcePath, targetPath, cancellationToken: CT);
 
         Assert.Equal(content, await Op.ReadAsync(targetPath, cancellationToken: CT));
         var ex = await Assert.ThrowsAsync<OpenDALException>(() => Op.ReadAsync(sourcePath, cancellationToken: CT));
         Assert.True(IsMissingError(ex));
+    }
+
+    [Fact]
+    public void RenameBehavior_IfNotExists_MovesToNewPath()
+    {
+        if (!Supports(c => c.Rename && c.Read && c.Write && c.RenameWithIfNotExists))
+        {
+            return;
+        }
+
+        var sourcePath = NewPath("rename-if-not-exists-source");
+        var targetPath = NewPath("rename-if-not-exists-target");
+        var content = RandomBytes(111);
+
+        Op.Write(sourcePath, content);
+        Op.Rename(sourcePath, targetPath, new RenameOptions { IfNotExists = true });
+
+        Assert.Equal(content, Op.Read(targetPath));
+        var ex = Assert.Throws<OpenDALException>(() => Op.Read(sourcePath));
+        Assert.True(IsMissingError(ex));
+    }
+
+    [Fact]
+    public async Task RenameBehavior_IfNotExists_RejectsExistingTargetAsync()
+    {
+        if (!Supports(c => c.Rename && c.Read && c.Write && c.RenameWithIfNotExists))
+        {
+            return;
+        }
+
+        var sourcePath = NewPath("rename-if-not-exists-existing-source");
+        var targetPath = NewPath("rename-if-not-exists-existing-target");
+        var sourceContent = RandomBytes(111);
+        var targetContent = RandomBytes(222);
+
+        await Op.WriteAsync(sourcePath, sourceContent, cancellationToken: CT);
+        await Op.WriteAsync(targetPath, targetContent, cancellationToken: CT);
+
+        var ex = await Assert.ThrowsAsync<OpenDALException>(
+            () => Op.RenameAsync(sourcePath, targetPath, new RenameOptions { IfNotExists = true }, CT));
+        Assert.Equal(ErrorCode.ConditionNotMatch, ex.Code);
+        Assert.Equal(sourceContent, await Op.ReadAsync(sourcePath, cancellationToken: CT));
+        Assert.Equal(targetContent, await Op.ReadAsync(targetPath, cancellationToken: CT));
     }
 }

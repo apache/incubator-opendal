@@ -63,7 +63,7 @@ public class ConstructorTest
         var ex = Assert.Throws<OpenDALException>(() => new Operator("memory", options));
 
         Assert.Equal(ErrorCode.ConfigInvalid, ex.Code);
-        Assert.Contains("value at index 0", ex.Message);
+        Assert.Contains("value of option root is null", ex.Message);
     }
 
     [Fact]
@@ -98,5 +98,47 @@ public class ConstructorTest
         using var op = new Operator(config);
 
         Assert.NotEqual(IntPtr.Zero, op.DangerousGetHandle());
+    }
+
+    [Fact]
+    public void Constructor_OptionsDictionaryCallsBackIntoOpenDAL_KeepsOptionsIntact()
+    {
+        using var other = new Operator("memory");
+        other.Write("file", new byte[] { 1, 2, 3 });
+        var options = new ReentrantDictionary(other, new Dictionary<string, string> { ["root"] = "/reentrant/" });
+
+        using var op = new Operator("memory", options);
+
+        Assert.Equal("/reentrant/", op.Info.Root);
+    }
+
+    /// <summary>
+    /// Serializes other options on the same thread while it is being enumerated.
+    /// </summary>
+    private sealed class ReentrantDictionary(Operator other, Dictionary<string, string> inner)
+        : IReadOnlyDictionary<string, string>
+    {
+        public string this[string key] => inner[key];
+
+        public IEnumerable<string> Keys => inner.Keys;
+
+        public IEnumerable<string> Values => inner.Values;
+
+        public int Count => inner.Count;
+
+        public bool ContainsKey(string key) => inner.ContainsKey(key);
+
+        public bool TryGetValue(string key, out string value) => inner.TryGetValue(key, out value!);
+
+        public IEnumerator<KeyValuePair<string, string>> GetEnumerator()
+        {
+            foreach (var entry in inner)
+            {
+                other.Read("file", new OpenDAL.Options.ReadOptions { Offset = 1, Length = 1 });
+                yield return entry;
+            }
+        }
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
     }
 }

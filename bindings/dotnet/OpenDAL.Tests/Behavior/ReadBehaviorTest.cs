@@ -297,4 +297,51 @@ public sealed class ReadBehaviorTest : BehaviorTestBase
         await Assert.ThrowsAsync<ArgumentNullException>(() => Op.ReadAsync(
             path, (Func<ReadOnlySequence<byte>, byte[]>)null!, cancellationToken: CT));
     }
+
+    [Fact]
+    public async Task ReadBehavior_WithSuffixLength_ReturnsTailAsync()
+    {
+        if (!Supports(c => c.Read && c.Write && c.ReadWithSuffix))
+        {
+            return;
+        }
+
+        var path = NewPath("read-suffix");
+        var content = RandomBytes(1024);
+
+        await Op.WriteAsync(path, content, cancellationToken: CT);
+        var tail = await Op.ReadAsync(path, new ReadOptions { SuffixLength = 257 }, CT);
+
+        Assert.Equal(content.AsSpan(content.Length - 257).ToArray(), tail);
+    }
+
+    [Fact]
+    public void ReadBehavior_WithSuffixLengthLargerThanFile_ReturnsWholeFile()
+    {
+        if (!Supports(c => c.Read && c.Write && c.ReadWithSuffix))
+        {
+            return;
+        }
+
+        var path = NewPath("read-suffix-larger");
+        var content = RandomBytes(1024);
+
+        Op.Write(path, content);
+        var tail = Op.Read(path, new ReadOptions { SuffixLength = content.Length * 2 });
+
+        Assert.Equal(content, tail);
+    }
+
+    [Fact]
+    public void ReadBehavior_WithSuffixLengthAndOffset_RejectsOptions()
+    {
+        if (!Supports(c => c.Read))
+        {
+            return;
+        }
+
+        var ex = Assert.Throws<ArgumentException>(
+            () => Op.Read(NewPath("read-suffix-offset"), new ReadOptions { Offset = 1, SuffixLength = 1 }));
+        Assert.Equal("SuffixLength", ex.ParamName);
+    }
 }
