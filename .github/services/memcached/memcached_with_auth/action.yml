@@ -25,12 +25,25 @@ runs:
       shell: bash
       working-directory: fixtures/memcached
       run: docker compose -f docker-compose-memcached-with-auth.yml up -d --wait
+
+    - name: Print memcached logs on failure
+      if: failure()
+      shell: bash
+      working-directory: fixtures/memcached
+      run: |
+        echo "==== docker ps -a ===="
+        docker ps -a
+        echo "==== docker logs memcached-memcached-1 ===="
+        docker logs memcached-memcached-1 || true
+        echo "==== docker compose logs ===="
+        docker compose -f docker-compose-memcached-with-auth.yml logs || true
+
     - name: Setup
       shell: bash
       run: |
         cat << EOF >> $GITHUB_ENV
         OPENDAL_MEMCACHED_ENDPOINT=tcp://127.0.0.1:11211
         OPENDAL_MEMCACHED_ROOT=/
-        OPENDAL_MEMCACHED_USERNAME=test
-        OPENDAL_MEMCACHED_PASSWORD=test
+        OPENDAL_MEMCACHED_USERNAME=root
+        OPENDAL_MEMCACHED_PASSWORD=opendal
         EOF
