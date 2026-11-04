@@ -265,9 +265,6 @@ TEST(OpenDALOptionsTest, ListOptions) {
   opendal::ListOptions options;
   options.recursive = true;
   options.limit = 16;
-  options.start_after = "list_options/";
-  options.versions = true;
-  options.deleted = true;
 
   auto entries = op.List("list_options/", options);
   std::unordered_set<std::string> paths;
@@ -282,6 +279,23 @@ TEST(OpenDALOptionsTest, ListOptions) {
     paths.insert(entry.path);
   }
   EXPECT_TRUE(paths.find("list_options/nested/file") != paths.end());
+}
+
+TEST(OpenDALOptionsTest, ListOptionsUnsupportedByService) {
+  opendal::Operator op("memory");
+  op.Write("list_unsupported/file", "hello");
+
+  opendal::ListOptions start_after;
+  start_after.start_after = "list_unsupported/file";
+  EXPECT_THROW(op.List("list_unsupported/", start_after), std::exception);
+
+  opendal::ListOptions versions;
+  versions.versions = true;
+  EXPECT_THROW(op.List("list_unsupported/", versions), std::exception);
+
+  opendal::ListOptions deleted;
+  deleted.deleted = true;
+  EXPECT_THROW(op.List("list_unsupported/", deleted), std::exception);
 }
 
 TEST(OpenDALOptionsTest, DeleteOptions) {

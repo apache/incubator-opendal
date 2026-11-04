@@ -133,12 +133,18 @@ pub struct ListOptions {
     pub limit: Option<usize>,
     /// The start_after passes to underlying service to specify the specified key
     /// to start listing from.
+    ///
+    /// Requires [`Capability::list_with_start_after`](crate::Capability::list_with_start_after).
     pub start_after: Option<String>,
     /// Whether to list recursively under the prefix; default `false`.
     pub recursive: bool,
-    /// Include object versions when supported by the backend; default `false`.
+    /// Include object versions; default `false`.
+    ///
+    /// Requires [`Capability::list_with_versions`](crate::Capability::list_with_versions).
     pub versions: bool,
-    /// Include delete markers when supported by version-aware backends; default `false`.
+    /// Include delete markers; default `false`.
+    ///
+    /// Requires [`Capability::list_with_deleted`](crate::Capability::list_with_deleted).
     pub deleted: bool,
 }
 
