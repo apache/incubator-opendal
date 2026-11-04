@@ -251,12 +251,15 @@ impl CompleteLister {
             return Ok(entry);
         }
 
-        let (path, metadata) = entry.into_parts();
+        let (mut path, metadata) = entry.into_parts();
         let mut builder = metadata.into_builder();
         if stat_metadata.is_file() {
             builder.set_file(stat_metadata.content_length());
         } else {
             builder.set_dir();
+            if !path.ends_with('/') {
+                path.push('/');
+            }
         }
         Ok(oio::Entry::with(path, builder.build()))
     }
