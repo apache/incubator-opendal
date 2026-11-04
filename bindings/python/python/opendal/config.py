@@ -524,9 +524,9 @@ class MiniMokaConfig(TypedDict):
     root: NotRequired[str | os.PathLike[str]]
     """root path of this backend"""
     time_to_idle: NotRequired[str]
-    """Sets the time to idle of the cache.  Refer to [`mini-moka::sync::CacheBuilder::time_to_idle`](https://docs.rs/mini-moka/latest/mini_moka/sync/struct.CacheBuilder.html#method.time_to_idle)"""
+    """Sets the time to idle of the cache.  Refer to [`mini-moka::sync::CacheBuilder::time_to_idle`](https://docs.rs/mini-moka/latest/mini_moka/sync/struct.CacheBuilder.html#method.time_to_idle) A human readable duration string, e.g. "5s" (see https://docs.rs/humantime/latest/humantime/fn.parse_duration.html)."""
     time_to_live: NotRequired[str]
-    """Sets the time to live of the cache.  Refer to [`mini-moka::sync::CacheBuilder::time_to_live`](https://docs.rs/mini-moka/latest/mini_moka/sync/struct.CacheBuilder.html#method.time_to_live)"""
+    """Sets the time to live of the cache.  Refer to [`mini-moka::sync::CacheBuilder::time_to_live`](https://docs.rs/mini-moka/latest/mini_moka/sync/struct.CacheBuilder.html#method.time_to_live) A human readable duration string, e.g. "5s" (see https://docs.rs/humantime/latest/humantime/fn.parse_duration.html)."""
 
 
 class MokaConfig(TypedDict):
@@ -541,9 +541,9 @@ class MokaConfig(TypedDict):
     root: NotRequired[str | os.PathLike[str]]
     """root path of this backend"""
     time_to_idle: NotRequired[str]
-    """Sets the time to idle of the cache.  Refer to [`moka::future::CacheBuilder::time_to_idle`](https://docs.rs/moka/latest/moka/future/struct.CacheBuilder.html#method.time_to_idle)"""
+    """Sets the time to idle of the cache.  Refer to [`moka::future::CacheBuilder::time_to_idle`](https://docs.rs/moka/latest/moka/future/struct.CacheBuilder.html#method.time_to_idle) A human readable duration string, e.g. "5s" (see https://docs.rs/humantime/latest/humantime/fn.parse_duration.html)."""
     time_to_live: NotRequired[str]
-    """Sets the time to live of the cache.  Refer to [`moka::future::CacheBuilder::time_to_live`](https://docs.rs/moka/latest/moka/future/struct.CacheBuilder.html#method.time_to_live)"""
+    """Sets the time to live of the cache.  Refer to [`moka::future::CacheBuilder::time_to_live`](https://docs.rs/moka/latest/moka/future/struct.CacheBuilder.html#method.time_to_live) A human readable duration string, e.g. "5s" (see https://docs.rs/humantime/latest/humantime/fn.parse_duration.html)."""
 
 
 class MongodbConfig(TypedDict):

@@ -19,6 +19,7 @@ use serde::Deserialize;
 use serde::Serialize;
 
 use super::backend::MokaBuilder;
+use opendal_core::raw::SignedDuration;
 use opendal_core::{Configurator, OperatorUri, Result};
 
 /// Config for Moka services support.
@@ -35,11 +36,11 @@ pub struct MokaConfig {
     /// Sets the time to live of the cache.
     ///
     /// Refer to [`moka::future::CacheBuilder::time_to_live`](https://docs.rs/moka/latest/moka/future/struct.CacheBuilder.html#method.time_to_live)
-    pub time_to_live: Option<String>,
+    pub time_to_live: Option<SignedDuration>,
     /// Sets the time to idle of the cache.
     ///
     /// Refer to [`moka::future::CacheBuilder::time_to_idle`](https://docs.rs/moka/latest/moka/future/struct.CacheBuilder.html#method.time_to_idle)
-    pub time_to_idle: Option<String>,
+    pub time_to_idle: Option<SignedDuration>,
 
     /// root path of this backend
     pub root: Option<String>,
@@ -86,5 +87,17 @@ mod tests {
         let cfg = MokaConfig::from_uri(&uri).unwrap();
         assert_eq!(cfg.name.as_deref(), Some("session"));
         assert_eq!(cfg.root.as_deref(), Some("cache"));
+    }
+
+    #[test]
+    fn from_iter_parses_cache_durations() -> Result<()> {
+        let cfg = MokaConfig::from_iter([
+            ("time_to_live".to_string(), "1500ms".to_string()),
+            ("time_to_idle".to_string(), "2s".to_string()),
+        ])?;
+
+        assert_eq!(cfg.time_to_live, Some(SignedDuration::from_millis(1500)));
+        assert_eq!(cfg.time_to_idle, Some(SignedDuration::from_secs(2)));
+        Ok(())
     }
 }

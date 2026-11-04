@@ -34,6 +34,8 @@ use super::writer::MiniMokaWriter;
 #[derive(Debug, Default)]
 pub struct MiniMokaBuilder {
     pub(super) config: MiniMokaConfig,
+    pub(super) time_to_live: Option<Duration>,
+    pub(super) time_to_idle: Option<Duration>,
 }
 
 impl MiniMokaBuilder {
@@ -57,7 +59,7 @@ impl MiniMokaBuilder {
     /// Refer to [`mini-moka::sync::CacheBuilder::time_to_live`](https://docs.rs/mini-moka/latest/mini_moka/sync/struct.CacheBuilder.html#method.time_to_live)
     pub fn time_to_live(mut self, v: Duration) -> Self {
         if !v.is_zero() {
-            self.config.time_to_live = Some(format!("{}s", v.as_secs()));
+            self.time_to_live = Some(v);
         }
         self
     }
@@ -67,7 +69,7 @@ impl MiniMokaBuilder {
     /// Refer to [`mini-moka::sync::CacheBuilder::time_to_idle`](https://docs.rs/mini-moka/latest/mini_moka/sync/struct.CacheBuilder.html#method.time_to_idle)
     pub fn time_to_idle(mut self, v: Duration) -> Self {
         if !v.is_zero() {
-            self.config.time_to_idle = Some(format!("{}s", v.as_secs()));
+            self.time_to_idle = Some(v);
         }
         self
     }
@@ -99,12 +101,26 @@ impl Builder for MiniMokaBuilder {
         if let Some(v) = self.config.max_capacity {
             builder = builder.max_capacity(v);
         }
-        if let Some(value) = self.config.time_to_live.as_deref() {
-            let duration = signed_to_duration(value)?;
+        let time_to_live = match self.time_to_live {
+            Some(value) => Some(value),
+            None => self
+                .config
+                .time_to_live
+                .map(signed_duration_to_duration)
+                .transpose()?,
+        };
+        if let Some(duration) = time_to_live {
             builder = builder.time_to_live(duration);
         }
-        if let Some(value) = self.config.time_to_idle.as_deref() {
-            let duration = signed_to_duration(value)?;
+        let time_to_idle = match self.time_to_idle {
+            Some(value) => Some(value),
+            None => self
+                .config
+                .time_to_idle
+                .map(signed_duration_to_duration)
+                .transpose()?,
+        };
+        if let Some(duration) = time_to_idle {
             builder = builder.time_to_idle(duration);
         }
 
@@ -116,6 +132,23 @@ impl Builder for MiniMokaBuilder {
 
         debug!("backend build finished: {root}");
         Ok(MiniMokaBackend::new(core, root))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn builder_preserves_subsecond_durations() {
+        let time_to_live = Duration::new(1, 500_000_001);
+        let time_to_idle = Duration::from_millis(750);
+        let builder = MiniMokaBuilder::default()
+            .time_to_live(time_to_live)
+            .time_to_idle(time_to_idle);
+
+        assert_eq!(builder.time_to_live, Some(time_to_live));
+        assert_eq!(builder.time_to_idle, Some(time_to_idle));
     }
 }
 
