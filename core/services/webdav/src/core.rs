@@ -302,6 +302,7 @@ impl WebdavCore {
         &self,
         ctx: &OperationContext,
         path: &str,
+        args: &OpDelete,
     ) -> Result<Response<Buffer>> {
         let path = build_rooted_abs_path(&self.root, path);
         let url = format!("{}{}", self.endpoint, percent_encode_path(&path));
@@ -310,6 +311,10 @@ impl WebdavCore {
 
         if let Some(auth) = &self.authorization {
             req = req.header(header::AUTHORIZATION, auth.clone())
+        }
+
+        if let Some(if_match) = args.if_match() {
+            req = req.header(header::IF_MATCH, if_match);
         }
 
         let req = req

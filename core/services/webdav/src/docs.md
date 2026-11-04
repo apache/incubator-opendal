@@ -20,6 +20,12 @@ Inspect the effective capability set with [`opendal_core::Operator::info`] and
 Bazel Remote Caching and Ccache HTTP Storage is also part of this service.
 Users can use `webdav` to connect those services.
 
+`delete_with_if_match` is only as safe as the server's ETags. SabreDAV-based
+servers such as Nextcloud and ownCloud derive ETags from one-second
+modification times, so a stale ETag still matches after an overwrite within
+the same second and the delete removes content the caller never observed.
+Disable `delete_with_if_match` with `CapabilityOverrideLayer` for such servers.
+
 ## Configuration
 
 Use [`crate::WebdavConfig`] for serializable configuration and this builder's

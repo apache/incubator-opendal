@@ -220,6 +220,7 @@ impl Builder for WebdavBuilder {
 
                 create_dir: true,
                 delete: true,
+                delete_with_if_match: true,
 
                 copy: true,
 
