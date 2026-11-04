@@ -56,4 +56,6 @@ web-sys = { version = "0.3.77", features = [
   "WriteParams",
   "StorageManager",
   "Window",
+  "WorkerGlobalScope",
+  "WorkerNavigator",
 ] }

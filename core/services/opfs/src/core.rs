@@ -102,14 +102,34 @@ mod utils {
     use web_sys::FileSystemFileHandle;
     use web_sys::FileSystemGetDirectoryOptions;
     use web_sys::FileSystemGetFileOptions;
-    use web_sys::window;
+    use web_sys::StorageManager;
+    use web_sys::Window;
+    use web_sys::WorkerGlobalScope;
 
     use crate::core::*;
 
+    /// Get the storage manager from the current global scope.
+    ///
+    /// OPFS is available both on the main thread (`Window`) and in workers
+    /// (`WorkerGlobalScope`), so `web_sys::window()` cannot be used: it is
+    /// `None` inside a worker.
+    fn storage_manager() -> Result<StorageManager> {
+        let global = js_sys::global();
+        if let Some(window) = global.dyn_ref::<Window>() {
+            Ok(window.navigator().storage())
+        } else if let Some(worker) = global.dyn_ref::<WorkerGlobalScope>() {
+            Ok(worker.navigator().storage())
+        } else {
+            Err(Error::new(
+                ErrorKind::Unsupported,
+                "OPFS requires a window or worker global scope",
+            ))
+        }
+    }
+
     /// Get the OPFS root directory handle.
     pub(crate) async fn get_root_directory_handle() -> Result<FileSystemDirectoryHandle> {
-        let navigator = window().unwrap().navigator();
-        let storage_manager = navigator.storage();
+        let storage_manager = storage_manager()?;
         // This may fail if not secure (not: HTTPS or localhost)
         JsFuture::from(storage_manager.get_directory())
             .await
