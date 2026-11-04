@@ -101,6 +101,32 @@ ranges are still merged without over-fetching. Set an intermediate value to trad
 fewer backend requests for additional bytes read. A gap of `0` can be useful for
 HDFS scans that are sensitive to retaining large coalesced backing buffers.
 
+### Tune multipart uploads
+
+Set the buffered chunk size in bytes and the concurrency per multipart upload
+when constructing the store:
+
+```rust
+let object_store = OpendalStore::new(operator)
+    .with_multipart_chunk_size(16 * 1024 * 1024)
+    .with_multipart_concurrency(4);
+```
+
+Both settings apply to multipart uploads, including `put_multipart` and
+`put_multipart_opts`. They do not affect `put` or `put_opts`. Without an explicit
+chunk size, OpenDAL continues to choose it from the service's capabilities. OpenDAL clamps an explicit size to the service's minimum and
+maximum multipart sizes, and the final chunk may be smaller. The size must be
+nonzero; passing zero panics.
+
+Larger chunks reduce backend requests per byte uploaded, at the cost of more
+buffered memory and more data to retransmit after a failed request.
+
+Upload concurrency defaults to 8. Set it to 1 for sequential writes. Higher
+concurrency can improve throughput at the cost of more buffered memory. Services
+that do not support concurrent writes continue to write sequentially. Concurrency
+must be nonzero; passing zero panics. This setting does not affect ordinary puts
+or reads.
+
 ## WASM support
 
 To build with `wasm32-unknown-unknown` target, you need to enable the `send_wrapper` feature:

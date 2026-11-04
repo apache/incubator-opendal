@@ -183,6 +183,8 @@ pub struct OpendalStore {
     info: Arc<OperatorInfo>,
     inner: Operator,
     get_ranges_gap: usize,
+    multipart_chunk_size: Option<usize>,
+    multipart_concurrency: usize,
 }
 
 impl OpendalStore {
@@ -192,6 +194,8 @@ impl OpendalStore {
             info: op.info().into(),
             inner: op,
             get_ranges_gap: DEFAULT_GET_RANGES_GAP,
+            multipart_chunk_size: None,
+            multipart_concurrency: DEFAULT_CONCURRENT,
         }
     }
 
@@ -202,6 +206,56 @@ impl OpendalStore {
     /// Overlapping or adjacent ranges are still merged without over-fetching.
     pub fn with_get_ranges_gap(mut self, gap: usize) -> Self {
         self.get_ranges_gap = gap;
+        self
+    }
+
+    /// Set the buffered chunk size, in bytes, for multipart uploads.
+    ///
+    /// By default, OpenDAL chooses the chunk size from the service's capabilities.
+    /// This setting applies to [`ObjectStore::put_multipart_opts`] and the
+    /// convenience multipart APIs, but not to [`ObjectStore::put_opts`].
+    /// OpenDAL clamps the size to the service's minimum and maximum multipart
+    /// sizes. The final chunk may be smaller. Upload concurrency is unchanged.
+    /// Larger chunks reduce write requests but increase buffering and the amount
+    /// of data retransmitted when a request fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `chunk_size` is zero.
+    ///
+    /// ```
+    /// # use object_store_opendal::OpendalStore;
+    /// # use opendal::{Operator, services::Memory};
+    /// # let operator = Operator::new(Memory::default()).unwrap();
+    /// let store = OpendalStore::new(operator)
+    ///     .with_multipart_chunk_size(16 * 1024 * 1024)
+    ///     .with_multipart_concurrency(4);
+    /// ```
+    pub fn with_multipart_chunk_size(mut self, chunk_size: usize) -> Self {
+        assert!(
+            chunk_size > 0,
+            "multipart chunk size must be greater than zero"
+        );
+        self.multipart_chunk_size = Some(chunk_size);
+        self
+    }
+
+    /// Set the maximum concurrent writes for each multipart upload.
+    ///
+    /// Defaults to 8. Set to 1 for sequential writes. Higher values can improve
+    /// throughput at the cost of more buffered memory. Services that do not
+    /// support concurrent writes continue to write sequentially.
+    /// This setting does not affect ordinary puts or reads.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `concurrency` is zero.
+    pub fn with_multipart_concurrency(mut self, concurrency: usize) -> Self {
+        assert!(
+            concurrency > 0,
+            "multipart concurrency must be greater than zero"
+        );
+        self.multipart_concurrency = concurrency;
         self
     }
 
@@ -485,7 +539,8 @@ impl ObjectStore for OpendalStore {
         opts: PutMultipartOptions,
     ) -> object_store::Result<Box<dyn MultipartUpload>> {
         let mut options = opendal::options::WriteOptions {
-            concurrent: DEFAULT_CONCURRENT,
+            concurrent: self.multipart_concurrency,
+            chunk: self.multipart_chunk_size,
             ..Default::default()
         };
 
