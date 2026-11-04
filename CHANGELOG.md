@@ -722,7 +722,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 * refactor: Split await tree layer to new crate by @Xuanwo in https://github.com/apache/opendal/pull/6875
 * refactor(!): Remove deprecated http client config by @Xuanwo in https://github.com/apache/opendal/pull/6878
 * refactor: Split service aliyun drive to new crate by @Xuanwo in https://github.com/apache/opendal/pull/6879
-* refactor: Split capability check to seperate layer by @Xuanwo in https://github.com/apache/opendal/pull/6952
+* refactor: Split capability check to separate layer by @Xuanwo in https://github.com/apache/opendal/pull/6952
 * refactor: Split service hdfs-native to new crate by @chitralverma in https://github.com/apache/opendal/pull/6953
 * refactor: split metrics related crates to new crates by @Xuanwo in https://github.com/apache/opendal/pull/6954
 * refactor: Split service mysql to new crate  by @fenfeng9 in https://github.com/apache/opendal/pull/6960
