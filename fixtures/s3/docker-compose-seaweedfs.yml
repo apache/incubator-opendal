@@ -17,7 +17,7 @@
 
 services:
   seaweedfs:
-    image: chrislusf/seaweedfs:4.40
+    image: chrislusf/seaweedfs:4.52
     ports:
       - 8333:8333
     # `mini` runs the whole cluster in one process. Only the S3 gateway is used
