@@ -1269,6 +1269,8 @@ enum CopyField {
     IfVersionMatch,
     IfVersionNotMatch,
     SourceVersion,
+    ContentType,
+    UserMetadata,
 }
 
 impl OpCopy {
@@ -1321,13 +1323,19 @@ impl OpCopy {
             }
         }
 
+        let user_metadata = options.user_metadata.take().map(sorted_user_metadata);
         let fields = [
             options.if_match.as_deref().map(str::as_bytes),
             options.if_none_match.as_deref().map(str::as_bytes),
             options.if_version_match.as_deref().map(str::as_bytes),
             options.if_version_not_match.as_deref().map(str::as_bytes),
             options.source_version.as_deref().map(str::as_bytes),
+            options.content_type.as_deref().map(str::as_bytes),
+            None,
         ];
+        let mut lengths = fields.map(|value| value.map(<[u8]>::len));
+        lengths[CopyField::UserMetadata as usize] =
+            user_metadata.as_deref().map(user_metadata_encoded_len);
         Ok(Self {
             concurrent: options.concurrent.max(1),
             chunk: options.chunk,
@@ -1337,7 +1345,17 @@ impl OpCopy {
             } else {
                 0
             },
-            values: CompactValues::encode(&fields),
+            values: CompactValues::encode_with(&lengths, |field, output| match field {
+                field if field == CopyField::UserMetadata as usize => {
+                    write_user_metadata(
+                        user_metadata.as_deref().expect("present field has a value"),
+                        output,
+                    );
+                }
+                _ => {
+                    output.write(fields[field].expect("present field has a value"));
+                }
+            }),
         })
     }
 
@@ -1388,6 +1406,20 @@ impl OpCopy {
     #[inline]
     pub fn source_version(&self) -> Option<&str> {
         string_value(&self.values, CopyField::SourceVersion as usize)
+    }
+
+    /// Get the replacement destination Content-Type.
+    #[inline]
+    pub fn content_type(&self) -> Option<&str> {
+        string_value(&self.values, CopyField::ContentType as usize)
+    }
+
+    /// Get the replacement destination user metadata.
+    #[inline]
+    pub fn user_metadata(&self) -> Option<UserMetadata<'_>> {
+        self.values
+            .get(CopyField::UserMetadata as usize)
+            .map(UserMetadata::new)
     }
 
     /// Get the concurrent tasks for the copy operation.
@@ -1749,6 +1781,21 @@ mod tests {
         assert_eq!(copy.if_version_match(), Some("destination-version"));
         assert_eq!(copy.source_version(), Some("source-version"));
         assert!(copy.is_conditional());
+        assert!(copy.user_metadata().is_none());
+
+        let copy = OpCopy::from_options(
+            &Capability::default(),
+            options::CopyOptions {
+                if_match: Some("etag".to_owned()),
+                content_type: Some("text/plain".to_owned()),
+                user_metadata: Some(HashMap::from([("mtime".to_owned(), "42".to_owned())])),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(copy.if_match(), Some("etag"));
+        assert_eq!(copy.content_type(), Some("text/plain"));
+        assert_eq!(copy.user_metadata().unwrap().get("mtime"), Some("42"));
 
         let list: OpList = options::ListOptions {
             limit: Some(100),

@@ -56,6 +56,7 @@ pub mod constants {
     pub const X_AMZ_COPY_SOURCE_IF_NONE_MATCH: &str = "x-amz-copy-source-if-none-match";
     pub const X_AMZ_COPY_SOURCE_IF_MODIFIED_SINCE: &str = "x-amz-copy-source-if-modified-since";
     pub const X_AMZ_COPY_SOURCE_IF_UNMODIFIED_SINCE: &str = "x-amz-copy-source-if-unmodified-since";
+    pub const X_AMZ_METADATA_DIRECTIVE: &str = "x-amz-metadata-directive";
 
     pub const X_AMZ_SERVER_SIDE_ENCRYPTION: &str = "x-amz-server-side-encryption";
     pub const X_AMZ_SERVER_REQUEST_PAYER: (&str, &str) = ("x-amz-request-payer", "requester");
@@ -823,6 +824,19 @@ impl S3Core {
             req = req.header(constants::X_AMZ_COPY_SOURCE_IF_MATCH, source_if_match);
         }
 
+        // Without REPLACE, S3 copies the source metadata and ignores these headers.
+        if args.content_type().is_some() || args.user_metadata().is_some() {
+            req = req.header(constants::X_AMZ_METADATA_DIRECTIVE, "REPLACE");
+        }
+        if let Some(mime) = args.content_type() {
+            req = req.header(CONTENT_TYPE, mime);
+        }
+        if let Some(user_metadata) = args.user_metadata() {
+            for (key, value) in user_metadata {
+                req = req.header(format!("{X_AMZ_META_PREFIX}{key}"), value);
+            }
+        }
+
         // Set SSE headers.
         req = self.insert_sse_headers(req, true);
         if let Some(value) = &self.server_side_encryption_bucket_key_enabled {
@@ -1060,12 +1074,23 @@ impl S3Core {
         &self,
         ctx: &OperationContext,
         path: &str,
+        args: &OpCopy,
     ) -> Result<Response<Buffer>> {
         let p = build_abs_path(&self.root, path);
 
         let url = format!("{}/{}?uploads", self.endpoint, percent_encode_path(&p));
 
         let mut req = Request::post(&url);
+
+        // A multipart copy never inherits source metadata, so set it on creation.
+        if let Some(mime) = args.content_type() {
+            req = req.header(CONTENT_TYPE, mime);
+        }
+        if let Some(user_metadata) = args.user_metadata() {
+            for (key, value) in user_metadata {
+                req = req.header(format!("{X_AMZ_META_PREFIX}{key}"), value);
+            }
+        }
 
         // Set storage class header.
         if let Some(v) = &self.default_storage_class {

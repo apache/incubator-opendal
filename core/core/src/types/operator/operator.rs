@@ -1347,8 +1347,8 @@ impl Operator {
     /// # Notes
     ///
     /// - `from` and `to` must be a file.
-    /// - If `from` and `to` are the same and `source_version` is not set,
-    ///   an `IsSameFile` error will occur.
+    /// - If `from` and `to` are the same and none of `source_version`,
+    ///   `user_metadata` or `content_type` is set, an `IsSameFile` error will occur.
     /// - `copy` is idempotent. For same `from` and `to` input, the result will be the same.
     ///
     /// # Options
@@ -1410,8 +1410,8 @@ impl Operator {
     /// # Notes
     ///
     /// - `from` and `to` must be a file.
-    /// - If `from` and `to` are the same and `source_version` is not set,
-    ///   an `IsSameFile` error will occur.
+    /// - If `from` and `to` are the same and none of `source_version`,
+    ///   `user_metadata` or `content_type` is set, an `IsSameFile` error will occur.
     /// - `copy` is idempotent. For same `from` and `to` input, the result will be the same.
     ///
     /// # Options
@@ -1497,7 +1497,11 @@ impl Operator {
             );
         }
 
-        if from == to && opts.source_version.is_none() {
+        if from == to
+            && opts.source_version.is_none()
+            && opts.user_metadata.is_none()
+            && opts.content_type.is_none()
+        {
             return Err(
                 Error::new(ErrorKind::IsSameFile, "from and to paths are same")
                     .with_operation("Operator::copy")
@@ -1543,7 +1547,11 @@ impl Operator {
             );
         }
 
-        if from == to && opts.source_version.is_none() {
+        if from == to
+            && opts.source_version.is_none()
+            && opts.user_metadata.is_none()
+            && opts.content_type.is_none()
+        {
             return Err(
                 Error::new(ErrorKind::IsSameFile, "from and to paths are same")
                     .with_operation("Operator::copier")

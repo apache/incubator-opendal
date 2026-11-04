@@ -15,6 +15,8 @@
 // specific language governing permissions and limitations
 // under the License.
 
+use std::collections::HashMap;
+
 use anyhow::Result;
 
 use crate::*;
@@ -93,6 +95,10 @@ pub fn tests(op: &Operator, tests: &mut Vec<Trial>) {
             test_copy_with_source_version_to_new_file,
             test_copy_with_source_version_to_same_file
         ))
+    }
+
+    if cap.read && cap.write && cap.stat && cap.copy && cap.copy_with_user_metadata {
+        tests.extend(async_trials!(op, test_copy_with_user_metadata_in_place))
     }
 }
 
@@ -872,5 +878,35 @@ pub async fn test_copier_with_if_not_exists_to_existing_file(op: Operator) -> Re
 
     op.delete(&source_path).await.expect("delete must succeed");
     op.delete(&target_path).await.expect("delete must succeed");
+    Ok(())
+}
+
+/// Copy onto the same path with user_metadata should replace the metadata
+/// and keep the content.
+pub async fn test_copy_with_user_metadata_in_place(op: Operator) -> Result<()> {
+    let path = uuid::Uuid::new_v4().to_string();
+    let (content, _) = gen_bytes(op.info().capability());
+    op.write_with(&path, content.clone())
+        .user_metadata([("old".to_string(), "value".to_string())])
+        .await?;
+
+    let new_metadata = HashMap::from([("mtime".to_string(), "1700000000".to_string())]);
+    op.copy_with(&path, &path)
+        .user_metadata(new_metadata.clone())
+        .await?;
+
+    let meta = op.stat(&path).await.expect("stat must succeed");
+    let current = meta
+        .user_metadata()
+        .expect("user metadata must exist")
+        .into_iter()
+        .map(|(key, value)| (key.to_owned(), value.to_owned()))
+        .collect::<HashMap<_, _>>();
+    assert_eq!(current, new_metadata);
+
+    let current_content = op.read(&path).await.expect("read must succeed").to_bytes();
+    assert_eq!(sha256_digest(current_content), sha256_digest(&content));
+
+    op.delete(&path).await.expect("delete must succeed");
     Ok(())
 }

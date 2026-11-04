@@ -1005,6 +1005,29 @@ pub struct CopyOptions {
     /// this option.
     pub source_version: Option<String>,
 
+    /// Replaces the destination's user metadata with exactly these entries.
+    ///
+    /// When this option or [`Self::content_type`] is set, the destination does
+    /// not inherit metadata from the source. User metadata and Content-Type
+    /// take the values given here; anything left unset, including other system
+    /// metadata such as Cache-Control, takes the service default. Setting
+    /// either option also allows `from` and `to` to be the same path, which
+    /// updates metadata without rewriting the content. On S3 this is
+    /// `CopyObject` with `x-amz-metadata-directive: REPLACE`.
+    ///
+    /// The operation returns [`crate::ErrorKind::Unsupported`] when the
+    /// service does not advertise
+    /// [`crate::Capability::copy_with_user_metadata`].
+    pub user_metadata: Option<HashMap<String, String>>,
+    /// Replaces the destination's Content-Type with this value.
+    ///
+    /// Follows the same replacement rules as [`Self::user_metadata`].
+    ///
+    /// The operation returns [`crate::ErrorKind::Unsupported`] when the
+    /// service does not advertise
+    /// [`crate::Capability::copy_with_content_type`].
+    pub content_type: Option<String>,
+
     /// Asserted complete content length of the source object.
     ///
     /// OpenDAL may trust this value without reading source metadata. It can use

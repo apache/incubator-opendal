@@ -1763,6 +1763,22 @@ impl<F: Future<Output = Result<Metadata>>> FutureCopy<F> {
         self
     }
 
+    /// Replace the destination's user metadata with these entries.
+    ///
+    /// Refer to [`options::CopyOptions::user_metadata`] for the full contract.
+    pub fn user_metadata(mut self, data: impl IntoIterator<Item = (String, String)>) -> Self {
+        self.args.0.user_metadata = Some(HashMap::from_iter(data));
+        self
+    }
+
+    /// Replace the destination's Content-Type with this value.
+    ///
+    /// Refer to [`options::CopyOptions::content_type`] for the full contract.
+    pub fn content_type(mut self, v: &str) -> Self {
+        self.args.0.content_type = Some(v.to_string());
+        self
+    }
+
     /// Sets concurrent copy operations for this copy.
     ///
     /// Refer to [`options::CopyOptions::concurrent`] for more details.
@@ -1847,6 +1863,22 @@ impl<F: Future<Output = Result<Copier>>> FutureCopier<F> {
     /// Refer to [`options::CopyOptions::source_version`] for the full contract.
     pub fn source_version(mut self, version: impl Into<String>) -> Self {
         self.args.0.source_version = Some(version.into());
+        self
+    }
+
+    /// Replace the destination's user metadata with these entries.
+    ///
+    /// Refer to [`options::CopyOptions::user_metadata`] for the full contract.
+    pub fn user_metadata(mut self, data: impl IntoIterator<Item = (String, String)>) -> Self {
+        self.args.0.user_metadata = Some(HashMap::from_iter(data));
+        self
+    }
+
+    /// Replace the destination's Content-Type with this value.
+    ///
+    /// Refer to [`options::CopyOptions::content_type`] for the full contract.
+    pub fn content_type(mut self, v: &str) -> Self {
+        self.args.0.content_type = Some(v.to_string());
         self
     }
 

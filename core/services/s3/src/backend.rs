@@ -1245,6 +1245,8 @@ impl Builder for S3Builder {
                     copy_with_if_not_exists: true,
                     copy_with_if_match: true,
                     copy_with_source_version: !is_s3_express,
+                    copy_with_user_metadata: true,
+                    copy_with_content_type: true,
                     // The min multipart size of S3 is 5 MiB.
                     //
                     // ref: <https://docs.aws.amazon.com/AmazonS3/latest/userguide/qfacts.html>
@@ -2232,6 +2234,59 @@ mod tests {
             1,
             "session operations in multipart copy must share one session"
         );
+    }
+
+    #[tokio::test]
+    async fn test_s3_copy_replaces_metadata() {
+        let transport = S3ExpressMockTransport::new(CreateSessionOutcome::Success);
+        let op = s3_general_operator(transport.clone());
+
+        op.copy_with("source", "source")
+            .user_metadata([("mtime".to_owned(), "42".to_owned())])
+            .content_type("text/plain")
+            .source_content_length_hint(7)
+            .await
+            .expect("same-key copy with new metadata must succeed");
+
+        let requests = transport.requests();
+        assert_eq!(requests.len(), 1);
+        assert_eq!(
+            header(&requests[0], constants::X_AMZ_METADATA_DIRECTIVE),
+            "REPLACE"
+        );
+        assert_eq!(header(&requests[0], "x-amz-meta-mtime"), "42");
+        assert_eq!(header(&requests[0], "content-type"), "text/plain");
+
+        op.copy_with("source", "target")
+            .source_content_length_hint(7)
+            .await
+            .expect("copy must succeed");
+        let requests = transport.requests();
+        assert!(
+            !requests[1]
+                .headers
+                .contains_key(constants::X_AMZ_METADATA_DIRECTIVE)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_s3_multipart_copy_sets_metadata_on_create() {
+        let transport = S3ExpressMockTransport::new(CreateSessionOutcome::Success);
+        let op = s3_general_operator(transport.clone());
+
+        op.copy_with("source", "target")
+            .user_metadata([("mtime".to_owned(), "42".to_owned())])
+            .source_content_length_hint(5 * 1024 * 1024 + 1)
+            .chunk(5 * 1024 * 1024)
+            .await
+            .expect("multipart copy must succeed");
+
+        let requests = transport.requests();
+        let create = requests
+            .iter()
+            .find(|request| request.uri.query() == Some("uploads"))
+            .expect("CreateMultipartUpload request must be captured");
+        assert_eq!(header(create, "x-amz-meta-mtime"), "42");
     }
 
     #[tokio::test]

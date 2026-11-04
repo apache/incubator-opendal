@@ -249,7 +249,7 @@ impl oio::MultipartCopy for S3Copier {
     async fn initiate_copy(&self) -> Result<String> {
         let resp = self
             .core
-            .s3_initiate_multipart_copy(&self.ctx, &self.to)
+            .s3_initiate_multipart_copy(&self.ctx, &self.to, &self.args)
             .await?;
 
         match resp.status() {
