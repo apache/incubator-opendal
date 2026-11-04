@@ -134,6 +134,7 @@ pub fn normalize_path(path: &str) -> String {
 /// Finally, we will get path like `/path/to/root/`.
 pub fn normalize_root(v: &str) -> String {
     let mut v = v
+        .trim()
         .split('/')
         .filter(|v| !v.is_empty())
         .collect::<Vec<&str>>()
@@ -303,6 +304,7 @@ mod tests {
             ("abs file path with extra /", "///abc/def", "/abc/def/"),
             ("abs dir path with extra /", "///abc/def/", "/abc/def/"),
             ("dir path contains ///", "abc///def///", "/abc/def/"),
+            ("root path with whitespace", " abc/def ", "/abc/def/"),
         ];
 
         for (name, input, expect) in cases {
