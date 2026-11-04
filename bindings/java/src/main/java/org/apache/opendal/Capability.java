@@ -80,6 +80,31 @@ public class Capability {
     public final boolean readWithIfNoneMatch;
 
     /**
+     * If operator supports reads with stored version selection.
+     */
+    public final boolean readWithVersion;
+
+    /**
+     * If operator supports reads with a version match condition.
+     */
+    public final boolean readWithIfVersionMatch;
+
+    /**
+     * If operator supports reads with a version non-match condition.
+     */
+    public final boolean readWithIfVersionNotMatch;
+
+    /**
+     * If operator supports reads with an If-Modified-Since condition.
+     */
+    public final boolean readWithIfModifiedSince;
+
+    /**
+     * If operator supports reads with an If-Unmodified-Since condition.
+     */
+    public final boolean readWithIfUnmodifiedSince;
+
+    /**
      * If operator supports read with override cache control.
      */
     public final boolean readWithOverrideCacheControl;
@@ -273,7 +298,12 @@ public class Capability {
             boolean presignRead,
             boolean presignStat,
             boolean presignWrite,
-            boolean shared) {
+            boolean shared,
+            boolean readWithVersion,
+            boolean readWithIfVersionMatch,
+            boolean readWithIfVersionNotMatch,
+            boolean readWithIfModifiedSince,
+            boolean readWithIfUnmodifiedSince) {
         this.stat = stat;
         this.statWithIfMatch = statWithIfMatch;
         this.statWithIfNoneMatch = statWithIfNoneMatch;
@@ -315,5 +345,10 @@ public class Capability {
         this.presignStat = presignStat;
         this.presignWrite = presignWrite;
         this.shared = shared;
+        this.readWithVersion = readWithVersion;
+        this.readWithIfVersionMatch = readWithIfVersionMatch;
+        this.readWithIfVersionNotMatch = readWithIfVersionNotMatch;
+        this.readWithIfModifiedSince = readWithIfModifiedSince;
+        this.readWithIfUnmodifiedSince = readWithIfUnmodifiedSince;
     }
 }

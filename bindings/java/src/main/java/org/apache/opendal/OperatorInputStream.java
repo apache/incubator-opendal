@@ -50,7 +50,19 @@ public class OperatorInputStream extends InputStream {
 
     public OperatorInputStream(Operator operator, String path, ReadOptions options) {
         Objects.requireNonNull(options, "options");
-        try (OperatorReader source = operator.createReader(path)) {
+        ReaderOptions readerOptions = ReaderOptions.builder()
+                .version(options.version)
+                .ifMatch(options.ifMatch)
+                .ifNoneMatch(options.ifNoneMatch)
+                .ifVersionMatch(options.ifVersionMatch)
+                .ifVersionNotMatch(options.ifVersionNotMatch)
+                .ifModifiedSince(options.ifModifiedSince)
+                .ifUnmodifiedSince(options.ifUnmodifiedSince)
+                .concurrent(options.concurrent)
+                .chunk(options.chunk)
+                .contentLengthHint(options.contentLengthHint)
+                .build();
+        try (OperatorReader source = operator.createReader(path, readerOptions)) {
             this.iterator = new NativeIterator(source.createBytesIterator(options.offset, options.length));
         }
     }

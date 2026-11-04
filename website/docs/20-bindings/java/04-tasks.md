@@ -34,6 +34,32 @@ String text = new String(data);
 byte[] data = op.read("path/to/file", 0, 1024);
 ```
 
+Pass `ReadOptions` to `op.read(path, options)` or
+`op.createInputStream(path, options)` to configure a single read. Async reads accept
+the same options:
+
+```java
+import org.apache.opendal.ReadOptions;
+
+ReadOptions options = ReadOptions.builder()
+        .offset(1024)
+        .length(4096)
+        .ifMatch("\"etag\"")
+        .chunk(2048)
+        .concurrent(2)
+        .build();
+byte[] data = op.read("path/to/file", options);
+```
+
+`ReadOptions` supports the version and condition fields described below for
+`ReaderOptions`. Use `chunk` to set the size of each read request and
+`concurrent` to limit parallel requests.
+
+`contentLengthHint` specifies the total object size in bytes, not the length of
+the requested range. It can avoid a metadata request when OpenDAL needs the
+object length to plan a read. An incorrect hint may cause incomplete reads or
+errors.
+
 For repeated reads from the same file, create an `OperatorReader`. It uses a
 Rust core reader and lets each call select an independent byte range:
 

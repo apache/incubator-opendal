@@ -95,7 +95,7 @@ fn make_operator_info<'a>(env: &mut Env<'a>, info: OperatorInfo) -> Result<JObje
 fn make_capability<'a>(env: &mut Env<'a>, cap: Capability) -> Result<JObject<'a>> {
     let capability = env.new_object(
         jni_str!("org/apache/opendal/Capability"),
-        jni_sig!("(ZZZZZZZZZZZZZZZZZZZZZZZZJJZZZZZZZZZZZZZZZ)V"),
+        jni_sig!("(ZZZZZZZZZZZZZZZZZZZZZZZZJJZZZZZZZZZZZZZZZZZZZZ)V"),
         &[
             JValue::Bool(cap.stat),
             JValue::Bool(cap.stat_with_if_match),
@@ -138,6 +138,11 @@ fn make_capability<'a>(env: &mut Env<'a>, cap: Capability) -> Result<JObject<'a>
             JValue::Bool(cap.presign_stat),
             JValue::Bool(cap.presign_write),
             JValue::Bool(cap.shared),
+            JValue::Bool(cap.read_with_version),
+            JValue::Bool(cap.read_with_if_version_match),
+            JValue::Bool(cap.read_with_if_version_not_match),
+            JValue::Bool(cap.read_with_if_modified_since),
+            JValue::Bool(cap.read_with_if_unmodified_since),
         ],
     )?;
     Ok(capability)
@@ -287,35 +292,11 @@ fn make_stat_options(env: &mut Env, options: &JObject) -> Result<opendal::option
     })
 }
 
-fn make_read_options<'a>(
-    env: &mut Env<'a>,
-    options: &JObject,
-) -> Result<opendal::options::ReadOptions> {
-    let offset = convert::read_int64_field(env, options, "offset")?;
-    let length = convert::read_int64_field(env, options, "length")?;
-
-    Ok(opendal::options::ReadOptions {
-        range: convert::offset_length_to_range(offset, length)?.into(),
-        override_content_type: convert::read_string_field(env, options, "overrideContentType")?,
-        override_cache_control: convert::read_string_field(env, options, "overrideCacheControl")?,
-        override_content_disposition: convert::read_string_field(
-            env,
-            options,
-            "overrideContentDisposition",
-        )?,
-        ..Default::default()
-    })
-}
-
-fn make_reader_options(
-    env: &mut Env,
-    options: &JObject,
-) -> Result<opendal::options::ReaderOptions> {
-    let concurrent = convert::read_int_field(env, options, "concurrent")?;
-    let chunk = convert::read_int64_field(env, options, "chunk")?;
-    let prefetch = convert::read_int_field(env, options, "prefetch")?;
-    let content_length_hint = convert::read_int64_field(env, options, "contentLengthHint")?;
-
+fn validate_read_execution_options(
+    concurrent: i32,
+    chunk: i64,
+    content_length_hint: i64,
+) -> Result<(usize, Option<usize>, Option<u64>)> {
     if concurrent <= 0 {
         return Err(Error::new(ErrorKind::ConfigInvalid, "concurrent must be positive").into());
     }
@@ -333,8 +314,6 @@ fn make_reader_options(
             );
         }
     };
-    let prefetch = usize::try_from(prefetch)
-        .map_err(|_| Error::new(ErrorKind::ConfigInvalid, "prefetch must be non-negative"))?;
     let content_length_hint = match content_length_hint {
         -1 => None,
         value => Some(u64::try_from(value).map_err(|_| {
@@ -344,6 +323,69 @@ fn make_reader_options(
             )
         })?),
     };
+
+    Ok((concurrent, chunk, content_length_hint))
+}
+
+fn make_read_options<'a>(
+    env: &mut Env<'a>,
+    options: &JObject,
+) -> Result<opendal::options::ReadOptions> {
+    let offset = convert::read_int64_field(env, options, "offset")?;
+    let length = convert::read_int64_field(env, options, "length")?;
+
+    let concurrent = convert::read_int_field(env, options, "concurrent")?;
+    let chunk = convert::read_int64_field(env, options, "chunk")?;
+    let content_length_hint = convert::read_int64_field(env, options, "contentLengthHint")?;
+
+    let (concurrent, chunk, content_length_hint) =
+        validate_read_execution_options(concurrent, chunk, content_length_hint)?;
+
+    Ok(opendal::options::ReadOptions {
+        range: convert::offset_length_to_range(offset, length)?.into(),
+        version: convert::read_string_field(env, options, "version")?,
+        if_match: convert::read_string_field(env, options, "ifMatch")?,
+        if_none_match: convert::read_string_field(env, options, "ifNoneMatch")?,
+        if_version_match: convert::read_string_field(env, options, "ifVersionMatch")?,
+        if_version_not_match: convert::read_string_field(env, options, "ifVersionNotMatch")?,
+        if_modified_since: convert::read_instant_field_to_timestamp(
+            env,
+            options,
+            "ifModifiedSince",
+        )?,
+        if_unmodified_since: convert::read_instant_field_to_timestamp(
+            env,
+            options,
+            "ifUnmodifiedSince",
+        )?,
+        concurrent,
+        chunk,
+        gap: None,
+        content_length_hint,
+        override_content_type: convert::read_string_field(env, options, "overrideContentType")?,
+        override_cache_control: convert::read_string_field(env, options, "overrideCacheControl")?,
+        override_content_disposition: convert::read_string_field(
+            env,
+            options,
+            "overrideContentDisposition",
+        )?,
+    })
+}
+
+fn make_reader_options(
+    env: &mut Env,
+    options: &JObject,
+) -> Result<opendal::options::ReaderOptions> {
+    let concurrent = convert::read_int_field(env, options, "concurrent")?;
+    let chunk = convert::read_int64_field(env, options, "chunk")?;
+    let prefetch = convert::read_int_field(env, options, "prefetch")?;
+    let content_length_hint = convert::read_int64_field(env, options, "contentLengthHint")?;
+
+    let (concurrent, chunk, content_length_hint) =
+        validate_read_execution_options(concurrent, chunk, content_length_hint)?;
+
+    let prefetch = usize::try_from(prefetch)
+        .map_err(|_| Error::new(ErrorKind::ConfigInvalid, "prefetch must be non-negative"))?;
 
     Ok(opendal::options::ReaderOptions {
         version: convert::read_string_field(env, options, "version")?,
