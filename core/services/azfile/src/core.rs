@@ -47,6 +47,7 @@ pub struct AzfileCore {
     pub root: String,
     pub endpoint: String,
     pub share_name: String,
+    pub sas_token: Option<String>,
     pub signer: Signer<Credential>,
     pub sign_ctx: Context,
 }
@@ -306,12 +307,15 @@ impl AzfileCore {
         // the official document does not mention the URL style path
         // find the solution from the community FAQ and implementation of the Java-SDK
         // ref: https://learn.microsoft.com/en-us/answers/questions/799611/azure-file-service-rest-api(rename)?page=1
-        let source_url = format!(
+        let mut source_url = format!(
             "{}/{}/{}",
             self.endpoint,
             self.share_name,
             percent_encode_path(&p)
         );
+        if let Some(sas_token) = &self.sas_token {
+            source_url = format!("{source_url}?{sas_token}");
+        }
 
         req = req.header(X_MS_FILE_RENAME_SOURCE, &source_url);
 
