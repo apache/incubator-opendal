@@ -180,8 +180,9 @@ impl Debug for S3Core {
 
 impl S3Core {
     fn sign_error(&self, err: reqsign_core::Error) -> Error {
+        let retryable = err.is_retryable();
         if !self.signers.is_express() {
-            return new_request_sign_error(err.into());
+            return new_request_sign_error(err.into()).with_temporary(retryable);
         }
 
         let kind = match err.kind() {
@@ -193,7 +194,6 @@ impl S3Core {
                 ErrorKind::Unexpected
             }
         };
-        let retryable = err.is_retryable();
         Error::new(kind, "failed to sign S3 Express request")
             .with_operation("S3Core::sign")
             .set_source(err)

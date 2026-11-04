@@ -929,6 +929,12 @@ impl Builder for S3Builder {
     type Config = S3Config;
 
     fn build(self) -> Result<impl Service> {
+        self.build_backend()
+    }
+}
+
+impl S3Builder {
+    fn build_backend(self) -> Result<S3Backend> {
         debug!("backend build started: {:?}", self);
 
         let S3Builder {
@@ -1580,6 +1586,8 @@ impl Service for S3Backend {
 mod tests {
     use std::sync::Arc;
     use std::sync::Mutex;
+    use std::sync::atomic::AtomicUsize;
+    use std::sync::atomic::Ordering;
 
     use bytes::Bytes;
     use http::HeaderMap;
@@ -1587,6 +1595,7 @@ mod tests {
     use http::Method;
     use http::Request;
     use http::Response;
+    use reqsign_core::ProvideCredential;
 
     use super::*;
 
@@ -2361,6 +2370,100 @@ mod tests {
             assert_eq!(err.kind(), kind);
             assert_eq!(err.is_temporary(), temporary);
         }
+    }
+
+    #[derive(Debug)]
+    struct FailingOnceCredentialProvider {
+        error: Mutex<Option<reqsign_core::Error>>,
+        calls: Arc<AtomicUsize>,
+    }
+
+    impl ProvideCredential for FailingOnceCredentialProvider {
+        type Credential = Credential;
+
+        async fn provide_credential(
+            &self,
+            ctx: &Context,
+        ) -> reqsign_core::Result<Option<Self::Credential>> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            if let Some(err) = self.error.lock().expect("lock poisoned").take() {
+                return Err(err);
+            }
+            StaticCredentialProvider::new("provider-access-key", "provider-secret-key")
+                .provide_credential(ctx)
+                .await
+        }
+    }
+
+    fn s3_general_operator_with_provider(
+        error: reqsign_core::Error,
+        transport: S3ExpressMockTransport,
+    ) -> (Operator, Arc<AtomicUsize>) {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let provider = FailingOnceCredentialProvider {
+            error: Mutex::new(Some(error)),
+            calls: calls.clone(),
+        };
+        let backend = S3Builder::default()
+            .bucket("example")
+            .region("us-west-2")
+            .disable_config_load()
+            .disable_ec2_metadata()
+            .build_backend()
+            .expect("S3 backend must build");
+        let mut core = Arc::into_inner(backend.core).expect("S3 core must not be shared");
+        core.signers = S3Signers::General(Signer::new(
+            Context::new(),
+            provider,
+            AwsV4Signer::new("s3", "us-west-2"),
+        ));
+        let service = Arc::new(S3Backend {
+            core: Arc::new(core),
+        }) as Servicer;
+        let ctx = OperationContext::new().with_http_transport(HttpTransporter::new(transport));
+        (Operator::from_parts(ctx, service), calls)
+    }
+
+    #[tokio::test]
+    async fn test_s3_retryable_credential_error_is_temporary() {
+        let transport = S3ExpressMockTransport::new(CreateSessionOutcome::Success);
+        let (op, calls) = s3_general_operator_with_provider(
+            reqsign_core::Error::unexpected("failed to send AWS STS AssumeRole request")
+                .set_retryable(true),
+            transport.clone(),
+        );
+
+        let err = op
+            .stat("test")
+            .await
+            .expect_err("credential failure must reach the caller");
+        assert_eq!(err.kind(), ErrorKind::Unexpected);
+        assert!(err.is_temporary());
+        assert!(transport.requests().is_empty());
+
+        op.stat("test")
+            .await
+            .expect("retry must load the credential and sign the request");
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+        assert!(header(&transport.requests()[0], "authorization").contains("provider-access-key/"));
+    }
+
+    #[tokio::test]
+    async fn test_s3_persistent_credential_error_is_not_temporary() {
+        let transport = S3ExpressMockTransport::new(CreateSessionOutcome::Success);
+        let (op, calls) = s3_general_operator_with_provider(
+            reqsign_core::Error::credential_invalid("failed to load signing credential"),
+            transport.clone(),
+        );
+
+        let err = op
+            .stat("test")
+            .await
+            .expect_err("credential failure must reach the caller");
+        assert_eq!(err.kind(), ErrorKind::Unexpected);
+        assert!(!err.is_temporary());
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
+        assert!(transport.requests().is_empty());
     }
 
     #[test]
