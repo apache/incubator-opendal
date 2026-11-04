@@ -38,7 +38,7 @@ bytes = "1.4.0"
 log = { version = "0.4.33", features = ["std"] }
 # this crate won't be published, we always use the local version
 opendal = { version = ">=0", path = "../../core", features = ["blocking"] }
-tokio = { version = "1.27", features = ["fs", "macros", "rt-multi-thread"] }
+tokio = { version = "1.27", features = ["fs", "macros", "rt-multi-thread", "sync"] }
 
 [features]
 default = []

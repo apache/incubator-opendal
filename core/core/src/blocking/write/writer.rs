@@ -73,6 +73,24 @@ impl Writer {
         self.handle.block_on(inner.write(bs))
     }
 
+    /// Return this writer's runtime handle.
+    pub fn get_handle(&self) -> &tokio::runtime::Handle {
+        &self.handle
+    }
+
+    /// Borrow the internal [`crate::Writer`].
+    ///
+    /// Write operations update this writer's buffer and upload state.
+    /// Close or abort operations also close or abort this writer.
+    /// Use the runtime from [`Self::get_handle`] to run these operations.
+    ///
+    /// Return an error if the internal writer is unavailable.
+    pub fn as_async_mut(&mut self) -> Result<&mut AsyncWriter> {
+        self.inner
+            .as_mut()
+            .ok_or_else(|| Error::new(ErrorKind::Unexpected, "writer has been dropped"))
+    }
+
     /// Close the writer and make sure all data have been committed.
     ///
     /// ## Notes
@@ -105,5 +123,57 @@ impl Drop for Writer {
         if let Some(v) = self.inner.take() {
             self.handle.block_on(async move { drop(v) });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn as_async_mut_updates_original_writer() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _guard = runtime.enter();
+        let op =
+            crate::blocking::Operator::new(Operator::new(services::Memory::default()).unwrap())
+                .unwrap();
+        let mut writer = op
+            .writer_options(
+                "dest",
+                options::WriteOptions {
+                    chunk: Some(1024),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        writer.write("before").unwrap();
+        {
+            let handle = writer.get_handle().clone();
+            assert_eq!(handle.id(), runtime.handle().id());
+            let inner = writer.as_async_mut().unwrap();
+            handle.block_on(inner.write("middle")).unwrap();
+        }
+        writer.write("after").unwrap();
+        let metadata = writer.close().unwrap();
+        assert_eq!(metadata.content_length(), 17);
+        assert_eq!(op.read("dest").unwrap().to_bytes(), "beforemiddleafter");
+    }
+
+    #[test]
+    fn as_async_mut_close_closes_original_writer() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _guard = runtime.enter();
+        let op =
+            crate::blocking::Operator::new(Operator::new(services::Memory::default()).unwrap())
+                .unwrap();
+        let mut writer = op.writer("dest").unwrap();
+        writer.write("data").unwrap();
+        {
+            let handle = writer.get_handle().clone();
+            let inner = writer.as_async_mut().unwrap();
+            assert_eq!(handle.block_on(inner.close()).unwrap().content_length(), 4);
+        }
+        assert!(writer.write("more").is_err());
+        assert_eq!(op.read("dest").unwrap().to_bytes(), "data");
     }
 }

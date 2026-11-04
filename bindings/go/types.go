@@ -106,6 +106,14 @@ var (
 		}[0],
 	}
 
+	typeResultStreamCopy = ffi.Type{
+		Type: ffi.Struct,
+		Elements: &[]*ffi.Type{
+			&ffi.TypeUint64,
+			&ffi.TypePointer,
+			nil,
+		}[0],
+	}
 	typeResultWriterWrite = ffi.Type{
 		Type: ffi.Struct,
 		Elements: &[]*ffi.Type{
@@ -319,6 +327,11 @@ type opendalWriter struct{}
 type resultOperatorWriter struct {
 	writer *opendalWriter
 	error  *opendalError
+}
+
+type resultStreamCopy struct {
+	size  uint64
+	error *opendalError
 }
 
 type resultWriterWrite struct {

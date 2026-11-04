@@ -18,6 +18,11 @@
 package opendal_test
 
 import (
+	"bytes"
+	"errors"
+	"io"
+	"os"
+
 	opendal "github.com/apache/opendal/bindings/go"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -46,7 +51,218 @@ func testsWrite(cap *opendal.Capability) []behaviorTest {
 		testWriterWithAppend,
 		testWriteReturnsMetadata,
 		testWriterCloseReturnsMetadata,
+		testWriterReadFrom,
+		testWriterAfterCopy,
+		testWriterReadFromResults,
+		testWriterReadFromBufferOwnership,
+		testWriterReadFromSourcePanic,
 	}
+}
+
+const copyBufferSize = 256 * 1024
+
+type copyReaderFunc func([]byte) (int, error)
+
+func (f copyReaderFunc) Read(p []byte) (int, error) { return f(p) }
+
+func testWriterReadFrom(assert *require.Assertions, op *opendal.Operator, fixture *fixture) {
+	if !op.Info().GetCapability().WriteCanMulti() {
+		return
+	}
+	content := genFixedBytes(contentMaxSize(op.Info().GetCapability()))
+	file, err := os.CreateTemp("", "opendal-upload-*")
+	assert.Nil(err)
+	defer func() { _ = os.Remove(file.Name()) }()
+	defer func() { assert.Nil(file.Close()) }()
+	_, err = file.Write(content)
+	assert.Nil(err)
+
+	for _, source := range []string{"file", "plain_reader"} {
+		for _, method := range []string{"Copy", "CopyBuffer", "ReadFrom"} {
+			_, err := file.Seek(0, io.SeekStart)
+			assert.Nil(err)
+			reader := bytes.NewReader(content)
+			maxRead := 0
+			var src io.Reader = copyReaderFunc(func(p []byte) (int, error) {
+				maxRead = max(maxRead, len(p))
+				return reader.Read(p)
+			})
+			if source == "file" {
+				src = file
+			}
+			path := fixture.NewFilePath()
+			w, err := op.Writer(path)
+			assert.Nil(err)
+			var n int64
+			switch method {
+			case "Copy":
+				n, err = io.Copy(w, src)
+			case "CopyBuffer":
+				n, err = io.CopyBuffer(w, src, make([]byte, 7))
+			case "ReadFrom":
+				n, err = w.ReadFrom(src)
+			}
+			meta, closeErr := w.Close()
+			assert.Nil(err, source+"/"+method)
+			assert.Nil(closeErr)
+			assert.NotNil(meta)
+			assert.Equal(int64(len(content)), n)
+			if source == "plain_reader" {
+				assert.Equal(copyBufferSize, maxRead, "copy must dispatch to ReadFrom")
+			} else {
+				_, err = file.Seek(0, io.SeekStart)
+				assert.Nil(err, "copy must leave the source open")
+			}
+			got, err := op.Read(path)
+			assert.Nil(err)
+			assert.Equal(content, got)
+		}
+	}
+}
+
+func testWriterAfterCopy(assert *require.Assertions, op *opendal.Operator, fixture *fixture) {
+	cap := op.Info().GetCapability()
+	if !cap.WriteCanMulti() {
+		return
+	}
+	contents := [][]byte{
+		bytes.Repeat([]byte("a"), copyBufferSize+17),
+		bytes.Repeat([]byte("b"), copyBufferSize+29),
+	}
+	markers := [][]byte{[]byte("prefix"), []byte("between"), []byte("tail")}
+	want := append([]byte(nil), markers[0]...)
+	for i, content := range contents {
+		want = append(want, content...)
+		want = append(want, markers[i+1]...)
+	}
+	if limit := cap.WriteTotalMaxSize(); limit > 0 && uint(len(want)) > limit {
+		return
+	}
+	sources := make([]string, len(contents))
+	for i, content := range contents {
+		sources[i] = fixture.NewFilePath()
+		_, err := op.Write(sources[i], content)
+		assert.Nil(err)
+	}
+
+	for _, method := range []string{"ReadFrom", "WriteTo"} {
+		for _, buffered := range []bool{false, true} {
+			var options []opendal.WithWriteFn
+			if buffered {
+				options = append(options, opendal.WriteWithChunk(copyBufferSize*4))
+			}
+			path := fixture.NewFilePath()
+			w, err := op.Writer(path, options...)
+			assert.Nil(err)
+			n, err := w.Write(markers[0])
+			assert.Nil(err)
+			assert.Equal(len(markers[0]), n)
+			for i, source := range sources {
+				r, err := op.Reader(source, opendal.ReaderWithChunk(64*1024))
+				assert.Nil(err)
+				var copied int64
+				switch method {
+				case "ReadFrom":
+					copied, err = w.ReadFrom(r)
+				case "WriteTo":
+					copied, err = r.WriteTo(w)
+				}
+				assert.Nil(err, "%s, buffered=%t, copy=%d", method, buffered, i)
+				assert.Equal(int64(len(contents[i])), copied)
+				assert.Nil(r.Close())
+				n, err = w.Write(markers[i+1])
+				assert.Nil(err, "%s must leave the original writer usable, buffered=%t, copy=%d", method, buffered, i)
+				assert.Equal(len(markers[i+1]), n)
+			}
+			meta, err := w.Close()
+			assert.Nil(err, "%s, buffered=%t", method, buffered)
+			assert.NotNil(meta)
+			got, err := op.Read(path)
+			assert.Nil(err)
+			assert.Equal(want, got, "%s, buffered=%t", method, buffered)
+			meta, err = op.Stat(path)
+			assert.Nil(err)
+			assert.Equal(uint64(len(want)), meta.ContentLength())
+		}
+	}
+}
+
+func testWriterReadFromResults(assert *require.Assertions, op *opendal.Operator, fixture *fixture) {
+	sourceErr := errors.New("source failed")
+	for _, size := range []int{0, 3, copyBufferSize} {
+		if size == 0 && !op.Info().GetCapability().WriteCanEmpty() {
+			continue
+		}
+		for _, end := range []error{io.EOF, sourceErr} {
+			path := fixture.NewFilePath()
+			w, err := op.Writer(path)
+			assert.Nil(err)
+			reads := 0
+			data := bytes.Repeat([]byte("s"), size)
+			n, copyErr := w.ReadFrom(copyReaderFunc(func(p []byte) (int, error) {
+				reads++
+				if reads == 1 {
+					return 0, nil
+				}
+				return copy(p, data), end
+			}))
+			_, closeErr := w.Close()
+			wantErr := end
+			if end == io.EOF {
+				wantErr = nil
+			}
+			assert.Equal(wantErr, copyErr, "size=%d, end=%v", size, end)
+			assert.Equal(int64(size), n)
+			assert.Nil(closeErr)
+			assert.Equal(2, reads, "a zero-byte read without an error is not EOF")
+			got, err := op.Read(path)
+			assert.Nil(err)
+			assert.True(bytes.Equal(data, got), "stored data must match the source")
+		}
+	}
+}
+
+func testWriterReadFromBufferOwnership(assert *require.Assertions, op *opendal.Operator, fixture *fixture) {
+	if !op.Info().GetCapability().WriteCanMulti() {
+		return
+	}
+	path := fixture.NewFilePath()
+	w, err := op.Writer(path, opendal.WriteWithChunk(copyBufferSize*4))
+	assert.Nil(err)
+	// Use different data in each buffer to detect a writer that keeps the input slice.
+	data := make([]byte, copyBufferSize*3+19)
+	for i := range data {
+		data[i] = byte(i/copyBufferSize + 1)
+	}
+	n, copyErr := w.ReadFrom(bytes.NewReader(data))
+	tail := []byte("caller owned tail")
+	_, writeErr := w.Write(tail)
+	want := append(append([]byte(nil), data...), tail...)
+	clear(tail)
+	clear(data)
+	_, closeErr := w.Close()
+	assert.Equal(int64(len(data)), n)
+	assert.Nil(copyErr)
+	assert.Nil(writeErr, "ReadFrom must leave the writer open")
+	assert.Nil(closeErr)
+	got, err := op.Read(path)
+	assert.Nil(err)
+	assert.Equal(want, got)
+}
+
+func testWriterReadFromSourcePanic(assert *require.Assertions, op *opendal.Operator, fixture *fixture) {
+	if !op.Info().GetCapability().WriteCanEmpty() {
+		return
+	}
+	path := fixture.NewFilePath()
+	w, err := op.Writer(path)
+	assert.Nil(err)
+	value := errors.New("source panic")
+	assert.PanicsWithValue(value, func() {
+		_, _ = w.ReadFrom(copyReaderFunc(func([]byte) (int, error) { panic(value) }))
+	})
+	_, err = w.Close()
+	assert.Nil(err)
 }
 
 func testWriteOnly(assert *require.Assertions, op *opendal.Operator, fixture *fixture) {

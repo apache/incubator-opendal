@@ -75,9 +75,8 @@ err := op.Write("path/to/file", []byte("Hello, World!"))
 
 ## Stream a large upload
 
-Use a `Writer` for data produced incrementally. It implements `io.WriteCloser`;
-call `Write` repeatedly, then `Close` to commit. Each `Write` call accepts up to
-256KB.
+Use a `Writer` to write data in chunks. It implements `io.Writer`.
+Call `Write` for each chunk. Call `Close` to complete the write and get the object's metadata.
 
 ```go
 w, err := op.Writer("big.bin")
@@ -90,11 +89,30 @@ if _, err := w.Write(firstChunk); err != nil {
 if _, err := w.Write(secondChunk); err != nil {
 	log.Fatal(err)
 }
-// Close finishes the write; data may be lost if you skip it.
-if err := w.Close(); err != nil {
+if _, err := w.Close(); err != nil {
 	log.Fatal(err)
 }
 ```
+
+## Copy between streams
+
+Use `io.Copy(w, src)` to upload from an `io.Reader`, such as an open local file.
+Use `io.Copy(dst, r)` to download to an `io.Writer`.
+
+The copy uses native buffers between an OpenDAL `Reader` and `Writer`.
+Both must use the same native library. They can belong to different operators.
+The copy reads up to one buffer ahead of the current write.
+After a write error, the reader can have consumed more bytes than the copy reports.
+The byte count excludes partial writes from a failed buffer.
+
+For other readers and writers, `ReadFrom` and `WriteTo` use one 256 KiB Go buffer
+per call. Each call reuses its buffer until the copy stops.
+
+The copy leaves both streams open. Call `w.Close()` to complete the write.
+Check both the copy and close errors. Close the reader after use.
+
+`io.CopyBuffer` also calls `ReadFrom` or `WriteTo` when available.
+These methods do not use the buffer supplied to `io.CopyBuffer`.
 
 ## Upload concurrently
 

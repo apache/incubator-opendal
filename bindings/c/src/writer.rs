@@ -31,7 +31,7 @@ pub struct opendal_writer {
 }
 
 impl opendal_writer {
-    fn deref_mut(&mut self) -> &mut core::blocking::Writer {
+    pub(crate) fn deref_mut(&mut self) -> &mut core::blocking::Writer {
         // Safety: the inner should never be null once constructed
         // The use-after-free is undefined behavior
         unsafe { &mut *(self.inner as *mut core::blocking::Writer) }
@@ -74,6 +74,17 @@ impl opendal_writer {
                 ),
             },
         }
+    }
+
+    /// \brief Copy native buffers from the reader's current position into the writer.
+    ///
+    /// See opendal_reader_write_to() for the copy behavior and handle requirements.
+    #[no_mangle]
+    pub unsafe extern "C" fn opendal_writer_read_from(
+        &mut self,
+        reader: &mut opendal_reader,
+    ) -> opendal_result_stream_copy {
+        reader.opendal_reader_write_to(self)
     }
 
     /// \brief Close the writer and make sure all data have been stored.

@@ -530,6 +530,7 @@ type Reader struct {
 }
 
 var _ io.ReadSeekCloser = (*Reader)(nil)
+var _ io.WriterTo = (*Reader)(nil)
 
 // Read reads data from the underlying storage into the provided buffer.
 //
@@ -638,6 +639,31 @@ func (r *Reader) Read(buf []byte) (int, error) {
 // if the underlying storage system has restrictions on seeking.
 func (r *Reader) Seek(offset int64, whence int) (int64, error) {
 	return ffiReaderSeek.symbol(r.ctx)(r.inner, offset, whence)
+}
+
+// WriteTo copies data from r to dst until EOF or an error.
+// It returns the number of bytes copied. At EOF, it returns a nil error.
+//
+// For a *Writer, WriteTo copies native buffers.
+// The reader and writer must use the same native library.
+// It reads up to one buffer ahead of the current write.
+// A write error stops the copy without waiting for a pending read.
+// The reader can consume more bytes than the returned count.
+// The count excludes bytes from a failed buffer.
+//
+// For other writers, WriteTo uses one 256 KiB Go buffer per call.
+// WriteTo leaves both streams open.
+func (r *Reader) WriteTo(dst io.Writer) (int64, error) {
+	if w, ok := dst.(*Writer); ok {
+		return ffiReaderWriteTo.symbol(r.ctx)(r.inner, w.inner)
+	}
+
+	buf := make([]byte, copyBufferSize)
+
+	// Hide WriteTo and ReadFrom to prevent recursive calls from io.CopyBuffer.
+	reader := struct{ io.Reader }{Reader: r}
+	writer := struct{ io.Writer }{Writer: dst}
+	return io.CopyBuffer(writer, reader, buf)
 }
 
 // Close releases resources associated with the OperatorReader.
@@ -1008,6 +1034,18 @@ var ffiReaderRead = newFFI(ffiOpts{
 			return 0, parseError(ctx, result.error)
 		}
 		return result.size, nil
+	}
+})
+
+var ffiReaderWriteTo = newFFI(ffiOpts{
+	sym:    "opendal_reader_write_to",
+	rType:  &typeResultStreamCopy,
+	aTypes: []*ffi.Type{&ffi.TypePointer, &ffi.TypePointer},
+}, func(ctx context.Context, ffiCall ffiCall) func(*opendalReader, *opendalWriter) (int64, error) {
+	return func(reader *opendalReader, writer *opendalWriter) (int64, error) {
+		var result resultStreamCopy
+		ffiCall(unsafe.Pointer(&result), unsafe.Pointer(&reader), unsafe.Pointer(&writer))
+		return int64(result.size), parseError(ctx, result.error)
 	}
 })
 

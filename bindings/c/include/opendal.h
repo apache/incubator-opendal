@@ -534,15 +534,12 @@ typedef struct opendal_read_options {
 } opendal_read_options;
 
 /**
- * \brief The result type returned by opendal's reader operation.
- *
- * \note The opendal_reader actually owns a pointer to
- * a opendal::BlockingReader, which is inside the Rust core code.
+ * \brief A handle that owns an OpenDAL reader.
  */
 typedef struct opendal_reader {
   /**
-   * The pointer to the opendal::StdReader in the Rust code.
-   * Only touch this on judging whether it is NULL.
+   * The owned opendal::blocking::StdReader.
+   * Use this field only to check for NULL.
    */
   void *inner;
 } opendal_reader;
@@ -1257,6 +1254,22 @@ typedef struct opendal_result_reader_read {
    */
   struct opendal_error *error;
 } opendal_result_reader_read;
+
+/**
+ * \brief The result of copying between an OpenDAL reader and writer.
+ *
+ * Returned by opendal_reader_write_to() and opendal_writer_read_from().
+ */
+typedef struct opendal_result_stream_copy {
+  /**
+   * The number of bytes in completed buffer writes.
+   */
+  uint64_t size;
+  /**
+   * The error, or NULL on success.
+   */
+  struct opendal_error *error;
+} opendal_result_stream_copy;
 
 /**
  * \brief The result type returned by opendal_reader_seek().
@@ -3079,6 +3092,25 @@ struct opendal_result_reader_read opendal_reader_read(struct opendal_reader *sel
                                                       uintptr_t len);
 
 /**
+ * \brief Copy native buffers from the reader's current position into the writer.
+ *
+ * Both handles must use the same loaded OpenDAL library.
+ * The handles can belong to different operators.
+ *
+ * The copy reads up to one buffer ahead of the current write.
+ * After a write error, it discards prefetched data and returns without
+ * waiting for a pending read. The reader can consume more bytes than the
+ * copy reports. The byte count includes completed buffer writes, even on
+ * error. It excludes bytes from a failed buffer, including any partial
+ * write. EOF is not an error.
+ *
+ * Both handles stay open. Close the writer to complete the write.
+ * Free both handles after use.
+ */
+struct opendal_result_stream_copy opendal_reader_write_to(struct opendal_reader *self,
+                                                          struct opendal_writer *writer);
+
+/**
  * \brief Seek to an offset, in bytes, in a stream.
  */
 struct opendal_result_reader_seek opendal_reader_seek(struct opendal_reader *self,
@@ -3095,6 +3127,14 @@ void opendal_reader_free(struct opendal_reader *ptr);
  */
 struct opendal_result_writer_write opendal_writer_write(struct opendal_writer *self,
                                                         const struct opendal_bytes *bytes);
+
+/**
+ * \brief Copy native buffers from the reader's current position into the writer.
+ *
+ * See opendal_reader_write_to() for the copy behavior and handle requirements.
+ */
+struct opendal_result_stream_copy opendal_writer_read_from(struct opendal_writer *self,
+                                                           struct opendal_reader *reader);
 
 /**
  * \brief Close the writer and make sure all data have been stored.

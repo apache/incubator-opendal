@@ -58,6 +58,23 @@ impl StdReader {
         self.handle.block_on(r.read_buffer(size))
     }
 
+    /// Return this reader's runtime handle.
+    pub fn get_handle(&self) -> &tokio::runtime::Handle {
+        &self.handle
+    }
+
+    /// Borrow the internal [`FuturesAsyncReader`].
+    ///
+    /// Read and seek operations update this reader's position and buffer.
+    /// Use the runtime from [`Self::get_handle`] to run these operations.
+    ///
+    /// Return an error if the internal reader is unavailable.
+    pub fn as_async_mut(&mut self) -> Result<&mut FuturesAsyncReader> {
+        self.r
+            .as_mut()
+            .ok_or_else(|| Error::new(ErrorKind::Unexpected, "reader has been dropped"))
+    }
+
     /// Read all remaining bytes and return them as an OpenDAL [`Buffer`].
     ///
     /// This method preserves the underlying buffer storage and only allocates
@@ -117,5 +134,49 @@ impl Drop for StdReader {
         if let Some(v) = self.r.take() {
             self.handle.block_on(async move { drop(v) });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn as_async_mut_updates_original_reader() {
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let _guard = runtime.enter();
+        let op =
+            crate::blocking::Operator::new(Operator::new(services::Memory::default()).unwrap())
+                .unwrap();
+        op.write("source", "abcdef").unwrap();
+        let mut reader = op.reader("source").unwrap().into_std_read(..).unwrap();
+        let mut first = [0; 1];
+        reader.read_exact(&mut first).unwrap();
+        assert_eq!(&first, b"a");
+        {
+            let handle = reader.get_handle().clone();
+            assert_eq!(handle.id(), runtime.handle().id());
+            let inner = reader.as_async_mut().unwrap();
+            handle.block_on(async {
+                assert_eq!(inner.read_buffer(2).await.unwrap().to_bytes(), "bc");
+                assert_eq!(inner.seek(SeekFrom::Current(1)).await.unwrap(), 4);
+            });
+        }
+        assert_eq!(reader.stream_position().unwrap(), 4);
+        let mut remaining = Vec::new();
+        reader.read_to_end(&mut remaining).unwrap();
+        assert_eq!(remaining, b"ef");
+        reader.seek(SeekFrom::Start(1)).unwrap();
+        {
+            let handle = reader.get_handle().clone();
+            let inner = reader.as_async_mut().unwrap();
+            assert_eq!(
+                handle.block_on(inner.read_buffer(1)).unwrap().to_bytes(),
+                "b"
+            );
+        }
+        assert_eq!(reader.stream_position().unwrap(), 2);
+        reader.read_exact(&mut first).unwrap();
+        assert_eq!(&first, b"c");
     }
 }

@@ -181,6 +181,17 @@ pub struct opendal_result_writer_write {
     pub error: *mut opendal_error,
 }
 
+/// \brief The result of copying between an OpenDAL reader and writer.
+///
+/// Returned by opendal_reader_write_to() and opendal_writer_read_from().
+#[repr(C)]
+pub struct opendal_result_stream_copy {
+    /// The number of bytes in completed buffer writes.
+    pub size: u64,
+    /// The error, or NULL on success.
+    pub error: *mut opendal_error,
+}
+
 /// \brief The result type returned by the metadata-returning write operations.
 ///
 /// Returned by opendal_operator_write_with_metadata() and
