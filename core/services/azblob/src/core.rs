@@ -1333,7 +1333,9 @@ pub fn parse_error(ctx: ErrorContext, resp: Response<Buffer>) -> Error {
 
     let (mut kind, mut retryable) = match parts.status {
         StatusCode::NOT_FOUND => (ErrorKind::NotFound, false),
-        StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, false),
+        // Azure answers a missing, expired or invalid credential with 401
+        // (e.g. `InvalidAuthenticationInfo`) and an insufficient one with 403.
+        StatusCode::UNAUTHORIZED | StatusCode::FORBIDDEN => (ErrorKind::PermissionDenied, false),
         StatusCode::NOT_MODIFIED | StatusCode::PRECONDITION_FAILED if ctx.caller_condition => {
             (ErrorKind::ConditionNotMatch, false)
         }
@@ -1487,5 +1489,22 @@ mod error_tests {
             parse_azblob_error_code(raced, "BlobAlreadyExists", StatusCode::CONFLICT),
             Some((ErrorKind::Conflict, true))
         );
+    }
+
+    #[test]
+    fn unauthorized_and_forbidden_are_permission_denied() {
+        for (status, code) in [
+            (StatusCode::UNAUTHORIZED, "InvalidAuthenticationInfo"),
+            (StatusCode::FORBIDDEN, "AuthorizationPermissionMismatch"),
+        ] {
+            let resp = Response::builder()
+                .status(status)
+                .header("x-ms-error-code", code)
+                .body(Buffer::new())
+                .unwrap();
+            let err = parse_error(ErrorContext::new(ServiceOperation("GetBlob")), resp);
+            assert_eq!(err.kind(), ErrorKind::PermissionDenied, "status {status}");
+            assert!(!err.is_temporary(), "status {status}");
+        }
     }
 }
