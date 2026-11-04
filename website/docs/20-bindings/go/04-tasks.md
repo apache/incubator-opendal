@@ -43,7 +43,12 @@ Use `opendal.ReadWithRangeFrom(offset)` to read from `offset` to the end.
 ## Stream a large file
 
 Don't load gigabytes into memory — use a `Reader`, which implements
-`io.ReadSeekCloser`, and read in chunks:
+`io.ReadSeekCloser`, and read in chunks.
+
+`Reader.Read` returns after one read from the storage library.
+It can return fewer bytes than the buffer can hold, even before EOF.
+Process `buf[:n]` before you check the returned error.
+Use `io.ReadFull(r, buf)` if you need to fill the buffer.
 
 ```go
 r, err := op.Reader("big.bin")
