@@ -122,6 +122,7 @@ impl GhacWriter {
                     encryption_key_sha256: None,
                     encryption_algorithm: None,
                     skip_signature: false,
+                    sas_token: None,
                     signer,
                 });
                 let w = AzblobWriter::new(

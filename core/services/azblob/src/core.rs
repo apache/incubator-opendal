@@ -82,6 +82,7 @@ pub struct AzblobCore {
     pub encryption_key_sha256: Option<HeaderValue>,
     pub encryption_algorithm: Option<HeaderValue>,
     pub skip_signature: bool,
+    pub sas_token: Option<String>,
     pub signer: Signer<Credential>,
 }
 
@@ -777,18 +778,21 @@ impl AzblobCore {
         self.send(ctx, req).await
     }
 
-    pub async fn azblob_copy_blob(
+    pub fn azblob_copy_blob_request(
         &self,
-        ctx: &OperationContext,
         from: &str,
         to: &str,
-        args: OpCopy,
-    ) -> Result<Response<Buffer>> {
+        args: &OpCopy,
+    ) -> Result<Request<Buffer>> {
         let mut source = self.build_path_url(from);
         if let Some(version) = args.source_version() {
             source = QueryPairsWriter::new(&source)
                 .push("versionid", &percent_encode_path(version))
                 .finish();
+        }
+        if let Some(sas_token) = &self.sas_token {
+            let sep = if source.contains('?') { '&' } else { '?' };
+            source = format!("{source}{sep}{sas_token}");
         }
         let target = self.build_path_url(to);
 
@@ -807,12 +811,20 @@ impl AzblobCore {
             req = req.header(IF_NONE_MATCH, if_none_match);
         }
 
-        let req = req
-            .extension(Operation::Copy)
+        req.extension(Operation::Copy)
             .extension(ServiceOperation("CopyBlob"))
             .body(Buffer::new())
-            .map_err(new_request_build_error)?;
+            .map_err(new_request_build_error)
+    }
 
+    pub async fn azblob_copy_blob(
+        &self,
+        ctx: &OperationContext,
+        from: &str,
+        to: &str,
+        args: OpCopy,
+    ) -> Result<Response<Buffer>> {
+        let req = self.azblob_copy_blob_request(from, to, &args)?;
         let req = self.sign(ctx, req).await?;
         self.send(ctx, req).await
     }
@@ -955,6 +967,7 @@ mod tests {
             encryption_key_sha256: None,
             encryption_algorithm: None,
             skip_signature: true,
+            sas_token: None,
             signer: Signer::new(
                 Context::new(),
                 StaticCredentialProvider::new_shared_key("acc", "a2V5"),
@@ -1178,6 +1191,40 @@ mod tests {
                 .get("x-ms-meta-k")
                 .map(|v| v.to_str().unwrap()),
             Some("v")
+        );
+    }
+
+    #[test]
+    fn test_copy_blob_source_carries_sas_token() {
+        let core = AzblobCore {
+            sas_token: Some("sv=x&sig=y".to_string()),
+            ..test_core()
+        };
+        let copy_source = |args: OpCopy| {
+            let req = core
+                .azblob_copy_blob_request("a", "b", &args)
+                .expect("must build");
+            req.headers()[constants::X_MS_COPY_SOURCE]
+                .to_str()
+                .unwrap()
+                .to_string()
+        };
+
+        assert_eq!(
+            copy_source(OpCopy::new()),
+            "https://acc.blob.core.windows.net/c/a?sv=x&sig=y"
+        );
+        let args = OpCopy::from_options(
+            &Capability::default(),
+            options::CopyOptions {
+                source_version: Some("v1".to_string()),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            copy_source(args),
+            "https://acc.blob.core.windows.net/c/a?versionid=v1&sv=x&sig=y"
         );
     }
 

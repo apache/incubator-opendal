@@ -491,6 +491,7 @@ impl Builder for AzblobBuilder {
                 encryption_algorithm,
                 container: self.config.container.clone(),
                 skip_signature: self.config.skip_signature,
+                sas_token: self.config.sas_token.clone(),
                 signer,
             }),
         })
