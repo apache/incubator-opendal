@@ -17,7 +17,6 @@
 
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -31,6 +30,16 @@ use opendal_core::*;
 pub type FsWriters = TwoWays<FsWriter, oio::PositionWriter<FsWriter>>;
 
 pub struct FsWriter {
+    #[cfg(any(
+        target_os = "linux",
+        target_os = "android",
+        target_vendor = "apple",
+        target_os = "freebsd",
+        target_os = "netbsd",
+        target_os = "openbsd",
+        target_os = "dragonfly"
+    ))]
+    root: PathBuf,
     target_path: PathBuf,
     /// The temp_path is used to specify whether we should move to target_path after the file has been closed.
     temp_path: Option<PathBuf>,
@@ -58,6 +67,16 @@ impl FsWriter {
             let target_file = core.fs_write(&target_path, &op).await?;
 
             return Ok(Self {
+                #[cfg(any(
+                    target_os = "linux",
+                    target_os = "android",
+                    target_vendor = "apple",
+                    target_os = "freebsd",
+                    target_os = "netbsd",
+                    target_os = "openbsd",
+                    target_os = "dragonfly"
+                ))]
+                root: core.root.clone(),
                 target_path,
                 temp_path: None,
                 f: target_file,
@@ -87,12 +106,102 @@ impl FsWriter {
         };
 
         Ok(Self {
+            #[cfg(any(
+                target_os = "linux",
+                target_os = "android",
+                target_vendor = "apple",
+                target_os = "freebsd",
+                target_os = "netbsd",
+                target_os = "openbsd",
+                target_os = "dragonfly"
+            ))]
+            root: core.root.clone(),
             target_path,
             temp_path,
             f,
             #[cfg(unix)]
             user_metadata,
         })
+    }
+
+    async fn finish(&self) -> Result<std::fs::Metadata> {
+        let file = self
+            .f
+            .try_clone()
+            .await
+            .map_err(new_std_io_error)?
+            .into_std()
+            .await;
+
+        let target_path = self.target_path.clone();
+        let temp_path = self.temp_path.clone();
+
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "android",
+            target_vendor = "apple",
+            target_os = "freebsd",
+            target_os = "netbsd",
+            target_os = "openbsd",
+            target_os = "dragonfly"
+        ))]
+        let root = self.root.clone();
+        #[cfg(unix)]
+        let user_metadata = self.user_metadata.clone();
+
+        tokio::task::spawn_blocking(move || {
+            #[cfg(unix)]
+            if let Some(user_metadata) = user_metadata {
+                use xattr::FileExt;
+
+                // Set attributes on the inode being written before publishing it.
+                for (key, value) in user_metadata {
+                    file.set_xattr(format!("user.{key}"), value.as_bytes())
+                        .map_err(new_std_io_error)?;
+                }
+            }
+
+            file.sync_all()
+                .map_err(|err| new_std_io_error(err).set_permanent())?;
+
+            let metadata = file.metadata().map_err(new_std_io_error)?;
+
+            if let Some(temp_path) = &temp_path {
+                std::fs::rename(temp_path, &target_path).map_err(new_std_io_error)?;
+
+                #[cfg(any(
+                    target_os = "linux",
+                    target_os = "android",
+                    target_vendor = "apple",
+                    target_os = "freebsd",
+                    target_os = "netbsd",
+                    target_os = "openbsd",
+                    target_os = "dragonfly"
+                ))]
+                {
+                    for parent in target_path.ancestors().skip(1) {
+                        File::open(parent)
+                            .and_then(|dir| dir.sync_all())
+                            .map_err(|err| new_std_io_error(err).set_permanent())?;
+                        if parent == root {
+                            break;
+                        }
+                    }
+
+                    if let Some(parent) = temp_path.parent()
+                        && Some(parent) != target_path.parent()
+                    {
+                        File::open(parent)
+                            .and_then(|dir| dir.sync_all())
+                            .map_err(|err| new_std_io_error(err).set_permanent())?;
+                    }
+                }
+            }
+
+            Ok(metadata)
+        })
+        .await
+        .map_err(new_task_join_error)?
     }
 }
 
@@ -113,21 +222,7 @@ impl oio::Write for FsWriter {
 
     async fn close(&mut self) -> Result<Metadata> {
         self.f.flush().await.map_err(new_std_io_error)?;
-        self.f.sync_all().await.map_err(new_std_io_error)?;
-
-        if let Some(temp_path) = &self.temp_path {
-            tokio::fs::rename(temp_path, &self.target_path)
-                .await
-                .map_err(new_std_io_error)?;
-        }
-
-        // Write user metadata to xattr on Unix systems.
-        #[cfg(unix)]
-        if let Some(ref user_metadata) = self.user_metadata {
-            FsCore::set_user_metadata(&self.target_path, user_metadata)?;
-        }
-
-        let file_meta = self.f.metadata().await.map_err(new_std_io_error)?;
+        let file_meta = self.finish().await?;
         let mut meta = MetadataBuilder::file(file_meta.len());
         meta.last_modified(Timestamp::try_from(
             file_meta.modified().map_err(new_std_io_error)?,
@@ -178,30 +273,7 @@ impl oio::PositionWrite for FsWriter {
     }
 
     async fn close(&self, _size: u64) -> Result<Metadata> {
-        let mut f = self
-            .f
-            .try_clone()
-            .await
-            .map_err(new_std_io_error)?
-            .into_std()
-            .await;
-
-        f.flush().map_err(new_std_io_error)?;
-        f.sync_all().map_err(new_std_io_error)?;
-
-        if let Some(temp_path) = &self.temp_path {
-            tokio::fs::rename(temp_path, &self.target_path)
-                .await
-                .map_err(new_std_io_error)?;
-        }
-
-        // Write user metadata to xattr on Unix systems.
-        #[cfg(unix)]
-        if let Some(ref user_metadata) = self.user_metadata {
-            FsCore::set_user_metadata(&self.target_path, user_metadata)?;
-        }
-
-        let file_meta = f.metadata().map_err(new_std_io_error)?;
+        let file_meta = self.finish().await?;
         let mode = if file_meta.is_file() {
             EntryMode::FILE
         } else if file_meta.is_dir() {
