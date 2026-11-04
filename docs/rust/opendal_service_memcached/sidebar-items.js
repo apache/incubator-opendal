@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MEMCACHED_SCHEME"],"fn":["register_memcached_service"],"struct":["Memcached","MemcachedConfig"]};

@@ -1,0 +1,1827 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>
+  Class: OpenDal::IO
+  
+    &mdash; Documentation by YARD 0.9.45
+  
+</title>
+
+  <link rel="stylesheet" href="../css/style.css" type="text/css">
+
+  <link rel="stylesheet" href="../css/common.css" type="text/css">
+
+<script type="text/javascript">
+  pathId = "OpenDal::IO";
+  relpath = '../';
+</script>
+
+
+  <script type="text/javascript" charset="utf-8" src="../js/jquery.js"></script>
+
+  <script type="text/javascript" charset="utf-8" src="../js/app.js"></script>
+
+
+  </head>
+  <body>
+    <div id="main_progress" aria-hidden="true"></div>
+
+    <div class="nav_wrap">
+      <iframe id="nav" src="../class_list.html?1"></iframe>
+      <div id="resizer"></div>
+    </div>
+
+    <div id="main" tabindex="-1">
+      <div id="header">
+        <div id="menu">
+  
+    <a href="../_index.html">Index (I)</a> &raquo;
+    <span class='title'><span class='object_link'><a href="../OpenDal.html" title="OpenDal (module)">OpenDal</a></span></span>
+     &raquo; 
+    <span class="title">IO</span>
+  
+</div>
+
+        <div id="search">
+  
+    <a class="full_list_link" id="class_list_link"
+        href="../class_list.html">
+
+        <svg width="24" height="24">
+          <rect x="0" y="4" width="24" height="4" rx="1" ry="1"></rect>
+          <rect x="0" y="12" width="24" height="4" rx="1" ry="1"></rect>
+          <rect x="0" y="20" width="24" height="4" rx="1" ry="1"></rect>
+        </svg>
+    </a>
+  
+</div>
+        <div class="clear"></div>
+      </div>
+
+      <div id="content"><h1>Class: OpenDal::IO
+  
+  
+  
+</h1>
+<div class="box_info">
+  
+  <dl>
+    <dt>Inherits:</dt>
+    <dd>
+      <span class="inheritName">Object</span>
+      
+        <ul class="fullTree">
+          <li>Object</li>
+          
+            <li class="next">OpenDal::IO</li>
+          
+        </ul>
+        <a href="#" class="inheritanceTree">show all</a>
+      
+    </dd>
+  </dl>
+  
+
+  
+  
+  
+  
+  
+
+  
+
+  
+  <dl>
+    <dt>Defined in:</dt>
+    <dd>src/io.rs<span class="defines">,<br>
+  lib/opendal_ruby/io.rb</span>
+
+</dd>
+  </dl>
+  
+</div>
+
+<h2>Overview</h2><div class="docstring">
+  <div class="discussion">
+    <p><code>OpenDal::IO</code> is similar to Ruby's <code>IO</code> and <code>StringIO</code> for accessing files.</p>
+<p>You can't create an instance of <code>OpenDal::IO</code> except using <span class='object_link'><a href="Operator.html#open-instance_method" title="OpenDal::Operator#open (method)">Operator#open</a></span>.</p>
+<p>Constraints:</p>
+<ul>
+<li>Only available for reading and writing</li>
+<li>Writing doesn't support seek.</li>
+</ul>
+
+  </div>
+</div>
+<div class="tags">
+  
+
+</div>
+
+
+
+
+
+
+  
+    <h2>
+      Instance Method Summary
+      <small><a href="#" class="summary_toggle">collapse</a></small>
+    </h2>
+
+    <ul class="summary">
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#binmode-instance_method" title="#binmode (instance method)">#<strong>binmode</strong>  &#x21d2; nil </a>
+    
+
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Enables binary mode for the stream.</p></div></span>
+  
+</li>
+
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#binmode%3F-instance_method" title="#binmode? (instance method)">#<strong>binmode?</strong>  &#x21d2; Boolean </a>
+    
+
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Returns if the stream is on binary mode.</p></div></span>
+  
+</li>
+
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#close-instance_method" title="#close (instance method)">#<strong>close</strong>  &#x21d2; nil </a>
+    
+
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Close streams.</p></div></span>
+  
+</li>
+
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#close_read-instance_method" title="#close_read (instance method)">#<strong>close_read</strong>  &#x21d2; nil </a>
+    
+
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Closes the read stream.</p></div></span>
+  
+</li>
+
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#close_write-instance_method" title="#close_write (instance method)">#<strong>close_write</strong>  &#x21d2; nil </a>
+    
+
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Closes the write stream.</p></div></span>
+  
+</li>
+
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#closed%3F-instance_method" title="#closed? (instance method)">#<strong>closed?</strong>  &#x21d2; Boolean </a>
+    
+
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Returns if streams are closed.</p></div></span>
+  
+</li>
+
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#closed_read%3F-instance_method" title="#closed_read? (instance method)">#<strong>closed_read?</strong>  &#x21d2; Boolean </a>
+    
+
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Returns if the read stream is closed.</p></div></span>
+  
+</li>
+
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#closed_write%3F-instance_method" title="#closed_write? (instance method)">#<strong>closed_write?</strong>  &#x21d2; Boolean </a>
+    
+
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Returns if the write stream is closed.</p></div></span>
+  
+</li>
+
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#eof-instance_method" title="#eof (instance method)">#<strong>eof</strong>  &#x21d2; Boolean </a>
+    
+
+    
+      (also: #eof?)
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Checks if the stream is at the end of the file.</p></div></span>
+  
+</li>
+
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#length-instance_method" title="#length (instance method)">#<strong>length</strong>  &#x21d2; Integer </a>
+    
+
+    
+      (also: #size)
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Returns the total length of the stream.</p></div></span>
+  
+</li>
+
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#pos=-instance_method" title="#pos= (instance method)">#<strong>pos=</strong>(new_position)  &#x21d2; Object </a>
+    
+
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Sets the file position to <code>new_position</code>.</p></div></span>
+  
+</li>
+
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#readline-instance_method" title="#readline (instance method)">#<strong>readline</strong>  &#x21d2; String </a>
+    
+
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Reads a single line from the stream.</p></div></span>
+  
+</li>
+
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#readlines-instance_method" title="#readlines (instance method)">#<strong>readlines</strong>  &#x21d2; Array&lt;String&gt; </a>
+    
+
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Reads all lines from the stream into an array.</p></div></span>
+  
+</li>
+
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#rewind-instance_method" title="#rewind (instance method)">#<strong>rewind</strong>  &#x21d2; Object </a>
+    
+
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Rewinds the stream to the beginning.</p></div></span>
+  
+</li>
+
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#seek-instance_method" title="#seek (instance method)">#<strong>seek</strong>(offset, whence)  &#x21d2; Integer </a>
+    
+
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Moves the file position based on the offset and whence.</p></div></span>
+  
+</li>
+
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#tell-instance_method" title="#tell (instance method)">#<strong>tell</strong>  &#x21d2; Integer </a>
+    
+
+    
+      (also: #pos)
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Returns the current reader_position of the file pointer in the stream.</p></div></span>
+  
+</li>
+
+      
+        <li class="public ">
+  <span class="summary_signature">
+    
+      <a href="#write-instance_method" title="#write (instance method)">#<strong>write</strong>(buffer)  &#x21d2; Integer </a>
+    
+
+    
+  </span>
+  
+  
+  
+  
+  
+  
+  
+
+  
+    <span class="summary_desc"><div class='inline'><p>Writes data to the stream.</p></div></span>
+  
+</li>
+
+      
+    </ul>
+    
+  
+
+
+
+  <div id="instance_method_details" class="method_details_list">
+    <h2>Instance Method Details</h2>
+
+    
+      <div class="method_details first">
+  <h3 class="signature first" id="binmode-instance_method">
+  
+    #<strong>binmode</strong>  &#x21d2; <tt>nil</tt> 
+  
+
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Enables binary mode for the stream.</p>
+
+  </div>
+</div>
+<div class="tags">
+  
+<p class="tag_title">Returns:</p>
+<ul class="return">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>nil</tt>)</span>
+      
+      
+      
+    </li>
+  
+</ul>
+<p class="tag_title">Raises:</p>
+<ul class="raise">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>IOError</tt>)</span>
+      
+      
+      
+        &mdash;
+        <div class='inline'><p>when operate on a closed stream</p></div>
+      
+    </li>
+  
+</ul>
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+135
+136
+137
+138
+139
+140
+141
+142</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'src/io.rs', line 135</span>
+
+fn binary_mode(ruby: &amp;Ruby, rb_self: &amp;Self) -&gt; Result&lt;(), Error&gt; {
+    let mut handle = rb_self.0.borrow_mut();
+    if let FileState::Closed = handle.state {
+        return Err(Error::new(ruby.exception_io_error(), &quot;closed stream&quot;));
+    }
+    handle.fmode = FMode::new(handle.fmode.bits() | FMode::BINARY_MODE);
+    Ok(())
+}</pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+      <div class="method_details ">
+  <h3 class="signature " id="binmode?-instance_method">
+  
+    #<strong>binmode?</strong>  &#x21d2; <tt>Boolean</tt> 
+  
+
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Returns if the stream is on binary mode.</p>
+
+  </div>
+</div>
+<div class="tags">
+  
+<p class="tag_title">Returns:</p>
+<ul class="return">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>Boolean</tt>)</span>
+      
+      
+      
+    </li>
+  
+</ul>
+<p class="tag_title">Raises:</p>
+<ul class="raise">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>IOError</tt>)</span>
+      
+      
+      
+        &mdash;
+        <div class='inline'><p>when operate on a closed stream</p></div>
+      
+    </li>
+  
+</ul>
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+149
+150
+151
+152
+153
+154
+155</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'src/io.rs', line 149</span>
+
+fn is_binary_mode(ruby: &amp;Ruby, rb_self: &amp;Self) -&gt; Result&lt;bool, Error&gt; {
+    let handle = rb_self.0.borrow();
+    if let FileState::Closed = handle.state {
+        return Err(Error::new(ruby.exception_io_error(), &quot;closed stream&quot;));
+    }
+    Ok(handle.fmode.contains(FMode::BINARY_MODE))
+}</pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+      <div class="method_details ">
+  <h3 class="signature " id="close-instance_method">
+  
+    #<strong>close</strong>  &#x21d2; <tt>nil</tt> 
+  
+
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Close streams.</p>
+
+  </div>
+</div>
+<div class="tags">
+  
+<p class="tag_title">Returns:</p>
+<ul class="return">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>nil</tt>)</span>
+      
+      
+      
+    </li>
+  
+</ul>
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+161
+162
+163
+164
+165
+166
+167
+168</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'src/io.rs', line 161</span>
+
+fn close(ruby: &amp;Ruby, rb_self: &amp;Self) -&gt; Result&lt;(), Error&gt; {
+    let mut handle = rb_self.0.borrow_mut();
+    if let FileState::Writer(writer) = &amp;mut handle.state {
+        writer.close().map_err(|err| format_io_error(ruby, err))?;
+    }
+    handle.state = FileState::Closed;
+    Ok(())
+}</pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+      <div class="method_details ">
+  <h3 class="signature " id="close_read-instance_method">
+  
+    #<strong>close_read</strong>  &#x21d2; <tt>nil</tt> 
+  
+
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Closes the read stream.</p>
+
+  </div>
+</div>
+<div class="tags">
+  
+<p class="tag_title">Returns:</p>
+<ul class="return">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>nil</tt>)</span>
+      
+      
+      
+    </li>
+  
+</ul>
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+174
+175
+176
+177
+178
+179
+180</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'src/io.rs', line 174</span>
+
+fn close_read(&amp;self) -&gt; Result&lt;(), Error&gt; {
+    let mut handle = self.0.borrow_mut();
+    if let FileState::Reader(_) = &amp;handle.state {
+        handle.state = FileState::Closed;
+    }
+    Ok(())
+}</pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+      <div class="method_details ">
+  <h3 class="signature " id="close_write-instance_method">
+  
+    #<strong>close_write</strong>  &#x21d2; <tt>nil</tt> 
+  
+
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Closes the write stream.</p>
+
+  </div>
+</div>
+<div class="tags">
+  
+<p class="tag_title">Returns:</p>
+<ul class="return">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>nil</tt>)</span>
+      
+      
+      
+    </li>
+  
+</ul>
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+186
+187
+188
+189
+190
+191
+192
+193</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'src/io.rs', line 186</span>
+
+fn close_write(ruby: &amp;Ruby, rb_self: &amp;Self) -&gt; Result&lt;(), Error&gt; {
+    let mut handle = rb_self.0.borrow_mut();
+    if let FileState::Writer(writer) = &amp;mut handle.state {
+        writer.close().map_err(|err| format_io_error(ruby, err))?;
+        handle.state = FileState::Closed;
+    }
+    Ok(())
+}</pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+      <div class="method_details ">
+  <h3 class="signature " id="closed?-instance_method">
+  
+    #<strong>closed?</strong>  &#x21d2; <tt>Boolean</tt> 
+  
+
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Returns if streams are closed.</p>
+
+  </div>
+</div>
+<div class="tags">
+  
+<p class="tag_title">Returns:</p>
+<ul class="return">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>Boolean</tt>)</span>
+      
+      
+      
+    </li>
+  
+</ul>
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+199
+200
+201
+202</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'src/io.rs', line 199</span>
+
+fn is_closed(&amp;self) -&gt; Result&lt;bool, Error&gt; {
+    let handle = self.0.borrow();
+    Ok(matches!(handle.state, FileState::Closed))
+}</pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+      <div class="method_details ">
+  <h3 class="signature " id="closed_read?-instance_method">
+  
+    #<strong>closed_read?</strong>  &#x21d2; <tt>Boolean</tt> 
+  
+
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Returns if the read stream is closed.</p>
+
+  </div>
+</div>
+<div class="tags">
+  
+<p class="tag_title">Returns:</p>
+<ul class="return">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>Boolean</tt>)</span>
+      
+      
+      
+    </li>
+  
+</ul>
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+208
+209
+210
+211</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'src/io.rs', line 208</span>
+
+fn is_closed_read(&amp;self) -&gt; Result&lt;bool, Error&gt; {
+    let handle = self.0.borrow();
+    Ok(!matches!(handle.state, FileState::Reader(_)))
+}</pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+      <div class="method_details ">
+  <h3 class="signature " id="closed_write?-instance_method">
+  
+    #<strong>closed_write?</strong>  &#x21d2; <tt>Boolean</tt> 
+  
+
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Returns if the write stream is closed.</p>
+
+  </div>
+</div>
+<div class="tags">
+  
+<p class="tag_title">Returns:</p>
+<ul class="return">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>Boolean</tt>)</span>
+      
+      
+      
+    </li>
+  
+</ul>
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+217
+218
+219
+220
+221</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'src/io.rs', line 217</span>
+
+fn is_closed_write(&amp;self) -&gt; Result&lt;bool, Error&gt; {
+        let handle = self.0.borrow();
+        Ok(!matches!(handle.state, FileState::Writer(_)))
+    }
+}</pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+      <div class="method_details ">
+  <h3 class="signature " id="eof-instance_method">
+  
+    #<strong>eof</strong>  &#x21d2; <tt>Boolean</tt> 
+  
+
+  
+    <span class="aliases">Also known as:
+    <span class="names"><span id='eof?-instance_method'>eof?</span></span>
+    </span>
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Checks if the stream is at the end of the file.</p>
+
+  </div>
+</div>
+<div class="tags">
+  
+<p class="tag_title">Returns:</p>
+<ul class="return">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>Boolean</tt>)</span>
+      
+      
+      
+    </li>
+  
+</ul>
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+52
+53
+54
+55
+56</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'lib/opendal_ruby/io.rb', line 52</span>
+
+<span class='kw'>def</span> <span class='id identifier rubyid_eof'>eof</span>
+  <span class='id identifier rubyid_position'>position</span> <span class='op'>=</span> <span class='id identifier rubyid_tell'>tell</span>
+  <span class='id identifier rubyid_seek'>seek</span><span class='lparen'>(</span><span class='int'>0</span><span class='comma'>,</span> <span class='op'>::</span><span class='const'>IO</span><span class='op'>::</span><span class='const'>SEEK_END</span><span class='rparen'>)</span>
+  <span class='id identifier rubyid_tell'>tell</span> <span class='op'>==</span> <span class='id identifier rubyid_position'>position</span>
+<span class='kw'>end</span></pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+      <div class="method_details ">
+  <h3 class="signature " id="length-instance_method">
+  
+    #<strong>length</strong>  &#x21d2; <tt>Integer</tt> 
+  
+
+  
+    <span class="aliases">Also known as:
+    <span class="names"><span id='size-instance_method'>size</span></span>
+    </span>
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Returns the total length of the stream.</p>
+
+  </div>
+</div>
+<div class="tags">
+  
+<p class="tag_title">Returns:</p>
+<ul class="return">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>Integer</tt>)</span>
+      
+      
+      
+    </li>
+  
+</ul>
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+62
+63
+64
+65
+66</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'lib/opendal_ruby/io.rb', line 62</span>
+
+<span class='kw'>def</span> <span class='id identifier rubyid_length'>length</span>
+  <span class='id identifier rubyid_current_position'>current_position</span> <span class='op'>=</span> <span class='id identifier rubyid_tell'>tell</span>
+  <span class='id identifier rubyid_seek'>seek</span><span class='lparen'>(</span><span class='int'>0</span><span class='comma'>,</span> <span class='op'>::</span><span class='const'>IO</span><span class='op'>::</span><span class='const'>SEEK_END</span><span class='rparen'>)</span>
+  <span class='id identifier rubyid_tell'>tell</span><span class='period'>.</span><span class='id identifier rubyid_tap'>tap</span> <span class='lbrace'>{</span> <span class='kw'>self</span><span class='period'>.</span><span class='id identifier rubyid_pos'>pos</span> <span class='op'>=</span> <span class='id identifier rubyid_current_position'>current_position</span> <span class='rbrace'>}</span>
+<span class='kw'>end</span></pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+      <div class="method_details ">
+  <h3 class="signature " id="pos=-instance_method">
+  
+    #<strong>pos=</strong>(new_position)  &#x21d2; <tt>Object</tt> 
+  
+
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Sets the file position to <code>new_position</code>.</p>
+
+  </div>
+</div>
+<div class="tags">
+  <p class="tag_title">Parameters:</p>
+<ul class="param">
+  
+    <li>
+      
+        <span class='name'>new_position</span>
+      
+      
+        <span class='type'>(<tt>Integer</tt>)</span>
+      
+      
+      
+    </li>
+  
+</ul>
+
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+44
+45
+46</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'lib/opendal_ruby/io.rb', line 44</span>
+
+<span class='kw'>def</span> <span class='id identifier rubyid_pos='>pos=</span><span class='lparen'>(</span><span class='id identifier rubyid_new_position'>new_position</span><span class='rparen'>)</span>
+  <span class='id identifier rubyid_seek'>seek</span><span class='lparen'>(</span><span class='id identifier rubyid_new_position'>new_position</span><span class='comma'>,</span> <span class='op'>::</span><span class='const'>IO</span><span class='op'>::</span><span class='const'>SEEK_SET</span><span class='rparen'>)</span>
+<span class='kw'>end</span></pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+      <div class="method_details ">
+  <h3 class="signature " id="readline-instance_method">
+  
+    #<strong>readline</strong>  &#x21d2; <tt>String</tt> 
+  
+
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Reads a single line from the stream.</p>
+
+  </div>
+</div>
+<div class="tags">
+  
+<p class="tag_title">Returns:</p>
+<ul class="return">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>String</tt>)</span>
+      
+      
+      
+    </li>
+  
+</ul>
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+288
+289
+290
+291
+292
+293
+294
+295
+296
+297
+298
+299
+300
+301
+302
+303
+304
+305
+306
+307
+308
+309
+310</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'src/io.rs', line 288</span>
+
+fn readline(ruby: &amp;Ruby, rb_self: &amp;Self) -&gt; Result&lt;String, Error&gt; {
+    let mut handle = rb_self.0.borrow_mut();
+
+    if let FileState::Reader(reader) = &amp;mut handle.state {
+        let mut buffer = String::new();
+        let size = reader
+            .read_line(&amp;mut buffer)
+            .map_err(|err| format_io_error(ruby, err))?;
+        if size == 0 {
+            return Err(Error::new(
+                ruby.exception_eof_error(),
+                &quot;end of file reached&quot;,
+            ));
+        }
+
+        Ok(buffer)
+    } else {
+        Err(Error::new(
+            ruby.exception_runtime_error(),
+            &quot;I/O operation failed for reading on write-only file.&quot;,
+        ))
+    }
+}</pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+      <div class="method_details ">
+  <h3 class="signature " id="readlines-instance_method">
+  
+    #<strong>readlines</strong>  &#x21d2; <tt>Array&lt;String&gt;</tt> 
+  
+
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Reads all lines from the stream into an array.</p>
+
+  </div>
+</div>
+<div class="tags">
+  
+<p class="tag_title">Returns:</p>
+<ul class="return">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>Array&lt;String&gt;</tt>)</span>
+      
+      
+      
+    </li>
+  
+</ul>
+<p class="tag_title">Raises:</p>
+<ul class="raise">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>EOFError</tt>)</span>
+      
+      
+      
+        &mdash;
+        <div class='inline'><p>when the end of the file is reached.</p></div>
+      
+    </li>
+  
+</ul>
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+25
+26
+27
+28
+29
+30
+31
+32
+33
+34
+35</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'lib/opendal_ruby/io.rb', line 25</span>
+
+<span class='kw'>def</span> <span class='id identifier rubyid_readlines'>readlines</span>
+  <span class='id identifier rubyid_results'>results</span> <span class='op'>=</span> <span class='lbracket'>[</span><span class='rbracket'>]</span>
+
+  <span class='id identifier rubyid_loop'>loop</span> <span class='kw'>do</span>
+    <span class='id identifier rubyid_results'>results</span> <span class='op'>&lt;&lt;</span> <span class='id identifier rubyid_readline'>readline</span>
+  <span class='kw'>rescue</span> <span class='const'>EOFError</span>
+    <span class='kw'>break</span>
+  <span class='kw'>end</span>
+
+  <span class='id identifier rubyid_results'>results</span>
+<span class='kw'>end</span></pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+      <div class="method_details ">
+  <h3 class="signature " id="rewind-instance_method">
+  
+    #<strong>rewind</strong>  &#x21d2; <tt>Object</tt> 
+  
+
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Rewinds the stream to the beginning.</p>
+
+  </div>
+</div>
+<div class="tags">
+  
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+38
+39
+40</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'lib/opendal_ruby/io.rb', line 38</span>
+
+<span class='kw'>def</span> <span class='id identifier rubyid_rewind'>rewind</span>
+  <span class='id identifier rubyid_seek'>seek</span><span class='lparen'>(</span><span class='int'>0</span><span class='comma'>,</span> <span class='op'>::</span><span class='const'>IO</span><span class='op'>::</span><span class='const'>SEEK_SET</span><span class='rparen'>)</span>
+<span class='kw'>end</span></pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+      <div class="method_details ">
+  <h3 class="signature " id="seek-instance_method">
+  
+    #<strong>seek</strong>(offset, whence)  &#x21d2; <tt>Integer</tt> 
+  
+
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Moves the file position based on the offset and whence.</p>
+
+  </div>
+</div>
+<div class="tags">
+  <p class="tag_title">Parameters:</p>
+<ul class="param">
+  
+    <li>
+      
+        <span class='name'>offset</span>
+      
+      
+        <span class='type'>(<tt>Integer</tt>)</span>
+      
+      
+      
+        &mdash;
+        <div class='inline'><p>The position offset.</p></div>
+      
+    </li>
+  
+    <li>
+      
+        <span class='name'>whence</span>
+      
+      
+        <span class='type'>(<tt>Integer</tt>)</span>
+      
+      
+      
+        &mdash;
+        <div class='inline'><p>The reference point:</p>
+<ul>
+<li>0 = IO:SEEK_SET (Start)</li>
+<li>1 = IO:SEEK_CUR (Current position)</li>
+<li>2 = IO:SEEK_END (From the end)</li>
+</ul></div>
+      
+    </li>
+  
+</ul>
+
+<p class="tag_title">Returns:</p>
+<ul class="return">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>Integer</tt>)</span>
+      
+      
+      
+        &mdash;
+        <div class='inline'><p>always 0 if the seek operation is successful</p></div>
+      
+    </li>
+  
+</ul>
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+346
+347
+348
+349
+350
+351
+352
+353
+354
+355
+356
+357
+358
+359
+360
+361
+362
+363
+364
+365
+366
+367
+368
+369
+370
+371
+372
+373
+374
+375
+376
+377
+378
+379
+380
+381
+382
+383
+384
+385
+386
+387
+388
+389
+390
+391
+392
+393
+394
+395
+396
+397
+398
+399
+400</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'src/io.rs', line 346</span>
+
+fn seek(ruby: &amp;Ruby, rb_self: &amp;Self, offset: i64, whence: u8) -&gt; Result&lt;u8, Error&gt; {
+    let mut handle = rb_self.0.borrow_mut();
+
+    if let FileState::Reader(reader) = &amp;mut handle.state {
+        // Calculate the new position first
+        let new_reader_position = match whence {
+            0 =&gt; {
+                // SEEK_SET - absolute position
+                if offset &lt; 0 {
+                    return Err(Error::new(
+                        ruby.exception_runtime_error(),
+                        &quot;Cannot seek to negative reader_position.&quot;,
+                    ));
+                }
+                offset as u64
+            }
+            1 =&gt; {
+                // SEEK_CUR - relative to current position
+                let position = reader
+                    .stream_position()
+                    .map_err(|err| format_io_error(ruby, err))?;
+                if offset &lt; 0 &amp;&amp; (-offset as u64) &gt; position {
+                    return Err(Error::new(
+                        ruby.exception_runtime_error(),
+                        &quot;Cannot seek before start of stream.&quot;,
+                    ));
+                }
+                (position as i64 + offset) as u64
+            }
+            2 =&gt; {
+                // SEEK_END
+                let end_pos = reader
+                    .seek(SeekFrom::End(0))
+                    .map_err(|err| format_io_error(ruby, err))?;
+                if offset &lt; 0 &amp;&amp; (-offset as u64) &gt; end_pos {
+                    return Err(Error::new(
+                        ruby.exception_runtime_error(),
+                        &quot;Cannot seek before start of stream.&quot;,
+                    ));
+                }
+                (end_pos as i64 + offset) as u64
+            }
+            _ =&gt; return Err(Error::new(ruby.exception_arg_error(), &quot;invalid whence&quot;)),
+        };
+
+        let _ = reader.seek(std::io::SeekFrom::Start(new_reader_position));
+    } else {
+        return Err(Error::new(
+            ruby.exception_runtime_error(),
+            &quot;Cannot seek from end on write-only stream.&quot;,
+        ));
+    }
+
+    Ok(0)
+}</pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+      <div class="method_details ">
+  <h3 class="signature " id="tell-instance_method">
+  
+    #<strong>tell</strong>  &#x21d2; <tt>Integer</tt> 
+  
+
+  
+    <span class="aliases">Also known as:
+    <span class="names"><span id='pos-instance_method'>pos</span></span>
+    </span>
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Returns the current reader_position of the file pointer in the stream.</p>
+
+  </div>
+</div>
+<div class="tags">
+  
+<p class="tag_title">Returns:</p>
+<ul class="return">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>Integer</tt>)</span>
+      
+      
+      
+        &mdash;
+        <div class='inline'><p>the current reader_position in bytes</p></div>
+      
+    </li>
+  
+</ul>
+<p class="tag_title">Raises:</p>
+<ul class="raise">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>IOError</tt>)</span>
+      
+      
+      
+        &mdash;
+        <div class='inline'><p>when cannot operate on the operation mode</p></div>
+      
+    </li>
+  
+</ul>
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+407
+408
+409
+410
+411
+412
+413
+414
+415
+416
+417
+418
+419
+420
+421
+422
+423</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'src/io.rs', line 407</span>
+
+fn tell(ruby: &amp;Ruby, rb_self: &amp;Self) -&gt; Result&lt;u64, Error&gt; {
+    let mut handle = rb_self.0.borrow_mut();
+
+    match &amp;mut handle.state {
+        FileState::Reader(reader) =&gt; Ok(reader
+            .stream_position()
+            .map_err(|err| format_io_error(ruby, err))?),
+        FileState::Writer(_) =&gt; Err(Error::new(
+            ruby.exception_runtime_error(),
+            &quot;I/O operation failed for reading on write only file.&quot;,
+        )),
+        FileState::Closed =&gt; Err(Error::new(
+            ruby.exception_runtime_error(),
+            &quot;I/O operation failed for tell on closed stream.&quot;,
+        )),
+    }
+}</pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+      <div class="method_details ">
+  <h3 class="signature " id="write-instance_method">
+  
+    #<strong>write</strong>(buffer)  &#x21d2; <tt>Integer</tt> 
+  
+
+  
+
+  
+</h3><div class="docstring">
+  <div class="discussion">
+    <p>Writes data to the stream.</p>
+
+  </div>
+</div>
+<div class="tags">
+  <p class="tag_title">Parameters:</p>
+<ul class="param">
+  
+    <li>
+      
+        <span class='name'>buffer</span>
+      
+      
+        <span class='type'>(<tt>String</tt>)</span>
+      
+      
+      
+    </li>
+  
+</ul>
+
+<p class="tag_title">Returns:</p>
+<ul class="return">
+  
+    <li>
+      
+      
+        <span class='type'>(<tt>Integer</tt>)</span>
+      
+      
+      
+        &mdash;
+        <div class='inline'><p>the written byte size</p></div>
+      
+    </li>
+  
+</ul>
+
+</div><table class="source_code">
+  <tr>
+    <td>
+      <pre class="lines">
+
+
+317
+318
+319
+320
+321
+322
+323
+324
+325
+326
+327
+328
+329
+330
+331
+332
+333</pre>
+    </td>
+    <td>
+      <pre class="code"><span class="info file"># File 'src/io.rs', line 317</span>
+
+fn write(ruby: &amp;Ruby, rb_self: &amp;Self, bs: String) -&gt; Result&lt;usize, Error&gt; {
+        let mut handle = rb_self.0.borrow_mut();
+
+        if let FileState::Writer(writer) = &amp;mut handle.state {
+            let bytes_written = bs.len();
+            writer
+                .write_all(bs.as_bytes())
+                .map_err(|err| format_io_error(ruby, err))?;
+            Ok(bytes_written)
+        } else {
+            Err(Error::new(
+                ruby.exception_runtime_error(),
+                &quot;I/O operation failed for writing on read-only file.&quot;,
+            ))
+        }
+    }
+}</pre>
+    </td>
+  </tr>
+</table>
+</div>
+    
+  </div>
+
+</div>
+
+      <div id="footer">
+  Generated on Wed Nov  4 01:38:50 2026 by
+  <a href="https://yardoc.org" title="Yay! A Ruby Documentation Tool" target="_parent">yard</a>
+  0.9.45 (ruby-3.3.13).
+</div>
+
+    </div>
+  </body>
+</html>

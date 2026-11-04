@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["KOOFR_SCHEME"],"fn":["register_koofr_service"],"struct":["Koofr","KoofrConfig"]};

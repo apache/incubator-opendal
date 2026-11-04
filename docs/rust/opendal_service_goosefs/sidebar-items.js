@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["GOOSEFS_SCHEME"],"fn":["register_goosefs_service"],"struct":["GooseFs","GoosefsConfig"]};

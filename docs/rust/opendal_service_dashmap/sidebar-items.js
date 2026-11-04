@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DASHMAP_SCHEME"],"fn":["register_dashmap_service"],"struct":["Dashmap","DashmapConfig"]};

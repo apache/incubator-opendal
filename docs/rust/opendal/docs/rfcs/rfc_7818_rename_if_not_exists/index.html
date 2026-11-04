@@ -1,0 +1,369 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Rename If Not Exists"><title>opendal::docs::rfcs::rfc_7818_rename_if_not_exists - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_7818_rename_if_not_exists</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>7818_<wbr>rename_<wbr>if_<wbr>not_<wbr>exists</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a><ul><li><a href="#public-api" title="Public API">Public API</a></li><li><a href="#service-api" title="Service API">Service API</a></li><li><a href="#error-semantics" title="Error semantics">Error semantics</a></li><li><a href="#atomicity-requirement" title="Atomicity requirement">Atomicity requirement</a></li><li><a href="#service-analysis" title="Service analysis">Service analysis</a></li></ul></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a><ul><li><a href="#add-standalone-rename_if_not_exists" title="Add standalone `rename_if_not_exists`">Add standalone <code>rename_if_not_exists</code></a></li><li><a href="#change-default-rename-behavior" title="Change default rename behavior">Change default rename behavior</a></li><li><a href="#add-an-hdfs-configuration-flag" title="Add an HDFS configuration flag">Add an HDFS configuration flag</a></li><li><a href="#simulate-with-stat-then-rename" title="Simulate with stat then rename">Simulate with stat then rename</a></li><li><a href="#simulate-with-conditional-copy-then-delete" title="Simulate with conditional copy then delete">Simulate with conditional copy then delete</a></li></ul></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>7818_<wbr>rename_<wbr>if_<wbr>not_<wbr>exists</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Rename If Not Exists</p>
+<ul>
+<li>Proposal Name: <code>rename_if_not_exists</code></li>
+<li>Start Date: 2026-06-24</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/7818">apache/opendal#7818</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Extend rename with an <code>if_not_exists</code> option:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>op.rename_with(<span class="string">"staging/file"</span>, <span class="string">"published/file"</span>)
+    .if_not_exists(<span class="bool-val">true</span>)
+    .<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>The existing <code>rename</code> API keeps its overwrite semantics. When
+<code>if_not_exists</code> is enabled, rename succeeds only if the destination does not
+exist. A destination conflict returns <code>ConditionNotMatch</code> without modifying the
+source or destination.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>OpenDAL defines <code>rename</code> as an overwrite operation. Some applications also need
+an atomic publish primitive: move a completed staging file into place only when
+no other writer has already published that destination.</p>
+<p><code>stat</code> followed by <code>rename</code> are two atomic actions.
+A user might want to move a file to destination in an atomic action.</p>
+<p>An example is that when user is trying to:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>stat_result = stat(destination)
+<span class="kw">if </span>!stat_result {
+  rename(source, destination)
+}</code></pre></div>
+<p>Another writer could create destination file during the critical section.</p>
+<p>A service configuration flag is also unsuitable because it
+would make the meaning of the same <code>rename</code> call depend on backend construction
+rather than an explicit call-site condition.</p>
+<p>We will follow how OpenDAL models <code>write</code> and <code>copy</code> with options:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>op.write_with(<span class="string">"path"</span>, content)
+    .if_not_exists(<span class="bool-val">true</span>)
+    .<span class="kw">await</span><span class="question-mark">?</span>;
+
+op.copy_with(<span class="string">"source"</span>, <span class="string">"target"</span>)
+    .if_not_exists(<span class="bool-val">true</span>)
+    .<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>Rename should follow the same public API and error model.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>Current behavior: use <code>rename</code> when users want to overwrite a destination file when the destination file exist:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal::{Operator, <span class="prelude-ty">Result</span>};
+
+<span class="kw">async fn </span>replace(op: Operator) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt; {
+    op.rename(<span class="string">"staging/file"</span>, <span class="string">"published/file"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="prelude-val">Ok</span>(())
+}</code></pre></div>
+<p>New API: use <code>rename_with(...).if_not_exists(true)</code> when an existing destination must be
+preserved when the destination file exist:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal::{ErrorKind, Operator, <span class="prelude-ty">Result</span>};
+
+<span class="kw">async fn </span>publish(op: Operator) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt; {
+    <span class="kw">match </span>op
+        .rename_with(<span class="string">"staging/file"</span>, <span class="string">"published/file"</span>)
+        .if_not_exists(<span class="bool-val">true</span>)
+        .<span class="kw">await
+    </span>{
+        <span class="prelude-val">Ok</span>(()) =&gt; <span class="prelude-val">Ok</span>(()),
+        <span class="prelude-val">Err</span>(err) <span class="kw">if </span>err.kind() == ErrorKind::ConditionNotMatch =&gt; <span class="prelude-val">Err</span>(err),
+        <span class="prelude-val">Err</span>(err) =&gt; <span class="prelude-val">Err</span>(err),
+    }
+}</code></pre></div>
+<p>The conditional operation has the following outcomes:</p>
+<ul>
+<li>If the destination does not exist, the source is renamed to the destination.</li>
+<li>If the destination exists, the operation returns <code>ConditionNotMatch</code> and
+leaves both paths unchanged.</li>
+<li>If the service cannot enforce the destination condition atomically, the
+operation returns <code>Unsupported</code>.</li>
+<li>If source and destination are the same path, the operation returns
+<code>IsSameFile</code>, matching normal rename.</li>
+</ul>
+<p>Users can inspect <code>Capability::rename_with_if_not_exists</code> before enabling the
+option.</p>
+<p>Blocking users configure the same condition through <code>RenameOptions</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal::blocking;
+<span class="kw">use </span>opendal::options::RenameOptions;
+<span class="kw">use </span>opendal::Result;
+
+<span class="kw">fn </span>publish(op: blocking::Operator) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt; {
+    <span class="kw">let </span><span class="kw-2">mut </span>options = RenameOptions::default();
+    options.if_not_exists = <span class="bool-val">true</span>;
+    op.rename_options(<span class="string">"staging/file"</span>, <span class="string">"published/file"</span>, options)<span class="question-mark">?</span>;
+    <span class="prelude-val">Ok</span>(())
+}</code></pre></div><h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2><h3 id="public-api"><a class="doc-anchor" href="#public-api">§</a>Public API</h3>
+<p>Add <code>RenameOptions</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="attr">#[derive(Debug, Clone, Default, Eq, PartialEq)]
+</span><span class="kw">pub struct </span>RenameOptions {
+    <span class="kw">pub </span>if_not_exists: bool,
+}</code></pre></div>
+<p>The asynchronous operator exposes:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Operator {
+    <span class="kw">pub async fn </span>rename(<span class="kw-2">&amp;</span><span class="self">self</span>, from: <span class="kw-2">&amp;</span>str, to: <span class="kw-2">&amp;</span>str) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;;
+
+    <span class="kw">pub fn </span>rename_with(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        from: <span class="kw-2">&amp;</span>str,
+        to: <span class="kw-2">&amp;</span>str,
+    ) -&gt; FutureRename&lt;<span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;()&gt;&gt;&gt;;
+
+    <span class="kw">pub async fn </span>rename_options(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        from: <span class="kw-2">&amp;</span>str,
+        to: <span class="kw-2">&amp;</span>str,
+        options: <span class="kw">impl </span>Into&lt;RenameOptions&gt;,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;;
+}</code></pre></div>
+<p><code>rename</code> delegates to <code>rename_options</code> with default options. <code>FutureRename</code>
+provides:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl</span>&lt;F: Future&lt;Output = <span class="prelude-ty">Result</span>&lt;()&gt;&gt;&gt; FutureRename&lt;F&gt; {
+    <span class="kw">pub fn </span>if_not_exists(<span class="self">self</span>, value: bool) -&gt; <span class="self">Self</span>;
+}</code></pre></div>
+<p>The blocking operator follows existing blocking options APIs:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>blocking::Operator {
+    <span class="kw">pub fn </span>rename_options(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        from: <span class="kw-2">&amp;</span>str,
+        to: <span class="kw-2">&amp;</span>str,
+        options: RenameOptions,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;;
+}</code></pre></div>
+<p>No standalone <code>rename_if_not_exists</code> method is added. The options API matches
+write and copy and leaves room for future composable rename conditions.</p>
+<p>The rename API follows the copy API at every layer:</p>
+<div class="table"><table><thead><tr><th>Layer</th><th>Copy</th><th>Rename</th></tr></thead><tbody>
+<tr><td>Default operation</td><td><code>copy</code></td><td><code>rename</code></td></tr>
+<tr><td>Fluent options</td><td><code>copy_with(...).if_not_exists(true)</code></td><td><code>rename_with(...).if_not_exists(true)</code></td></tr>
+<tr><td>Options struct</td><td><code>CopyOptions</code></td><td><code>RenameOptions</code></td></tr>
+<tr><td>Explicit options call</td><td><code>copy_options</code></td><td><code>rename_options</code></td></tr>
+<tr><td>Raw arguments</td><td><code>OpCopy::if_not_exists()</code></td><td><code>OpRename::if_not_exists()</code></td></tr>
+<tr><td>Capability</td><td><code>copy_with_if_not_exists</code></td><td><code>rename_with_if_not_exists</code></td></tr>
+</tbody></table>
+</div>
+<p>This RFC does not add a public <code>copy_if_not_exists</code>-style standalone method,
+because copy itself exposes the condition through its options APIs.</p>
+<h3 id="service-api"><a class="doc-anchor" href="#service-api">§</a>Service API</h3>
+<p><code>RenameOptions</code> converts into the raw <code>OpRename</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>OpRename {
+    if_not_exists: bool,
+}</code></pre></div>
+<p>The <code>Service::rename</code> signature does not change. Services inspect
+<code>OpRename::if_not_exists()</code> to select their native overwrite or no-overwrite
+operation.</p>
+<p>Add a capability field:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>Capability {
+    <span class="kw">pub </span>rename: bool,
+    <span class="kw">pub </span>rename_with_if_not_exists: bool,
+}</code></pre></div>
+<p><code>rename_with_if_not_exists</code> is meaningful only when <code>rename</code> is also supported.
+The correctness check returns <code>Unsupported</code> before dispatch when the option is
+enabled but the service does not advertise the capability.</p>
+<p>This follows the existing pattern for write and copy, where
+<code>RenameOptions</code> is always constructable and the runtime check enforces
+the underlying service support. See
+<code>correctness_check.rs</code> for the equivalent copy and write checks.</p>
+<h3 id="error-semantics"><a class="doc-anchor" href="#error-semantics">§</a>Error semantics</h3>
+<p><code>if_not_exists</code> is a destination precondition, so a destination conflict maps
+to <code>ConditionNotMatch</code>. This is consistent with existing write and copy
+behavior.</p>
+<p>Backend errors caused by the native no-replace condition must be translated to
+<code>ConditionNotMatch</code>, even when the backend or operating system reports a native
+error such as <code>AlreadyExists</code>.</p>
+<p>Other errors retain their normal meanings. For example, a missing source
+returns <code>NotFound</code>, a directory passed where a file is required returns the
+corresponding directory error, and an unsupported condition returns
+<code>Unsupported</code>.</p>
+<h3 id="atomicity-requirement"><a class="doc-anchor" href="#atomicity-requirement">§</a>Atomicity requirement</h3>
+<p>A service must advertise <code>rename_with_if_not_exists</code> only when the
+destination-does-not-exist check and the rename itself are performed by a
+single native operation. Performing a separate stat check followed by an
+overwriting rename has a time-of-check to time-of-use race and does not
+satisfy the capability.</p>
+<p>When the destination already exists (the <code>if_not_exists</code> condition fails):</p>
+<ul>
+<li>The source remains at its original path.</li>
+<li>The destination remains unchanged.</li>
+</ul>
+<p>When the rename succeeds:</p>
+<ul>
+<li>The source no longer exists at its original path.</li>
+<li>The destination contains the source data.</li>
+</ul>
+<p>This RFC does not require rename to be crash-atomic beyond the guarantees of the
+underlying service. It requires the no-replace decision to be atomic with
+respect to competing destination creation.</p>
+<p>This RFC does not require <code>rename</code> (overwrite) to be atomic. A service may
+implement overwrite rename as a multi-step delete-then-rename and still
+advertise <code>rename: true</code> because overwrite has no external condition to
+enforce. The atomicity gate is specific to <code>rename_with_if_not_exists</code>,
+where the destination existence check and the move must not race with
+another writer.</p>
+<p>A backend whose overwrite rename is implemented as delete-then-rename
+may still support <code>rename_with_if_not_exists</code> when its native move
+atomically rejects an existing destination: it simply skips the
+pre-delete when <code>if_not_exists</code> is set. The HDFS analysis below
+illustrates this pattern.</p>
+<h3 id="service-analysis"><a class="doc-anchor" href="#service-analysis">§</a>Service analysis</h3><h4 id="audit-scope"><a class="doc-anchor" href="#audit-scope">§</a>Audit scope</h4>
+<p>At the time of this RFC, 19 services advertise <code>Capability::rename</code>. The table
+below audits all of them, plus S3 as the representative object store without a
+native rename operation.</p>
+<p>The “assessment” column describes whether the current backend primitive could
+support <code>rename_with_if_not_exists</code>. It does not enable the capability. A
+backend must still demonstrate that the destination check and move are one
+atomic service operation and map destination conflicts to
+<code>ConditionNotMatch</code>.</p>
+<div class="table"><table><thead><tr><th>Service</th><th>Current rename implementation</th><th>Assessment for <code>if_not_exists</code></th></tr></thead><tbody>
+<tr><td><code>aliyun_drive</code></td><td>Deletes the destination, moves by file ID, then updates the name</td><td>Not suitable as implemented; overwrite is a multi-request workflow</td></tr>
+<tr><td><code>azdls</code></td><td>Sends one Data Lake Storage rename request</td><td>Strong candidate: the API supports <code>If-None-Match: *</code> on the destination</td></tr>
+<tr><td><code>azfile</code></td><td>Sends one Azure Files rename request with <code>x-ms-file-rename-replace-if-exists: true</code></td><td>Strong candidate: set the native replace header to <code>false</code></td></tr>
+<tr><td><code>compfs</code></td><td>Calls <code>compio::fs::rename</code></td><td>Same portability constraints as <code>fs</code></td></tr>
+<tr><td><code>dbfs</code></td><td>Sends one DBFS move request</td><td>Candidate, but atomicity must be verified; DBFS rejects an existing destination</td></tr>
+<tr><td><code>dropbox</code></td><td>Sends one <code>files/move_v2</code> request</td><td>Candidate, but destination-conflict and atomicity guarantees must be verified</td></tr>
+<tr><td><code>fs</code></td><td>Calls <code>tokio::fs::rename</code></td><td>No portable no-replace primitive in the current implementation</td></tr>
+<tr><td><code>gdrive</code></td><td>Trashes the destination, then patches source metadata</td><td>Not suitable; overwrite is a multi-request workflow and Drive permits duplicate names</td></tr>
+<tr><td><code>goosefs</code></td><td>Stats and deletes the destination, then calls the native rename RPC</td><td>Candidate if the native conflict is atomic; the current overwrite path is multi-step</td></tr>
+<tr><td><code>hdfs_native</code></td><td>Mutates the destination, then calls the client rename API with an overwrite flag</td><td>Strong candidate through the native <code>overwrite = false</code> path, after removing destination pre-mutation</td></tr>
+<tr><td><code>hdfs</code></td><td>Deletes the destination for normal rename, then calls native no-overwrite rename</td><td>Supported by this RFC’s initial implementation</td></tr>
+<tr><td><code>koofr</code></td><td>Removes the destination, then sends one move request</td><td>Candidate only if the move endpoint atomically rejects conflicts; current overwrite is multi-step</td></tr>
+<tr><td><code>monoiofs</code></td><td>Calls <code>monoio::fs::rename</code></td><td>Same portability constraints as <code>fs</code></td></tr>
+<tr><td><code>onedrive</code></td><td>Sends a PATCH move request with conflict behavior set to <code>replace</code></td><td>Candidate through conflict behavior <code>fail</code>, subject to OneDrive variant compatibility</td></tr>
+<tr><td><code>pcloud</code></td><td>Sends one <code>renamefile</code> or <code>renamefolder</code> request</td><td>Requires service-specific conflict and atomicity verification</td></tr>
+<tr><td><code>sftp</code></td><td>Calls the SFTP client’s rename operation</td><td>Requires protocol/server-specific verification; overwrite behavior is not portable across servers</td></tr>
+<tr><td><code>upyun</code></td><td>Sends one move request using <code>x-upyun-move-source</code></td><td>Requires service-specific conflict and atomicity verification</td></tr>
+<tr><td><code>webdav</code></td><td>Sends one <code>MOVE</code> request with <code>Overwrite: T</code></td><td>Strong candidate: RFC 4918 defines <code>Overwrite: F</code> and a failed precondition</td></tr>
+<tr><td><code>yandex_disk</code></td><td>Sends one move request with <code>overwrite=true</code></td><td>Candidate through <code>overwrite=false</code>, subject to atomicity and error-mapping verification</td></tr>
+<tr><td><code>s3</code></td><td>Does not advertise rename; supports copy and delete separately</td><td>Not suitable: conditional copy followed by delete is not an atomic rename</td></tr>
+</tbody></table>
+</div>
+<p>This audit also reveals that several existing backends implement OpenDAL’s
+overwrite contract by deleting the destination before a native move. That
+behavior is inherently multi-step, but it does not prevent the same backend
+from supporting conditional rename when its native move atomically rejects an
+existing destination. The conditional capability must be based on the native
+operation, not on a <code>stat</code> or delete preflight.</p>
+<h4 id="hdfs"><a class="doc-anchor" href="#hdfs">§</a>HDFS</h4>
+<p>HDFS exposes rename options through <code>Options.Rename</code>. libhdfs <code>hdfsRename</code>
+invokes rename with <code>Options.Rename.NONE</code>, which rejects an existing
+destination. The HDFS service can therefore advertise
+<code>rename_with_if_not_exists</code> and use that native operation directly.</p>
+<p>Normal OpenDAL rename continues to provide overwrite behavior. Where the
+libhdfs operation does not overwrite, the HDFS service removes an existing file
+destination before invoking native rename.</p>
+<p>The HDFS implementation must translate both an existing destination discovered
+before the call and a native conflict reported by the final rename into
+<code>ConditionNotMatch</code>. The final native operation remains authoritative so a
+concurrent creator cannot be overwritten.</p>
+<h4 id="fs"><a class="doc-anchor" href="#fs">§</a>FS</h4>
+<p>The FS service currently uses <code>tokio::fs::rename</code>. Normal rename behavior and
+destination replacement differ across operating systems, and this API does not
+offer a portable no-replace option.</p>
+<p>The FS service must not advertise <code>rename_with_if_not_exists</code> with a
+<code>metadata</code>-then-<code>rename</code> implementation. A future implementation may use native
+primitives such as Linux <code>renameat2(RENAME_NOREPLACE)</code> and equivalent supported
+operations on other platforms, with a clearly defined portability policy.</p>
+<p>Any existing cross-platform differences in default FS overwrite behavior are
+outside this RFC and should be handled separately.</p>
+<p><code>compfs</code> and <code>monoiofs</code> wrap the same operating-system rename model through
+different runtimes, so they have the same portability constraint. SFTP also
+requires caution because the effective rename behavior depends on the protocol
+operation and server implementation.</p>
+<h4 id="native-conditional-move-services"><a class="doc-anchor" href="#native-conditional-move-services">§</a>Native conditional move services</h4>
+<p>Several services expose a destination policy in the same server-side move
+request:</p>
+<ul>
+<li>Azure Data Lake Storage accepts <code>If-None-Match: *</code> for rename.</li>
+<li>Azure Files exposes <code>x-ms-file-rename-replace-if-exists</code>.</li>
+<li>WebDAV defines the <code>Overwrite</code> header for <code>MOVE</code>; <code>F</code> requires the server to
+reject an existing destination.</li>
+<li>Yandex Disk exposes an <code>overwrite</code> query parameter.</li>
+<li>OneDrive exposes conflict behavior, although support differs between service
+variants and must be verified before advertising the capability.</li>
+</ul>
+<p>These services are candidates for follow-up implementations. They are not
+enabled by this RFC’s initial HDFS change. Each follow-up must include behavior
+coverage and service-specific error translation.</p>
+<h4 id="multi-step-overwrite-services"><a class="doc-anchor" href="#multi-step-overwrite-services">§</a>Multi-step overwrite services</h4>
+<p><code>aliyun_drive</code>, <code>gdrive</code>, <code>goosefs</code>, and <code>koofr</code> currently delete or trash an
+existing destination before moving the source. <code>hdfs</code>, <code>hdfs_native</code>, and some
+other filesystem-like services also perform destination preparation to retain
+OpenDAL’s default overwrite contract.</p>
+<p>A multi-step overwrite implementation does not itself satisfy conditional
+rename. A backend may advertise <code>rename_with_if_not_exists</code> only if it can skip
+the destination mutation and invoke a native move that atomically rejects a
+conflict. Where that native guarantee is absent or undocumented, the capability
+must remain disabled.</p>
+<h4 id="s3-and-object-stores-without-rename"><a class="doc-anchor" href="#s3-and-object-stores-without-rename">§</a>S3 and object stores without rename</h4>
+<p>S3 does not expose a native rename operation, and the S3 service does not
+advertise <code>rename</code>. S3 supports conditional copy, but conditional copy followed
+by delete is not an atomic rename:</p>
+<ul>
+<li>The copy may succeed while deleting the source fails.</li>
+<li>Other clients can observe both source and destination between operations.</li>
+<li>Retrying after partial completion has different semantics from native rename.</li>
+</ul>
+<p>Therefore, <code>copy_with(...).if_not_exists(true)</code> plus delete must not be used to
+advertise either rename capability. Other object stores with the same operation
+model, including services whose <code>rename</code> implementation is an unsupported
+placeholder, follow the same rule.</p>
+<h4 id="other-services"><a class="doc-anchor" href="#other-services">§</a>Other services</h4>
+<p><code>dbfs</code>, <code>dropbox</code>, <code>pcloud</code>, and <code>upyun</code> issue server-side move requests but the
+current OpenDAL implementations do not expose enough evidence to claim the
+required atomic destination condition. They remain follow-up candidates pending
+verification against service guarantees and real backend behavior.</p>
+<p>Services can adopt <code>rename_with_if_not_exists</code> independently after that
+verification. A service-specific implementation may translate native error
+codes, but it must preserve the common OpenDAL result and path-state contract.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>The public options and capability surfaces gain new fields and a new
+<code>FutureRename</code> alias.</p>
+<p>Only a subset of rename-capable services can initially support the option.
+Callers that operate across arbitrary services must inspect capability or handle
+<code>Unsupported</code>.</p>
+<p>The common error kind hides backend-specific conflict errors. This is
+intentional for portable conditional-operation handling but removes some native
+detail from the primary error kind.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="add-standalone-rename_if_not_exists"><a class="doc-anchor" href="#add-standalone-rename_if_not_exists">§</a>Add standalone <code>rename_if_not_exists</code></h3>
+<p>A separate method is easy to discover but diverges from OpenDAL’s write and
+copy APIs. Rename conditions belong in <code>RenameOptions</code>, and <code>rename_with</code>
+provides the established fluent API.</p>
+<h3 id="change-default-rename-behavior"><a class="doc-anchor" href="#change-default-rename-behavior">§</a>Change default rename behavior</h3>
+<p>Changing <code>rename</code> to reject an existing destination would break the existing
+overwrite contract and callers that rely on replacement.</p>
+<h3 id="add-an-hdfs-configuration-flag"><a class="doc-anchor" href="#add-an-hdfs-configuration-flag">§</a>Add an HDFS configuration flag</h3>
+<p>A backend configuration flag would make the meaning of a standard operation
+depend on service construction. The destination condition is a per-call
+requirement and should be explicit at the call site.</p>
+<h3 id="simulate-with-stat-then-rename"><a class="doc-anchor" href="#simulate-with-stat-then-rename">§</a>Simulate with stat then rename</h3>
+<p>This cannot enforce the condition under concurrent destination creation and
+must not be exposed as the native capability.</p>
+<h3 id="simulate-with-conditional-copy-then-delete"><a class="doc-anchor" href="#simulate-with-conditional-copy-then-delete">§</a>Simulate with conditional copy then delete</h3>
+<p>This can be useful in application-specific workflows, but it is not an atomic
+rename and has partial-success states. OpenDAL should not expose it under the
+same contract.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>OpenDAL already provides <code>if_not_exists</code> options for write and copy, with
+<code>ConditionNotMatch</code> representing a failed destination condition.</p>
+<p>HDFS provides <code>Options.Rename.NONE</code> and <code>Options.Rename.OVERWRITE</code>. Linux
+provides <code>renameat2</code> with <code>RENAME_NOREPLACE</code>. Rust’s <code>object_store</code> crate
+exposes a conditional rename operation as a distinct method; OpenDAL adopts the
+same semantic capability while retaining its established options-based API.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<ul>
+<li>Which additional filesystem platforms have a suitable native no-replace
+primitive that OpenDAL can support without weakening the contract?</li>
+<li>Should OpenDAL eventually provide a separate, explicitly non-atomic
+copy-then-delete move helper for object stores?</li>
+</ul>
+<p>Neither question blocks the HDFS implementation or the common API.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>Additional rename conditions can be added to <code>RenameOptions</code> if services expose
+portable native support.</p>
+<p>The FS service can advertise <code>rename_with_if_not_exists</code> on platforms where a
+native implementation is available and the project defines the desired
+cross-platform capability behavior.</p>
+<p>Applications that accept non-atomic move semantics can build a separate helper
+from copy and delete without changing the guarantees of rename.</p>
+</div></details></section></div></main></body></html>

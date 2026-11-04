@@ -1,0 +1,240 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Simplify Stateful Operation Factory"><title>opendal::docs::rfcs::rfc_7744_simplify_stateful_operation_factory - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_7744_simplify_stateful_operation_factory</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>7744_<wbr>simplify_<wbr>stateful_<wbr>operation_<wbr>factory</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a><ul><li><a href="#service-and-servicedyn" title="`Service` and `ServiceDyn`"><code>Service</code> and <code>ServiceDyn</code></a></li><li><a href="#contract" title="Contract">Contract</a></li><li><a href="#read-metadata" title="Read metadata">Read metadata</a></li><li><a href="#operation-classification" title="Operation classification">Operation classification</a></li></ul></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>7744_<wbr>simplify_<wbr>stateful_<wbr>operation_<wbr>factory</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Simplify Stateful Operation Factory</p>
+<ul>
+<li>Proposal Name: <code>simplify_stateful_operation_factory</code></li>
+<li>Start Date: 2026-06-16</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/7744">apache/opendal#7744</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/7745">apache/opendal#7745</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Refine the runtime service model from RFC-7740 and PR-7743 by making stateful
+operation factories synchronous and reply-free.</p>
+<p>In PR-7743, service authors implement the RPITIT <code>Service</code> trait, the operator
+runtime stores a <code>Servicer = Arc&lt;dyn ServiceDyn&gt;</code>, and every operation receives
+an explicit <code>&amp;OperationContext</code>. This RFC keeps that structure, but changes
+<code>read</code>, <code>write</code>, <code>list</code>, <code>delete</code>, and <code>copy</code> so they synchronously create
+<code>oio::*</code> bodies and return only <code>oio::Reader</code>, <code>oio::Writer</code>, <code>oio::Lister</code>,
+<code>oio::Deleter</code>, or <code>oio::Copier</code>.</p>
+<p>Factory-level <code>RpRead</code>, <code>RpWrite</code>, <code>RpList</code>, <code>RpDelete</code>, and <code>RpCopy</code> are
+removed. Remote I/O and observable operation replies belong to the returned
+body. Unary operations such as <code>stat</code>, <code>presign</code>, <code>create_dir</code>, and <code>rename</code>
+remain async because the <code>Service</code> method itself is their execution point.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>PR-7743 already gives OpenDAL one runtime service stack: <code>Service</code> for
+implementors, <code>ServiceDyn</code> for object-safe dispatch, and <code>OperationContext</code> for
+layer-composed runtime resources. However, stateful operations still have the
+old unary shape:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">fn </span>read(<span class="kw-2">&amp;</span><span class="self">self</span>, ctx: <span class="kw-2">&amp;</span>OperationContext, path: <span class="kw-2">&amp;</span>str, args: OpRead)
+    -&gt; <span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;(RpRead, <span class="self">Self</span>::Reader)&gt;&gt; + MaybeSend;</code></pre></div>
+<p>That shape preserves the wrong boundary. A stateful factory creates a
+long-lived body; it does not execute the operation. Most factory replies are
+empty (<code>RpWrite</code>, <code>RpList</code>, <code>RpDelete</code>, <code>RpCopy</code>), so services construct values
+with no semantics and layers forward them mechanically.</p>
+<p><code>RpRead</code> is the only non-empty stateful reply, but its metadata is observed
+while the read body opens or reads a concrete range. RFC-5871 requires services
+not to issue an extra request only to fill read metadata, and RFC-7660 makes
+<code>Service::read</code> create a reusable raw reader while range execution happens in
+<code>oio::Read::open</code> or <code>oio::Read::read</code>. Returning <code>RpRead</code> from the factory
+therefore reports data from the wrong phase.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>Operator users do not get a new public API. The change is at the raw service
+boundary used by PR-7743.</p>
+<p>Service authors implement stateful methods as local body factories:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Service <span class="kw">for </span>S3Service {
+    <span class="kw">fn </span>read(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        ctx: <span class="kw-2">&amp;</span>OperationContext,
+        path: <span class="kw-2">&amp;</span>str,
+        args: OpRead,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>::Reader&gt; {
+        <span class="prelude-val">Ok</span>(S3Reader::new(
+            <span class="self">self</span>.core.clone(),
+            ctx.http_client().clone(),
+            path,
+            args,
+        ))
+    }
+
+    <span class="kw">fn </span>write(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        ctx: <span class="kw-2">&amp;</span>OperationContext,
+        path: <span class="kw-2">&amp;</span>str,
+        args: OpWrite,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>::Writer&gt; {
+        <span class="prelude-val">Ok</span>(S3Writer::new(
+            <span class="self">self</span>.core.clone(),
+            ctx.executor().clone(),
+            path,
+            args,
+        ))
+    }
+}</code></pre></div>
+<p>These methods may validate local arguments, normalize paths, select an
+implementation, clone service state, and capture resources from
+<code>OperationContext</code>. They must not send network requests, open remote handles, or
+spawn background work that represents operation progress.</p>
+<p>The returned body owns execution:</p>
+<ul>
+<li><code>oio::Read</code> opens range streams and performs range reads.</li>
+<li><code>oio::Write</code> writes data and commits on close.</li>
+<li><code>oio::List</code> fetches pages.</li>
+<li><code>oio::Delete</code> queues and executes batch deletion.</li>
+<li><code>oio::Copy</code> performs one-shot, block, or multipart copy.</li>
+</ul>
+<p>One-request operations still use stateful bodies. Server-side copy returns an
+<code>oio::OneShotCopier</code>; the copy request is sent when the copier is driven, not
+when <code>Service::copy</code> returns.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2><h3 id="service-and-servicedyn"><a class="doc-anchor" href="#service-and-servicedyn">§</a><code>Service</code> and <code>ServiceDyn</code></h3>
+<p><code>Service</code> keeps PR-7743’s implementor-friendly shape: associated body types,
+<code>impl Future + MaybeSend</code> for unary operations, and <code>OperationContext</code> as the
+first operation parameter. Only stateful factories become synchronous:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Service: Send + Sync + Debug + Unpin + <span class="lifetime">'static </span>{
+    <span class="kw">type </span>Reader: oio::Read;
+    <span class="kw">type </span>Writer: oio::Write;
+    <span class="kw">type </span>Lister: oio::List;
+    <span class="kw">type </span>Deleter: oio::Delete;
+    <span class="kw">type </span>Copier: oio::Copy;
+
+    <span class="kw">fn </span>info(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; ServiceInfo;
+    <span class="kw">fn </span>capability(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Capability;
+
+    <span class="kw">fn </span>read(<span class="kw-2">&amp;</span><span class="self">self</span>, ctx: <span class="kw-2">&amp;</span>OperationContext, path: <span class="kw-2">&amp;</span>str, args: OpRead)
+        -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>::Reader&gt;;
+
+    <span class="kw">fn </span>write(<span class="kw-2">&amp;</span><span class="self">self</span>, ctx: <span class="kw-2">&amp;</span>OperationContext, path: <span class="kw-2">&amp;</span>str, args: OpWrite)
+        -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>::Writer&gt;;
+
+    <span class="kw">fn </span>list(<span class="kw-2">&amp;</span><span class="self">self</span>, ctx: <span class="kw-2">&amp;</span>OperationContext, path: <span class="kw-2">&amp;</span>str, args: OpList)
+        -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>::Lister&gt;;
+
+    <span class="kw">fn </span>delete(<span class="kw-2">&amp;</span><span class="self">self</span>, ctx: <span class="kw-2">&amp;</span>OperationContext)
+        -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>::Deleter&gt;;
+
+    <span class="kw">fn </span>copy(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        ctx: <span class="kw-2">&amp;</span>OperationContext,
+        from: <span class="kw-2">&amp;</span>str,
+        to: <span class="kw-2">&amp;</span>str,
+        args: OpCopy,
+        opts: OpCopier,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>::Copier&gt;;
+}</code></pre></div>
+<p><code>ServiceDyn</code> mirrors the same boundary. Stateful factories no longer allocate a
+boxed future at the service-erasure boundary; the blanket adapter only boxes the
+returned body:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>ServiceDyn: Send + Sync + Debug + Unpin + <span class="lifetime">'static </span>{
+    <span class="kw">fn </span>read_dyn(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        ctx: <span class="kw-2">&amp;</span>OperationContext,
+        path: <span class="kw-2">&amp;</span>str,
+        args: OpRead,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;oio::Reader&gt;;
+
+    <span class="kw">fn </span>write_dyn(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        ctx: <span class="kw-2">&amp;</span>OperationContext,
+        path: <span class="kw-2">&amp;</span>str,
+        args: OpWrite,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;oio::Writer&gt;;
+}
+
+<span class="kw">impl</span>&lt;S: Service + <span class="question-mark">?</span>Sized&gt; ServiceDyn <span class="kw">for </span>S {
+    <span class="kw">fn </span>read_dyn(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        ctx: <span class="kw-2">&amp;</span>OperationContext,
+        path: <span class="kw-2">&amp;</span>str,
+        args: OpRead,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;oio::Reader&gt; {
+        <span class="prelude-val">Ok</span>(Box::new(<span class="self">self</span>.read(ctx, path, args)<span class="question-mark">?</span>) <span class="kw">as </span>oio::Reader)
+    }
+}</code></pre></div>
+<p>Unary operations keep PR-7743’s async <code>Service</code> and boxed-future <code>ServiceDyn</code>
+shape. Empty unary replies such as <code>RpCreateDir</code> and <code>RpRename</code> are not changed
+by this RFC; they can become <code>Result&lt;()&gt;</code> in a separate cleanup.</p>
+<h3 id="contract"><a class="doc-anchor" href="#contract">§</a>Contract</h3>
+<p>Successful stateful factory return means local construction succeeded. It does
+not mean the remote object exists, the destination is writable, listing has
+started, or copy/delete has completed.</p>
+<p>Factories may fail for local reasons: invalid arguments, unsupported local mode
+selection, path normalization failure, or missing local service configuration.
+Remote errors are reported by the body method that observes them:</p>
+<ul>
+<li>read errors from <code>oio::Read::open</code> or <code>oio::Read::read</code>;</li>
+<li>write errors from <code>oio::Write::write</code>, <code>oio::Write::close</code>, or abort paths;</li>
+<li>list errors from <code>oio::List::next</code>;</li>
+<li>delete errors from <code>oio::Delete::delete</code> or <code>oio::Delete::close</code>;</li>
+<li>copy errors from <code>oio::Copy::next</code>, <code>oio::Copy::close</code>, or
+<code>oio::Copy::abort</code>.</li>
+</ul>
+<p>Layer wrappers keep PR-7743’s <code>Layer::apply_service(inner: Servicer) -&gt; Servicer</code> model. A wrapper’s stateful factory may build a wrapped body, but
+retry, timeout, tracing, metrics, and error-context behavior must happen around
+body execution.</p>
+<h3 id="read-metadata"><a class="doc-anchor" href="#read-metadata">§</a>Read metadata</h3>
+<p><code>RpRead</code> remains a read body response and is no longer returned by
+<code>Service::read</code>:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>oio::Read <span class="kw">for </span>S3Reader {
+    <span class="kw">async fn </span>open(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        range: BytesRange,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;(RpRead, Box&lt;<span class="kw">dyn </span>oio::ReadStreamDyn&gt;)&gt; {
+        <span class="kw">let </span>req = <span class="self">self</span>.build_get_object_request(range)<span class="question-mark">?</span>;
+        <span class="kw">let </span>resp = <span class="self">self</span>.http_client.fetch(req).<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="kw">let </span>meta = parse_into_metadata(<span class="self">self</span>.path.as_str(), resp.headers())<span class="question-mark">?</span>;
+        <span class="prelude-val">Ok</span>((RpRead::new(meta), resp.into_body()))
+    }
+}</code></pre></div>
+<p>This preserves the RFC-5871 contract: metadata is optional, describes complete
+object metadata instead of the returned range, and is filled only when the
+native read response already returns enough data. Services without native
+read-open metadata return <code>RpRead::default()</code> from <code>oio::Read::open</code> or
+<code>oio::Read::read</code>.</p>
+<h3 id="operation-classification"><a class="doc-anchor" href="#operation-classification">§</a>Operation classification</h3>
+<p>New raw operations should be stateful factories only when the caller or a layer
+must drive a body with streaming, pagination, chunking, cancellation,
+backpressure, retry recovery, progress reporting, or close-time commit
+semantics. Otherwise they should be unary async <code>Service</code> methods.</p>
+<p>After this RFC, raw operations have two execution shapes:</p>
+<ul>
+<li>unary async methods return the final reply directly;</li>
+<li>synchronous stateful factories return a body whose methods perform I/O.</li>
+</ul>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>This is a raw API breaking change on top of PR-7743. Every service and layer
+implementation that still returns <code>(Rp*, oio::Body)</code> must be rewritten. The
+rewrite is mechanical for most backends, but it is broad.</p>
+<p>Some remote errors move later. Services that currently perform I/O in
+<code>Service::read</code>, <code>Service::list</code>, or <code>Service::copy</code> must move that work into
+the returned body. Callers that treated factory success as remote success must
+observe the body result instead.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>The root cause is that stateful operations are not unary operations. Their
+stable product is a body, not a factory reply. Empty replies make the API look
+uniform while forcing every service and layer to carry values with no meaning.</p>
+<p>Keeping async factories and deleting only empty replies would remove some
+boilerplate, but it would keep the wrong execution boundary. Implementations
+could still perform remote I/O before returning the body.</p>
+<p>Keeping <code>RpRead</code> on <code>Service::read</code> is rejected for the same reason. Read
+metadata is observed at range execution time, not reusable-reader construction
+time. Returning it from the factory conflicts with RFC-7660’s reader model.</p>
+<p>Adding a separate async <code>prepare</code> method to every body is unnecessary. Existing
+body methods already define the execution points. Lazy initialization can happen
+on first <code>open</code>, <code>read</code>, <code>next</code>, <code>write</code>, <code>delete</code>, <code>close</code>, or <code>abort</code>.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>OpenDAL already uses this model inside <code>oio</code>: read owns range execution, write
+owns streaming and close-time commit, list owns pagination, delete owns batch
+execution, and copy owns one-shot, block, or multipart progress.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<ul>
+<li>Whether deleting empty unary replies such as <code>RpCreateDir</code> and <code>RpRename</code>
+should be folded into the implementation or left to a follow-up.</li>
+</ul>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>Synchronous factories remove boxed futures from stateful body construction at
+the <code>ServiceDyn</code> boundary and make <code>Layer::apply_service</code> wrappers narrower.
+They also make future raw operation RFCs choose explicitly between unary async
+methods and stateful bodies.</p>
+</div></details></section></div></main></body></html>

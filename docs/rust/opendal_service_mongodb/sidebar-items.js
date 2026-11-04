@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MONGODB_SCHEME"],"fn":["register_mongodb_service"],"struct":["Mongodb","MongodbConfig"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MINI_MOKA_SCHEME"],"fn":["register_mini_moka_service"],"struct":["MiniMoka","MiniMokaConfig"]};

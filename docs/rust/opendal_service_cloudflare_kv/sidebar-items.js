@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CLOUDFLARE_KV_SCHEME"],"fn":["register_cloudflare_kv_service"],"struct":["CloudflareKv","CloudflareKvConfig"]};

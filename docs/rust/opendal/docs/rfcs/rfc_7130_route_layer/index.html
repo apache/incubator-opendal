@@ -1,0 +1,167 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Route Layer"><title>opendal::docs::rfcs::rfc_7130_route_layer - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_7130_route_layer</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>7130_<wbr>route_<wbr>layer</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a><ul><li><a href="#enable-feature" title="Enable feature">Enable feature</a></li><li><a href="#build-per-route-operators" title="Build per-route operators">Build per-route operators</a></li><li><a href="#combine-them-with-routelayer" title="Combine them with `RouteLayer`">Combine them with <code>RouteLayer</code></a></li><li><a href="#pattern-rules" title="Pattern rules">Pattern rules</a></li><li><a href="#routing-for-copy-and-rename" title="Routing for `copy` and `rename`">Routing for <code>copy</code> and <code>rename</code></a></li></ul></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a><ul><li><a href="#public-api" title="Public API">Public API</a></li><li><a href="#internal-structure" title="Internal structure">Internal structure</a></li><li><a href="#dispatch-algorithm" title="Dispatch algorithm">Dispatch algorithm</a></li><li><a href="#info-behavior" title="`info()` behavior"><code>info()</code> behavior</a></li></ul></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a><ul><li><a href="#why-glob-patterns-via-globset" title="Why glob patterns via `globset`?">Why glob patterns via <code>globset</code>?</a></li><li><a href="#why-first-match-wins-without-priority" title="Why first-match-wins without priority?">Why first-match-wins without priority?</a></li><li><a href="#alternatives-considered" title="Alternatives considered">Alternatives considered</a></li></ul></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>7130_<wbr>route_<wbr>layer</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Route Layer</p>
+<ul>
+<li>Proposal Name: <code>route_layer</code></li>
+<li>Start Date: 2026-01-04</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/7130">apache/opendal#7130</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/7131">apache/opendal#7131</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Introduce <code>RouteLayer</code>, a layer that dispatches each OpenDAL operation to one of multiple pre-built <code>Operator</code> stacks by matching the operation path against user-provided glob patterns.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>In practice, OpenDAL users often want different policies for different parts of a namespace:</p>
+<ul>
+<li>Apply caching only for frequently-read objects (e.g., <code>**/*.parquet</code>).</li>
+<li>Use a tighter timeout for latency-sensitive paths (e.g., <code>hot/**</code>).</li>
+<li>Attach different observability or throttling configurations per dataset.</li>
+</ul>
+<p>Today, users can achieve this by building multiple <code>Operator</code>s and routing requests in application code. However, this approach duplicates routing logic across projects and makes it harder to share a consistent, well-tested routing behavior across bindings and integrations.</p>
+<p><code>RouteLayer</code> centralizes this routing as a reusable primitive while preserving OpenDAL’s existing composition model: users still build independent <code>Operator</code> stacks for each policy, and <code>RouteLayer</code> only decides which stack should handle a request.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2><h3 id="enable-feature"><a class="doc-anchor" href="#enable-feature">§</a>Enable feature</h3><div class="example-wrap"><pre class="language-toml"><code>opendal = { version = "*", features = ["layers-route"] }</code></pre></div><h3 id="build-per-route-operators"><a class="doc-anchor" href="#build-per-route-operators">§</a>Build per-route operators</h3>
+<p>Build each routed <code>Operator</code> as usual, including its own service configuration and layer stack.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>std::time::Duration;
+
+<span class="kw">use </span>opendal::layers::RouteLayer;
+<span class="kw">use </span>opendal::services;
+<span class="kw">use </span>opendal::Operator;
+<span class="kw">use </span>opendal::Result;
+<span class="kw">use </span>opendal_layer_timeout::TimeoutLayer;
+
+<span class="kw">fn </span>build_default() -&gt; <span class="prelude-ty">Result</span>&lt;Operator&gt; {
+    Operator::new(services::Memory::default())<span class="question-mark">?</span>.finish()
+}
+
+<span class="kw">fn </span>build_parquet_fast_path() -&gt; <span class="prelude-ty">Result</span>&lt;Operator&gt; {
+    Operator::new(services::Memory::default())<span class="question-mark">?
+        </span>.layer(TimeoutLayer::default().with_timeout(Duration::from_secs(<span class="number">3</span>)))
+        .finish()
+}</code></pre></div><h3 id="combine-them-with-routelayer"><a class="doc-anchor" href="#combine-them-with-routelayer">§</a>Combine them with <code>RouteLayer</code></h3>
+<p><code>RouteLayer</code> is applied to the default operator. When none of the patterns match, the request is handled by the default operator.</p>
+<p>Patterns are evaluated in insertion order. The first matching pattern wins.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal::Operator;
+<span class="kw">use </span>opendal::Result;
+
+<span class="kw">fn </span>build_routed_operator() -&gt; <span class="prelude-ty">Result</span>&lt;Operator&gt; {
+    <span class="kw">let </span>default_op = build_default()<span class="question-mark">?</span>;
+    <span class="kw">let </span>parquet_op = build_parquet_fast_path()<span class="question-mark">?</span>;
+
+    <span class="kw">let </span>routed = default_op.layer(
+        RouteLayer::builder()
+            .route(<span class="string">"**/*.parquet"</span>, parquet_op)
+            .build()<span class="question-mark">?</span>,
+    );
+
+    <span class="prelude-val">Ok</span>(routed)
+}</code></pre></div><h3 id="pattern-rules"><a class="doc-anchor" href="#pattern-rules">§</a>Pattern rules</h3>
+<p><code>RouteLayer</code> uses glob patterns (via <code>globset</code>) and does not perform any implicit expansion.</p>
+<ul>
+<li><code>*.parquet</code> matches <code>file.parquet</code> in the root, but does not match <code>dir/file.parquet</code>.</li>
+<li><code>**/*.parquet</code> matches <code>dir/file.parquet</code> and any other depth.</li>
+</ul>
+<p>Paths are matched against OpenDAL normalized paths as seen by the accessor:</p>
+<ul>
+<li>The root is represented as <code>/</code>.</li>
+<li>Non-root paths do not start with <code>/</code> (e.g., <code>dir/file</code>).</li>
+<li>Directory paths end with <code>/</code> (e.g., <code>dir/</code>).</li>
+</ul>
+<h3 id="routing-for-copy-and-rename"><a class="doc-anchor" href="#routing-for-copy-and-rename">§</a>Routing for <code>copy</code> and <code>rename</code></h3>
+<p>For <code>copy(from, to, ..)</code> and <code>rename(from, to, ..)</code>, routing is decided only by <code>from</code>. The <code>to</code> path is forwarded unchanged to the selected operator.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2><h3 id="public-api"><a class="doc-anchor" href="#public-api">§</a>Public API</h3>
+<p><code>RouteLayer</code> is constructed via a fallible builder, because glob compilation can fail and <code>Layer::layer()</code> cannot return <code>Result</code>.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>RouteLayer { <span class="comment">/* compiled router */ </span>}
+
+<span class="kw">impl </span>RouteLayer {
+    <span class="kw">pub fn </span>builder() -&gt; RouteLayerBuilder;
+}
+
+<span class="kw">pub struct </span>RouteLayerBuilder { <span class="comment">/* patterns + operators */ </span>}
+
+<span class="kw">impl </span>RouteLayerBuilder {
+    <span class="kw">pub fn </span>route(<span class="self">self</span>, pattern: <span class="kw">impl </span>AsRef&lt;str&gt;, op: Operator) -&gt; <span class="self">Self</span>;
+    <span class="kw">pub fn </span>build(<span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;RouteLayer&gt;;
+}</code></pre></div>
+<p><code>RouteLayer</code> is intended to be applied to a fully-built <code>Operator</code> (dynamic dispatch). Routed operators are also fully-built and independent.</p>
+<h3 id="internal-structure"><a class="doc-anchor" href="#internal-structure">§</a>Internal structure</h3>
+<p><code>RouteLayer</code> holds:</p>
+<ul>
+<li><code>glob: globset::GlobSet</code>, compiled from patterns in insertion order.</li>
+<li><code>targets: Vec&lt;Accessor&gt;</code>, where <code>targets[i]</code> is the accessor corresponding to the <code>i</code>-th inserted pattern.</li>
+</ul>
+<p>At <code>build()</code> time:</p>
+<ol>
+<li>Compile each pattern into a <code>globset::Glob</code>.</li>
+<li>Insert each glob into a <code>globset::GlobSetBuilder</code> in insertion order.</li>
+<li>Convert each routed <code>Operator</code> into its <code>Accessor</code> and store it in <code>targets</code> in the same order.</li>
+</ol>
+<p>Any glob compilation error results in <code>build()</code> returning an <code>ErrorKind::InvalidInput</code> error with the pattern and the underlying source error attached.</p>
+<h3 id="dispatch-algorithm"><a class="doc-anchor" href="#dispatch-algorithm">§</a>Dispatch algorithm</h3>
+<p>For an operation that includes a path <code>p</code>:</p>
+<ol>
+<li>Compute <code>matches = glob.matches(p)</code>, yielding a set of matching pattern indices.</li>
+<li>Select <code>idx = min(matches)</code> as the chosen route (first match in insertion order).</li>
+<li>If no match exists, dispatch to the inner accessor (the default operator that <code>RouteLayer</code> is applied to).</li>
+</ol>
+<p>This approach does not rely on any ordering guarantees from <code>globset</code> for returned matches.</p>
+<h4 id="operations-with-paths"><a class="doc-anchor" href="#operations-with-paths">§</a>Operations with paths</h4>
+<p>The following operations are dispatched based on their <code>path</code> argument:</p>
+<ul>
+<li><code>create_dir(path, ..)</code></li>
+<li><code>read(path, ..)</code></li>
+<li><code>write(path, ..)</code></li>
+<li><code>stat(path, ..)</code></li>
+<li><code>list(path, ..)</code></li>
+<li><code>presign(path, ..)</code></li>
+</ul>
+<h4 id="operations-with-two-paths"><a class="doc-anchor" href="#operations-with-two-paths">§</a>Operations with two paths</h4>
+<p>The following operations are dispatched based on <code>from</code> only:</p>
+<ul>
+<li><code>copy(from, to, ..)</code></li>
+<li><code>rename(from, to, ..)</code></li>
+</ul>
+<h4 id="delete-semantics"><a class="doc-anchor" href="#delete-semantics">§</a>Delete semantics</h4>
+<p><code>Access::delete()</code> returns a deleter that can queue multiple deletions and execute them in <code>close()</code>. To preserve this batching behavior while supporting per-path routing, <code>RouteLayer</code> returns a <code>RouteDeleter</code>:</p>
+<ul>
+<li><code>RouteDeleter::delete(path, ..)</code> routes by <code>path</code> and lazily creates (and caches) the underlying deleter for the selected target accessor.</li>
+<li><code>RouteDeleter::close()</code> closes all created deleters and returns an error if any close fails.</li>
+</ul>
+<p>This design batches deletions per routed operator and avoids creating deleters for unused routes.</p>
+<h3 id="info-behavior"><a class="doc-anchor" href="#info-behavior">§</a><code>info()</code> behavior</h3>
+<p><code>RouteAccessor::info()</code> forwards to the default (inner) accessor’s <code>AccessorInfo</code>. This keeps <code>Operator::info()</code> stable and avoids synthesizing a potentially misleading merged capability across routed operators.</p>
+<p>Users that need per-route <code>AccessorInfo</code> can query the routed <code>Operator</code>s directly before passing them into the builder.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<ul>
+<li>Order-dependent routing can be error-prone when multiple patterns overlap; users must manage ordering carefully.</li>
+<li><code>Operator::info()</code> reflects the default operator, not a merged view across routes.</li>
+<li><code>copy</code>/<code>rename</code> routing based only on <code>from</code> can lead to surprising behavior if the destination logically belongs to a different route; this is accepted for simplicity.</li>
+<li>Adds a new dependency (<code>globset</code>) and introduces a small per-operation routing cost.</li>
+</ul>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="why-glob-patterns-via-globset"><a class="doc-anchor" href="#why-glob-patterns-via-globset">§</a>Why glob patterns via <code>globset</code>?</h3>
+<ul>
+<li>Glob patterns are a well-known way to express path-based rules and cover common needs like <code>**/*.parquet</code>.</li>
+<li><code>globset</code> compiles patterns into an efficient matcher and provides a <code>matches</code> API suitable for first-match selection without scanning all patterns with separate matchers.</li>
+</ul>
+<h3 id="why-first-match-wins-without-priority"><a class="doc-anchor" href="#why-first-match-wins-without-priority">§</a>Why first-match-wins without priority?</h3>
+<p>First-match-wins keeps the model explicit and deterministic without additional concepts. Rule ordering is visible in code review and can be reasoned about locally.</p>
+<h3 id="alternatives-considered"><a class="doc-anchor" href="#alternatives-considered">§</a>Alternatives considered</h3>
+<ul>
+<li><strong>User-side routing</strong>: build multiple operators and dispatch in application code. Works today but duplicates logic and increases maintenance burden across projects.</li>
+<li><strong>Prefix-only routing</strong>: efficient but does not satisfy suffix-based rules like <code>**/*.parquet</code>.</li>
+<li><strong>Implicit expansion (e.g., treating <code>*.parquet</code> as <code>**/*.parquet</code>)</strong>: simplifies some patterns but introduces surprising behavior; this proposal requires explicit <code>**</code>.</li>
+<li><strong>Routing on operation type or options</strong>: valuable, but out of scope for this RFC and reserved for future work.</li>
+</ul>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<ul>
+<li><code>gitignore</code>-style globs for hierarchical path matching.</li>
+<li>HTTP routers and proxy configuration models (e.g., ordered rules with first-match semantics).</li>
+<li>Data lake engines commonly route by file suffix (e.g., <code>.parquet</code>) to specialized code paths.</li>
+</ul>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<ul>
+<li>Extend routing conditions beyond path, such as operation type (read/write/list) or per-operation options.</li>
+<li>Support loading rules from configuration files or environment variables for CLI tools and integrations.</li>
+</ul>
+</div></details></section></div></main></body></html>

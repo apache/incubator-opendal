@@ -1,0 +1,130 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="The portable contract for conditional operations."><title>opendal_core::docs::specs::conditional_operations - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module conditional_operations</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal_core/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal_core/index.html">opendal_<wbr>core</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module conditional_<wbr>operations</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#conditional-operations" title="Conditional operations">Conditional operations</a><ul><li><a href="#which-file-a-condition-checks" title="Which file a condition checks">Which file a condition checks</a></li><li><a href="#capability-contract" title="Capability contract">Capability contract</a></li><li><a href="#behavior-when-the-file-exists" title="Behavior when the file exists">Behavior when the file exists</a></li><li><a href="#behavior-when-the-file-does-not-exist" title="Behavior when the file does not exist">Behavior when the file does not exist</a></li><li><a href="#if_not_changed-lowering" title="`if_not_changed` lowering"><code>if_not_changed</code> lowering</a></li><li><a href="#error-contract" title="Error contract">Error contract</a></li><li><a href="#atomicity-and-visibility" title="Atomicity and visibility">Atomicity and visibility</a></li><li><a href="#metadata-contract" title="Metadata contract">Metadata contract</a></li><li><a href="#conformance" title="Conformance">Conformance</a></li><li><a href="#historical-decisions" title="Historical decisions">Historical decisions</a></li></ul></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal_<wbr>core::<wbr>docs::<wbr>specs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal_core</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">specs</a></div><h1>Module <span>conditional_<wbr>operations</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../../src/opendal_core/docs/specs/mod.rs.html#22">Source</a> </span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>The portable contract for conditional operations.</p>
+<h2 id="conditional-operations"><a class="doc-anchor" href="#conditional-operations">§</a>Conditional operations</h2>
+<p>Conditional operations let callers observe or mutate storage only when a file
+is in an expected state. A file is the object currently stored at an OpenDAL
+path.</p>
+<p>This specification defines the portable contract, and OpenDAL promises only
+the behavior it explicitly defines. A service may support a subset of the
+conditions through its advertised capabilities. Service-specific extensions do
+not change the meanings defined here.</p>
+<h3 id="which-file-a-condition-checks"><a class="doc-anchor" href="#which-file-a-condition-checks">§</a>Which file a condition checks</h3>
+<p>Each condition checks one file:</p>
+<ul>
+<li><code>stat</code> and <code>read</code> check the file being observed.</li>
+<li><code>write</code> and <code>delete</code> check the file at the operation path.</li>
+<li><code>copy</code> and <code>rename</code> check the destination file.</li>
+<li><code>restore</code> checks the file currently stored at the restore path. The selected
+version remains the source of the restore.</li>
+</ul>
+<p>A version selector chooses the stored version an operation acts on. A version
+condition compares the version of the file checked by the condition. They are
+different concepts.</p>
+<p>A copy or rename may also fail because its source does not exist, and a
+restore may also fail because its selected version does not exist. When such an
+error and a condition error occur together, this specification does not define
+which error the operation returns.</p>
+<h3 id="capability-contract"><a class="doc-anchor" href="#capability-contract">§</a>Capability contract</h3>
+<p>OpenDAL validates conditional options before dispatching an operation. If the
+service does not advertise the required capability, the operation returns
+<code>Unsupported</code>. OpenDAL never silently ignores a condition.</p>
+<p>A service that advertises a conditional capability must implement the exact
+contract for that condition. Separate capability fields do not imply support
+for combinations of those conditions. If an implementation accepts a
+combination, the file must satisfy every condition. If it cannot preserve the
+complete conjunction, it returns <code>Unsupported</code> instead of dropping a
+condition.</p>
+<h3 id="behavior-when-the-file-exists"><a class="doc-anchor" href="#behavior-when-the-file-exists">§</a>Behavior when the file exists</h3>
+<p>The ETag conditions in this table use concrete ETag values. A wildcard ETag
+has no portable meaning unless the documentation for a specific operation
+defines one.</p>
+<div class="table"><table><thead><tr><th>Condition</th><th>Succeeds when</th></tr></thead><tbody>
+<tr><td><code>if_match(etag)</code></td><td>The file’s ETag equals <code>etag</code>.</td></tr>
+<tr><td><code>if_none_match(etag)</code></td><td>The file’s ETag differs from <code>etag</code>.</td></tr>
+<tr><td><code>if_version_match(version)</code></td><td>The file’s version equals <code>version</code>.</td></tr>
+<tr><td><code>if_version_not_match(version)</code></td><td>The file’s version differs from <code>version</code>.</td></tr>
+<tr><td><code>if_not_exists()</code></td><td>Never.</td></tr>
+<tr><td><code>if_modified_since(time)</code></td><td>The file was modified after <code>time</code>.</td></tr>
+<tr><td><code>if_unmodified_since(time)</code></td><td>The file was not modified after <code>time</code>.</td></tr>
+<tr><td><code>if_not_changed(metadata)</code></td><td>The file has the identity represented by <code>metadata</code>.</td></tr>
+</tbody></table>
+</div><h3 id="behavior-when-the-file-does-not-exist"><a class="doc-anchor" href="#behavior-when-the-file-does-not-exist">§</a>Behavior when the file does not exist</h3>
+<p><code>stat</code> and <code>read</code> return <code>NotFound</code> regardless of the condition.</p>
+<p>For mutations:</p>
+<div class="table"><table><thead><tr><th>Condition</th><th>Result</th></tr></thead><tbody>
+<tr><td><code>if_match(etag)</code></td><td><code>ConditionNotMatch</code>.</td></tr>
+<tr><td><code>if_version_match(version)</code></td><td><code>ConditionNotMatch</code>.</td></tr>
+<tr><td><code>if_not_changed(metadata)</code></td><td><code>ConditionNotMatch</code>.</td></tr>
+<tr><td><code>if_none_match(etag)</code> with a concrete ETag</td><td>The condition succeeds.</td></tr>
+<tr><td><code>if_not_exists()</code></td><td>The condition succeeds.</td></tr>
+<tr><td><code>if_version_not_match(version)</code></td><td>No portable behavior is defined.</td></tr>
+</tbody></table>
+</div>
+<p>After a condition succeeds, the operation’s normal semantics apply. Deleting a
+file that does not exist remains a successful no-op. A write or copy may create
+the file. Rename and restore may still fail because their source or selected
+version does not exist.</p>
+<h3 id="if_not_changed-lowering"><a class="doc-anchor" href="#if_not_changed-lowering">§</a><code>if_not_changed</code> lowering</h3>
+<p><code>if_not_changed(metadata)</code> is a positive identity condition derived from
+metadata previously returned by OpenDAL. OpenDAL lowers it as follows:</p>
+<ol>
+<li>Use a version match when the operation advertises version matching and the
+metadata contains a version.</li>
+<li>Otherwise, use an ETag match when the metadata contains an ETag.</li>
+<li>Otherwise, use a version match when the metadata contains a version.</li>
+<li>Return <code>ConfigInvalid</code> when the metadata contains neither identity token.</li>
+<li>Validate the derived primitive condition normally and return <code>Unsupported</code>
+when the operation does not support it.</li>
+</ol>
+<p>An identical explicit equality condition is redundant. A conflicting equality
+condition returns <code>ConditionNotMatch</code>. Other accepted conditions combine with
+the derived condition using AND semantics.</p>
+<p>Lowering happens while the mutable public options still own the source
+metadata and after OpenDAL knows the composed service capability. The finalized
+raw operation arguments contain only the selected primitive equality condition.</p>
+<h3 id="error-contract"><a class="doc-anchor" href="#error-contract">§</a>Error contract</h3>
+<ul>
+<li>A false explicit condition returns <code>ConditionNotMatch</code>.</li>
+<li><code>stat</code> and <code>read</code> return <code>NotFound</code> when the file does not exist.</li>
+<li>A conflict reported by the service that is unrelated to an explicit OpenDAL
+condition returns <code>Conflict</code>.</li>
+<li>An unavailable condition or condition combination returns <code>Unsupported</code>.</li>
+</ul>
+<p>Protocol status codes do not determine the error kind on their own. For
+example, an HTTP <code>304 Not Modified</code> or <code>412 Precondition Failed</code> maps to
+<code>ConditionNotMatch</code> only when it is the service’s response to a condition
+explicitly supplied by OpenDAL.</p>
+<h3 id="atomicity-and-visibility"><a class="doc-anchor" href="#atomicity-and-visibility">§</a>Atomicity and visibility</h3>
+<p>A service advertises a mutation condition only when it can evaluate the
+condition atomically with the mutation’s visible commit. An implementation must
+not emulate a conditional mutation by issuing <code>stat</code> followed by an
+unconditional mutation.</p>
+<p>For staged or multipart writes, the service evaluates the condition at the
+final commit. If the condition fails, the previously visible file remains
+unchanged.</p>
+<p>The point at which an operation surfaces a conditional error is unspecified.
+Depending on the operation and service, it may surface while constructing an
+I/O handle, during I/O, or when closing the handle. The final result and
+atomicity contract remain the same.</p>
+<p>A conditional batch delete evaluates every entry independently. A service may
+batch entries only when it preserves each entry’s condition and error.
+Detailed partial-success reporting follows the delete operation’s separate
+contract.</p>
+<h3 id="metadata-contract"><a class="doc-anchor" href="#metadata-contract">§</a>Metadata contract</h3>
+<p>A service that advertises ETag or version match support must populate the
+corresponding <code>Metadata</code> field whenever the native response provides it. The
+identity token returned from a successful mutation or observation must be
+usable as input to a later matching condition for the same file.</p>
+<h3 id="conformance"><a class="doc-anchor" href="#conformance">§</a>Conformance</h3>
+<p>Capability-gated behavior tests under <code>core/tests/behavior</code> validate portable
+conditions against real services. They cover only the behavior this
+specification defines and do not impose cross-service expectations beyond it.
+A service must pass the relevant portable behavior tests before advertising a
+conditional capability.</p>
+<h3 id="historical-decisions"><a class="doc-anchor" href="#historical-decisions">§</a>Historical decisions</h3>
+<ul>
+<li><a href="https://github.com/apache/opendal/blob/main/core/core/src/docs/rfcs/5485_conditional_reader.md">RFC 5485: Conditional Reader</a></li>
+<li><a href="https://github.com/apache/opendal/blob/main/core/core/src/docs/rfcs/7818_rename_if_not_exists.md">RFC 7818: Rename If Not Exists</a></li>
+<li><a href="https://github.com/apache/opendal/blob/main/core/core/src/docs/rfcs/8145_conflict_error_kind.md">RFC 8145: Conflict Error Kind</a></li>
+<li><a href="https://github.com/apache/opendal/blob/main/core/core/src/docs/rfcs/8147_write_if_not_changed.md">RFC 8147: Write If Not Changed</a></li>
+</ul>
+</div></details></section></div></main></body></html>

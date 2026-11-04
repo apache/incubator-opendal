@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["HTTPS_SCHEME","HTTP_SCHEME"],"fn":["register_http_service"],"struct":["Http","HttpConfig"]};

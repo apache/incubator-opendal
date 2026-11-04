@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["YANDEX_DISK_SCHEME"],"fn":["register_yandex_disk_service"],"struct":["YandexDisk","YandexDiskConfig"]};

@@ -1,0 +1,12 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml"><head><title>Lister (opendal.Opendal.Operator.Lister)</title><meta charset="utf-8"/><link rel="stylesheet" href="../../../../odoc.support/odoc.css"/><meta name="generator" content="odoc 3.2.2"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><script src="../../../../odoc.support/highlight.pack.js"></script><script>hljs.initHighlightingOnLoad();</script></head><body class="odoc"><nav class="odoc-nav"><a href="../index.html">Up</a> – <a href="../../../../index.html">Index</a> &#x00BB; <a href="../../../index.html">opendal</a> &#x00BB; <a href="../../index.html">Opendal</a> &#x00BB; <a href="../index.html">Operator</a> &#x00BB; Lister</nav><header class="odoc-preamble"><h1>Module <code><span>Operator.Lister</span></code></h1></header><div class="odoc-tocs"><nav class="odoc-toc odoc-local-toc"><ul><li><a href="#lister-operations">Lister Operations</a></li></ul></nav></div><div class="odoc-content"><h3 id="lister-operations"><a href="#lister-operations" class="anchor"></a>Lister Operations</h3><p>Module for streaming directory listings.</p><div class="odoc-spec"><div class="spec value anchored" id="val-next"><a href="#val-next" class="anchor"></a><code><span><span class="keyword">val</span> next : 
+  <span><a href="../../../Opendal_core/Operator/index.html#type-lister">Opendal_core.Operator.lister</a> <span class="arrow">&#45;&gt;</span></span>
+  <span><span>(<span><a href="../../../Opendal_core/Operator/index.html#type-entry">Opendal_core.Operator.entry</a> option</span>, string)</span> <span class="xref-unresolved">Stdlib</span>.result</span></span></code></div><div class="spec-doc"><p><code>next lister</code> gets the next entry from the directory listing.</p><ul class="at-tags"><li class="parameter"><span class="at-tag">parameter</span> <span class="value">lister</span> <p>The lister instance</p></li></ul><ul class="at-tags"><li class="returns"><span class="at-tag">returns</span> <p>Some entry if available, None if no more entries</p></li></ul><p>Example:</p><pre class="language-ocaml"><code>let rec process_all lister =
+  match Lister.next lister with
+  | Ok (Some entry) -&gt;
+      printf &quot;Processing: %s\n&quot; (Entry.name entry);
+      process_all lister
+  | Ok None -&gt; print_endline &quot;Finished processing all entries&quot;
+  | Error err -&gt; printf &quot;Error: %s\n&quot; err
+in
+process_all my_lister</code></pre></div></div></div></body></html>

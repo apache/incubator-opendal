@@ -1,0 +1,194 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Write if not changed"><title>opendal::docs::rfcs::rfc_8147_write_if_not_changed - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_8147_write_if_not_changed</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>8147_<wbr>write_<wbr>if_<wbr>not_<wbr>changed</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#problem" title="Problem">Problem</a></li><li><a href="#proposed-design" title="Proposed design">Proposed design</a><ul><li><a href="#public-api" title="Public API">Public API</a></li><li><a href="#condition-semantics" title="Condition semantics">Condition semantics</a></li><li><a href="#atomicity-and-capabilities" title="Atomicity and capabilities">Atomicity and capabilities</a></li><li><a href="#gcs-mapping" title="GCS mapping">GCS mapping</a></li></ul></li><li><a href="#compatibility-and-migration" title="Compatibility and migration">Compatibility and migration</a></li><li><a href="#rationale-and-tradeoffs" title="Rationale and tradeoffs">Rationale and tradeoffs</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>8147_<wbr>write_<wbr>if_<wbr>not_<wbr>changed</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Write if not changed</p>
+<ul>
+<li>Proposal Name: <code>write_if_not_changed</code></li>
+<li>Start Date: 2026-08-25</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/8147">apache/opendal#8147</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/7889">apache/opendal#7889</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Add version match and non-match preconditions to OpenDAL’s target-object
+operations, and add <code>if_not_changed(&amp;Metadata)</code> as the portable
+optimistic-concurrency API. Before service dispatch, OpenDAL lowers
+<code>if_not_changed</code> to one supported primitive condition. A service evaluates that
+primitive atomically with the operation that changes the target.</p>
+<p>ETags and versions remain separate identity axes implemented by services. S3
+and Azure lower to ETag match, while GCS lowers to version match using the
+object generation exposed as <code>Metadata::version()</code>. The metadata represents
+caller-provided expected state and may come from OpenDAL or another source.</p>
+<h2 id="problem"><a class="doc-anchor" href="#problem">§</a>Problem</h2>
+<p>OpenDAL exposes ETag conditions and historical version selectors, but it lacks
+one portable read-modify-write condition. S3 guards replacement with the
+current ETag, while GCS uses the current generation. Applications must
+currently select a service-specific condition, and an unconditional mutation
+after <code>stat</code> cannot prevent a concurrent update.</p>
+<h2 id="proposed-design"><a class="doc-anchor" href="#proposed-design">§</a>Proposed design</h2><h3 id="public-api"><a class="doc-anchor" href="#public-api">§</a>Public API</h3>
+<p>Add <code>if_version_match</code> and <code>if_version_not_match</code> to stat, read, write, delete,
+and copy options. Add the missing <code>if_none_match</code> to delete and copy options.
+Write, delete, and copy options also accept expected metadata:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub </span>if_version_match: <span class="prelude-ty">Option</span>&lt;String&gt;,
+<span class="kw">pub </span>if_version_not_match: <span class="prelude-ty">Option</span>&lt;String&gt;,
+<span class="kw">pub </span>if_not_changed: <span class="prelude-ty">Option</span>&lt;Metadata&gt;,
+
+<span class="kw">pub fn </span>if_not_changed(<span class="self">self</span>, metadata: <span class="kw-2">&amp;</span>Metadata) -&gt; <span class="self">Self</span>;</code></pre></div>
+<p>Operator futures, reader and writer builders expose the corresponding fluent
+methods. Blocking APIs accept the same options structs, and <code>DeleteInput</code>
+accepts the same target conditions as <code>DeleteOptions</code>.</p>
+<p><code>if_not_changed</code> supports a read-modify-write flow without exposing the
+service’s identity choice:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>stream = op.reader(path).<span class="kw">await</span><span class="question-mark">?</span>.into_bytes_stream(..).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let </span>expected = stream.metadata().<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let </span>content = stream.try_collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;().<span class="kw">await</span><span class="question-mark">?</span>;
+
+op.write_with(path, modify(content))
+    .if_not_changed(<span class="kw-2">&amp;</span>expected)
+    .<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>Callers may also construct expected metadata from identities obtained through
+another trusted channel:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>expected = Metadata::builder(EntryMode::Unknown);
+expected.etag(saved_etag).version(saved_version);
+<span class="kw">let </span>expected = expected.build();</code></pre></div>
+<p>Preserving both fields keeps externally stored metadata portable across
+services. Both fields must describe the same observed object state.</p>
+<h3 id="condition-semantics"><a class="doc-anchor" href="#condition-semantics">§</a>Condition semantics</h3>
+<p>All token values are opaque. A <code>version</code> option selects a historical object;
+an <code>if_version_*</code> option compares the current live target without selecting a
+historical version.</p>
+<div class="table"><table><thead><tr><th>Condition</th><th>Successful when</th></tr></thead><tbody>
+<tr><td><code>if_match(e)</code></td><td>A live target exists and its current ETag equals <code>e</code>.</td></tr>
+<tr><td><code>if_none_match(e)</code></td><td>No live target exists or its current ETag differs from <code>e</code>.</td></tr>
+<tr><td><code>if_version_match(v)</code></td><td>A live target exists and its current version equals <code>v</code>.</td></tr>
+<tr><td><code>if_version_not_match(v)</code></td><td>No live target exists or its current version differs from <code>v</code>.</td></tr>
+<tr><td><code>if_not_exists</code></td><td>No live target exists.</td></tr>
+<tr><td><code>if_not_changed(meta)</code></td><td>One supported identity in <code>meta</code> still matches the target.</td></tr>
+</tbody></table>
+</div>
+<p>Only concrete ETag values have portable delete semantics. Wildcard values such
+as <code>"*"</code> are outside the portable delete contract. Multiple supplied conditions
+are combined with logical AND.</p>
+<p><code>if_not_changed</code> is a derived condition. At the shared write, delete, or copy
+entry point, OpenDAL first freezes the public options into raw arguments. It
+then uses the effective capabilities after all layers and selects the primitive
+condition before raw service dispatch:</p>
+<ol>
+<li>If the operation supports <code>if_version_match</code> and <code>meta.version()</code> exists,
+use <code>if_version_match(version)</code>.</li>
+<li>Otherwise, if the operation supports <code>if_match</code> and <code>meta.etag()</code> exists,
+use <code>if_match(etag)</code>.</li>
+<li>If neither primitive is supported, return <code>Unsupported</code>.</li>
+<li>If a primitive is supported but metadata contains no usable identity for
+any supported primitive, return <code>ConfigInvalid</code>.</li>
+</ol>
+<p>Raw arguments preserve the complete owned <code>if_not_changed</code> metadata together
+with the selected primitive. Services enforce the selected primitive; retaining
+the logical condition lets future shared dispatch logic use another identity
+without changing the public option or losing caller intent during structural
+conversion. Version match takes precedence because a version is intended to
+identify an object revision and avoids ETag ABA where the service can enforce
+it. Adding version-match support may therefore make a call carrying both fields
+stricter, but never weaker. Other metadata fields do not participate today.
+OpenDAL does not validate provenance, path, or storage namespace, so the caller
+must associate externally constructed metadata with the correct target.</p>
+<p>OpenDAL preserves explicit target conditions and version selectors while
+lowering <code>if_not_changed</code>. If the selected primitive match field already
+contains the same opaque token, OpenDAL deduplicates it. If that field contains
+a different token, OpenDAL returns <code>ConditionNotMatch</code> because both equality
+conditions cannot hold. OpenDAL forwards every other representable combination
+unchanged. After OpenDAL validates each condition’s capability, the service
+decides whether it accepts the combination and reports any invalid combination.</p>
+<p>Missing-target results are part of the portable contract:</p>
+<div class="table"><table><thead><tr><th>Condition</th><th>Stat or read</th><th>Mutation where supported</th></tr></thead><tbody>
+<tr><td><code>if_match</code></td><td><code>NotFound</code></td><td><code>ConditionNotMatch</code></td></tr>
+<tr><td><code>if_none_match</code></td><td><code>NotFound</code></td><td>The condition succeeds. Delete is an idempotent no-op.</td></tr>
+<tr><td><code>if_version_match</code></td><td><code>NotFound</code></td><td><code>ConditionNotMatch</code></td></tr>
+<tr><td><code>if_version_not_match</code></td><td><code>NotFound</code></td><td>The condition succeeds. Delete is an idempotent no-op.</td></tr>
+<tr><td><code>if_not_exists</code></td><td>N/A</td><td>The condition succeeds.</td></tr>
+<tr><td><code>if_not_changed</code></td><td>N/A</td><td><code>ConditionNotMatch</code>, inherited from the selected primitive.</td></tr>
+</tbody></table>
+</div>
+<p>OpenDAL normalizes native condition failures, including HTTP 304 and 412, to
+<code>ConditionNotMatch</code>. A successful condition only proves equality under the
+selected identity. In particular, ETag-backed services do not provide total
+ordering, fencing, or protection from ABA changes that return to the same
+ETag.</p>
+<h3 id="atomicity-and-capabilities"><a class="doc-anchor" href="#atomicity-and-capabilities">§</a>Atomicity and capabilities</h3>
+<p>A service advertises a mutation condition only when it can evaluate the
+condition in the native operation that makes the mutation visible. It must not
+simulate a mutation precondition with <code>stat</code> followed by an unconditional
+operation. Staged and multipart writes evaluate the condition at the final
+commit; a failure leaves the previously visible target unchanged. Copy
+conditions guard the destination.</p>
+<p>Conditional deletes may use a native batch only when it preserves each
+condition and reports per-object condition failures. Otherwise, OpenDAL routes
+conditional entries through a conforming single-object path. Existing
+<code>Deleter</code> partial-success and retry semantics remain unchanged.</p>
+<p>Capabilities follow the existing per-operation naming scheme:</p>
+<ul>
+<li><code>{stat,read,write,delete,copy}_with_if_version_{match,not_match}</code>.</li>
+<li><code>{delete,copy}_with_if_none_match</code>.</li>
+</ul>
+<p>All new capabilities default to <code>false</code>. There is no independently advertised
+<code>if_not_changed</code> capability; support is derived from the applicable version and
+ETag match capabilities plus the supplied metadata.</p>
+<p>Capabilities describe support for individual conditions. They do not guarantee
+that a service accepts any particular combination of conditions or selectors.</p>
+<p>A service advertising a version-match primitive must populate
+<code>Metadata::version()</code> on stat, read, write, copy, and list whenever the native
+response provides it. The same rule applies to <code>Metadata::etag()</code> for an
+advertised ETag-match primitive. Every execution path reachable by a primitive
+capability must preserve its condition and must not degrade to an unconditional
+request.</p>
+<h3 id="gcs-mapping"><a class="doc-anchor" href="#gcs-mapping">§</a>GCS mapping</h3>
+<p>GCS maps version conditions to JSON API generation parameters:</p>
+<div class="table"><table><thead><tr><th>OpenDAL</th><th>GCS JSON API</th></tr></thead><tbody>
+<tr><td><code>if_version_match(v)</code></td><td><code>ifGenerationMatch=v</code></td></tr>
+<tr><td><code>if_version_not_match(v)</code></td><td><code>ifGenerationNotMatch=v</code></td></tr>
+<tr><td><code>if_not_exists</code></td><td><code>ifGenerationMatch=0</code></td></tr>
+<tr><td><code>if_not_changed(meta)</code></td><td>Lower to <code>if_version_match(meta.version())</code>.</td></tr>
+</tbody></table>
+</div>
+<p>GCS applies these parameters to JSON API get, insert, delete, and destination
+rewrite requests. Stat and read preserve missing-object responses as
+<code>NotFound</code>. Mutations apply the portable condition predicate to missing targets
+and map native precondition failures to <code>ConditionNotMatch</code>. Multi-request
+rewrite keeps the destination condition across requests. Because GCS advertises
+version match rather than ETag match for mutations, the shared lowering rule
+selects the object generation for <code>if_not_changed</code>.</p>
+<p>GCS must use a write path that can preserve generation conditions, such as
+JSON resumable upload, before advertising a conditional write capability. It
+must also populate <code>Metadata::version()</code> from generation values returned by
+stat, read, write, copy, and list so OpenDAL-produced metadata can round-trip
+through <code>if_not_changed</code>.</p>
+<h2 id="compatibility-and-migration"><a class="doc-anchor" href="#compatibility-and-migration">§</a>Compatibility and migration</h2>
+<p>The new options and primitive capabilities are additive and default to
+disabled. Version conditions on stat and read follow the existing ETag
+condition contract for missing targets. Existing version selectors, ETag
+conditions, and <code>if_not_exists</code> retain their behavior except for conditional
+delete when its required live target is absent. Lowering <code>if_not_changed</code> in
+core produces the same native conditions and errors as choosing the identity
+separately in each service.</p>
+<p>Conditional delete currently inherits unconditional delete’s idempotent 404
+handling on some services. After this RFC, a delete guarded by <code>if_match</code>,
+<code>if_version_match</code>, or <code>if_not_changed</code> returns <code>ConditionNotMatch</code> when the
+target disappears before commit. A delete guarded by <code>if_none_match</code> or
+<code>if_version_not_match</code> succeeds as a no-op in the same case. This user-visible
+correction applies to every binding that exposes the condition.</p>
+<p>GCS currently advertises <code>write_with_if_not_exists</code> while one multipart path
+cannot preserve the condition. The implementation must route that case through
+a conforming API or disable the capability until it can honor the contract.</p>
+<h2 id="rationale-and-tradeoffs"><a class="doc-anchor" href="#rationale-and-tradeoffs">§</a>Rationale and tradeoffs</h2>
+<p>A single <code>revision</code> field would duplicate GCS version and S3 ETag while
+suggesting ordering, per-write uniqueness, or ABA resistance that ETags do not
+provide. Keeping the axes explicit preserves their native meaning.</p>
+<p>Applications could choose <code>if_match</code> or <code>if_version_match</code> after inspecting
+capabilities, but that would expose service differences at every call site.
+<code>if_not_changed</code> centralizes the choice as Operator-level policy and reuses
+<code>Metadata</code>, which is already returned by object operations and can be
+constructed by callers. Lowering it before raw dispatch keeps service contracts
+orthogonal and gives custom services the API automatically when they implement
+a primitive. Carrying the metadata costs more option space than carrying one
+token, but avoids another public identity type and keeps the explicit
+conditions available when callers need a specific axis.</p>
+</div></details></section></div></main></body></html>

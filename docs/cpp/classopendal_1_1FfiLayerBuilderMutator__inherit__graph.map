@@ -1,0 +1,5 @@
+<map id="opendal::FfiLayerBuilderMutator" name="opendal::FfiLayerBuilderMutator">
+<area shape="rect" id="Node000001" title="Applies layers through the cxx bridge." alt="" coords="23,81,202,126"/>
+<area shape="rect" id="Node000002" href="$classopendal_1_1LayerBuilderMutator.html" title="Abstraction for applying layers during operator construction." alt="" coords="5,5,220,33"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="114,47,115,81,110,79,111,51"/>
+</map>

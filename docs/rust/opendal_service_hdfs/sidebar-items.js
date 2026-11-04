@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["HDFS_SCHEME"],"fn":["register_hdfs_service"],"struct":["Hdfs","HdfsConfig"]};

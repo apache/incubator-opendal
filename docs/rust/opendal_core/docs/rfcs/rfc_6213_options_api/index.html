@@ -1,0 +1,99 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Options API"><title>opendal_core::docs::rfcs::rfc_6213_options_api - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_6213_options_api</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal_core/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal_core/index.html">opendal_<wbr>core</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>6213_<wbr>options_<wbr>api</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a><ul><li><a href="#expose-opxxx-api-as-is" title="Expose `OpXxx` API AS-IS">Expose <code>OpXxx</code> API AS-IS</a></li></ul></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal_<wbr>core::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal_core</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>6213_<wbr>options_<wbr>api</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../../src/opendal_core/docs/rfcs/mod.rs.html#286">Source</a> </span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Options API</p>
+<ul>
+<li>Proposal Name: <code>options_api</code></li>
+<li>Start Date: 2025-05-22</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/6213">apache/opendal#6213</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/6214">apache/opendal#6214</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Introduce a new options-based API pattern for OpenDAL to simplify the construction of operations.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>OpenDAL currently offers two API patterns.</p>
+<p>The first is a simple pattern that provides the most basic operations, such as <code>read</code>, <code>write</code>, and <code>delete</code>. These operations do not accept any options and serve as quick shortcuts for users to interact with OpenDAL.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>data = op.read(<span class="string">"example.txt"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let _ </span>= op.write(<span class="string">"example.txt"</span>, data).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>The second is the builder pattern API, which includes methods like <code>read_with</code>, <code>write_with</code>, and <code>delete_with</code>. This approach uses a builder pattern to construct operations with customizable options, offering greater flexibility and allowing users to tailor operations to their specific needs.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>data = op
+    .read_with(<span class="string">"example.txt"</span>)
+    .if_match(etag).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let _ </span>= op.write_with(<span class="string">"example.txt"</span>, data)
+    .chunk(<span class="number">1024 </span>* <span class="number">1024</span>)
+    .concurrent(<span class="number">8</span>)
+    .<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>The builder pattern is designed to make the OpenDAL API more flexible and extensible, but it can be cumbersome for users who are trying to construct complex operations that require tuning options at runtime.</p>
+<p>For examples, we have seen users write code like:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>write = <span class="self">self
+    </span>.core
+    .write_with(<span class="kw-2">&amp;</span>path, bs)
+    .append(kwargs.append.unwrap_or(<span class="bool-val">false</span>));
+<span class="kw">if let </span><span class="prelude-val">Some</span>(chunk) = kwargs.chunk {
+    write = write.chunk(chunk);
+}
+<span class="kw">if let </span><span class="prelude-val">Some</span>(content_type) = <span class="kw-2">&amp;</span>kwargs.content_type {
+    write = write.content_type(content_type);
+}
+<span class="kw">if let </span><span class="prelude-val">Some</span>(content_disposition) = <span class="kw-2">&amp;</span>kwargs.content_disposition {
+    write = write.content_disposition(content_disposition);
+}
+<span class="kw">if let </span><span class="prelude-val">Some</span>(cache_control) = <span class="kw-2">&amp;</span>kwargs.cache_control {
+    write = write.cache_control(cache_control);
+}
+<span class="kw">if let </span><span class="prelude-val">Some</span>(user_metadata) = kwargs.user_metadata.take() {
+    write = write.user_metadata(user_metadata);
+}
+write.call().map(|<span class="kw">_</span>| ()).map_err(format_pyerr)</code></pre></div>
+<p>This makes the code hard to read and maintain, especially when there are many options to set.</p>
+<p>So I propose to introduce an option based API pattern that allows users to set options in a more structured and readable way.</p>
+<p>This new API will allow users to create structs like <code>ReadOptions</code>  which contains all the options they want to set for an operation. They can then pass this struct to the operation, making the code cleaner and easier to understand.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>We will have the following new structs:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>ReadOptions {
+  <span class="kw">pub </span>if_match: <span class="prelude-ty">Option</span>&lt;String&gt;,
+  <span class="kw">pub </span>if_none_match: <span class="prelude-ty">Option</span>&lt;String&gt;,
+}</code></pre></div>
+<p>And we will expose APIs like:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Operator {
+    <span class="kw">pub async fn </span>read_options(<span class="kw-2">&amp;</span><span class="self">self</span>, path: <span class="kw-2">&amp;</span>str, opts: ReadOptions) -&gt; <span class="prelude-ty">Result</span>&lt;Buffer&gt; {
+        ...
+    }
+}</code></pre></div>
+<p>Users can then use this API like:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>opts = ReadOptions {
+    version: <span class="prelude-val">Some</span>(version_id),
+    ...ReadOptions::default(),
+};
+<span class="kw">let </span>data = op.read_options(path, opts).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div><h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>We will introduce an options API by creating new structs for each operation, with each struct containing all configurable options for that specific operation.</p>
+<p>Before calling APIs on <code>oio::Access</code>, we will convert <code>ReadOptions</code> to <code>OpRead</code> and <code>OpReader</code>.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>This RFC will add a new API patterns to OpenDAL, which may increase the complexity of the codebase and the learning curve for new users.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="expose-opxxx-api-as-is"><a class="doc-anchor" href="#expose-opxxx-api-as-is">§</a>Expose <code>OpXxx</code> API AS-IS</h3>
+<p>It’s a valid alternative to expose the <code>OpXxx</code> API as is. However, OpenDAL’s public API is not a direct one-to-one mapping from <code>Operator</code> to <code>oio::Access</code>. For instance, concurrency and chunk handling for read operations are implemented within the public API, which is why we have a separate <code>OpReader</code> struct.</p>
+<p>Therefore, we need a new struct that can handle all of these aspects simultaneously.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p><code>object_store</code> has APIs like <code>read_opts</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">trait </span>ObjectStore {
+    <span class="kw">async fn </span>get_opts(<span class="kw-2">&amp;</span><span class="self">self</span>, path: <span class="kw-2">&amp;</span>Path, options: GetOptions) {..}
+}
+
+<span class="kw">pub struct </span>GetOptions {
+    <span class="kw">pub </span>if_match: <span class="prelude-ty">Option</span>&lt;String&gt;,
+    <span class="kw">pub </span>if_none_match: <span class="prelude-ty">Option</span>&lt;String&gt;,
+    <span class="kw">pub </span>if_modified_since: <span class="prelude-ty">Option</span>&lt;DateTime&lt;Utc&gt;&gt;,
+    <span class="kw">pub </span>if_unmodified_since: <span class="prelude-ty">Option</span>&lt;DateTime&lt;Utc&gt;&gt;,
+    <span class="kw">pub </span>range: <span class="prelude-ty">Option</span>&lt;GetRange&gt;,
+    <span class="kw">pub </span>version: <span class="prelude-ty">Option</span>&lt;String&gt;,
+    <span class="kw">pub </span>head: bool,
+    <span class="kw">pub </span>extensions: Extensions,
+}</code></pre></div><h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>None</p>
+</div></details></section></div></main></body></html>

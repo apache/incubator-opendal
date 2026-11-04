@@ -1,0 +1,386 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Copier API"><title>opendal::docs::rfcs::rfc_7519_copier_api - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_7519_copier_api</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>7519_<wbr>copier_<wbr>api</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a><ul><li><a href="#public-api" title="Public API">Public API</a></li><li><a href="#options" title="Options">Options</a></li><li><a href="#raw-api" title="Raw API">Raw API</a></li><li><a href="#capability" title="Capability">Capability</a></li><li><a href="#helper-implementations" title="Helper implementations">Helper implementations</a></li><li><a href="#backend-behavior" title="Backend behavior">Backend behavior</a></li><li><a href="#conditions-and-consistency" title="Conditions and consistency">Conditions and consistency</a></li><li><a href="#error-handling" title="Error handling">Error handling</a></li></ul></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a><ul><li><a href="#hide-large-copy-inside-operatorcopy" title="Hide large copy inside `Operator::copy`">Hide large copy inside <code>Operator::copy</code></a></li><li><a href="#expose-backend-continuation-tokens" title="Expose backend continuation tokens">Expose backend continuation tokens</a></li><li><a href="#add-close" title="Add `close`">Add <code>close</code></a></li><li><a href="#return-total-copied-bytes-instead-of-per-step-bytes" title="Return total copied bytes instead of per-step bytes">Return total copied bytes instead of per-step bytes</a></li></ul></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a><ul><li><a href="#durable-resume" title="Durable resume">Durable resume</a></li><li><a href="#copy-progress-metadata" title="Copy progress metadata">Copy progress metadata</a></li><li><a href="#directory-copier" title="Directory copier">Directory copier</a></li></ul></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>7519_<wbr>copier_<wbr>api</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Copier API</p>
+<ul>
+<li>Proposal Name: <code>copier_api</code></li>
+<li>Start Date: 2026-05-12</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/7519">apache/opendal#7519</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/7521">apache/opendal#7521</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Introduce a <code>Copier</code> API for long running copy operations.</p>
+<p><code>Operator::copy</code> will remain the simple run-to-completion API. <code>Operator::copier</code>
+will create a stateful copy stream that users can drive step by step, observe
+byte progress, and abort when needed.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>OpenDAL currently exposes <code>copy</code> as a single future:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>op.copy(<span class="string">"from"</span>, <span class="string">"to"</span>).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>This works well for small objects and backends with native single-request copy.
+It does not model large object copies well. Services have different large-copy
+protocols:</p>
+<ul>
+<li>S3-compatible services use multipart copy for objects larger than the
+single-request copy limit.</li>
+<li>GCS uses rewrite tokens and may require multiple rewrite requests.</li>
+<li>Azure Blob can use block-copy style operations and commit the final block
+list.</li>
+</ul>
+<p>Those protocols are stateful. They can make progress over many requests, expose
+intermediate server-side state, and require explicit cleanup when aborted.</p>
+<p>OpenDAL should support those protocols without exposing backend continuation
+tokens to users. This matches the existing <code>Lister</code> design: pagination tokens
+are stored in <code>PageContext</code> and are not part of the public API. Users drive the
+operation by repeatedly asking for the next item.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>Users who do not need control over the copy process keep using <code>copy</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>op.copy(<span class="string">"from"</span>, <span class="string">"to"</span>).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>For large files or task-style workflows, users can create a <code>Copier</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>futures::TryStreamExt;
+
+<span class="kw">let </span><span class="kw-2">mut </span>copier = op.copier(<span class="string">"from"</span>, <span class="string">"to"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="kw">let </span><span class="kw-2">mut </span>copied = <span class="number">0usize</span>;
+<span class="kw">while let </span><span class="prelude-val">Some</span>(n) = copier.try_next().<span class="kw">await</span><span class="question-mark">? </span>{
+    copied += n;
+    <span class="macro">println!</span>(<span class="string">"copied {copied} bytes"</span>);
+}</code></pre></div>
+<p><code>Copier</code> is complete only after it returns <code>None</code>. A returned byte count means
+the copy has made progress, but it is not a completion signal.</p>
+<p>Users can abort an unfinished copy:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>copier = op.copier(<span class="string">"from"</span>, <span class="string">"to"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="kw">if let </span><span class="prelude-val">Err</span>(err) = copier.try_next().<span class="kw">await </span>{
+    <span class="kw">let _ </span>= copier.abort().<span class="kw">await</span>;
+    <span class="kw">return </span><span class="prelude-val">Err</span>(err);
+}</code></pre></div>
+<p><code>abort</code> is needed because some backends create intermediate server-side state,
+such as multipart uploads or uncommitted blocks. OpenDAL cannot perform async
+cleanup from <code>Drop</code>, so explicit abort remains the user’s responsibility when
+they stop driving a copier before completion.</p>
+<p><code>copy_with</code> and <code>copier_with</code> share copy options:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>copier = op
+    .copier_with(<span class="string">"from"</span>, <span class="string">"to"</span>)
+    .if_not_exists(<span class="bool-val">true</span>)
+    .concurrent(<span class="number">8</span>)
+    .<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="kw">while </span>copier.try_next().<span class="kw">await</span><span class="question-mark">?</span>.is_some() {}</code></pre></div>
+<p><code>if_not_exists</code> is a semantic option and must preserve the backend’s atomic
+destination condition. <code>concurrent</code> is an execution option for backends that can
+split copy into server-side tasks. Backends that cannot copy concurrently can
+ignore it.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2><h3 id="public-api"><a class="doc-anchor" href="#public-api">§</a>Public API</h3>
+<p>Add a public <code>Copier</code> type:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>Copier {
+    copier: <span class="prelude-ty">Option</span>&lt;oio::Copier&gt;,
+    fut: <span class="prelude-ty">Option</span>&lt;BoxedStaticFuture&lt;(oio::Copier, <span class="prelude-ty">Result</span>&lt;<span class="prelude-ty">Option</span>&lt;usize&gt;&gt;)&gt;&gt;,
+    errored: bool,
+}</code></pre></div>
+<p><code>Copier</code> implements:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Stream <span class="kw">for </span>Copier {
+    <span class="kw">type </span>Item = <span class="prelude-ty">Result</span>&lt;usize&gt;;
+}</code></pre></div>
+<p>The stream contract is:</p>
+<ul>
+<li><code>Some(Ok(n))</code>: the copy operation made progress by <code>n</code> bytes.</li>
+<li><code>Some(Err(err))</code>: the copy operation failed. Following stream polls return
+<code>None</code>.</li>
+<li><code>None</code>: the copy operation is complete and the destination object has been
+committed.</li>
+</ul>
+<p><code>n</code> is a best-effort byte count for this step. Backends should return the real
+increment when they can. Returning <code>0</code> is allowed when a backend can advance its
+state without reporting a reliable byte delta.</p>
+<p><code>Copier</code> also exposes:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Copier {
+    <span class="kw">pub async fn </span>abort(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;;
+}</code></pre></div>
+<p><code>abort</code> is only valid before the copier has completed or errored.</p>
+<p>Add <code>Operator</code> APIs:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Operator {
+    <span class="kw">pub async fn </span>copier(<span class="kw-2">&amp;</span><span class="self">self</span>, from: <span class="kw-2">&amp;</span>str, to: <span class="kw-2">&amp;</span>str) -&gt; <span class="prelude-ty">Result</span>&lt;Copier&gt;;
+
+    <span class="kw">pub fn </span>copier_with(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        from: <span class="kw-2">&amp;</span>str,
+        to: <span class="kw-2">&amp;</span>str,
+    ) -&gt; FutureCopier&lt;<span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;Copier&gt;&gt;&gt;;
+
+    <span class="kw">pub async fn </span>copier_options(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        from: <span class="kw-2">&amp;</span>str,
+        to: <span class="kw-2">&amp;</span>str,
+        opts: <span class="kw">impl </span>Into&lt;options::CopyOptions&gt;,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;Copier&gt;;
+}</code></pre></div>
+<p><code>Operator::copy</code> becomes a run-to-completion wrapper:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub async fn </span>copy(<span class="kw-2">&amp;</span><span class="self">self</span>, from: <span class="kw-2">&amp;</span>str, to: <span class="kw-2">&amp;</span>str) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt; {
+    <span class="kw">let </span><span class="kw-2">mut </span>copier = <span class="self">self</span>.copier(from, to).<span class="kw">await</span><span class="question-mark">?</span>;
+
+    <span class="kw">loop </span>{
+        <span class="kw">match </span>copier.try_next().<span class="kw">await </span>{
+            <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(<span class="kw">_</span>)) =&gt; <span class="kw">continue</span>,
+            <span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>) =&gt; <span class="kw">return </span><span class="prelude-val">Ok</span>(()),
+            <span class="prelude-val">Err</span>(err) =&gt; {
+                <span class="kw">let _ </span>= copier.abort().<span class="kw">await</span>;
+                <span class="kw">return </span><span class="prelude-val">Err</span>(err);
+            }
+        }
+    }
+}</code></pre></div><h3 id="options"><a class="doc-anchor" href="#options">§</a>Options</h3>
+<p><code>CopyOptions</code> will contain both semantic and execution options:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>CopyOptions {
+    <span class="kw">pub </span>if_not_exists: bool,
+    <span class="kw">pub </span>concurrent: usize,
+}</code></pre></div>
+<p>The raw layer splits this into operation arguments and copier execution options:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>OpCopy {
+    if_not_exists: bool,
+}
+
+<span class="kw">pub struct </span>OpCopier {
+    concurrent: usize,
+}</code></pre></div>
+<p><code>if_not_exists</code> affects destination semantics. <code>concurrent</code> affects how many
+copy tasks the copier may keep in flight.</p>
+<h3 id="raw-api"><a class="doc-anchor" href="#raw-api">§</a>Raw API</h3>
+<p>Add <code>oio::Copy</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub type </span>Copier = Box&lt;<span class="kw">dyn </span>CopyDyn&gt;;
+
+<span class="kw">pub trait </span>Copy: Unpin + Send + Sync {
+    <span class="kw">fn </span>next(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;<span class="prelude-ty">Option</span>&lt;usize&gt;&gt;&gt; + MaybeSend;
+
+    <span class="kw">fn </span>abort(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;()&gt;&gt; + MaybeSend;
+}</code></pre></div>
+<p><code>next</code> drives the server-side copy state machine. <code>None</code> means that the final
+commit has completed.</p>
+<p>Add a dynamic version:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>CopyDyn: Unpin + Send + Sync {
+    <span class="kw">fn </span>next_dyn(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; BoxedFuture&lt;<span class="lifetime">'_</span>, <span class="prelude-ty">Result</span>&lt;<span class="prelude-ty">Option</span>&lt;usize&gt;&gt;&gt;;
+
+    <span class="kw">fn </span>abort_dyn(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; BoxedFuture&lt;<span class="lifetime">'_</span>, <span class="prelude-ty">Result</span>&lt;()&gt;&gt;;
+}</code></pre></div>
+<p>Extend <code>Access</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">trait </span>Access {
+    <span class="kw">type </span>Copier: oio::Copy;
+
+    <span class="kw">fn </span>copy(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        from: <span class="kw-2">&amp;</span>str,
+        to: <span class="kw-2">&amp;</span>str,
+        args: OpCopy,
+        opts: OpCopier,
+    ) -&gt; <span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;(RpCopy, <span class="self">Self</span>::Copier)&gt;&gt; + MaybeSend;
+}</code></pre></div>
+<p>This changes the raw <code>copy</code> operation from “perform copy now” to “create a copy
+state machine”. The public <code>Operator::copy</code> preserves the current user-facing
+behavior by draining the returned copier to completion.</p>
+<h3 id="capability"><a class="doc-anchor" href="#capability">§</a>Capability</h3>
+<p>Keep the existing copy capability fields:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub </span>copy: bool,
+<span class="kw">pub </span>copy_with_if_not_exists: bool,</code></pre></div>
+<p>Do not add public multipart-copy size constraints. Copy takes an existing source
+object as input, so users do not need to plan request part sizes. Backends should
+choose request sizes internally based on source size and service-specific
+limits.</p>
+<p>Backends that only support single-request copy can still expose a <code>Copier</code>; it
+will be a one-step copier that performs the existing copy operation.</p>
+<h3 id="helper-implementations"><a class="doc-anchor" href="#helper-implementations">§</a>Helper implementations</h3>
+<p>Add <code>oio::OneShotCopier</code> for existing backends:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>OneShotCopy: Send + Sync + Unpin + <span class="lifetime">'static </span>{
+    <span class="kw">fn </span>copy_once(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;<span class="prelude-ty">Option</span>&lt;usize&gt;&gt;&gt; + MaybeSend;
+}</code></pre></div>
+<p><code>OneShotCopier</code> calls <code>copy_once</code> once, records completion, and returns <code>None</code>
+after the copy has completed.</p>
+<p>Add <code>oio::MultipartCopier</code> for S3-compatible services:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>MultipartCopy: Send + Sync + Unpin + <span class="lifetime">'static </span>{
+    <span class="kw">fn </span>initiate_copy(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;String&gt;&gt; + MaybeSend;
+
+    <span class="kw">fn </span>copy_part(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        upload_id: <span class="kw-2">&amp;</span>str,
+        part_number: usize,
+        range: BytesRange,
+    ) -&gt; <span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;MultipartPart&gt;&gt; + MaybeSend;
+
+    <span class="kw">fn </span>complete_copy(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        upload_id: <span class="kw-2">&amp;</span>str,
+        parts: <span class="kw-2">&amp;</span>[MultipartPart],
+    ) -&gt; <span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;()&gt;&gt; + MaybeSend;
+
+    <span class="kw">fn </span>abort_copy(<span class="kw-2">&amp;</span><span class="self">self</span>, upload_id: <span class="kw-2">&amp;</span>str) -&gt; <span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;()&gt;&gt; + MaybeSend;
+}</code></pre></div>
+<p><code>MultipartCopier</code> owns the source identity, destination path, upload id,
+completed parts, next range, and concurrent task queue. It uses <code>OpCopier</code> to
+choose concurrency and uses backend-private limits to choose part size.</p>
+<p><code>next</code> should keep the internal task queue full up to <code>concurrent</code>, wait for one
+copy task to complete, record the completed part, and return the completed byte
+count. This makes <code>Copier</code> capable of concurrent server-side copy without
+exposing multipart details to users.</p>
+<p>Other backends can implement <code>oio::Copy</code> directly when their protocol does not
+fit multipart copy. GCS rewrite is the main example.</p>
+<h3 id="backend-behavior"><a class="doc-anchor" href="#backend-behavior">§</a>Backend behavior</h3><h4 id="s3-compatible-services"><a class="doc-anchor" href="#s3-compatible-services">§</a>S3-compatible services</h4>
+<p>S3-compatible services should use single-request copy below the service limit
+and multipart copy above it.</p>
+<p>Large copy flow:</p>
+<ol>
+<li>Stat the source to get content length and source identity, such as ETag or
+version id when available.</li>
+<li>Initiate multipart upload for the destination.</li>
+<li>Fill the internal task queue with byte-range upload-part-copy requests up to
+the configured concurrency.</li>
+<li>Return <code>Some(part_size)</code> when a part has been copied.</li>
+<li>Complete multipart upload after all parts have been copied.</li>
+<li>Return <code>None</code> after complete succeeds.</li>
+</ol>
+<p>If a part fails after retries, <code>next</code> returns the error. <code>Operator::copy</code>
+attempts <code>abort</code>; users driving <code>Copier</code> manually can call <code>abort</code>.</p>
+<p>Resume across processes is not part of this RFC. Upload id and completed part
+state stay inside the copier object.</p>
+<h4 id="gcs"><a class="doc-anchor" href="#gcs">§</a>GCS</h4>
+<p>GCS should use rewrite for large copy.</p>
+<p>The copier owns the rewrite token internally. Each <code>next</code> call issues one
+rewrite request:</p>
+<ul>
+<li>If the response reports more bytes rewritten than the previous response,
+return the delta.</li>
+<li>If the response advances the token but does not provide a reliable delta,
+return <code>Some(0)</code>.</li>
+<li>If the response is done, return <code>None</code>.</li>
+</ul>
+<p>The rewrite token is not exposed to users.</p>
+<p>GCS should not use XML multipart upload for copy. OpenDAL’s current GCS
+multipart writer uploads client-provided request bodies through <code>UploadPart</code>.
+It does not provide a server-side upload-part-copy operation that copies a byte
+range from an existing source object. Using XML multipart upload for copy would
+therefore require OpenDAL to read source ranges through the client and upload
+them again, which is no longer an original server-side copy.</p>
+<p><code>concurrent</code> is best-effort for GCS. The rewrite protocol is token driven and
+must be advanced by repeatedly passing the token returned by the previous
+request. A GCS copier can ignore <code>concurrent</code> unless GCS exposes a compatible
+server-side range-copy protocol in the future.</p>
+<h4 id="azure-blob"><a class="doc-anchor" href="#azure-blob">§</a>Azure Blob</h4>
+<p>Azure Blob can use either service-side async copy or block-from-url style copy.
+For a controllable copier, block-from-url plus final block-list commit is a
+better fit:</p>
+<ol>
+<li>Stat the source.</li>
+<li>Generate block ids internally.</li>
+<li>Copy each source range into an uncommitted block.</li>
+<li>Return <code>Some(block_size)</code> for each copied block.</li>
+<li>Commit the block list and return <code>None</code>.</li>
+</ol>
+<p>If Azure async copy is used for a backend-specific reason, polling progress can
+still be hidden inside <code>next</code>.</p>
+<h4 id="local-filesystems"><a class="doc-anchor" href="#local-filesystems">§</a>Local filesystems</h4>
+<p>Local filesystem copy can use a one-shot copier at first. A future
+implementation can copy in chunks if we need progress for very large local
+files.</p>
+<h3 id="conditions-and-consistency"><a class="doc-anchor" href="#conditions-and-consistency">§</a>Conditions and consistency</h3>
+<p><code>if_not_exists</code> must remain an atomic destination condition. Backends must not
+emulate it with <code>stat(to)</code> followed by an unconditional copy for multipart copy.
+If a backend cannot preserve the condition for its large-copy protocol, it must
+return <code>Unsupported</code>.</p>
+<p>Backends should pin source identity when possible. For multipart copy, copied
+parts must come from the same logical source object. If the source object changes
+during copy and the backend can detect it, <code>next</code> should return
+<code>ConditionNotMatch</code> or another suitable error instead of completing a mixed
+object.</p>
+<h3 id="error-handling"><a class="doc-anchor" href="#error-handling">§</a>Error handling</h3>
+<p><code>next</code> should return temporary errors as temporary, so existing retry layers can
+retry them.</p>
+<p>After <code>next</code> returns an error:</p>
+<ul>
+<li>Public <code>Copier</code> marks itself errored and future stream polls return <code>None</code>.</li>
+<li><code>abort</code> remains available to clean server-side intermediate state.</li>
+<li><code>Operator::copy</code> attempts <code>abort</code> before returning the original error.</li>
+</ul>
+<p><code>abort</code> failure must not hide the original <code>copy</code> error in <code>Operator::copy</code>.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<ul>
+<li>Adds a new public API and a new raw IO trait.</li>
+<li>Changes the internal raw <code>copy</code> contract.</li>
+<li>Requires every backend with native copy to return a copier, even when the
+backend only needs a one-shot implementation.</li>
+<li>Progress is best effort. Some services can return <code>Some(0)</code> for state
+advancement without reliable byte deltas.</li>
+</ul>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="hide-large-copy-inside-operatorcopy"><a class="doc-anchor" href="#hide-large-copy-inside-operatorcopy">§</a>Hide large copy inside <code>Operator::copy</code></h3>
+<p>We could keep only <code>Operator::copy</code> and implement multipart copy or rewrite
+internally. This is simple for users, but bad for very large copies. Users cannot
+control progress, cancellation, or task scheduling.</p>
+<p><code>Copier</code> keeps <code>copy</code> simple while allowing advanced users to drive long copies.</p>
+<h3 id="expose-backend-continuation-tokens"><a class="doc-anchor" href="#expose-backend-continuation-tokens">§</a>Expose backend continuation tokens</h3>
+<p>We could expose S3 upload ids, GCS rewrite tokens, or Azure block lists as
+checkpoints. This would make cross-process resume possible, but it would leak
+backend protocols into the public API.</p>
+<p>OpenDAL’s <code>Lister</code> does not expose backend continuation tokens. It exposes
+semantic controls like <code>start_after</code> and keeps service tokens inside
+<code>PageContext</code>. <code>Copier</code> should follow the same abstraction boundary.</p>
+<h3 id="add-close"><a class="doc-anchor" href="#add-close">§</a>Add <code>close</code></h3>
+<p><code>Writer</code> needs <code>close</code> because users provide an open-ended stream of data.
+<code>Copier</code> does not. The source range is known when the copier is created, and the
+backend knows when the copy is complete. Therefore <code>next</code> can perform the final
+commit and return <code>None</code>.</p>
+<h3 id="return-total-copied-bytes-instead-of-per-step-bytes"><a class="doc-anchor" href="#return-total-copied-bytes-instead-of-per-step-bytes">§</a>Return total copied bytes instead of per-step bytes</h3>
+<p>Returning total bytes would require users to understand whether a value is a
+snapshot, a delta, or a backend-reported total. Returning per-step bytes keeps
+the stream item simple. Users who need accumulated progress can sum the returned
+values.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<ul>
+<li>OpenDAL <code>Lister</code> hides backend pagination tokens inside <code>PageContext</code>.</li>
+<li>OpenDAL <code>Writer</code> hides multipart upload details and exposes <code>write</code>, <code>close</code>,
+and <code>abort</code>.</li>
+<li>AWS S3 multipart copy splits source objects into copied parts and completes a
+multipart upload.</li>
+<li>GCS rewrite uses a rewrite token internally until the rewrite operation is
+done.</li>
+<li>Azure Blob block operations copy source ranges into blocks and commit a final
+block list.</li>
+</ul>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<ul>
+<li>Should <code>Copier</code> provide an inherent async <code>next</code> method, or only implement
+<code>Stream&lt;Item = Result&lt;usize&gt;&gt;</code> like <code>Lister</code>?</li>
+<li>Should <code>CopyOptions::concurrent</code> be added in this RFC, or should the first
+implementation use backend defaults only?</li>
+<li>Should successful <code>copy</code> return <code>Metadata</code> in the future, following
+<code>write_returns_metadata</code>?</li>
+</ul>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2><h3 id="durable-resume"><a class="doc-anchor" href="#durable-resume">§</a>Durable resume</h3>
+<p>This RFC does not expose durable checkpoints. A future RFC can add a separate
+task-oriented API if OpenDAL wants cross-process copy resume.</p>
+<p>That design should not expose raw backend tokens directly. It should define a
+portable checkpoint envelope with source identity, destination identity, backend
+scheme, and backend-private payload.</p>
+<h3 id="copy-progress-metadata"><a class="doc-anchor" href="#copy-progress-metadata">§</a>Copy progress metadata</h3>
+<p>If users need richer progress, OpenDAL can replace the stream item with a
+structured type:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>CopyProgress {
+    <span class="kw">pub </span>copied: usize,
+    <span class="kw">pub </span>total: <span class="prelude-ty">Option</span>&lt;u64&gt;,
+}</code></pre></div>
+<p>This RFC starts with <code>usize</code> to keep the public surface minimal.</p>
+<h3 id="directory-copier"><a class="doc-anchor" href="#directory-copier">§</a>Directory copier</h3>
+<p>This RFC only covers file copy. Recursive directory copy can be built later by
+combining <code>Lister</code>, <code>Deleter</code>, and <code>Copier</code> with explicit concurrency control.</p>
+</div></details></section></div></main></body></html>

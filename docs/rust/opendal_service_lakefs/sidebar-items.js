@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["LAKEFS_SCHEME"],"fn":["register_lakefs_service"],"struct":["Lakefs","LakefsConfig"]};

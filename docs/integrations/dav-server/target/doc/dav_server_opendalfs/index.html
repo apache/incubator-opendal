@@ -1,0 +1,24 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="dav-server-opendalfs is an dav-server implementation using opendal."><title>dav_server_opendalfs - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="dav_server_opendalfs" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js" ><script src="../static.files/storage-41dd4d93.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Crate dav_server_opendalfs</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../dav_server_opendalfs/index.html">dav_<wbr>server_<wbr>opendalfs</a><span class="version">0.7.11</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#structs">Crate Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><h1>Crate <span>dav_<wbr>server_<wbr>opendalfs</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/dav_server_opendalfs/lib.rs.html#18-52">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>dav-server-opendalfs is an dav-server implementation using opendal.</p>
+<p>This crate can help you to access ANY storage services with the same webdav API.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>anyhow::Result;
+<span class="kw">use </span>dav_server::davpath::DavPath;
+<span class="kw">use </span>dav_server::fs::DavFileSystem;
+<span class="kw">use </span>dav_server_opendalfs::OpendalFs;
+<span class="kw">use </span>opendal_core::services::Memory;
+<span class="kw">use </span>opendal_core::Operator;
+
+<span class="attr">#[tokio::test]
+</span><span class="kw">async fn </span>test() -&gt; <span class="prelude-ty">Result</span>&lt;()&gt; {
+    <span class="kw">let </span>op = Operator::new(Memory::default())<span class="question-mark">?</span>;
+
+    <span class="kw">let </span>webdavfs = OpendalFs::new(op);
+
+    <span class="kw">let </span>metadata = webdavfs
+        .metadata(<span class="kw-2">&amp;</span>DavPath::new(<span class="string">"/"</span>).unwrap())
+        .<span class="kw">await
+        </span>.unwrap();
+    <span class="macro">println!</span>(<span class="string">"{}"</span>, metadata.is_dir());
+
+    <span class="prelude-val">Ok</span>(())
+}</code></pre></div></div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.OpendalFs.html" title="struct dav_server_opendalfs::OpendalFs">Opendal<wbr>Fs</a></dt><dd>OpendalFs is a <code>DavFileSystem</code> implementation for opendal.</dd></dl></section></div></main></body></html>

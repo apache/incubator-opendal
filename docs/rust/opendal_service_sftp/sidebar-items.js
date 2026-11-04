@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["SFTP_SCHEME"],"fn":["register_sftp_service"],"struct":["Sftp","SftpConfig"]};

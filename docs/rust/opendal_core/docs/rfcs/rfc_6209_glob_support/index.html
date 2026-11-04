@@ -1,0 +1,128 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Glob support"><title>opendal_core::docs::rfcs::rfc_6209_glob_support - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_6209_glob_support</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal_core/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal_core/index.html">opendal_<wbr>core</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>6209_<wbr>glob_<wbr>support</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal_<wbr>core::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal_core</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>6209_<wbr>glob_<wbr>support</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../../src/opendal_core/docs/rfcs/mod.rs.html#282">Source</a> </span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Glob support</p>
+<ul>
+<li>Proposal Name: <code>glob_support</code></li>
+<li>Start Date: 2025-05-21</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/6209">apache/opendal#6209</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/6210">apache/opendal#6210</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Add support for matching file paths against Unix shell style patterns (glob) in OpenDAL.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>Glob patterns are a widely used way to filter files based on their paths. They provide a simple and intuitive syntax for matching multiple files with similar path patterns. Adding glob support to OpenDAL would enable users to easily filter and process files that match certain patterns without having to implement this functionality themselves.</p>
+<p>Currently, users who want to filter objects based on patterns have to list all objects and then apply filters manually, which is verbose and not very intuitive. By providing native glob support, we can make this common operation more convenient and efficient.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>With glob support, users can easily match files based on patterns. The API would be available as an option on the <code>list_with</code> and <code>lister_with</code> methods, allowing users to filter entries that match the provided glob pattern.</p>
+<p>For example:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// Get all jpeg files in the media directory and its subdirectories
+</span><span class="kw">let </span>entries: Vec&lt;Entry&gt; = op.list_with(<span class="string">"media/"</span>).glob(<span class="string">"**/*.jpg"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="comment">// Process entries
+</span><span class="kw">for </span>entry <span class="kw">in </span>entries {
+   do_something(<span class="kw-2">&amp;</span>entry);
+}
+
+<span class="comment">// Or use a lister for streaming access
+</span><span class="kw">let </span><span class="kw-2">mut </span>lister = op.lister_with(<span class="string">"media/"</span>).glob(<span class="string">"**/*.jpg"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="kw">while let </span><span class="prelude-val">Some</span>(entry) = lister.next().<span class="kw">await</span><span class="question-mark">? </span>{
+   do_something(<span class="kw-2">&amp;</span>entry);
+}</code></pre></div>
+<p>The glob syntax would support common patterns like:</p>
+<ul>
+<li><code>*</code> - Match any sequence of non-separator characters</li>
+<li><code>?</code> - Match any single non-separator character</li>
+<li><code>**</code> - Match any sequence of characters including separators</li>
+<li><code>{a,b}</code> - Match either a or b</li>
+<li><code>[ab]</code> - Match either a or b</li>
+<li><code>[a-z]</code> - Match any character in range a-z</li>
+</ul>
+<p>The API would be integrated into the existing builder pattern.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>The implementation would involve:</p>
+<ol>
+<li>
+<p>Implementing a pattern matching logic for glob expressions. This can be a simplified version focusing on common use cases like <code>*</code>, <code>?</code>, and <code>**</code>.</p>
+</li>
+<li>
+<p>Modifying the <code>FunctionLister</code> and <code>FutureLister</code> to accept a glob pattern and filter entries accordingly.</p>
+</li>
+</ol>
+<p>The <code>GlobMatcher</code> struct would be an internal implementation detail that encapsulates the parsed glob pattern and the matching logic.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// This is an internal implementation detail, not exposed in the public API
+</span><span class="kw">struct </span>GlobMatcher {
+    <span class="comment">// internal representation of the pattern
+</span>}
+
+<span class="kw">impl </span>GlobMatcher {
+    <span class="kw">fn </span>new(pattern: <span class="kw-2">&amp;</span>str) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="self">Self</span>&gt; {
+        <span class="comment">// Parse the pattern string
+        // ...
+    </span>}
+
+    <span class="kw">fn </span>matches(<span class="kw-2">&amp;</span><span class="self">self</span>, path: <span class="kw-2">&amp;</span>str) -&gt; bool {
+        <span class="comment">// Perform the matching logic
+        // ...
+    </span>}
+}</code></pre></div>
+<p>The implementation would be built on top of the existing listing capabilities. Pattern matching will primarily occur client-side. However, for services with native glob/pattern support (e.g., GCS <code>matchGlob</code>, Redis <code>SCAN</code> with <code>MATCH</code>), OpenDAL will delegate the pattern matching to the service where possible to improve efficiency.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<ul>
+<li>While the API surface change is minimized by integrating with the existing builder pattern, it still introduces a new concept (glob patterns) for users to learn.</li>
+<li>Implementing server-side delegation adds complexity, as OpenDAL needs to identify services with native support and translate glob patterns to their specific syntax.</li>
+<li>For services without native glob support, client-side matching still requires listing all potentially relevant entries first, which might be inefficient for very large directories or complex patterns.</li>
+<li>Ensuring consistent behavior between client-side and various server-side implementations of glob matching can be challenging.</li>
+</ul>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>This design integrates glob filtering into the existing builder pattern API, providing a natural extension to current functionality. We will implement our own pattern matching logic, focusing on commonly used glob syntax (e.g., <code>*</code>, <code>?</code>, <code>**</code>, <code>*.parquet</code>) to avoid the complexity of full-featured glob libraries designed for local file systems. This approach allows for a lean implementation tailored to object storage path matching.</p>
+<p>Where services offer native pattern matching capabilities, OpenDAL will delegate to them. This leverages server-side efficiencies. For other services, client-side filtering will be applied after listing entries.</p>
+<p>Alternatives considered:</p>
+<ol>
+<li>
+<p>Not implementing this feature and letting users implement filtering manually</p>
+<ul>
+<li>This puts the burden on users and leads to repetitive code.</li>
+<li>Users might implement inefficient or buggy filtering.</li>
+</ul>
+</li>
+<li>
+<p>Relying entirely on an external glob library</p>
+<ul>
+<li>Most glob libraries include complex logic for local file systems (e.g., directory traversal, symlink handling) which is not needed for OpenDAL’s path matching.</li>
+<li>This can introduce unnecessary dependencies and overhead.</li>
+</ul>
+</li>
+<li>
+<p>Implementing server-side filtering <em>only</em> for services that support it, without a client-side fallback.</p>
+<ul>
+<li>This would lead to inconsistent feature availability across services.</li>
+<li>A client-side fallback ensures glob functionality is universally available.</li>
+</ul>
+</li>
+<li>
+<p>Adding a more general filtering API instead of specifically glob patterns</p>
+<ul>
+<li>While potentially more flexible, this would be more complex to design and implement.</li>
+<li>Glob patterns are a well-understood and widely used standard for this type of path matching, covering the majority of use cases.</li>
+</ul>
+</li>
+</ol>
+<p>Not providing a unified glob capability means users continue to write verbose code for a common operation, or face inconsistencies if trying to leverage service-specific features directly. OpenDAL aims to provide a consistent and ergonomic interface for such common tasks.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>Many file system and storage APIs provide glob or similar pattern matching capabilities:</p>
+<ul>
+<li>The <a href="https://crates.io/crates/glob">glob</a> crate in Rust</li>
+<li>Python’s <a href="https://docs.python.org/3/library/glob.html">glob</a> module</li>
+<li>Node.js <a href="https://www.npmjs.com/package/glob">glob</a> package</li>
+<li>Unix shells like bash with built-in glob support</li>
+</ul>
+<p>Most implementations provide similar syntax, though there are some variations. We should align with established Rust patterns.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<ul>
+<li>If services add native support for glob filtering, we could optimize by pushing the filtering to the server side</li>
+<li>We could extend the API to support more advanced pattern matching like regex</li>
+</ul>
+</div></details></section></div></main></body></html>

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["OSS_SCHEME"],"fn":["register_oss_service"],"struct":["Oss","OssConfig"]};

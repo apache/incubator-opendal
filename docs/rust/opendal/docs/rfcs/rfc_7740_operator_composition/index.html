@@ -1,0 +1,197 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Operator Composition"><title>opendal::docs::rfcs::rfc_7740_operator_composition - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_7740_operator_composition</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>7740_<wbr>operator_<wbr>composition</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a><ul><li><a href="#two-worlds-one-bridge" title="Two worlds, one bridge">Two worlds, one bridge</a></li><li><a href="#two-extension-mechanisms-with-conflicting-semantics" title="Two extension mechanisms with conflicting semantics">Two extension mechanisms with conflicting semantics</a></li><li><a href="#fragmented-vocabulary" title="Fragmented vocabulary">Fragmented vocabulary</a></li></ul></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a><ul><li><a href="#for-operator-users" title="For operator users">For operator users</a></li><li><a href="#for-layer-authors" title="For layer authors">For layer authors</a></li><li><a href="#for-service-authors" title="For service authors">For service authors</a></li></ul></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a><ul><li><a href="#service-and-dyn-adapter" title="Service and dyn adapter">Service and dyn adapter</a></li><li><a href="#the-trait-surface" title="The trait surface">The trait surface</a></li><li><a href="#operator-bases-layers-composed-state" title="Operator: bases, layers, composed state">Operator: bases, layers, composed state</a></li><li><a href="#operation-dispatch" title="Operation dispatch">Operation dispatch</a></li><li><a href="#performance" title="Performance">Performance</a></li><li><a href="#deletions" title="Deletions">Deletions</a></li><li><a href="#no-compatibility-logic" title="No compatibility logic">No compatibility logic</a></li></ul></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>7740_<wbr>operator_<wbr>composition</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Operator Composition</p>
+<ul>
+<li>Proposal Name: <code>operator_composition</code></li>
+<li>Start Date: 2026-06-12</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/7740">apache/opendal#7740</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/7741">apache/opendal#7741</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Rebuild how an <code>Operator</code> is composed. <code>Access</code> becomes <code>Service</code>, with <code>ServiceDyn</code> as its object-safe adapter. <code>Layer</code> becomes an object-safe bundle of <code>apply_*</code> hooks. An <code>Operator</code> holds three base providers — the service, the HTTP transport, and the executor — plus an ordered layer list; the composed service stack and a <code>OperationContext</code> snapshot are replayed from the bases on every mutation. Composed resources reach services as an explicit <code>ctx</code> parameter on every operation method. The old accessor dual-trait machinery, <code>TypeEraseLayer</code>, <code>OperatorBuilder</code>, <code>finish()</code>, and all mutable shared state in <code>AccessorInfo</code> are deleted.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>Three independent problems share one root: composition state is scattered across two trait worlds, one mutable context, and five overlapping names.</p>
+<h3 id="two-worlds-one-bridge"><a class="doc-anchor" href="#two-worlds-one-bridge">§</a>Two worlds, one bridge</h3>
+<p>OpenDAL maintains a static world (<code>Access</code> with five associated types and RPITIT; every layer redeclares <code>LayeredAccess</code> and forwards all types), a dynamic world (<code>AccessDyn</code> plus the <code>ReadDyn</code> / <code>WriteDyn</code> / <code>ListDyn</code> / <code>DeleteDyn</code> dual traits), and a bridge (<code>TypeEraseLayer</code>). Yet every <code>Operator</code> call already goes through <code>Arc&lt;dyn AccessDyn&gt;</code>: static dispatch exists only between layers below the type-erasure point, so the production path pays one dyn boundary today while the codebase pays for both worlds. The concurrent-limit layer alone contains 20 associated-type declarations; retry, timeout, and foyer contain 10 each; monomorphizing 50 services across all layers is a significant share of compile time.</p>
+<p>The replacement keeps this useful split only where it pays for itself: service and layer authors implement <code>Service</code> with RPITIT and can write <code>async fn</code>, while the operator stack stores <code>Servicer</code>. The boxing and object-safety workaround live in one blanket adapter instead of every service implementation.</p>
+<h3 id="two-extension-mechanisms-with-conflicting-semantics"><a class="doc-anchor" href="#two-extension-mechanisms-with-conflicting-semantics">§</a>Two extension mechanisms with conflicting semantics</h3>
+<p>The operation plane composes structurally: a layer wraps an accessor, lexically scoped to the new stack. The HTTP, task, and capability planes compose imperatively: layers mutate the shared <code>AccessorInfo</code> at apply time via <code>update_http_client</code> / <code>update_executor</code> / <code>update_full_capability</code> — a global side effect with temporal ordering semantics. The imperative <code>update_*(f: T -&gt; T)</code> API stores only the folded result and erases the contribution history. Four defects follow:</p>
+<ol>
+<li><strong>Replace destroys wrappers.</strong> <code>update_http_client</code> documents that “requests must be forwarded to the old HTTP client”, yet <code>HttpClientLayer</code> itself passes <code>|_| client</code>. With <code>.layer(TracingLayer).layer(HttpClientLayer::new(c))</code>, HTTP-level spans silently disappear — order-sensitive, unobservable partial degradation.</li>
+<li><strong>Clone aliasing.</strong> <code>op.clone().layer(...)</code> mutates the shared info and leaks the layer’s context effects back into the original operator. The Java binding does exactly this today.</li>
+<li><strong>Inconsistent double-apply.</strong> Applying a layer twice stacks the operation wrapper twice with no defined contract on the context planes.</li>
+<li><strong>Capability ordering hazard.</strong> <code>set_native_capability</code> overwrites <code>full_capability</code>, silently dropping layer transforms applied earlier.</li>
+</ol>
+<h3 id="fragmented-vocabulary"><a class="doc-anchor" href="#fragmented-vocabulary">§</a>Fragmented vocabulary</h3>
+<p>One storage implementation spans five words: the S3 service crate (<code>opendal-service-s3</code>), the <code>S3Backend</code> struct, the <code>Access</code> trait, and the <code>Accessor</code> / <code>AccessorInfo</code> erased forms. The crate, feature, module, and directory names already say “service”; the trait is the only holdout.</p>
+<p>The expected outcome is one composition model with one rule: the four defects become unrepresentable by construction, thousands of lines of type plumbing disappear, the vocabulary collapses to one word, and the request hot path gets slightly faster.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2><h3 id="for-operator-users"><a class="doc-anchor" href="#for-operator-users">§</a>For operator users</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>op = Operator::new(S3::default())<span class="question-mark">?   </span><span class="comment">// already a complete, usable operator
+    </span>.layer(RetryLayer::new())
+    .layer(TracingLayer)
+    .http_client(my_client)              <span class="comment">// replace the HTTP transport (optional)
+    </span>.executor(my_executor);              <span class="comment">// replace the task runtime (optional)</span></code></pre></div>
+<p>There is no <code>finish()</code> and no <code>OperatorBuilder</code>: <code>Operator::new</code> returns a working operator, and every call above consumes it and returns a new one. There is exactly one way to apply a layer, shared by Rust users and bindings alike.</p>
+<p>Providers and layers cannot interfere, regardless of order: <code>.http_client()</code> replaces the bottom of the HTTP plane while every layer’s instrumentation survives, because the operator replays the composition from its bases on each change. The two roles are distinguished by form — providers are resource setters named after the existing types (<code>http_client</code>, <code>executor</code>), while every <code>Layer</code> hook carries the <code>apply_</code> prefix. <code>HttpClientLayer</code> is deleted; migration is the one-line change from <code>.layer(HttpClientLayer::new(client))</code> to <code>.http_client(client)</code>.</p>
+<p><code>op.clone().layer(...)</code> affects only the new operator. Two operators branched from one base are independent views — separate layers, separate contexts — over the same shared backend instance.</p>
+<h3 id="for-layer-authors"><a class="doc-anchor" href="#for-layer-authors">§</a>For layer authors</h3>
+<p><code>Layer</code> is a bundle of hooks, one per plane, all defaulting to identity:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Layer <span class="kw">for </span>TracingLayer {
+    <span class="kw">fn </span>apply_service(<span class="kw-2">&amp;</span><span class="self">self</span>, inner: Servicer) -&gt; Servicer {
+        Arc::new(TracingService { inner })
+    }
+
+    <span class="kw">fn </span>apply_http_fetch(<span class="kw-2">&amp;</span><span class="self">self</span>, _srv: Servicer, inner: HttpFetcher) -&gt; HttpFetcher {
+        Arc::new(TracingFetcher { inner })
+    }
+
+    <span class="kw">fn </span>apply_execute(<span class="kw-2">&amp;</span><span class="self">self</span>, _srv: Servicer, inner: Executor) -&gt; Executor {
+        Executor::with(TracingExecutor { inner })
+    }
+}</code></pre></div>
+<p>No generic parameter, no <code>LayeredAccess</code>, no associated types, no <code>update_*</code> calls. A layer that changes capability does so in its wrapper’s <code>capability()</code> method, even if the wrapper only forwards operations unchanged.</p>
+<p>One contract is new and strict: <strong>layer-owned state lives in the <code>Layer</code> struct; wrappers are cheap projections.</strong> <code>apply_*</code> hooks are re-invoked whenever an operator rebuilds its composition, so state created inside a hook would be silently duplicated. A cache layer holds its cache in the layer and lets wrappers reference it — which is how the foyer layer is already written; rebuilding turns the convention into a contract. Consequently, one <code>Layer</code> instance applied to two operators shares its state.</p>
+<h3 id="for-service-authors"><a class="doc-anchor" href="#for-service-authors">§</a>For service authors</h3>
+<p>The trait formerly named <code>Access</code> is now <code>Service</code>, collapsing the service / backend / accessor vocabulary into one word: <code>services::S3</code> (the builder) builds an S3 service, which implements <code>Service</code>. Service implementors write ordinary <code>async fn</code> operation methods; they do not hand-write boxed futures or explicit future lifetimes. The conventional <code>backend.rs</code> becomes <code>service.rs</code> and <code>S3Backend</code> becomes <code>S3Service</code>.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Service <span class="kw">for </span>S3Service {
+    <span class="kw">fn </span>info(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; ServiceInfo {
+        <span class="self">self</span>.info.clone()
+    }
+
+    <span class="kw">fn </span>capability(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Capability {
+        <span class="self">self</span>.capability
+    }
+
+    <span class="kw">async fn </span>read(<span class="kw-2">&amp;</span><span class="self">self</span>, ctx: <span class="kw-2">&amp;</span>OperationContext, path: <span class="kw-2">&amp;</span>str, args: OpRead) -&gt; <span class="prelude-ty">Result</span>&lt;(RpRead, oio::Reader)&gt; {
+        <span class="kw">let </span>req = <span class="self">self</span>.build_read_request(path, <span class="kw-2">&amp;</span>args)<span class="question-mark">?</span>;
+        <span class="kw">let </span>resp = ctx.http_client().fetch(req).<span class="kw">await</span><span class="question-mark">?</span>;
+        <span class="comment">// ...
+    </span>}
+}</code></pre></div>
+<p>Every operation method takes <code>ctx: &amp;OperationContext</code> as its first parameter. The split between <code>ctx</code> and <code>args</code> is provenance: <code>Op*</code> structs carry the caller’s intent (range, version, concurrency), <code>ctx</code> carries the runtime resources provided from above (HTTP client and executor). The <code>Op*</code> / <code>Rp*</code> grammar stays pure.</p>
+<p><code>ServiceInfo</code> is a plain immutable struct of identity facts (scheme, root, name) constructed once at build time — no lock, no setters. Capability is deliberately not part of it: info is forwarded by wrappers untouched, while capability is transformed by them, so they have different homes. Services that need HTTP during signing refresh their signer from <code>ctx</code> at the operation boundary (for example via reqsign’s <code>with_context</code>).</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2><h3 id="service-and-dyn-adapter"><a class="doc-anchor" href="#service-and-dyn-adapter">§</a>Service and dyn adapter</h3>
+<p>The oio traits keep the same split as <code>Service</code>: implementors use static traits (<code>Read</code>, <code>ReadStream</code>, <code>Write</code>, <code>List</code>, <code>Delete</code>, and <code>Copy</code>) that return <code>impl Future + MaybeSend</code>, while erased handles use the corresponding dyn adapters (<code>ReadDyn</code>, <code>ReadStreamDyn</code>, <code>WriteDyn</code>, <code>ListDyn</code>, <code>DeleteDyn</code>, and <code>CopyDyn</code>). <code>HttpFetch</code>, <code>HttpFetchDyn</code>, and <code>HttpFetcher</code> keep the same shape as before. <code>Execute</code> is already object-safe and unchanged.</p>
+<p><code>Service</code> deliberately stays implementor-friendly: operation methods return <code>impl Future + MaybeSend</code>, so impl blocks can use <code>async fn</code>. <code>ServiceDyn</code> is the object-safe adapter with the same operations returning <code>BoxedFuture</code>; a blanket <code>impl&lt;T: Service&gt; ServiceDyn for T</code> performs the boxing. The operator stack stores <code>Servicer</code>, while service and layer wrappers implement <code>Service</code>. This preserves one dynamic production stack without forcing every backend to spell boxed futures and lifetimes by hand.</p>
+<p><code>Service</code> does not provide operation defaults. Backends and layer wrappers must implement every operation method, and unsupported operations return <code>ErrorKind::Unsupported</code> explicitly at the implementation boundary.</p>
+<h3 id="the-trait-surface"><a class="doc-anchor" href="#the-trait-surface">§</a>The trait surface</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Service: Send + Sync {
+    <span class="kw">fn </span>info(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; ServiceInfo;
+    <span class="kw">fn </span>capability(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Capability;
+
+    <span class="kw">fn </span>read(<span class="kw-2">&amp;</span><span class="self">self</span>, ctx: <span class="kw-2">&amp;</span>OperationContext, path: <span class="kw-2">&amp;</span>str, args: OpRead)
+        -&gt; <span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;(RpRead, oio::Reader)&gt;&gt; + MaybeSend;
+    <span class="comment">// create_dir, write, copy, rename, stat, delete, list, presign: same shape, all take ctx.
+</span>}
+
+<span class="kw">pub trait </span>ServiceDyn: Send + Sync {
+    <span class="kw">fn </span>info_dyn(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; ServiceInfo;
+    <span class="kw">fn </span>capability_dyn(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Capability;
+
+    <span class="kw">fn </span>read_dyn(<span class="kw-2">&amp;</span><span class="self">self</span>, ctx: <span class="kw-2">&amp;</span>OperationContext, path: <span class="kw-2">&amp;</span>str, args: OpRead)
+        -&gt; BoxedFuture&lt;<span class="lifetime">'_</span>, <span class="prelude-ty">Result</span>&lt;(RpRead, oio::Reader)&gt;&gt;;
+    <span class="comment">// create_dir, write, copy, rename, stat, delete, list, presign: same shape, all take ctx.
+</span>}
+
+<span class="kw">pub trait </span>Layer: Send + Sync {
+    <span class="kw">fn </span>apply_service(<span class="kw-2">&amp;</span><span class="self">self</span>, inner: Servicer) -&gt; Servicer { inner }
+    <span class="kw">fn </span>apply_http_fetch(<span class="kw-2">&amp;</span><span class="self">self</span>, srv: Servicer, inner: HttpFetcher) -&gt; HttpFetcher {
+        <span class="kw">let _ </span>= srv;
+        inner
+    }
+    <span class="kw">fn </span>apply_execute(<span class="kw-2">&amp;</span><span class="self">self</span>, srv: Servicer, inner: Executor) -&gt; Executor {
+        <span class="kw">let _ </span>= srv;
+        inner
+    }
+}
+
+<span class="kw">pub struct </span>OperationContext {
+    http_client: HttpClient,   <span class="comment">// composed: middleware folded over the transport
+    </span>executor: Executor,
+}</code></pre></div>
+<p><code>OperationContext</code> is named for its consumer: it is what the service receives downward. The name is deliberately neither <code>OpContext</code> (the <code>Op*</code> prefix is reserved for operation argument structs) nor <code>OperatorContext</code> (bottom-layer code must not import top-of-stack vocabulary).</p>
+<h3 id="operator-bases-layers-composed-state"><a class="doc-anchor" href="#operator-bases-layers-composed-state">§</a>Operator: bases, layers, composed state</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>Operator {
+    base_srv: Servicer,
+    base_http_fetch: HttpFetcher,
+    base_executor: Executor,
+
+    layers: Arc&lt;[Arc&lt;<span class="kw">dyn </span>Layer&gt;]&gt;,
+
+    srv: Servicer,
+    ctx: OperationContext,
+}</code></pre></div>
+<p>The bases are the slots, the layers are the program, and <code>srv</code> / <code>ctx</code> are the memoized composed state, governed by one invariant: they come from the same fold over <code>(layers, bases)</code>. Every mutation — <code>.layer()</code>, <code>.http_client()</code>, <code>.executor()</code> — consumes the operator, rebuilds the composed state from the bases, and returns a new operator:</p>
+<ol>
+<li><code>srv' = layers.fold(base_srv, apply_service)</code></li>
+<li><code>http' = layers.fold(base_http_fetch, |inner, layer| layer.apply_http_fetch(srv', inner))</code></li>
+<li><code>executor' = layers.fold(base_executor, |inner, layer| layer.apply_execute(srv', inner))</code></li>
+<li><code>ctx' = OperationContext { http', executor' }</code></li>
+</ol>
+<p>Rebuilding is always total — no plane-skipping optimizations, one code path. Layering is a configuration-time operation; the wasted intermediate folds cost a handful of <code>Arc</code> allocations.</p>
+<div class="table"><table><thead><tr><th>Plane</th><th>Provider (slot, last-wins)</th><th>Middleware (folded in stack order)</th></tr></thead><tbody>
+<tr><td>operation</td><td>service, via <code>Operator::new</code></td><td><code>Layer::apply_service</code></td></tr>
+<tr><td>HTTP</td><td>transport, via <code>.http_client()</code></td><td><code>Layer::apply_http_fetch</code></td></tr>
+<tr><td>task</td><td>runtime, via <code>.executor()</code></td><td><code>Layer::apply_execute</code></td></tr>
+</tbody></table>
+</div>
+<p>Invariants, all guaranteed by construction:</p>
+<ul>
+<li>Temporal order equals structural order; the same stack order projects onto every plane (tracing outside retry on the operation plane implies tracing outside retry on the HTTP plane).</li>
+<li>Providers and middleware cannot interfere: replacing a slot refolds the middleware over the new bottom.</li>
+<li>Applying a layer twice stacks twice on every plane consistently.</li>
+<li>Layers are pure values; hooks take <code>&amp;self</code> and must tolerate repeated invocation.</li>
+</ul>
+<p>Capability is deliberately not a fourth plane: its bottom value is a property of the operation-plane provider, so it composes as a <code>Service</code> method — a wrapper overrides <code>capability()</code> and consults <code>self.inner.capability()</code>, in exactly the order a separate hook would have folded. This also makes a layer’s capability claim and its operation implementation adjacent in one struct, where today they are two registrations that can silently drift. The <code>full_capability</code> name disappears: <code>op.info()</code> exposes <code>capability()</code> read from the composed service and <code>native_capability()</code> read from <code>base_service</code>.</p>
+<h3 id="operation-dispatch"><a class="doc-anchor" href="#operation-dispatch">§</a>Operation dispatch</h3>
+<p><code>op.read()</code> calls <code>srv.read(&amp;ctx, path, args)</code>. The operator itself is the public-API-to-raw boundary; there is no injection machinery and no entry layer. Readers, writers, listers, and deleters clone the individual pieces they need from <code>ctx</code> at construction; background tasks spawned by writers capture the executor the same way. A middle layer can override resources per operation by constructing a modified <code>OperationContext</code> and forwarding it to <code>inner</code> — per-tenant HTTP clients and per-call executors need no additional mechanism. HTTP request extensions carry request-level facts such as <code>Operation</code> and <code>ServiceOperation</code>; service identity stays in <code>ServiceInfo</code> and is observed by resource hooks through the final <code>Servicer</code>.</p>
+<p>Nothing in this structure is interior-mutable. A mutation creates new values; existing handles and in-flight operations keep theirs. The Java binding’s <code>op.clone().layer(concurrent_limit)</code> leak is structurally impossible.</p>
+<h3 id="performance"><a class="doc-anchor" href="#performance">§</a>Performance</h3>
+<p>Estimates, to be confirmed by a benchmark gate (five-layer fully-dyn stack versus current, memory backend) before implementation:</p>
+<ul>
+<li>Today every HTTP request pays an <code>RwLock</code> read plus an <code>HttpClient</code> clone (~30ns) to fetch the client from <code>AccessorInfo</code>. After this change, <code>ctx</code> is passed by reference for free, and operation bodies clone only the pieces they capture.</li>
+<li>The dyn delta is one <code>BoxedFuture</code> allocation at the <code>ServiceDyn</code> boundary plus one vtable dispatch per operation call: ~10⁻⁶ of S3 first-byte latency, ~0.5% of a single 64KiB poll, a single-digit percentage on in-memory microbenchmarks.</li>
+<li>Memory: the operator retains its bases, layer list, composed service, and composed context (a few <code>Arc</code>s).</li>
+</ul>
+<h3 id="deletions"><a class="doc-anchor" href="#deletions">§</a>Deletions</h3>
+<p><code>TypeEraseLayer</code>; <code>Access</code>, <code>AccessDyn</code>, and associated-type plumbing (renamed into the <code>Service</code> / <code>ServiceDyn</code> pair); <code>HttpClientLayer</code>; <code>OperatorBuilder</code> and <code>finish()</code>; <code>update_http_client</code>, <code>update_executor</code>, <code>update_full_capability</code>, <code>Operator::update_executor</code>; <code>AccessorInfo</code>’s <code>RwLock</code>, poisoning recovery, and all <code>set_*</code> setters (identity facts are constructor arguments); the <code>set_native_capability</code> / <code>full_capability</code> overwrite hazard.</p>
+<h3 id="no-compatibility-logic"><a class="doc-anchor" href="#no-compatibility-logic">§</a>No compatibility logic</h3>
+<p>This RFC is implemented in one shot with no migration scaffolding: no deprecated aliases, no shims, no staged intermediate states. Old APIs are deleted outright, and migration is a mechanical rewrite documented in the upgrade guide. Carrying compatibility logic would re-introduce exactly the kind of duplicated machinery this RFC exists to remove.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<ul>
+<li>This is a major breaking change to the raw API: every third-party <code>Service</code> and <code>Layer</code> implementation is rewritten, and in-repo roughly 50 services and 20 layers migrate. The changes are mechanical (delete associated-type plumbing; thread <code>ctx</code> through operation methods and request helpers) but wide, and the <code>Access</code> → <code>Service</code> rename further inflates the diff.</li>
+<li>It reverses the documented design tenet that OpenDAL uses static dispatch internally; in-memory microbenchmarks will regress by a visible single-digit percentage.</li>
+<li>The rebuild contract — state in the <code>Layer</code>, wrappers as projections — is a new obligation on layer authors, enforced by documentation rather than types.</li>
+</ul>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>The root cause analysis: providers and wrappers have different merge disciplines — last-wins versus ordered folding — and any API that expresses both as <code>update(f: T -&gt; T)</code> over an opaque composed value must erase the distinction. This cannot be fixed by documentation; the existing forwarding contract on <code>update_http_client</code> is violated by <code>HttpClientLayer</code> itself. The fix is to store the ingredients (bases and layers) and derive the result, never the reverse.</p>
+<p><code>finish()</code> and <code>OperatorBuilder</code> are rejected as vestiges: a deferred-build barrier matters only when the service must capture the composed context at construction time. With the explicit <code>ctx</code> parameter, services capture nothing, so rebuilding per mutation is strictly simpler — it unifies the builder-phase and post-finish layer paths into one, and future stack validation (capability requirements) fails at the offending <code>.layer()</code> call with precise blame.</p>
+<p>The <code>Access</code> → <code>Service</code> rename rides along because the rewrite is the only moment it is free: every implementor touches every impl anyway, and most of the old name’s surface (<code>AccessDyn</code>, <code>LayeredAccess</code>, <code>TypeEraseLayer</code>) is deleted rather than migrated.</p>
+<p>Alternatives considered:</p>
+<ol>
+<li><strong>Structure <code>HttpClient</code> internally</strong> (transport + middleware list), keeping all entry points: fixes replace-versus-wrap for HTTP only; the dual machinery, clone aliasing, and mutation architecture remain.</li>
+<li><strong>A contribution store inside <code>AccessorInfo</code></strong> (declarative registry, derive on update): fixes the merge discipline but keeps shared mutation and both trait worlds.</li>
+<li><strong>A lineage-shared snapshot cell</strong> (services hold a swappable handle captured at build): rejected — it retains a shared mutation point and “layering affects the whole lineage” semantics; the explicit <code>ctx</code> parameter is pure, gives perfect clone isolation, and enables per-operation overrides.</li>
+<li><strong>Keep <code>HttpClientLayer</code> as sugar over the slot</strong>: rejected — a layer whose <code>apply_http_fetch</code> ignores <code>inner</code> has position-dependent cut-off semantics while the slot is position-independent last-wins; two spellings with divergent semantics recreate the original confusion.</li>
+<li><strong>Flatten resources into <code>Op*</code> args instead of a <code>ctx</code> parameter</strong>: rejected — args carry the caller’s intent and ctx carries the framework-provided environment; merging the two provenances pollutes the <code>Op*</code> / <code>Rp*</code> grammar and complicates per-operation overrides.</li>
+<li><strong>Do nothing</strong>: the clone leak, the silent loss of HTTP instrumentation, and the per-layer boilerplate tax remain live.</li>
+</ol>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<ul>
+<li><strong>object_store</strong> is <code>Arc&lt;dyn ObjectStore&gt;</code> throughout and serves performance-sensitive consumers (DataFusion, Delta); <strong>axum</strong> boxes every route while <strong>tower</strong> chose generics with well-known complexity costs. The ecosystem evidence is that dyn-first is the right tradeoff for an IO library.</li>
+<li>The explicit <code>ctx</code> parameter follows Go’s <code>context.Context</code> and Rust’s own <code>std::task::Context</code>: an execution environment passed as a leading parameter rather than hidden in ambient state.</li>
+<li><strong>RFC-5479 (Context)</strong> created the shared mutable context after rejecting per-operation threading, because layers then had to hijack every operation to extract and rebuild executors from args. That objection no longer applies: <code>ctx</code> is part of the method signature, so wrappers forward it like any other parameter, with zero extra machinery.</li>
+<li>The <code>Layer</code> hook design follows tower’s <code>Layer</code> — a pure value that wraps a service — extended to multiple planes.</li>
+</ul>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<ul>
+<li>Benchmark gate: measure a five-layer fully-dyn stack against the current architecture on the memory backend before implementation starts.</li>
+<li>Whether <code>blocking::Operator</code> needs any surface change (expected: no, it wraps the async operator).</li>
+</ul>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<ul>
+<li>The retained layer list makes stack introspection nearly free: <code>op.info()</code> could list applied layers for debugging, and runtime reconfiguration (hot-swapping observability layers) becomes a rebuild with a modified list.</li>
+<li>Layers could declare capability <em>requirements</em>, checked against <code>inner.capability()</code> at each <code>.layer()</code> call, rejecting incoherent stacks at configuration time with precise blame.</li>
+<li>Per-operation <code>OperationContext</code> overrides open per-tenant HTTP clients and per-call executors; convenience APIs can be added on demand without new mechanisms.</li>
+</ul>
+</div></details></section></div></main></body></html>

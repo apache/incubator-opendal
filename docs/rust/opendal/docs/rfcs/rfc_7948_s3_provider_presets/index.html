@@ -1,0 +1,200 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="S3 Provider Presets"><title>opendal::docs::rfcs::rfc_7948_s3_provider_presets - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_7948_s3_provider_presets</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>7948_<wbr>s3_<wbr>provider_<wbr>presets</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a><ul><li><a href="#public-api-and-registration" title="Public API and registration">Public API and registration</a></li><li><a href="#provider-configuration" title="Provider configuration">Provider configuration</a></li><li><a href="#service-construction" title="Service construction">Service construction</a></li><li><a href="#error-and-validation-contract" title="Error and validation contract">Error and validation contract</a></li></ul></li><li><a href="#compatibility-and-migration" title="Compatibility and migration">Compatibility and migration</a></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a></li><li><a href="#prior-art" title="Prior art">Prior art</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>7948_<wbr>s3_<wbr>provider_<wbr>presets</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>S3 Provider Presets</p>
+<ul>
+<li>Proposal Name: <code>s3_provider_presets</code></li>
+<li>Start Date: 2026-07-24</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/7948">apache/opendal#7948</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/0000">apache/opendal#0000</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Add first-class <code>r2</code> and <code>minio</code> services to <code>opendal-service-s3</code>. Each service
+has its own URI scheme, config type, and builder. Its config exposes only the
+connection, location, and authentication fields supported by that provider.</p>
+<p>The provider builder validates those fields, converts them into an internal
+<code>S3Config</code>, and delegates requests to the existing S3 implementation. Existing
+<code>s3</code> construction and behavior remain unchanged.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>S3 wire compatibility does not imply AWS configuration compatibility. Today,
+an R2 or MinIO user must construct <code>s3</code> and know which endpoint, region, and
+AWS-oriented options are meaningful. The complete <code>S3Config</code> also advertises
+settings such as AssumeRole, request payer, storage classes, and AWS encryption
+options even when a provider does not support them.</p>
+<p>Here, <em>preset</em> means predefined construction semantics, not a scheme alias or
+AWS credential profile. It neither exposes <code>S3Config</code> wholesale nor stores
+credentials.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>Select Cloudflare R2 with an account ID:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>op = Operator::from_uri((
+    <span class="string">"r2://data/root"</span>,
+    [
+        (<span class="string">"account_id"</span>, <span class="string">"example-account"</span>),
+        (<span class="string">"access_key_id"</span>, <span class="string">"example-access-key"</span>),
+        (<span class="string">"secret_access_key"</span>, <span class="string">"example-secret-key"</span>),
+    ],
+))<span class="question-mark">?</span>;</code></pre></div>
+<p>The URI authority is the bucket and the path is the OpenDAL root. The preset
+derives the documented
+<a href="https://developers.cloudflare.com/r2/get-started/s3/"><code>https://&lt;ACCOUNT_ID&gt;.r2.cloudflarestorage.com</code></a>
+endpoint and uses <code>auto</code> as the signing region. A jurisdiction may be supplied
+with <code>account_id</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>op = Operator::from_uri((
+    <span class="string">"r2://data/root"</span>,
+    [
+        (<span class="string">"account_id"</span>, <span class="string">"example-account"</span>),
+        (<span class="string">"jurisdiction"</span>, <span class="string">"eu"</span>),
+    ],
+))<span class="question-mark">?</span>;</code></pre></div>
+<p>An R2 user may supply <code>endpoint</code> instead of <code>account_id</code> for a proxy, gateway,
+or test server. Supplying both is invalid, and <code>jurisdiction</code> is valid only
+with <code>account_id</code>.</p>
+<p>Select a MinIO deployment with its endpoint:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>op = Operator::from_uri((
+    <span class="string">"minio://data/root"</span>,
+    [
+        (<span class="string">"endpoint"</span>, <span class="string">"http://127.0.0.1:9000"</span>),
+        (<span class="string">"access_key_id"</span>, <span class="string">"minioadmin"</span>),
+        (<span class="string">"secret_access_key"</span>, <span class="string">"minioadmin"</span>),
+    ],
+))<span class="question-mark">?</span>;</code></pre></div>
+<p>MinIO has no universal endpoint, so <code>endpoint</code> is required. <code>region</code> is
+optional and defaults to <code>auto</code>; deployments that require a configured region
+can provide it explicitly.</p>
+<p>Provider selection is explicit; OpenDAL does not infer it from a hostname.
+Unsupported fields such as <code>role_arn</code> fail during construction. Users who need
+the complete S3 configuration surface continue to use <code>s3</code>.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2><h3 id="public-api-and-registration"><a class="doc-anchor" href="#public-api-and-registration">§</a>Public API and registration</h3>
+<p>The <code>opendal-service-s3</code> crate exports <code>R2</code>, <code>R2Config</code>, <code>R2_SCHEME</code>, <code>Minio</code>,
+<code>MinioConfig</code>, and <code>MINIO_SCHEME</code> alongside <code>S3</code>, <code>S3Config</code>, and <code>S3_SCHEME</code>.
+Enabling <code>services-s3</code> registers all three schemes:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code>registry.register::&lt;S3&gt;(S3_SCHEME);
+registry.register::&lt;R2&gt;(R2_SCHEME);
+registry.register::&lt;Minio&gt;(MINIO_SCHEME);</code></pre></div>
+<p>Each provider implements the existing <code>Configurator</code> and <code>Builder</code> contracts.
+<code>Operator::from_uri</code>, <code>Operator::via_iter</code>, and <code>Operator::from_config</code>
+therefore work without changes to <code>OperatorRegistry</code>.</p>
+<h3 id="provider-configuration"><a class="doc-anchor" href="#provider-configuration">§</a>Provider configuration</h3>
+<p>Provider config types are independent structs. They do not embed or flatten
+<code>S3Config</code>.</p>
+<p><code>R2Config</code> exposes:</p>
+<ul>
+<li><code>root</code></li>
+<li><code>bucket</code></li>
+<li><code>account_id</code></li>
+<li><code>jurisdiction</code></li>
+<li><code>endpoint</code></li>
+<li><code>access_key_id</code></li>
+<li><code>secret_access_key</code></li>
+<li><code>session_token</code></li>
+</ul>
+<p><code>MinioConfig</code> exposes:</p>
+<ul>
+<li><code>root</code></li>
+<li><code>bucket</code></li>
+<li><code>endpoint</code></li>
+<li><code>region</code></li>
+<li><code>access_key_id</code></li>
+<li><code>secret_access_key</code></li>
+<li><code>session_token</code></li>
+<li><code>skip_signature</code></li>
+</ul>
+<p><code>bucket</code> is a required <code>String</code>, <code>skip_signature</code> is a <code>bool</code> that defaults to
+<code>false</code>, and every other listed field is an <code>Option&lt;String&gt;</code>. Both configs are
+non-exhaustive and use <code>#[serde(deny_unknown_fields)]</code>. Unknown or misspelled
+options therefore fail rather than silently adopting S3 defaults. Custom
+<code>Debug</code> implementations omit credentials and session tokens.</p>
+<p>Direct credentials require both <code>access_key_id</code> and <code>secret_access_key</code>.
+<code>session_token</code> requires that pair. Both
+<a href="https://developers.cloudflare.com/r2/api/s3/temporary-credentials/">R2</a> and
+<a href="https://min.io/docs/minio/linux/developers/security-token-service.html">MinIO</a>
+support temporary credentials; the configs accept issued credentials but do
+not expose credential-issuance settings. When direct credentials are absent,
+the builders may load static credentials from the standard AWS environment
+variables or shared credential files. They do not use SSO, web identity,
+credential processes, ECS, EC2 metadata, or AssumeRole.
+<code>MinioConfig::skip_signature</code> explicitly selects anonymous requests and cannot
+be combined with direct credentials.</p>
+<p>These allowlists are public contracts. Additions require documented provider
+support and tests. S3-specific operation policy remains available through
+<code>S3Config</code>, not provider configs.</p>
+<h3 id="service-construction"><a class="doc-anchor" href="#service-construction">§</a>Service construction</h3>
+<p>Construction follows one path:</p>
+<div class="example-wrap"><pre class="language-text"><code>provider config
+-&gt; provider validation and defaults
+-&gt; internal S3Config
+-&gt; shared S3 builder
+-&gt; S3 backend with provider scheme</code></pre></div>
+<p><code>R2Config::from_uri</code> and <code>MinioConfig::from_uri</code> map the URI authority to
+<code>bucket</code> and the path to <code>root</code>, then deserialize query or iterator options
+into their own fields.</p>
+<p><code>R2Builder</code> requires exactly one of <code>account_id</code> and <code>endpoint</code>. With
+<code>account_id</code>, it accepts an optional <code>eu</code> or <code>fedramp</code>
+<a href="https://developers.cloudflare.com/r2/reference/data-location/">jurisdiction</a>
+and derives <code>https://&lt;ACCOUNT_ID&gt;.&lt;JURISDICTION&gt;.r2.cloudflarestorage.com</code>; it
+omits the jurisdiction segment when no jurisdiction is set. It always sets the
+internal signing region to <code>auto</code> and prevents AWS-specific metadata lookup
+that is outside the R2 contract.</p>
+<p><code>MinioBuilder</code> requires <code>endpoint</code>, forwards an explicit <code>region</code>, or uses
+<code>auto</code> when it is absent. It maps only its declared authentication fields.</p>
+<p>Before delegation, each builder creates the restricted credential chain
+described above and passes it to the shared builder. This prevents the default
+AWS credential chain from reintroducing behavior omitted by the provider
+contract.</p>
+<p>Both builders create the shared S3 backend through a crate-private construction
+path that accepts the selected scheme. The backend uses that scheme in
+<code>ServiceInfo</code> and error context, so an R2 or MinIO operator identifies itself
+correctly without an operation-forwarding wrapper.</p>
+<p>The <code>S3Config</code> conversion remains private and does not widen provider
+deserialization or public APIs.</p>
+<h3 id="error-and-validation-contract"><a class="doc-anchor" href="#error-and-validation-contract">§</a>Error and validation contract</h3>
+<p>Invalid combinations return <code>ErrorKind::ConfigInvalid</code> before a request is
+sent. Errors identify the provider and invalid field or field combination, but
+never include credential values.</p>
+<p>Provider validation includes:</p>
+<ul>
+<li>A non-empty bucket.</li>
+<li>The endpoint rules described above.</li>
+<li>Valid R2 jurisdiction values.</li>
+<li>Complete direct credential tuples.</li>
+<li>No credentials when MinIO anonymous mode is selected.</li>
+</ul>
+<h2 id="compatibility-and-migration"><a class="doc-anchor" href="#compatibility-and-migration">§</a>Compatibility and migration</h2>
+<p>This proposal adds schemes and types without changing <code>s3</code>. OpenDAL never
+reinterprets an existing S3 endpoint as a provider preset.</p>
+<p>An application can migrate by changing <code>s3</code> to <code>r2</code> or <code>minio</code>, removing
+AWS-only options, and supplying the provider’s required fields. Applications
+that depend on fields outside the provider contract keep using <code>s3</code> as an
+explicit escape hatch. Older OpenDAL versions reject the new schemes as
+unregistered instead of falling back to S3.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>The dedicated configs duplicate a small number of S3 connection and
+authentication fields. This duplication is intentional: it prevents shared
+implementation details from defining provider APIs.</p>
+<p>Provider schemes and config types also enlarge generated binding APIs.
+Unit tests must cover field rejection, endpoint derivation, invalid credential
+tuples, redacted debug output, and scheme identity. Existing R2 and MinIO
+behavior fixtures must construct through the new schemes. MinIO deployments
+can vary, so its initial contract remains conservative and requires an
+endpoint.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>Registering <code>r2</code> or <code>minio</code> as aliases of <code>S3</code> would improve naming but would
+retain the full AWS-oriented config surface and could not enforce
+provider-specific requirements.</p>
+<p>Embedding or flattening <code>S3Config</code> into provider configs would make every S3
+field appear supported. A denylist would drift whenever <code>S3Config</code> grows. A
+small allowlist makes provider support explicit.</p>
+<p>Adding a provider discriminator to <code>S3Config</code> would accumulate provider
+branches inside <code>S3Builder</code> and give typed construction a weaker contract.
+Dedicated configs keep validation local while sharing the runtime.</p>
+<p>Detecting providers from endpoints would fail for custom domains, gateways,
+and compatible test servers. Explicit schemes keep construction deterministic.</p>
+<p>Separate provider crates would add feature and release boundaries without a
+separate protocol implementation. The provider types belong in
+<code>opendal-service-s3</code> because their runtime is S3-compatible.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>RFC-5444 introduced scheme-based <code>OperatorRegistry</code> construction and identified
+R2 configuration presets as a future extension. This proposal makes those
+presets first-class provider contracts over a shared S3 runtime.</p>
+</div></details></section></div></main></body></html>

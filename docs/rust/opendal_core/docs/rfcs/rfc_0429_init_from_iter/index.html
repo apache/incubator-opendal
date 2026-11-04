@@ -1,0 +1,73 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Init from iter"><title>opendal_core::docs::rfcs::rfc_0429_init_from_iter - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_0429_init_from_iter</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal_core/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal_core/index.html">opendal_<wbr>core</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>0429_<wbr>init_<wbr>from_<wbr>iter</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a><ul><li><a href="#connection-string" title="Connection string">Connection string</a></li></ul></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal_<wbr>core::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal_core</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>0429_<wbr>init_<wbr>from_<wbr>iter</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../../src/opendal_core/docs/rfcs/mod.rs.html#94">Source</a> </span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Init from iter</p>
+<ul>
+<li>Proposal Name: <code>init_from_iter</code></li>
+<li>Start Date: 2022-07-10</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/429">apache/opendal#429</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/430">apache/opendal#430</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Allow initializing opendal operators from an iterator.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>To init OpenDAL operators, users have to init an accessor first.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>root = <span class="kw-2">&amp;</span>env::var(<span class="string">"OPENDAL_S3_ROOT"</span>).unwrap_or_else(|<span class="kw">_</span>| <span class="string">"/"</span>.to_string());
+<span class="kw">let </span>root = <span class="macro">format!</span>(<span class="string">"/{}/{}"</span>, root, uuid::Uuid::new_v4());
+
+<span class="kw">let </span><span class="kw-2">mut </span>builder = opendal::services::s3::Backend::build();
+builder.root(<span class="kw-2">&amp;</span>root);
+builder.bucket(<span class="kw-2">&amp;</span>env::var(<span class="string">"OPENDAL_S3_BUCKET"</span>).expect(<span class="string">"OPENDAL_S3_BUCKET must set"</span>));
+builder.endpoint(<span class="kw-2">&amp;</span>env::var(<span class="string">"OPENDAL_S3_ENDPOINT"</span>).unwrap_or_default());
+builder.access_key_id(<span class="kw-2">&amp;</span>env::var(<span class="string">"OPENDAL_S3_ACCESS_KEY_ID"</span>).unwrap_or_default());
+builder.secret_access_key(<span class="kw-2">&amp;</span>env::var(<span class="string">"OPENDAL_S3_SECRET_ACCESS_KEY"</span>).unwrap_or_default());
+builder
+    .server_side_encryption(<span class="kw-2">&amp;</span>env::var(<span class="string">"OPENDAL_S3_SERVER_SIDE_ENCRYPTION"</span>).unwrap_or_default());
+builder.server_side_encryption_customer_algorithm(
+    <span class="kw-2">&amp;</span>env::var(<span class="string">"OPENDAL_S3_SERVER_SIDE_ENCRYPTION_CUSTOMER_ALGORITHM"</span>).unwrap_or_default(),
+);
+builder.server_side_encryption_customer_key(
+    <span class="kw-2">&amp;</span>env::var(<span class="string">"OPENDAL_S3_SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY"</span>).unwrap_or_default(),
+);
+builder.server_side_encryption_customer_key_md5(
+    <span class="kw-2">&amp;</span>env::var(<span class="string">"OPENDAL_S3_SERVER_SIDE_ENCRYPTION_CUSTOMER_KEY_MD5"</span>).unwrap_or_default(),
+);
+builder.server_side_encryption_aws_kms_key_id(
+    <span class="kw-2">&amp;</span>env::var(<span class="string">"OPENDAL_S3_SERVER_SIDE_ENCRYPTION_AWS_KMS_KEY_ID"</span>).unwrap_or_default(),
+);
+<span class="kw">if </span>env::var(<span class="string">"OPENDAL_S3_ENABLE_VIRTUAL_HOST_STYLE"</span>).unwrap_or_default() == <span class="string">"on" </span>{
+    builder.enable_virtual_host_style();
+}
+<span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(builder.finish().<span class="kw">await</span><span class="question-mark">?</span>))</code></pre></div>
+<p>We can simplify this logic if opendal has its native <code>from_iter</code> support.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>Users can init an operator like the following:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// OPENDAL_S3_BUCKET = &lt;bucket&gt;
+// OPENDAL_S3_ENDPOINT = &lt;endpoint&gt;
+</span><span class="kw">let </span>op = Operator::from_env(Scheme::S3)<span class="question-mark">?</span>;</code></pre></div>
+<p>Or from a prefixed env:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// OIL_PROFILE_&lt;name&gt;_S3_BUCKET = &lt;bucket&gt;
+// OIL_PROFILE_&lt;name&gt;_S3_ENDPOINT = &lt;endpoint&gt;
+</span><span class="kw">let </span>op = Operator::from_env(Scheme::S3, <span class="string">"OIL_PROFILE_&lt;name&gt;"</span>)<span class="question-mark">?</span>;</code></pre></div>
+<p>Also, we call the underlying function directly:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// var it: impl Iterator&lt;Item=(String, String)&gt;
+</span><span class="kw">let </span>op = Operator::from_iter(Scheme::S3, it)<span class="question-mark">?</span>;</code></pre></div><h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>Internally, every service’s backend will implement the following functions:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">fn </span>from_iter(it: <span class="kw">impl </span>Iterator&lt;Item=(String, String)&gt;) -&gt; Backend {}</code></pre></div>
+<p>Note: it’s not a public API of <code>Accessor</code>, and it will never be. Instead, we will use this function inside the crate to keep the ability to refactor or even remove it.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>None</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2><h3 id="connection-string"><a class="doc-anchor" href="#connection-string">§</a>Connection string</h3>
+<p>It sounds a good idea to implement something like:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>op = Operator::open(<span class="string">"s3://bucket?region=test"</span>)<span class="question-mark">?</span></code></pre></div>
+<p>But there are no valid use cases. Let’s implement this in the future if needed.</p>
+</div></details></section></div></main></body></html>

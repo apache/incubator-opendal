@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PCLOUD_SCHEME"],"fn":["register_pcloud_service"],"struct":["Pcloud","PcloudConfig"]};

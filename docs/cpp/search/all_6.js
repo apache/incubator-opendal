@@ -1,0 +1,7 @@
+var searchData=
+[
+  ['gap_0',['gap',['../structopendal_1_1ReadOptions.html#a2fcc7241e5161af189ff9943bc837271',1,'opendal::ReadOptions::gap'],['../structopendal_1_1ReaderOptions.html#acb625287aee4657cb70a30bb923fcd93',1,'opendal::ReaderOptions::gap']]],
+  ['getlister_1',['GetLister',['../classopendal_1_1Operator.html#aaf870597eba9bf2fc8fd6a6970053531',1,'opendal::Operator::GetLister(std::string_view path)'],['../classopendal_1_1Operator.html#a9c19385a67a7011cd194f24f65f826ab',1,'opendal::Operator::GetLister(std::string_view path, const ListOptions &amp;options)'],['../classopendal_1_1async_1_1Operator.html#a7d727729ebd4613cb019cd898e2ccf4f',1,'opendal::async::Operator::GetLister()']]],
+  ['getreader_2',['GetReader',['../classopendal_1_1Operator.html#a1a6500010c81a91803270cfd8c99b080',1,'opendal::Operator::GetReader(std::string_view path)'],['../classopendal_1_1Operator.html#af9b04448ea0a83277b87c129a7a1cff0',1,'opendal::Operator::GetReader(std::string_view path, const ReaderOptions &amp;options)'],['../classopendal_1_1async_1_1Operator.html#a8a86f3418993b66e3557f2e94e70dfa0',1,'opendal::async::Operator::GetReader()']]],
+  ['getwriter_3',['GetWriter',['../classopendal_1_1Operator.html#ad5821e9a8cddc00eb423fecd60dbd6da',1,'opendal::Operator::GetWriter(std::string_view path)'],['../classopendal_1_1Operator.html#a60c1e5e5ad6c766770afd98d9ff6a085',1,'opendal::Operator::GetWriter(std::string_view path, const WriteOptions &amp;options)']]]
+];

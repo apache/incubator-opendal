@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["WEBHDFS_SCHEME"],"fn":["register_webhdfs_service"],"struct":["Webhdfs","WebhdfsConfig"]};

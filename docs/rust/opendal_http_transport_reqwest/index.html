@@ -1,0 +1,160 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="opendal-http-transport-reqwest"><title>opendal_http_transport_reqwest - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="opendal_http_transport_reqwest" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js" ><script src="../static.files/storage-41dd4d93.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Crate opendal_http_transport_reqwest</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../opendal_http_transport_reqwest/index.html">opendal_<wbr>http_<wbr>transport_<wbr>reqwest</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#opendal-http-transport-reqwest" title="opendal-http-transport-reqwest">opendal-http-transport-reqwest</a><ul><li><a href="#tls-configuration" title="TLS configuration">TLS configuration</a></li><li><a href="#cargo-features" title="Cargo features">Cargo features</a></li><li><a href="#use-with-opendal-core" title="Use with `opendal-core`">Use with <code>opendal-core</code></a></li><li><a href="#build-different-tls-backends" title="Build different TLS backends">Build different TLS backends</a></li><li><a href="#wasm-targets" title="WASM targets">WASM targets</a></li><li><a href="#license-and-trademarks" title="License and Trademarks">License and Trademarks</a></li></ul></li></ul><h3><a href="#structs">Crate Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><h1>Crate <span>opendal_<wbr>http_<wbr>transport_<wbr>reqwest</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/opendal_http_transport_reqwest/lib.rs.html#18-284">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h2 id="opendal-http-transport-reqwest"><a class="doc-anchor" href="#opendal-http-transport-reqwest">§</a>opendal-http-transport-reqwest</h2>
+<p>Reqwest-based HTTP transport for <a href="https://opendal.apache.org">Apache OpenDAL</a>.</p>
+<p>This crate provides <code>ReqwestTransport</code>, an implementation of OpenDAL’s
+<code>HttpTransport</code> trait backed by <a href="https://crates.io/crates/reqwest">reqwest</a>.</p>
+<h3 id="tls-configuration"><a class="doc-anchor" href="#tls-configuration">§</a>TLS configuration</h3>
+<p>OpenDAL does not add another TLS backend selector on top of reqwest. Pick the
+Cargo feature set you need, build a <code>reqwest::Client</code> with reqwest’s
+<code>ClientBuilder</code>, and pass that client to <code>ReqwestTransport::new</code>.</p>
+<p>The default feature is <code>rustls</code>. When <code>ReqwestTransport::default()</code> is used on
+native targets, this crate explicitly asks reqwest for the Rustls backend if the
+<code>rustls</code> feature is compiled in.</p>
+<p>If this crate is built with only <code>rustls-no-provider</code>, install a Rustls default
+crypto provider before using <code>ReqwestTransport::default()</code>, or build a
+preconfigured <code>reqwest::Client</code> yourself and pass it to <code>ReqwestTransport::new</code>.</p>
+<h4 id="reqwest-tls-resolution"><a class="doc-anchor" href="#reqwest-tls-resolution">§</a>Reqwest TLS resolution</h4>
+<p>Reqwest has its own TLS resolution rules. For OpenDAL users, the practical
+resolution order is:</p>
+<ul>
+<li>Explicit reqwest client configuration wins. Call
+<code>ClientBuilder::tls_backend_rustls()</code>,
+<code>ClientBuilder::tls_backend_native()</code>, or
+<code>ClientBuilder::tls_backend_preconfigured()</code>, but reqwest documents that API
+as semver-unstable because the concrete TLS config type must match reqwest’s
+dependency versions.</li>
+<li>Otherwise, reqwest’s automatic TLS backend selection applies. The reqwest
+<code>default-tls</code> feature takes precedence if any crate in the dependency tree
+enables it. Disable reqwest defaults with <code>default-features = false</code> when you
+need deterministic TLS features.</li>
+<li>Cargo features are additive. If multiple TLS backends are compiled by feature
+unification, use explicit client configuration instead of relying on automatic
+selection.</li>
+</ul>
+<p>See reqwest’s TLS documentation:</p>
+<ul>
+<li><a href="https://docs.rs/reqwest/latest/reqwest/tls/index.html">reqwest TLS module</a></li>
+<li><a href="https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.tls_backend_rustls">ClientBuilder::tls_backend_rustls</a></li>
+<li><a href="https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.tls_backend_native">ClientBuilder::tls_backend_native</a></li>
+<li><a href="https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html#method.tls_backend_preconfigured">ClientBuilder::tls_backend_preconfigured</a></li>
+</ul>
+<h4 id="feature-matrix"><a class="doc-anchor" href="#feature-matrix">§</a>Feature matrix</h4><div class="table"><table><thead><tr><th>Feature</th><th>Crypto provider</th><th>Certificate roots</th><th>Use when</th></tr></thead><tbody>
+<tr><td><code>rustls</code> (default)</td><td>reqwest default</td><td>Platform verifier</td><td>Pure-Rust TLS with the system trust store</td></tr>
+<tr><td><code>rustls-no-provider</code></td><td>You provide</td><td>You provide</td><td>BYO crypto provider, roots, or FIPS module</td></tr>
+<tr><td><code>native-tls</code></td><td>OS library</td><td>OS trust store</td><td>You want platform TLS</td></tr>
+</tbody></table>
+</div><h3 id="cargo-features"><a class="doc-anchor" href="#cargo-features">§</a>Cargo features</h3>
+<p>Most users depend on the <code>opendal</code> facade crate:</p>
+<div class="example-wrap"><pre class="language-toml"><code>[dependencies]
+# Default: reqwest transport with rustls.
+opendal = { version = &quot;0.58&quot; }</code></pre></div>
+<p>To select one transport TLS feature explicitly, disable default features:</p>
+<div class="example-wrap"><pre class="language-toml"><code>[dependencies]
+opendal = { version = &quot;0.58&quot;, default-features = false, features = [
+    &quot;http-transport-reqwest-rustls&quot;,
+] }</code></pre></div><h3 id="use-with-opendal-core"><a class="doc-anchor" href="#use-with-opendal-core">§</a>Use with <code>opendal-core</code></h3>
+<p>Applications that use the split crates can attach reqwest to an operator
+without installing a process-wide default transport:</p>
+<div class="example-wrap"><pre class="language-shell"><code>cargo add opendal-core opendal-http-transport-reqwest</code></pre></div>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal_core::Builder;
+<span class="kw">use </span>opendal_core::HttpTransporter;
+<span class="kw">use </span>opendal_core::OperationContext;
+<span class="kw">use </span>opendal_core::Operator;
+<span class="kw">use </span>opendal_core::Result;
+<span class="kw">use </span>opendal_http_transport_reqwest::ReqwestTransport;
+
+<span class="kw">fn </span>build_operator&lt;B: Builder&gt;(builder: B) -&gt; <span class="prelude-ty">Result</span>&lt;Operator&gt; {
+    <span class="kw">let </span>transport = HttpTransporter::new(ReqwestTransport::default());
+    <span class="kw">let </span>context = OperationContext::new().with_http_transport(transport);
+
+    <span class="prelude-val">Ok</span>(Operator::new(builder)<span class="question-mark">?</span>.with_context(context))
+}</code></pre></div>
+<p>Pass a configured service builder to <code>build_operator</code>. The resulting operator
+uses this reqwest transport for HTTP-backed services.</p>
+<h3 id="build-different-tls-backends"><a class="doc-anchor" href="#build-different-tls-backends">§</a>Build different TLS backends</h3><h4 id="rustls"><a class="doc-anchor" href="#rustls">§</a>Rustls</h4>
+<p>Use reqwest’s Rustls backend explicitly when you build the client:</p>
+<div class="example-wrap"><pre class="language-toml"><code>[dependencies]
+opendal = { version = &quot;0.58&quot;, default-features = false, features = [
+    &quot;http-transport-reqwest-rustls&quot;,
+] }
+reqwest = { version = &quot;0.13.4&quot;, default-features = false, features = [
+    &quot;rustls&quot;,
+    &quot;stream&quot;,
+] }</code></pre></div>
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">use </span>std::time::Duration;
+
+<span class="kw">use </span>opendal::HttpTransporter;
+<span class="kw">use </span>opendal::ReqwestTransport;
+
+<span class="kw">fn </span>build_transport() -&gt; <span class="prelude-ty">Result</span>&lt;HttpTransporter, Box&lt;<span class="kw">dyn </span>std::error::Error&gt;&gt; {
+    <span class="kw">let </span>client = reqwest::Client::builder()
+        .tls_backend_rustls()
+        .connect_timeout(Duration::from_secs(<span class="number">10</span>))
+        .build()<span class="question-mark">?</span>;
+
+    <span class="prelude-val">Ok</span>(HttpTransporter::new(ReqwestTransport::new(client)))
+}</code></pre></div><h4 id="native-tls"><a class="doc-anchor" href="#native-tls">§</a>Native TLS</h4>
+<p>Use <code>native-tls</code> when you want reqwest to delegate TLS to the platform stack:</p>
+<div class="example-wrap"><pre class="language-toml"><code>[dependencies]
+opendal = { version = &quot;0.58&quot;, default-features = false, features = [
+    &quot;http-transport-reqwest-native-tls&quot;,
+] }
+reqwest = { version = &quot;0.13.4&quot;, default-features = false, features = [
+    &quot;native-tls&quot;,
+    &quot;stream&quot;,
+] }</code></pre></div>
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal::HttpTransporter;
+<span class="kw">use </span>opendal::ReqwestTransport;
+
+<span class="kw">fn </span>build_transport() -&gt; <span class="prelude-ty">Result</span>&lt;HttpTransporter, Box&lt;<span class="kw">dyn </span>std::error::Error&gt;&gt; {
+    <span class="kw">let </span>client = reqwest::Client::builder()
+        .tls_backend_native()
+        .build()<span class="question-mark">?</span>;
+
+    <span class="prelude-val">Ok</span>(HttpTransporter::new(ReqwestTransport::new(client)))
+}</code></pre></div><h4 id="rustls-no-provider"><a class="doc-anchor" href="#rustls-no-provider">§</a>rustls-no-provider</h4>
+<p>When using <code>wekpki-roots</code>, you could use <code>rustls-no-provider</code>.</p>
+<p>Use <code>rustls-no-provider</code> when the application owns the Rustls provider and
+certificate roots. This example only configures Mozilla roots from
+<code>webpki-roots</code>; install or configure the Rustls crypto provider in application
+startup.</p>
+<div class="example-wrap"><pre class="language-toml"><code>[dependencies]
+opendal = { version = &quot;0.58&quot;, default-features = false, features = [
+    &quot;http-transport-reqwest-rustls-no-provider&quot;,
+] }
+reqwest = { version = &quot;0.13.4&quot;, default-features = false, features = [
+    &quot;rustls-no-provider&quot;,
+    &quot;stream&quot;,
+] }
+rustls = { version = &quot;0.23&quot;, default-features = false, features = [&quot;std&quot;] }
+webpki-roots = &quot;1&quot;</code></pre></div>
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal::HttpTransporter;
+<span class="kw">use </span>opendal::ReqwestTransport;
+
+<span class="kw">fn </span>build_transport() -&gt; <span class="prelude-ty">Result</span>&lt;HttpTransporter, Box&lt;<span class="kw">dyn </span>std::error::Error&gt;&gt; {
+    <span class="kw">let </span>root_store =
+        rustls::RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+    <span class="kw">let </span>tls_config = rustls::ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+
+    <span class="kw">let </span>client = reqwest::Client::builder()
+        .tls_backend_preconfigured(tls_config)
+        .build()<span class="question-mark">?</span>;
+
+    <span class="prelude-val">Ok</span>(HttpTransporter::new(ReqwestTransport::new(client)))
+}</code></pre></div>
+<p>To use <code>ring</code> crate, please refer <code>rustls</code> documentation.</p>
+<h3 id="wasm-targets"><a class="doc-anchor" href="#wasm-targets">§</a>WASM targets</h3>
+<p>On <code>wasm32-unknown-unknown</code> and <code>wasm32-none</code>, reqwest switches to its WASM
+client implementation. It uses the browser or host Fetch API instead of hyper.
+TLS is provided by the browser or host environment, so the effective choice is
+the system TLS stack exposed to that environment.</p>
+<p>This means <code>native-tls</code>, <code>rustls</code>, <code>rustls-no-provider</code>, custom root stores,
+and custom Rustls crypto providers do not select the TLS implementation for
+wasm requests. See <a href="https://docs.rs/reqwest/latest/reqwest/#wasm">reqwest’s WASM documentation</a>
+for the target-specific limitations.</p>
+<h3 id="license-and-trademarks"><a class="doc-anchor" href="#license-and-trademarks">§</a>License and Trademarks</h3>
+<p>Licensed under the Apache License, Version 2.0: <a href="http://www.apache.org/licenses/LICENSE-2.0">http://www.apache.org/licenses/LICENSE-2.0</a></p>
+<p>Apache OpenDAL, OpenDAL, and Apache are either registered trademarks or trademarks of the Apache Software Foundation.</p>
+</div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.ReqwestTransport.html" title="struct opendal_http_transport_reqwest::ReqwestTransport">Reqwest<wbr>Transport</a></dt><dd>A HTTP transport with [<code>reqwest::Client</code>].</dd></dl></section></div></main></body></html>

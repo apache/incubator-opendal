@@ -1,0 +1,38 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Apache OpenDAL™ Huawei Cloud OBS Service"><title>opendal_service_obs - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="opendal_service_obs" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js" ><script src="../static.files/storage-41dd4d93.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Crate opendal_service_obs</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../opendal_service_obs/index.html">opendal_<wbr>service_<wbr>obs</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#apache-opendal-huawei-cloud-obs-service" title="Apache OpenDAL™ Huawei Cloud OBS Service">Apache OpenDAL™ Huawei Cloud OBS Service</a><ul><li><a href="#use-through-opendal" title="Use through `opendal`">Use through <code>opendal</code></a></li><li><a href="#use-with-opendal-core" title="Use with `opendal-core`">Use with <code>opendal-core</code></a></li><li><a href="#documentation" title="Documentation">Documentation</a></li><li><a href="#license" title="License">License</a></li></ul></li></ul><h3><a href="#structs">Crate Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#constants" title="Constants">Constants</a></li><li><a href="#functions" title="Functions">Functions</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><h1>Crate <span>opendal_<wbr>service_<wbr>obs</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/opendal_service_obs/lib.rs.html#18-45">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h2 id="apache-opendal-huawei-cloud-obs-service"><a class="doc-anchor" href="#apache-opendal-huawei-cloud-obs-service">§</a>Apache OpenDAL™ Huawei Cloud OBS Service</h2>
+<p><code>opendal-service-obs</code> provides access to Huawei Cloud Object Storage Service for
+applications built with Apache OpenDAL™.</p>
+<h3 id="use-through-opendal"><a class="doc-anchor" href="#use-through-opendal">§</a>Use through <code>opendal</code></h3>
+<p>Applications should normally enable this service through the <code>opendal</code> facade with the
+<code>services-obs</code> feature:</p>
+<div class="example-wrap"><pre class="language-shell"><code>cargo add opendal --features services-obs</code></pre></div>
+<p>The service is available as <code>opendal::services::Obs</code>. Configure the
+service builder, then pass it to <code>opendal::Operator::new</code>.</p>
+<h3 id="use-with-opendal-core"><a class="doc-anchor" href="#use-with-opendal-core">§</a>Use with <code>opendal-core</code></h3>
+<p>Add the split crates directly:</p>
+<div class="example-wrap"><pre class="language-shell"><code>cargo add opendal-core opendal-service-obs</code></pre></div>
+<p>Pass a configured service builder to <code>Operator::new</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal_core::{Operator, OperatorRegistry, <span class="prelude-ty">Result</span>};
+<span class="kw">use </span>opendal_service_obs::{register_obs_service, Obs};
+
+<span class="kw">fn </span>build_operator(builder: Obs) -&gt; <span class="prelude-ty">Result</span>&lt;Operator&gt; {
+    Operator::new(builder)
+}
+
+<span class="kw">fn </span>register_for_uri() {
+    register_obs_service(OperatorRegistry::get());
+}</code></pre></div>
+<p><code>register_for_uri</code> is only needed for scheme-driven construction through
+<code>Operator::from_uri</code> or <code>Operator::via_iter</code>.</p>
+<p>Services that send HTTP requests also require an HTTP transport in
+<code>OperationContext</code>. See the
+<a href="https://crates.io/crates/opendal-core"><code>opendal-core</code> composition example</a>.</p>
+<h3 id="documentation"><a class="doc-anchor" href="#documentation">§</a>Documentation</h3>
+<ul>
+<li><a href="https://opendal.apache.org/services/obs">Service configuration and examples</a></li>
+<li><a href="https://docs.rs/opendal-service-obs">Rust API documentation</a></li>
+<li><a href="https://opendal.apache.org/docs/">Apache OpenDAL documentation</a></li>
+</ul>
+<h3 id="license"><a class="doc-anchor" href="#license">§</a>License</h3>
+<p>Licensed under the Apache License, Version 2.0.</p>
+</div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.Obs.html" title="struct opendal_service_obs::Obs">Obs</a></dt><dd>Huawei-Cloud Object Storage Service (OBS) support</dd><dt><a class="struct" href="struct.ObsConfig.html" title="struct opendal_service_obs::ObsConfig">ObsConfig</a></dt><dd>Config for Huawei-Cloud Object Storage Service (OBS) support.</dd></dl><h2 id="constants" class="section-header">Constants<a href="#constants" class="anchor">§</a></h2><dl class="item-table"><dt><a class="constant" href="constant.OBS_SCHEME.html" title="constant opendal_service_obs::OBS_SCHEME">OBS_<wbr>SCHEME</a></dt><dd>URI scheme used for service registration and scheme-driven construction.</dd></dl><h2 id="functions" class="section-header">Functions<a href="#functions" class="anchor">§</a></h2><dl class="item-table"><dt><a class="fn" href="fn.register_obs_service.html" title="fn opendal_service_obs::register_obs_service">register_<wbr>obs_<wbr>service</a></dt><dd>Register this service’s URI scheme or schemes with an operator registry.</dd></dl></section></div></main></body></html>

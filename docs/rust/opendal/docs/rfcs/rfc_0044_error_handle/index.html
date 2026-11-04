@@ -1,0 +1,142 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Error handle"><title>opendal::docs::rfcs::rfc_0044_error_handle - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_0044_error_handle</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>0044_<wbr>error_<wbr>handle</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a><ul><li><a href="#why-dont-we-implement-backtrace" title="Why don’t we implement `backtrace`?">Why don’t we implement <code>backtrace</code>?</a></li></ul></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>0044_<wbr>error_<wbr>handle</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Error handle</p>
+<ul>
+<li>Proposal Name: <code>error_handle</code></li>
+<li>Start Date: 2022-02-23</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/44">apache/opendal#44</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/pull/43">apache/opendal#43</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Enhanced error handling for OpenDAL.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>OpenDAL didn’t handle errors correctly.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">fn </span>parse_unexpected_error&lt;E&gt;(<span class="kw">_</span>: SdkError&lt;E&gt;, path: <span class="kw-2">&amp;</span>str) -&gt; Error {
+    Error::Unexpected(path.to_string())
+}</code></pre></div>
+<p>Most time, we return a path that is meaningless for debugging.</p>
+<p>There are two issues about this shortcoming:</p>
+<ul>
+<li><a href="https://github.com/apache/opendal/issues/24">error: Split ErrorKind and Context for error check easier</a></li>
+<li><a href="https://github.com/apache/opendal/issues/29">Improvement: provides more information about the cause of DalTransportError</a></li>
+</ul>
+<p>First, we can’t check <code>ErrorKind</code> quickly. We have to use <code>matches</code> for the help:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="macro">assert!</span>(
+    <span class="macro">matches!</span>(
+        result.err().unwrap(),
+        opendal::error::Error::ObjectNotExist(<span class="kw">_</span>)
+    ),
+);</code></pre></div>
+<p>Then, we didn’t bring enough information for users to debug what happened inside OpenDAL.</p>
+<p>So we must handle errors correctly, so that:</p>
+<ul>
+<li>We can check the <code>Kind</code> to know what error happened.</li>
+<li>We can read <code>context</code> to know more details.</li>
+<li>We can get the source of this error to know more details.</li>
+</ul>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>Now we are trying to get an object’s metadata:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>meta = o.metadata().<span class="kw">await</span>;</code></pre></div>
+<p>Unfortunately, the <code>Object</code> does not exist, so we can check out what happened.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">if let </span><span class="prelude-val">Err</span>(e) = meta {
+    <span class="kw">if </span>e.kind() == Kind::ObjectNotExist {
+        <span class="comment">// Handle this error
+    </span>}
+}</code></pre></div>
+<p>It’s possible that we don’t care about other errors. It’s OK to log it out:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">if let </span><span class="prelude-val">Err</span>(e) = meta {
+    <span class="kw">if </span>e.kind() == Kind::ObjectNotExist {
+        <span class="comment">// Handle this error
+    </span>} <span class="kw">else </span>{
+        <span class="macro">error!</span>(<span class="string">"{e}"</span>);
+    }
+}</code></pre></div>
+<p>For a backend implementer, we can provide as much information as possible. For example, we can return <code>bucket is empty</code> to let the user know:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">return </span><span class="prelude-val">Err</span>(Error::Backend {
+    kind: Kind::BackendConfigurationInvalid,
+    context: HashMap::from([(<span class="string">"bucket"</span>.to_string(), <span class="string">""</span>.to_string())]),
+    source: <span class="macro">anyhow!</span>(<span class="string">"bucket is empty"</span>),
+});</code></pre></div>
+<p>Or, we can return an underlying error to let users figure out:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>Error::Object {
+    kind: Kind::Unexpected,
+    op,
+    path: path.to_string(),
+    source: anyhow::Error::from(err),
+}</code></pre></div>
+<p>So our application users will get enough information now:</p>
+<div class="example-wrap"><pre class="language-shell"><code>Object { kind: ObjectNotExist, op: "stat", path: "/tmp/998e4dec-c84b-4164-a7a1-1f140654934f", source: No such file or directory (os error 2) }</code></pre></div><h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>We will split <code>Error</code> into <code>Error</code> and <code>Kind</code>.</p>
+<p><code>Kind</code> is an enum organized by different categories.</p>
+<p>Every error will map to a kind, which will be in the error message.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub enum </span>Kind {
+    <span class="attr">#[error(<span class="string">"backend not supported"</span>)]
+    </span>BackendNotSupported,
+    <span class="attr">#[error(<span class="string">"backend configuration invalid"</span>)]
+    </span>BackendConfigurationInvalid,
+
+    <span class="attr">#[error(<span class="string">"object not exist"</span>)]
+    </span>ObjectNotExist,
+    <span class="attr">#[error(<span class="string">"object permission denied"</span>)]
+    </span>ObjectPermissionDenied,
+
+    <span class="attr">#[error(<span class="string">"unexpected"</span>)]
+    </span>Unexpected,
+}</code></pre></div>
+<p>In <code>Error</code>, we will have different struct to carry different contexts:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub enum </span>Error {
+    <span class="attr">#[error(<span class="string">"{kind}: (context: {context:?}, source: {source})"</span>)]
+    </span>Backend {
+        kind: Kind,
+        context: HashMap&lt;String, String&gt;,
+        source: anyhow::Error,
+    },
+
+    <span class="attr">#[error(<span class="string">"{kind}: (op: {op}, path: {path}, source: {source})"</span>)]
+    </span>Object {
+        kind: Kind,
+        op: <span class="kw-2">&amp;</span><span class="lifetime">'static </span>str,
+        path: String,
+        source: anyhow::Error,
+    },
+
+    <span class="attr">#[error(<span class="string">"unexpected: (source: {0})"</span>)]
+    </span>Unexpected(<span class="attr">#[from] </span>anyhow::Error),
+}</code></pre></div>
+<p>Every one of them will carry a source: <code>anyhow::Error</code> so that users can get the complete picture of this error. We have implemented <code>Error::kind()</code>, other helper functions are possible, but they are out of this RFC’s scope.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub fn </span>kind(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; Kind {
+    <span class="kw">match </span><span class="self">self </span>{
+        Error::Backend { kind, .. } =&gt; <span class="kw-2">*</span>kind,
+        Error::Object { kind, .. } =&gt; <span class="kw-2">*</span>kind,
+        Error::Unexpected(<span class="kw">_</span>) =&gt; Kind::Unexpected,
+    }
+}</code></pre></div>
+<p>The implementer should do their best to carry as much context as possible. Such as, they should return <code>Error::Object</code> to carry the <code>op</code> and <code>path</code>, instead of just returns <code>Error::Unexpected(anyhow::Error::from(err))</code>.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>Error::Object {
+    kind: Kind::Unexpected,
+    op,
+    path: path.to_string(),
+    source: anyhow::Error::from(err),
+}</code></pre></div><h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="why-dont-we-implement-backtrace"><a class="doc-anchor" href="#why-dont-we-implement-backtrace">§</a>Why don’t we implement <code>backtrace</code>?</h3>
+<p><code>backtrace</code> is not stable yet, and <code>OpenDAL</code> must be compilable on stable Rust.</p>
+<p>This proposal doesn’t erase the possibility to add support once <code>backtrace</code> is stable.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<ul>
+<li><code>Backtrace</code> support.</li>
+</ul>
+</div></details></section></div></main></body></html>

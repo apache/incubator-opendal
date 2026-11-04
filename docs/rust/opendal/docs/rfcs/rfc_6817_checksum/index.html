@@ -1,0 +1,169 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Checksum"><title>opendal::docs::rfcs::rfc_6817_checksum - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_6817_checksum</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>6817_<wbr>checksum</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a><ul><li><a href="#new-concepts" title="New concepts">New concepts</a></li><li><a href="#examples" title="Examples">Examples</a></li></ul></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a><ul><li><a href="#data-types" title="Data types">Data types</a></li><li><a href="#capability" title="Capability">Capability</a></li><li><a href="#write-path" title="Write path">Write path</a></li><li><a href="#readstat-path" title="Read/stat path">Read/stat path</a></li><li><a href="#checksumlayer" title="ChecksumLayer">ChecksumLayer</a></li><li><a href="#errors" title="Errors">Errors</a></li><li><a href="#backward-compatibility" title="Backward compatibility">Backward compatibility</a></li></ul></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>6817_<wbr>checksum</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Checksum</p>
+<ul>
+<li>Proposal Name: checksum</li>
+<li>Start Date: 2025-11-24</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/6817">apache/opendal#6817</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/5549">apache/opendal#5549</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Add a single full-file checksum abstraction (<code>Checksum { algo, value }</code>), capability booleans for supported algorithms, write options for user-provided checksums, metadata return of the final checksum, and a <code>ChecksumLayer</code> that can auto-compute and enforce end-to-end verification using a preferred algorithm order.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<ul>
+<li>Give users a storage-agnostic way to attach and receive full-file checksums.</li>
+<li>Detect corruption or mismatched uploads early by comparing expected vs actual values.</li>
+<li>Provide an opt-in layer to fill gaps where backends cannot verify or return checksums.</li>
+<li>Keep changes minimal and consistent with existing <code>Capability</code> boolean style.</li>
+</ul>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2><h3 id="new-concepts"><a class="doc-anchor" href="#new-concepts">§</a>New concepts</h3>
+<ul>
+<li><code>ChecksumAlgo</code>: algorithms we support (<code>Crc64Nvme</code>, <code>Crc32c</code>, <code>Md5</code>, <code>Sha256</code>, extensible).</li>
+<li><code>Checksum</code>: holds exactly one algorithm and the full-file checksum bytes.</li>
+<li><code>ChecksumLayer</code>: optional layer that computes/checks checksums with a preferred algorithm list and an <code>enforce</code> flag.</li>
+</ul>
+<h3 id="examples"><a class="doc-anchor" href="#examples">§</a>Examples</h3><h4 id="write-with-a-user-computed-checksum-no-layer"><a class="doc-anchor" href="#write-with-a-user-computed-checksum-no-layer">§</a>Write with a user-computed checksum (no layer)</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal::services;
+<span class="kw">use </span>opendal::{Checksum, ChecksumAlgo, Operator, <span class="prelude-ty">Result</span>};
+
+<span class="kw">fn </span>crc64_nvme_of(data: <span class="kw-2">&amp;</span>[u8]) -&gt; Vec&lt;u8&gt; {
+    <span class="comment">// user-side computation (placeholder)
+    </span><span class="macro">vec!</span>[<span class="number">0</span>; <span class="number">8</span>]
+}
+
+<span class="attr">#[tokio::main]
+</span><span class="kw">async fn </span>main() -&gt; <span class="prelude-ty">Result</span>&lt;()&gt; {
+    <span class="kw">let </span><span class="kw-2">mut </span>builder = services::Memory::default();
+    <span class="kw">let </span>op = Operator::new(builder)<span class="question-mark">?</span>.finish();
+
+    <span class="kw">let </span>data = <span class="string">b"hello checksum"</span>.to_vec();
+    <span class="kw">let </span>expected = Checksum::new(ChecksumAlgo::Crc64Nvme, crc64_nvme_of(<span class="kw-2">&amp;</span>data));
+
+    <span class="comment">// Backend supports CRC64-NVMe. Mismatch returns ErrorKind::ChecksumMismatch.
+    </span>op.write_with(<span class="string">"foo.txt"</span>, data)
+        .checksum(expected)
+        .<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="prelude-val">Ok</span>(())
+}</code></pre></div><h4 id="read-and-inspect-checksum-from-metadata"><a class="doc-anchor" href="#read-and-inspect-checksum-from-metadata">§</a>Read and inspect checksum from metadata</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal::services;
+<span class="kw">use </span>opendal::{Operator, <span class="prelude-ty">Result</span>};
+
+<span class="attr">#[tokio::main]
+</span><span class="kw">async fn </span>main() -&gt; <span class="prelude-ty">Result</span>&lt;()&gt; {
+    <span class="kw">let </span><span class="kw-2">mut </span>builder = services::Memory::default();
+    <span class="kw">let </span>op = Operator::new(builder)<span class="question-mark">?</span>.finish();
+
+    <span class="kw">let </span>meta = op.stat(<span class="string">"foo.txt"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="kw">if let </span><span class="prelude-val">Some</span>(cs) = meta.checksum() {
+        <span class="macro">println!</span>(<span class="string">"algo={:?}, value={:x?}"</span>, cs.algo, cs.value);
+    }
+    <span class="prelude-val">Ok</span>(())
+}</code></pre></div><h4 id="enable-end-to-end-verification-via-checksumlayer-auto-compute"><a class="doc-anchor" href="#enable-end-to-end-verification-via-checksumlayer-auto-compute">§</a>Enable end-to-end verification via ChecksumLayer (auto-compute)</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal::layers::ChecksumLayer;
+<span class="kw">use </span>opendal::services;
+<span class="kw">use </span>opendal::{ChecksumAlgo, Operator, <span class="prelude-ty">Result</span>};
+
+<span class="attr">#[tokio::main]
+</span><span class="kw">async fn </span>main() -&gt; <span class="prelude-ty">Result</span>&lt;()&gt; {
+    <span class="kw">let </span><span class="kw-2">mut </span>builder = services::Memory::default();
+
+    <span class="comment">// Prefer CRC64-NVMe, fall back to Sha256. 
+    // Enforce=true: if backend lacks support, compute locally; 
+    // any mismatch errors out.
+    </span><span class="kw">let </span>op = Operator::new(builder)<span class="question-mark">?
+        </span>.layer(ChecksumLayer::new().preferred(<span class="macro">vec!</span>[ChecksumAlgo::Crc64Nvme, ChecksumAlgo::Sha256]).enforce(<span class="bool-val">true</span>))
+        .finish();
+
+    <span class="comment">// User does not provide checksum; layer will compute and attach automatically.
+    </span>op.write(<span class="string">"bar.bin"</span>, <span class="string">b"data"</span>.to_vec()).<span class="kw">await</span><span class="question-mark">?</span>;
+
+    <span class="comment">// If metadata lacks the preferred checksum, the layer will stream-read and compute.
+    </span><span class="kw">let _ </span>= op.read(<span class="string">"bar.bin"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="prelude-val">Ok</span>(())
+}</code></pre></div><h4 id="error-on-mismatch"><a class="doc-anchor" href="#error-on-mismatch">§</a>Error on mismatch</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal::services;
+<span class="kw">use </span>opendal::{Checksum, ChecksumAlgo, Operator, <span class="prelude-ty">Result</span>, ErrorKind};
+
+<span class="attr">#[tokio::main]
+</span><span class="kw">async fn </span>main() -&gt; <span class="prelude-ty">Result</span>&lt;()&gt; {
+    <span class="kw">let </span><span class="kw-2">mut </span>builder = services::Memory::default();
+    <span class="kw">let </span>op = Operator::new(builder)<span class="question-mark">?</span>.finish();
+
+    <span class="kw">let </span>wrong = Checksum::new(ChecksumAlgo::Sha256, <span class="macro">vec!</span>[<span class="number">0</span>; <span class="number">32</span>]);
+    <span class="kw">let </span>res = op
+        .write_with(<span class="string">"bad.bin"</span>, <span class="string">b"payload"</span>.to_vec())
+        .checksum(wrong)
+        .<span class="kw">await</span>;
+
+    <span class="macro">assert!</span>(<span class="macro">matches!</span>(res, <span class="prelude-val">Err</span>(err) <span class="kw">if </span>err.kind() == ErrorKind::ChecksumMismatch));
+    <span class="prelude-val">Ok</span>(())
+}</code></pre></div><h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2><h3 id="data-types"><a class="doc-anchor" href="#data-types">§</a>Data types</h3>
+<ul>
+<li><code>ChecksumAlgo</code>: enum of supported algorithms. Extending this enum is allowed.</li>
+<li><code>Checksum</code>: <code>{ algo: ChecksumAlgo, value: Vec&lt;u8&gt; }</code>; represents the full file only.</li>
+<li><code>Metadata</code>: add <code>checksum: Option&lt;Checksum&gt;</code> plus helpers (<code>checksum()</code>, <code>crc64_nvme()</code>, etc.).</li>
+</ul>
+<h3 id="capability"><a class="doc-anchor" href="#capability">§</a>Capability</h3>
+<ul>
+<li>Add boolean fields to <code>Capability</code>: <code>checksum_crc64_nvme</code>, <code>checksum_crc32c</code>, <code>checksum_md5</code>, <code>checksum_sha256</code>.</li>
+<li>Semantics: <code>true</code> means the backend can accept and return that algorithm for full-file checksum.</li>
+</ul>
+<h3 id="write-path"><a class="doc-anchor" href="#write-path">§</a>Write path</h3>
+<ul>
+<li><code>WriteOptions</code> / <code>OpWrite</code> gains <code>checksum: Option&lt;Checksum&gt;</code>.</li>
+<li>Flow:
+<ol>
+<li>If <code>checksum</code> is provided and its algo flag is <code>false</code> in capability, return <code>Unsupported</code>.</li>
+<li>If supported, pass to backend; mismatch returns <code>ChecksumMismatch</code>.</li>
+<li>Response metadata includes the final checksum (from backend or layer).</li>
+</ol>
+</li>
+</ul>
+<h3 id="readstat-path"><a class="doc-anchor" href="#readstat-path">§</a>Read/stat path</h3>
+<ul>
+<li>If backend provides checksum, fill <code>Metadata::checksum</code>.</li>
+<li>Otherwise leave <code>None</code>; <code>ChecksumLayer</code> may compute and inject.</li>
+</ul>
+<h3 id="checksumlayer"><a class="doc-anchor" href="#checksumlayer">§</a>ChecksumLayer</h3>
+<ul>
+<li>Config: <code>preferred(Vec&lt;ChecksumAlgo&gt;)</code>, <code>enforce(bool)</code>.</li>
+<li>Selection: pick the first preferred algo whose capability flag is true; if none and <code>enforce=false</code>, skip; if <code>enforce=true</code>, compute locally anyway.</li>
+<li>Write: if backend cannot verify, stream-compute chosen algo; compare against provided <code>checksum</code> (if any); mismatch -&gt; <code>ChecksumMismatch</code>; inject result into returned metadata.</li>
+<li>Read: if metadata lacks chosen algo, stream-compute; mismatch -&gt; <code>ChecksumMismatch</code>; if <code>enforce=true</code> and cannot obtain, surface <code>Unsupported</code> or mismatch.</li>
+</ul>
+<h3 id="errors"><a class="doc-anchor" href="#errors">§</a>Errors</h3>
+<ul>
+<li>New <code>ErrorKind::ChecksumMismatch</code> for value differences.</li>
+<li>Unsupported algorithm keeps using existing <code>Unsupported</code> error kind.</li>
+</ul>
+<h3 id="backward-compatibility"><a class="doc-anchor" href="#backward-compatibility">§</a>Backward compatibility</h3>
+<ul>
+<li><code>content_md5</code> stays; when backends return MD5, it can populate both <code>content_md5</code> and <code>checksum(algo=Md5)</code>.</li>
+<li>No behavior change for users who ignore checksum features.</li>
+</ul>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<ul>
+<li>More boolean fields in <code>Capability</code>; adding many algorithms enlarges the struct.</li>
+<li><code>ChecksumLayer</code> can add CPU cost for large objects when enforce is enabled.</li>
+</ul>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<ul>
+<li>Chose capability booleans to match existing style and keep <code>Capability: Copy</code>.</li>
+<li>Rejected multi-checksum containers to keep the surface small and semantics single-valued.</li>
+<li>Rejected HashSet/bitmask because booleans are already the established pattern in <code>Capability</code>.</li>
+</ul>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<ul>
+<li>Cloud SDKs commonly expose a single MD5/CRC32C field (e.g., GCS, OSS); we generalize to multiple algorithms via booleans.</li>
+<li>Middleware-style checksum verification mirrors S3 client behaviors but made storage-agnostic here.</li>
+</ul>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<ul>
+<li>Default preferred order for <code>ChecksumLayer</code> (proposed: <code>Crc64Nvme</code>, <code>Sha256</code>, <code>Crc32c</code>, <code>Md5</code>).</li>
+<li>Per-backend capability matrix (which algorithms to mark true by default).</li>
+</ul>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<ul>
+<li>Add more algorithms (e.g., <code>Sha1</code>) with new booleans.</li>
+<li>Optional <code>reverify_on_read</code> flag in <code>ChecksumLayer</code> to recompute even when a checksum exists.</li>
+<li>Expose checksum info in presign responses when services support checksum headers.</li>
+</ul>
+</div></details></section></div></main></body></html>

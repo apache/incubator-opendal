@@ -1,0 +1,9 @@
+(function() {
+    const implementors = Object.fromEntries([["opendal_core",[["impl&lt;F: <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/future/future/trait.Future.html\" title=\"trait core::future::future::Future\">Future</a>&lt;Output = <a class=\"type\" href=\"opendal_core/type.Result.html\" title=\"type opendal_core::Result\">Result</a>&lt;<a class=\"primitive\" href=\"https://doc.rust-lang.org/nightly/std/primitive.unit.html\">()</a>&gt;&gt;&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/future/into_future/trait.IntoFuture.html\" title=\"trait core::future::into_future::IntoFuture\">IntoFuture</a> for <a class=\"struct\" href=\"opendal_core/struct.FutureComposeSource.html\" title=\"struct opendal_core::FutureComposeSource\">FutureComposeSource</a>&lt;'_, F&gt;",0],["impl&lt;I, O, F&gt; <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/future/into_future/trait.IntoFuture.html\" title=\"trait core::future::into_future::IntoFuture\">IntoFuture</a> for <a class=\"struct\" href=\"opendal_core/operator_futures/struct.OperatorFuture.html\" title=\"struct opendal_core::operator_futures::OperatorFuture\">OperatorFuture</a>&lt;I, O, F&gt;<div class=\"where\">where\n    F: <a class=\"trait\" href=\"https://doc.rust-lang.org/nightly/core/future/future/trait.Future.html\" title=\"trait core::future::future::Future\">Future</a>&lt;Output = <a class=\"type\" href=\"opendal_core/type.Result.html\" title=\"type opendal_core::Result\">Result</a>&lt;O&gt;&gt;,</div>",0]]]]);
+    if (window.register_implementors) {
+        window.register_implementors(implementors);
+    } else {
+        window.pending_implementors = implementors;
+    }
+})()
+//{"start":59,"fragment_lengths":[1477]}

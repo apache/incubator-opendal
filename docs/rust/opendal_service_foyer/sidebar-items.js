@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FOYER_SCHEME"],"fn":["register_foyer_service"],"struct":["Foyer","FoyerConfig","FoyerKey","FoyerValue"]};

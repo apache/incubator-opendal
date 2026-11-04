@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["VERCEL_BLOB_SCHEME"],"fn":["register_vercel_blob_service"],"struct":["VercelBlob","VercelBlobConfig"]};

@@ -1,0 +1,1 @@
+rd_("AoReturns the argument unchanged.0BaCalls <code>U::from(self)</code>.0D`A wrapper around <code>opendal::Metadata</code> to implement \xe2\x80\xa6Dj<code>unftp-sbe-opendal</code> is an unftp <code>StorageBackend</code> \xe2\x80\xa6")

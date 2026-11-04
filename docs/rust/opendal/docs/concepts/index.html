@@ -1,0 +1,74 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="The core concepts of OpenDAL’s Rust API."><title>opendal::docs::concepts - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module concepts</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module concepts</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#service-and-builder" title="Service and builder">Service and builder</a></li><li><a href="#operator" title="Operator">Operator</a></li><li><a href="#operation" title="Operation">Operation</a></li><li><a href="#layer-and-operation-context" title="Layer and operation context">Layer and operation context</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">opendal</a>::<wbr><a href="../index.html">docs</a></div><h1>Module <span>concepts</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>The core concepts of OpenDAL’s Rust API.</p>
+<p>OpenDAL gives applications one storage API across services. Rust
+applications use four concepts: a service describes the storage backend, a
+builder configures it, an operator exposes operations, and layers add
+behavior around those operations.</p>
+<p>For the language-independent model shared by every OpenDAL binding, see the
+<a href="https://opendal.apache.org/docs/concepts/">OpenDAL concepts guide</a>.</p>
+<h2 id="service-and-builder"><a class="doc-anchor" href="#service-and-builder">§</a>Service and builder</h2>
+<p>A <strong>service</strong> is a storage backend such as S3, Google Cloud Storage, a
+local filesystem, or an in-memory store. Each service supports a different
+set of operations and optional features.</p>
+<p>A <a href="../../trait.Builder.html" title="trait opendal::Builder"><code>Builder</code></a> collects one service’s configuration and constructs its
+implementation. The [<code>services</code>][crate::services] module exposes concrete
+builders, while <a href="../../struct.Operator.html#method.new" title="associated function opendal::Operator::new"><code>Operator::new</code></a> turns a builder into a ready-to-use
+operator.</p>
+<div class="example-wrap"><pre class="language-text"><code>configuration -&gt; builder -&gt; service -&gt; operator</code></pre></div>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal_core::Operator;
+<span class="kw">use </span>opendal_core::services::Memory;
+
+<span class="kw">let </span>builder = Memory::default();
+<span class="kw">let </span>op = Operator::new(builder)<span class="question-mark">?</span>;</code></pre></div>
+<p>OpenDAL does not make every service support every operation. Applications
+can inspect the operator’s effective <a href="../../struct.Capability.html" title="struct opendal::Capability"><code>Capability</code></a> before using an
+optional operation or option.</p>
+<h2 id="operator"><a class="doc-anchor" href="#operator">§</a>Operator</h2>
+<p>An <a href="../../struct.Operator.html" title="struct opendal::Operator"><code>Operator</code></a> is the public handle for one configured service and root.
+It normalizes paths, validates options against effective capabilities, runs
+the configured layers, and dispatches each operation to the service.</p>
+<p>Operators are cheap to clone, contain no caller-visible lifetime or service
+type parameter, and can be shared across threads. A clone refers to the
+same composed service stack. Methods that add a layer or replace runtime
+resources return a new operator; existing clones and in-flight operations
+keep their current stack.</p>
+<h2 id="operation"><a class="doc-anchor" href="#operation">§</a>Operation</h2>
+<p>Operations are storage actions such as <code>read</code>, <code>write</code>, <code>stat</code>, <code>list</code>,
+<code>delete</code>, <code>copy</code>, and <code>rename</code>. Convenience methods use default options,
+while the corresponding <code>_with</code> methods expose operation-specific options.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal_core::Operator;
+<span class="kw">use </span>opendal_core::services::Memory;
+
+<span class="kw">let </span>op = Operator::new(Memory::default())<span class="question-mark">?</span>;
+<span class="kw">let </span>bs = op.read(<span class="string">"abc"</span>).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>OpenDAL normalizes every path relative to the operator’s root. <code>/</code>
+represents the root, a trailing <code>/</code> represents a directory, and any other
+normalized path represents a file. Operation documentation defines the
+observable behavior and errors. <a href="../specs/index.html" title="mod opendal::docs::specs">Specifications</a> define
+portable contracts that span multiple operations and services.</p>
+<h2 id="layer-and-operation-context"><a class="doc-anchor" href="#layer-and-operation-context">§</a>Layer and operation context</h2>
+<p>A <a href="../../raw/trait.Layer.html" title="trait opendal::raw::Layer"><code>Layer</code></a> adds cross-cutting behavior such as retry,
+timeout, tracing, or metrics. Layers form an ordered stack around a
+service.</p>
+<p>An <a href="../../struct.OperationContext.html" title="struct opendal::OperationContext"><code>OperationContext</code></a> carries runtime resources such as the HTTP
+transport and executor from the operator to the service.
+Operation-specific values such as ranges, versions, conditions, and
+concurrency remain in that operation’s options.</p>
+<p>Adding a layer with <a href="../../struct.Operator.html#method.layer" title="method opendal::Operator::layer"><code>Operator::layer</code></a> or replacing the base context with
+<a href="../../struct.Operator.html#method.with_context" title="method opendal::Operator::with_context"><code>Operator::with_context</code></a> rebuilds both the service stack and the composed
+context from the same ordered layer list:</p>
+<div class="example-wrap"><pre class="language-text"><code>base service -----+                    +-&gt; composed service --+
+                  +-&gt; ordered layers --+                      +-&gt; operation
+base context -----+                    +-&gt; composed context --+</code></pre></div>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal_core::HttpTransporter;
+<span class="kw">use </span>opendal_core::OperationContext;
+<span class="kw">use </span>opendal_core::Operator;
+<span class="kw">use </span>opendal_core::services::Memory;
+
+<span class="kw">let </span>transport = HttpTransporter::default();
+<span class="kw">let </span>op = Operator::new(Memory::default())<span class="question-mark">?</span>.with_context(
+    OperationContext::new().with_http_transport(transport),
+);</code></pre></div>
+<p>Most applications only need the public <a href="../../struct.Operator.html" title="struct opendal::Operator"><code>Operator</code></a> API. Service and layer
+authors should continue with the <a href="../internals/index.html" title="mod opendal::docs::internals">internals</a> guide.</p>
+</div></details></section></div></main></body></html>

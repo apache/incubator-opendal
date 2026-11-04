@@ -1,0 +1,373 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Compact metadata and operation arguments"><title>opendal_core::docs::rfcs::rfc_8194_compact_metadata_and_operation_args - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_8194_compact_metadata_and_operation_args</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal_core/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal_core/index.html">opendal_<wbr>core</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>8194_<wbr>compact_<wbr>metadata_<wbr>and_<wbr>operation_<wbr>args</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a><ul><li><a href="#public-api" title="Public API">Public API</a></li><li><a href="#representation-and-ownership" title="Representation and ownership">Representation and ownership</a></li><li><a href="#construction-and-transformation" title="Construction and transformation">Construction and transformation</a></li><li><a href="#raw-operation-arguments" title="Raw operation arguments">Raw operation arguments</a></li><li><a href="#required-content-length" title="Required content length">Required content length</a></li></ul></li><li><a href="#compatibility-and-migration" title="Compatibility and migration">Compatibility and migration</a></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#validation" title="Validation">Validation</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal_<wbr>core::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal_core</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>8194_<wbr>compact_<wbr>metadata_<wbr>and_<wbr>operation_<wbr>args</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../../src/opendal_core/docs/rfcs/mod.rs.html#26">Source</a> </span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Compact metadata and operation arguments</p>
+<ul>
+<li>Proposal Name: <code>compact_metadata_and_operation_args</code></li>
+<li>Start Date: 2026-08-29</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/8194">apache/opendal#8194</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/0000">apache/opendal#0000</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Represent <code>Metadata</code> and raw operation arguments with a private, copy-on-write
+value block. <code>Metadata</code> keeps its required content length and optional timestamp
+inline. Raw arguments place scalars according to their access and allocation
+profile: <code>OpRead</code> packs its optional content-length hint, while <code>OpList</code> keeps
+its limit inline. Optional strings, user metadata, listed paths, and raw
+conditional timestamps use one immutable, exactly sized allocation per owner.
+Each <code>Metadata</code> remains independently owned, and existing public <code>*Options</code>
+remain the sole mutable operation-construction types.</p>
+<p>On the measured 64-bit target, the prototype reduces <code>Metadata</code> from 264
+to 40 bytes, <code>OpRead</code> from 256 to 16 bytes, <code>OpWrite</code> from 256 to 32 bytes, and
+the other affected raw operations to 16-64 bytes. Clones share the block.
+Empty metadata and metadata containing only inline scalars allocate nothing.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p><code>Metadata</code> is returned by stat, read, and list operations and is often retained
+in application caches, indexes, or work queues. It must remain independently
+owned because a single listed entry can outlive its producing page. This makes
+per-value size, allocation count, and clone cost part of the steady-state cost
+of common OpenDAL workloads rather than temporary response-decoding overhead.</p>
+<p>The current representation reserves one <code>Option&lt;String&gt;</code> slot for every known
+string field even when most fields are absent. On the measured 64-bit target,
+an empty <code>Metadata</code> occupies 264 bytes; 10,000 list results therefore reserve
+about 2.5 MiB for metadata structs before paths, string payloads, collection
+capacity, and allocator overhead. Each populated string allocates separately.
+User metadata adds <code>HashMap</code> buckets and two independently allocated strings per
+pair. Derived <code>Clone</code> repeats every populated string, bucket array, key, and
+value, so cloning cost grows with the logical payload instead of remaining
+constant.</p>
+<p>Raw operation arguments have the same shape after their public options have
+already been finalized. A measured <code>OpRead</code> occupies 256 bytes, owns each
+condition or override string separately, and is retained by read contexts and
+cloned when opening or splitting reads. Other raw operations repeat the same
+pattern. Existing metadata mutation is concentrated in service response
+assembly and normalization; downstream code primarily reads and retains the
+completed value. Separating mutable construction from immutable results matches
+this lifecycle. Compact immutable blocks make clone cost constant and reduce
+resident memory and allocator traffic for large listings, concurrent reads,
+retries, and downstream metadata retention.</p>
+<p>Release-mode benchmarks ran on an Apple M4 Max with 128 GiB RAM using Rust
+1.97.0. They compare the prototype types with the previous field-for-field
+representations under the same allocator and benchmark process. Retaining
+10,000 independently owned values produced these peak live-heap measurements.
+Times are the median of three benchmark invocations and include constructing
+the complete batch:</p>
+<div class="table"><table><thead><tr><th>Retained batch</th><th style="text-align: right">Previous heap</th><th style="text-align: right">Compact heap</th><th style="text-align: right">Heap change</th><th style="text-align: right">Previous time</th><th style="text-align: right">Compact time</th></tr></thead><tbody>
+<tr><td>List: length, ETag, version</td><td style="text-align: right">3.480 MB</td><td style="text-align: right">1.520 MB</td><td style="text-align: right">-56.3%</td><td style="text-align: right">256.5 us</td><td style="text-align: right">597.5 us</td></tr>
+<tr><td>List entries including paths</td><td style="text-align: right">3.980 MB</td><td style="text-align: right">1.760 MB</td><td style="text-align: right">-55.8%</td><td style="text-align: right">528.5 us</td><td style="text-align: right">1.517 ms</td></tr>
+<tr><td>Stat: seven strings</td><td style="text-align: right">4.540 MB</td><td style="text-align: right">2.720 MB</td><td style="text-align: right">-40.1%</td><td style="text-align: right">712.0 us</td><td style="text-align: right">1.618 ms</td></tr>
+<tr><td>Stat plus eight user pairs</td><td style="text-align: right">14.070 MB</td><td style="text-align: right">4.721 MB</td><td style="text-align: right">-66.4%</td><td style="text-align: right">2.945 ms</td><td style="text-align: right">7.208 ms</td></tr>
+</tbody></table>
+</div>
+<p>The retained allocation count falls from 20,001 to 10,003 for the list metadata
+profile, 30,001 to 10,004 for list entries including their paths, 70,001 to
+10,008 for stat, and 240,001 to 10,025 with user metadata. Packing is therefore
+2.3-2.9 times slower during initial construction, while removing 40-66% of
+retained heap and 50-96% of retained allocations.
+An empty build changes from 13.17 ns to 24.64 ns. Cloning an empty value and
+adding its first ETag changes from 35.36 ns to 53.38 ns because the compact form
+creates its value block at that point.</p>
+<p>Clone performance measures the lifecycle after construction:</p>
+<div class="table"><table><thead><tr><th>Operation</th><th style="text-align: right">Previous median</th><th style="text-align: right">Compact median</th><th style="text-align: right">Change</th></tr></thead><tbody>
+<tr><td>Clone list metadata</td><td style="text-align: right">39.12 ns</td><td style="text-align: right">2.13 ns</td><td style="text-align: right">18.4x faster</td></tr>
+<tr><td>Clone stat metadata</td><td style="text-align: right">118.0 ns</td><td style="text-align: right">1.99 ns</td><td style="text-align: right">59.3x faster</td></tr>
+<tr><td>Clone metadata with user pairs</td><td style="text-align: right">451.5 ns</td><td style="text-align: right">1.89 ns</td><td style="text-align: right">239.4x faster</td></tr>
+<tr><td>Clone then replace stat ETag</td><td style="text-align: right">141.4 ns</td><td style="text-align: right">86.58 ns</td><td style="text-align: right">38.8% faster</td></tr>
+<tr><td>Clone then replace user-metadata ETag</td><td style="text-align: right">484.6 ns</td><td style="text-align: right">83.97 ns</td><td style="text-align: right">82.7% faster</td></tr>
+<tr><td>Read list version</td><td style="text-align: right">0.74 ns</td><td style="text-align: right">1.55 ns</td><td style="text-align: right">2.1x slower</td></tr>
+<tr><td>Read user-metadata version</td><td style="text-align: right">0.73 ns</td><td style="text-align: right">1.52 ns</td><td style="text-align: right">2.1x slower</td></tr>
+</tbody></table>
+</div>
+<p>Raw-operation measurements show the same exchange. Freezing populated
+<code>ReadOptions</code> into <code>OpRead</code> changes from 62.34 ns to about 110 ns, while cloning
+the compact result takes about 1.56 ns and no allocation instead of roughly 145
+ns and eight allocations. For <code>OpWrite</code>, freezing changes from 186.9 ns to 437.8 ns,
+while cloning changes from 480.0 ns and 25 allocations to 1.87 ns and no
+allocation. Reading a packed read version takes 1.54 ns versus 1.63 ns from the
+previous representation. Decoding a packed hint together with the version adds
+about 0.8-1.4 ns compared with keeping the hint inline. Looking up one of eight
+write user metadata entries takes 6.39 ns versus 10.82 ns. Direct final-block
+encoding keeps lookup cheap and avoids temporary nested value blocks during the
+mutable-to-immutable freeze.</p>
+<p>The smaller owned condition also reduces public option layouts that embed
+<code>Option&lt;Metadata&gt;</code>: <code>DeleteOptions</code> falls from 392 to 176 bytes (-55.1%),
+<code>WriteOptions</code> from 536 to 320 bytes (-40.3%), and <code>CopyOptions</code> from 432 to 216
+bytes (-50.0%).</p>
+<p>Integer placement was measured separately because placing every integer in the
+value block minimizes the carrier size but can introduce an allocation for a
+value that previously needed none. The benchmark compares equivalent private
+layouts and reports peak live heap while retaining 10,000 values:</p>
+<div class="table"><table><thead><tr><th>Metadata profile</th><th style="text-align: right">Length and timestamp inline</th><th style="text-align: right">Timestamp packed</th><th style="text-align: right">All scalars packed</th></tr></thead><tbody>
+<tr><td>Length only</td><td style="text-align: right">400 KB</td><td style="text-align: right">320 KB</td><td style="text-align: right">640 KB</td></tr>
+<tr><td>Length and timestamp</td><td style="text-align: right">400 KB</td><td style="text-align: right">720 KB</td><td style="text-align: right">720 KB</td></tr>
+<tr><td>Length, timestamp, ETag, version</td><td style="text-align: right">1.520 MB</td><td style="text-align: right">1.600 MB</td><td style="text-align: right">1.600 MB</td></tr>
+<tr><td>Full stat</td><td style="text-align: right">2.720 MB</td><td style="text-align: right">2.800 MB</td><td style="text-align: right">2.800 MB</td></tr>
+</tbody></table>
+</div>
+<p>The inline layout constructs those batches in 90.2 us, 97.3 us, 561.8 us, and
+1.540 ms respectively. Packing the timestamp takes 159.3 us, 213.7 us, 596.1
+us, and 1.645 ms; packing every scalar takes 206.5 us, 252.1 us, 601.9 us, and
+1.678 ms. A scalar-only inline batch performs one allocation for the containing
+<code>Vec</code>; either packed scalar layout performs 10,001 allocations when its packed
+field is present. <code>Metadata</code> therefore keeps <code>content_length</code> and
+<code>last_modified</code> inline. Their direct getters also avoid value-block decoding.</p>
+<p><code>OpRead::content_length_hint</code> has a different lifecycle. Packing it reduces
+every <code>OpRead</code> from 32 to 16 bytes and reuses the value block whenever another
+packed read option is present:</p>
+<div class="table"><table><thead><tr><th>Retained <code>OpRead</code> profile</th><th style="text-align: right">Inline hint heap / time</th><th style="text-align: right">Packed hint heap / time</th></tr></thead><tbody>
+<tr><td>Empty</td><td style="text-align: right">320 KB / 127.5 us</td><td style="text-align: right">160 KB / 191.5 us</td></tr>
+<tr><td>Hint only</td><td style="text-align: right">320 KB / 125.0 us</td><td style="text-align: right">560 KB / 243.6 us</td></tr>
+<tr><td>Version only</td><td style="text-align: right">1.040 MB / 409.5 us</td><td style="text-align: right">880 KB / 401.6 us</td></tr>
+<tr><td>Version and hint</td><td style="text-align: right">1.040 MB / 396.6 us</td><td style="text-align: right">960 KB / 422.1 us</td></tr>
+<tr><td>All read options</td><td style="text-align: right">3.040 MB / 2.134 ms</td><td style="text-align: right">2.960 MB / 1.770 ms</td></tr>
+</tbody></table>
+</div>
+<p>Single-value lowering remains 11.3 ns for an empty value and changes from
+106.0 ns to 109.9 ns for all read options. The isolated hint profile changes
+from 11.5 ns with no allocation to 22.5 ns with one allocation. This RFC accepts
+that narrow case because the hint is optional, consumers read it during
+operation setup rather than each streamed read, and the 16-byte reduction
+applies to every retained or cloned <code>OpRead</code>.</p>
+<p>Packing <code>OpList::limit</code> would reduce the carrier from 32 to 24 bytes, but a
+limit-only batch would grow from 320 KB to 640 KB and slow from 26.58 us to
+121.3 us. A batch containing both <code>start_after</code> and <code>limit</code> would grow from 800
+KB to 880 KB and slow from 290.7 us to 317.6 us. <code>OpList</code> therefore keeps
+<code>limit</code> inline.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p><code>Metadata</code> remains an owned, immutable value with existing scalar and string
+getters:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>metadata = op.stat(<span class="string">"path/to/file"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let </span>size = metadata.content_length();
+<span class="kw">let </span>etag = metadata.etag();
+<span class="kw">let </span>cloned = metadata.clone();</code></pre></div>
+<p>The clone can outlive its producer. Callers construct metadata with
+<code>MetadataBuilder</code> and consume existing metadata into a builder when they need a
+modified value:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>builder = Metadata::builder(EntryMode::FILE);
+builder.content_length(size).etag(etag);
+<span class="kw">let </span>metadata = builder.build();
+
+<span class="kw">let </span><span class="kw-2">mut </span>builder = metadata.into_builder();
+builder.content_length(actual_size);
+<span class="kw">let </span>metadata = builder.build();</code></pre></div>
+<p>User metadata is exposed through a borrowed view:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">if let </span><span class="prelude-val">Some</span>(attributes) = metadata.user_metadata() {
+    <span class="macro">println!</span>(<span class="string">"{:?}"</span>, attributes.get(<span class="string">"owner"</span>));
+}</code></pre></div>
+<p>The view supports lookup and iteration without materializing a map. Callers use
+<code>IntoIterator</code> directly and collect into the collection required by their
+boundary.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2><h3 id="public-api"><a class="doc-anchor" href="#public-api">§</a>Public API</h3>
+<p><code>MetadataBuilder</code> is the only public construction and modification surface for
+metadata. <code>Metadata</code> exposes no <code>new</code>, <code>Default</code>, <code>set_*</code>, or <code>with_*</code> API:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Metadata {
+    <span class="kw">pub fn </span>builder(mode: EntryMode) -&gt; MetadataBuilder;
+    <span class="kw">pub fn </span>into_builder(<span class="self">self</span>) -&gt; MetadataBuilder;
+    <span class="kw">pub fn </span>user_metadata(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;UserMetadata&lt;<span class="lifetime">'_</span>&gt;&gt;;
+}
+
+<span class="kw">pub struct </span>MetadataBuilder {
+    <span class="comment">// Private mutable construction state.
+</span>}
+
+<span class="kw">impl </span>MetadataBuilder {
+    <span class="kw">pub fn </span>mode(<span class="kw-2">&amp;mut </span><span class="self">self</span>, value: EntryMode) -&gt; <span class="kw-2">&amp;mut </span><span class="self">Self</span>;
+    <span class="kw">pub fn </span>content_length(<span class="kw-2">&amp;mut </span><span class="self">self</span>, value: u64) -&gt; <span class="kw-2">&amp;mut </span><span class="self">Self</span>;
+    <span class="kw">pub fn </span>etag(<span class="kw-2">&amp;mut </span><span class="self">self</span>, value: <span class="kw">impl </span>Into&lt;String&gt;) -&gt; <span class="kw-2">&amp;mut </span><span class="self">Self</span>;
+    <span class="kw">pub fn </span>user_metadata(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        value: <span class="kw">impl </span>IntoIterator&lt;Item = (String, String)&gt;,
+    ) -&gt; <span class="kw-2">&amp;mut </span><span class="self">Self</span>;
+    <span class="kw">pub fn </span>build(<span class="self">self</span>) -&gt; Metadata;
+}
+
+<span class="kw">impl </span>OpWrite {
+    <span class="kw">pub fn </span>user_metadata(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;UserMetadata&lt;<span class="lifetime">'_</span>&gt;&gt;;
+}
+
+<span class="attr">#[derive(Clone, Copy)]
+</span><span class="kw">pub struct </span>UserMetadata&lt;<span class="lifetime">'a</span>&gt; {
+    <span class="comment">// Private view into an immutable value block.
+</span>}
+
+<span class="kw">impl</span>&lt;<span class="lifetime">'a</span>&gt; UserMetadata&lt;<span class="lifetime">'a</span>&gt; {
+    <span class="kw">pub fn </span>get(<span class="kw-2">&amp;</span><span class="self">self</span>, key: <span class="kw-2">&amp;</span>str) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span><span class="lifetime">'a </span>str&gt;;
+    <span class="kw">pub fn </span>len(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; usize;
+    <span class="kw">pub fn </span>is_empty(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool;
+}</code></pre></div>
+<p>The builder provides the same setter shape for every other logical metadata
+field.</p>
+<p><code>UserMetadata</code> and <code>&amp;UserMetadata</code> implement
+<code>IntoIterator&lt;Item = (&amp;str, &amp;str)&gt;</code>. Callers can collect borrowed pairs
+directly; boundaries that require ownership map the pairs to owned strings and
+collect them. The builder accepts any owned string pairs and preserves the
+distinction between an explicitly empty collection and an absent value.
+Existing metadata getters, <code>Lister</code>, <code>Operator</code>, public operation options, and
+raw operation getters retain their signatures and ownership semantics.</p>
+<h3 id="representation-and-ownership"><a class="doc-anchor" href="#representation-and-ownership">§</a>Representation and ownership</h3>
+<p>The conceptual metadata representation is:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>Metadata {
+    header: MetadataHeader,
+    values: CompactValues,
+}
+
+<span class="kw">struct </span>CompactValues(<span class="prelude-ty">Option</span>&lt;Arc&lt;[u8]&gt;&gt;);
+
+<span class="kw">struct </span>MetadataHeader {
+    content_length: u64,
+    last_modified_seconds: i64,
+    last_modified_nanoseconds: u32,
+    flags: MetadataFlags,
+}
+
+<span class="attr">#[repr(transparent)]
+</span><span class="kw">struct </span>MetadataFlags(u16);</code></pre></div>
+<p><code>MetadataFlags</code> encodes mode, scalar presence, deletion state, the three states
+of <code>is_current</code>, and whether user metadata was supplied. Separate seconds and
+nanoseconds preserve the range and precision of the existing <code>last_modified</code>
+field.</p>
+<p>On 64-bit targets, <code>MetadataHeader</code> is 24 bytes. <code>Arc&lt;[u8]&gt;</code> is a 16-byte fat
+pointer, and <code>Option&lt;Arc&lt;[u8]&gt;&gt;</code> has the same size because <code>None</code> uses the null
+pointer niche. <code>Metadata</code> is therefore 40 bytes. These are implementation
+targets, not a stable ABI.</p>
+<p>Each owner defines a closed internal <code>FieldId</code> set. A value block contains a
+presence bitmap, a <code>u16</code> end offset for each present field, and payloads ordered
+by <code>FieldId</code>; absent fields consume no offset slot. Known fields use bitmap and
+offset arithmetic rather than hashing. User metadata follows them as sorted
+key/value ranges and uses binary search, giving deterministic iteration and
+order-independent equality.</p>
+<p>Fields may contain UTF-8 strings or fixed-width scalar encodings. Private typed
+helpers encode and decode scalars in little-endian byte order and require the
+exact width for the field type. Integer type alone does not determine field
+placement; each owner chooses whether a scalar remains inline or becomes a
+typed value-block field.</p>
+<p>String ranges enter the block only from Rust <code>str</code> or <code>String</code> values. Internal
+decoding accepts blocks produced by the same encoders, so getters preserve this
+UTF-8 invariant without validating the same bytes on every access.</p>
+<p>Every encoded <code>CompactValues</code> block, including its bitmap, offsets, and entry
+path when present, is limited to <code>u16::MAX</code> bytes. A builder panics before
+encoding a larger block. There is no fallback representation.</p>
+<p>For listed entries, the entry path occupies a private range in the same value
+record. Retaining one entry can retain its own path but never its siblings.
+Equality, debug output, bindings, and serialization use logical getters and do
+not expose the byte representation as an ABI or wire format.</p>
+<h3 id="construction-and-transformation"><a class="doc-anchor" href="#construction-and-transformation">§</a>Construction and transformation</h3>
+<p>A fresh <code>MetadataBuilder</code> stores the inline header and mutable values until
+<code>build</code> encodes one exact block. <code>Metadata::into_builder</code> moves the existing
+header and <code>CompactValues</code> into the builder without eagerly decoding or copying
+the block. Header-only changes reuse the existing block. Packed-field changes
+are recorded by the builder and encoded together once at <code>build</code>, leaving
+clones of the original metadata unchanged. User metadata and nested conditional
+metadata write directly into the final block instead of allocating intermediate
+encoded buffers.</p>
+<p>An <code>Entry</code> stores its path in the same block as its metadata.
+<code>Entry::into_parts</code> retains its return type and materializes the returned path
+<code>String</code>. <code>oio::Entry::metadata_mut</code> is removed; code that needs a modified
+entry consumes its metadata into a builder and replaces the completed value.</p>
+<h3 id="raw-operation-arguments"><a class="doc-anchor" href="#raw-operation-arguments">§</a>Raw operation arguments</h3>
+<p>Public <code>ReadOptions</code>, <code>StatOptions</code>, <code>WriteOptions</code>, <code>DeleteOptions</code>,
+<code>CopyOptions</code>, <code>ListOptions</code>, and <code>RestoreOptions</code> remain ordinary owned,
+mutable structs. Converting an options value into its raw <code>Op*</code> is a structural
+freeze: every option is moved into the corresponding raw argument without
+capability-dependent rewriting. The conversion does not accept or inspect
+<code>Capability</code> and does not interpret conditional values.</p>
+<p>For example:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>OpRead {
+    values: CompactValues,
+}</code></pre></div>
+<p><code>ReadField::ContentLengthHint</code> stores the hint as a fixed-width <code>u64</code> entry.
+Existing optional fields use typed value entries; strings use UTF-8 and
+fixed-width values use canonical little-endian encoding. A default <code>OpRead</code>
+does not allocate. A hint-only value allocates one exact block; a hint combined
+with another packed option shares that option’s allocation. The measured
+previous and proposed 64-bit sizes are:</p>
+<div class="table"><table><thead><tr><th>Type</th><th style="text-align: right">Previous</th><th style="text-align: right">Compact</th></tr></thead><tbody>
+<tr><td><code>OpRead</code></td><td style="text-align: right">256 bytes</td><td style="text-align: right">16 bytes</td></tr>
+<tr><td><code>OpStat</code></td><td style="text-align: right">240 bytes</td><td style="text-align: right">16 bytes</td></tr>
+<tr><td><code>OpWrite</code></td><td style="text-align: right">256 bytes</td><td style="text-align: right">32 bytes</td></tr>
+<tr><td><code>OpDelete</code></td><td style="text-align: right">128 bytes</td><td style="text-align: right">24 bytes</td></tr>
+<tr><td><code>OpCopy</code></td><td style="text-align: right">168 bytes</td><td style="text-align: right">64 bytes</td></tr>
+<tr><td><code>OpList</code></td><td style="text-align: right">48 bytes</td><td style="text-align: right">32 bytes</td></tr>
+<tr><td><code>OpRestore</code></td><td style="text-align: right">32 bytes</td><td style="text-align: right">24 bytes</td></tr>
+</tbody></table>
+</div>
+<p><code>OpWrite</code> packs user metadata using the same sorted key/value representation as
+<code>Metadata</code>. <code>OpReader</code>, <code>OpWriter</code>, and <code>OpCopy</code> retain their scalar tuning
+fields, <code>OpList</code> retains its inline limit, and <code>OpRename</code> retains its one-byte
+representation. The <code>OpCopy</code> measurement reflects the current single raw
+argument that also owns copy concurrency, chunk size, and source length hint.</p>
+<p>Raw <code>Op*</code> values expose getters plus <code>Clone</code>, <code>Default</code>, and <code>new</code> for empty
+arguments, but no public <code>with_*</code> methods. Options-to-raw conversion encodes all
+fields in one pass. <code>WriteOptions</code>, <code>DeleteOptions</code>, and <code>CopyOptions</code> preserve
+the complete logical <code>if_not_changed</code> value in the corresponding raw arguments;
+its fields are packed into the operation’s value block rather than lowered to a
+selected ETag or version condition. How a service evaluates the condition is
+outside this representation RFC.</p>
+<h3 id="required-content-length"><a class="doc-anchor" href="#required-content-length">§</a>Required content length</h3>
+<p>Every file <code>Metadata</code> returned by an <code>Operator</code> has an explicit content length
+for the complete object. Directory metadata reports zero. A private presence
+bit distinguishes an explicit zero from a missing value during assembly. A
+completion layer may fill a missing value; publishing file metadata without one
+returns <code>Unexpected</code>. The guarantee applies at the <code>Operator</code> response boundary.</p>
+<h2 id="compatibility-and-migration"><a class="doc-anchor" href="#compatibility-and-migration">§</a>Compatibility and migration</h2>
+<p><code>Metadata::user_metadata</code> and <code>OpWrite::user_metadata</code> break callers that name
+or clone the returned <code>HashMap</code>; lookup and length checks retain the same shape,
+while iteration uses <code>IntoIterator</code> instead of an <code>iter</code> method. Bindings
+materialize their maps by collecting owned pairs at the boundary.</p>
+<p>Metadata construction migrates from <code>Metadata::new</code>, <code>Default</code>, <code>set_*</code>, and
+<code>with_*</code> to <code>Metadata::builder</code>; modifying an owned value uses
+<code>Metadata::into_builder</code>. Raw callers migrate chained <code>Op*::with_*</code> construction
+to the corresponding public <code>*Options</code> and structural conversion. Empty raw
+arguments continue to use <code>new</code> or <code>Default</code>. Encoded value blocks larger than
+<code>u16::MAX</code>, including codec overhead, now panic. Raw list batching, scheduling,
+retry, serialization, and conditional-operation semantics remain unchanged.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>Variable-field lookup performs bitmap and offset arithmetic instead of
+dereferencing an <code>Option&lt;String&gt;</code>. A one-field transformation requires a
+builder round trip, and removing direct mutation is a source-breaking API
+change. Clone and drop perform an atomic reference-count operation when a block
+exists. The private codec must uphold offset bounds and UTF-8 validity and is
+less convenient to inspect in a debugger. A hint-only <code>OpRead</code> adds one
+allocation and fixed-width decoding to save 16 bytes in every <code>OpRead</code>.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>Direct <code>Option&lt;Box&lt;str&gt;&gt;</code> fields remove string capacity but keep a pointer and
+length for every absent field and retain one allocation per populated field. A
+map adds bucket overhead and hashing for a closed field set. A page arena lets
+one retained entry keep all siblings alive. A separate <code>Arc&lt;Record&gt;</code> and boxed
+payload needs two allocations. The inline metadata header preserves direct
+access to required or frequently read scalars and prevents scalar-only metadata
+from allocating.</p>
+<p>Scalar placement follows the measured lifecycle of its owner. The required
+metadata content length and optional metadata timestamp stay inline because
+packing either creates per-value allocations in scalar-only profiles.
+<code>OpList::limit</code> stays inline because its standalone profile regresses both heap
+and construction time. The setup-only, optional
+<code>OpRead::content_length_hint</code> uses an existing typed value entry because halving
+every <code>OpRead</code> outweighs the isolated hint-only allocation. This field-specific
+rule retains a single compact codec without adding a second container or a
+public scalar-storage abstraction.</p>
+<p>Compacting the public <code>*Options</code> types would move block rebuilding into the
+short-lived configuration path. Public options already express the mutable
+construction state, so freezing them once at their existing conversion
+boundary keeps mutation cheap without another builder or pending-options type.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>Cloudflare’s <a href="https://blog.cloudflare.com/dns-cache-memory-optimization-1111/">DNS cache memory optimization</a> applies the
+same principles to immutable Rust cache entries: remove unused capacity, pack
+variable data into one exactly sized byte buffer, reuse scratch storage during
+construction, and measure allocation and resident memory. OpenDAL keeps hot
+scalars decoded and uses an independent entry allocation because downstream
+users retain metadata outside list operations.</p>
+<h2 id="validation"><a class="doc-anchor" href="#validation">§</a>Validation</h2>
+<p>The implementation must include layout tests for all sizes in this RFC on
+supported 64-bit targets. Contract tests cover getters, equality, debug output,
+timestamp range and precision, builder round trips, transformation after clone,
+empty-versus-absent user metadata, field-for-field options conversion,
+dispatch-time conditional lowering, and required file content length. Boundary
+tests prove that a <code>u16::MAX</code>-byte block succeeds and the next byte panics before
+encoding. Prototype benchmarks cover construction, retained heap, lookup, clone,
+builder transformation, raw operations, and scalar placement. The implementation
+must check in equivalent benchmarks with the optimized types.</p>
+</div></details></section></div></main></body></html>

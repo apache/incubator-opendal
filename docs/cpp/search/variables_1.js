@@ -1,0 +1,14 @@
+var searchData=
+[
+  ['cache_5fcontrol_0',['cache_control',['../classopendal_1_1Metadata.html#a54aa48a42c283dae626fae2f15197ecd',1,'opendal::Metadata::cache_control'],['../structopendal_1_1WriteOptions.html#a1577328f951a7d87eac9988ebf0eeeef',1,'opendal::WriteOptions::cache_control']]],
+  ['chunk_1',['chunk',['../structopendal_1_1ReadOptions.html#ac06923371234765ecbd0a7c9d1144406',1,'opendal::ReadOptions::chunk'],['../structopendal_1_1ReaderOptions.html#a9feb6a0a0191026ac6466a607685b2b1',1,'opendal::ReaderOptions::chunk'],['../structopendal_1_1WriteOptions.html#a371883fad5bcb2586715680659b84b0b',1,'opendal::WriteOptions::chunk'],['../structopendal_1_1CopyOptions.html#a1b542d4fa9a01768ec4c02982be0c4b7',1,'opendal::CopyOptions::chunk']]],
+  ['concurrent_2',['concurrent',['../structopendal_1_1ReadOptions.html#a07081681da13af1f8e461a638617f8b8',1,'opendal::ReadOptions::concurrent'],['../structopendal_1_1ReaderOptions.html#a38328ae59877a4e932263da09c3b0c2a',1,'opendal::ReaderOptions::concurrent'],['../structopendal_1_1WriteOptions.html#afc7f82b77176b82e0f252abdca543600',1,'opendal::WriteOptions::concurrent'],['../structopendal_1_1CopyOptions.html#a20c4f88997374cc71e22ea380a5297dd',1,'opendal::CopyOptions::concurrent']]],
+  ['content_5fdisposition_3',['content_disposition',['../classopendal_1_1Metadata.html#a03bb80ddc8a734bf3568397070b9c25c',1,'opendal::Metadata::content_disposition'],['../structopendal_1_1WriteOptions.html#af59c0ebf6b0670256eedb55464d57c3a',1,'opendal::WriteOptions::content_disposition']]],
+  ['content_5fencoding_4',['content_encoding',['../classopendal_1_1Metadata.html#ab161754f0af4a4e6a88b98622bd07cc1',1,'opendal::Metadata::content_encoding'],['../structopendal_1_1WriteOptions.html#a8253ebdc6e11b1f3dc8d5f542bbb5997',1,'opendal::WriteOptions::content_encoding']]],
+  ['content_5flength_5',['content_length',['../classopendal_1_1Metadata.html#abac7ec36113aec8c3e7ad885ffbf3141',1,'opendal::Metadata']]],
+  ['content_5flength_5fhint_6',['content_length_hint',['../structopendal_1_1ReadOptions.html#a57d7dbf0192e7623c6e9e20b59f817f2',1,'opendal::ReadOptions::content_length_hint'],['../structopendal_1_1ReaderOptions.html#a098892e38d16c48d89b0bde0c86ab9e4',1,'opendal::ReaderOptions::content_length_hint']]],
+  ['content_5fmd5_7',['content_md5',['../classopendal_1_1Metadata.html#ac62a1144f48e70b73cb99a9172b52c7a',1,'opendal::Metadata']]],
+  ['content_5ftype_8',['content_type',['../classopendal_1_1Metadata.html#a63bec27aebb286fec3e280924e311949',1,'opendal::Metadata::content_type'],['../structopendal_1_1WriteOptions.html#a54f358f0e280975685d0f6c2d83afe6c',1,'opendal::WriteOptions::content_type']]],
+  ['copy_9',['copy',['../classopendal_1_1Capability.html#a6fd2c34070689ce5a6a7e28f240379d2',1,'opendal::Capability']]],
+  ['create_5fdir_10',['create_dir',['../classopendal_1_1Capability.html#a740041996d51d9afe8e9970d3d692dc4',1,'opendal::Capability']]]
+];

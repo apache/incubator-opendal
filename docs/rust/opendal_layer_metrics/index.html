@@ -1,0 +1,31 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Apache OpenDAL™ Metrics Layer"><title>opendal_layer_metrics - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="opendal_layer_metrics" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js" ><script src="../static.files/storage-41dd4d93.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Crate opendal_layer_metrics</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../opendal_layer_metrics/index.html">opendal_<wbr>layer_<wbr>metrics</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#apache-opendal-metrics-layer" title="Apache OpenDAL™ Metrics Layer">Apache OpenDAL™ Metrics Layer</a><ul><li><a href="#use-through-opendal" title="Use through `opendal`">Use through <code>opendal</code></a></li><li><a href="#use-with-opendal-core" title="Use with `opendal-core`">Use with <code>opendal-core</code></a></li><li><a href="#documentation" title="Documentation">Documentation</a></li><li><a href="#license" title="License">License</a></li></ul></li></ul><h3><a href="#structs">Crate Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><h1>Crate <span>opendal_<wbr>layer_<wbr>metrics</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/opendal_layer_metrics/lib.rs.html#18-206">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h2 id="apache-opendal-metrics-layer"><a class="doc-anchor" href="#apache-opendal-metrics-layer">§</a>Apache OpenDAL™ Metrics Layer</h2>
+<p><code>opendal-layer-metrics</code> records OpenDAL operation and HTTP metrics with the <code>metrics</code> facade.</p>
+<h3 id="use-through-opendal"><a class="doc-anchor" href="#use-through-opendal">§</a>Use through <code>opendal</code></h3>
+<p>Applications should normally enable this layer through the <code>opendal</code> facade with the
+<code>layers-metrics</code> feature:</p>
+<div class="example-wrap"><pre class="language-shell"><code>cargo add opendal --features layers-metrics</code></pre></div>
+<p>The layer is available as <code>opendal::layers::MetricsLayer</code> and can be
+composed with an operator through <code>opendal::Operator::layer</code>.</p>
+<h3 id="use-with-opendal-core"><a class="doc-anchor" href="#use-with-opendal-core">§</a>Use with <code>opendal-core</code></h3>
+<p>Add the split crates directly:</p>
+<div class="example-wrap"><pre class="language-shell"><code>cargo add opendal-core opendal-layer-metrics</code></pre></div>
+<p>Pass a configured layer to <code>Operator::layer</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal_core::Operator;
+<span class="kw">use </span>opendal_layer_metrics::MetricsLayer;
+
+<span class="kw">fn </span>add_layer(operator: Operator, layer: MetricsLayer) -&gt; Operator {
+    operator.layer(layer)
+}</code></pre></div>
+<p>Construct and configure <code>layer</code> as described in the API documentation before
+composing it with an operator.</p>
+<h3 id="documentation"><a class="doc-anchor" href="#documentation">§</a>Documentation</h3>
+<ul>
+<li><a href="https://docs.rs/opendal-layer-metrics">Rust API documentation</a></li>
+<li><a href="https://opendal.apache.org/docs/core/production">Apache OpenDAL production guide</a></li>
+<li><a href="https://opendal.apache.org/docs/">Apache OpenDAL documentation</a></li>
+</ul>
+<h3 id="license"><a class="doc-anchor" href="#license">§</a>License</h3>
+<p>Licensed under the Apache License, Version 2.0.</p>
+</div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.MetricsLayer.html" title="struct opendal_layer_metrics::MetricsLayer">Metrics<wbr>Layer</a></dt><dd><code>MetricsLayer</code> records every operation with
+<a href="https://docs.rs/metrics/">metrics</a>.</dd></dl></section></div></main></body></html>

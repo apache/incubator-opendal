@@ -1,0 +1,114 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Core"><title>opendal::docs::rfcs::rfc_6828_core - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_6828_core</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>6828_<wbr>core</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a><ul><li><a href="#crate-layout" title="Crate layout">Crate layout</a></li><li><a href="#feature-matrix" title="Feature matrix">Feature matrix</a></li><li><a href="#registry-and-scheme" title="Registry and Scheme">Registry and Scheme</a></li><li><a href="#testing-and-ci" title="Testing and CI">Testing and CI</a></li><li><a href="#compatibility" title="Compatibility">Compatibility</a></li></ul></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>6828_<wbr>core</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Core</p>
+<ul>
+<li>Proposal Name: core</li>
+<li>Start Date: 2025-11-27</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/6828">apache/opendal#6828</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/6829">apache/opendal#6829</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Introduce a crate topology where <code>opendal-core</code> owns types, raw traits, and a minimal set of critical layers; each storage backend lives in its own <code>opendal-service-{backend}</code> crate; non-critical layers move to <code>opendal-layer-{name}</code> crates; and a facade crate <code>opendal</code> re-exports core, services, and layers while wiring dynamic service registration and feature aliases.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<ul>
+<li>Decouple compilation units so users only build the services and layers they need, reducing compile time and dependency footprint.</li>
+<li>Make service delivery and versioning independent, enabling faster backend evolution without touching core.</li>
+<li>Allow layer evolution at its own pace while keeping correctness-critical layers close to core for safety.</li>
+<li>Prepare for future plugin ecosystems (e.g., third-party services/layers published independently) without breaking existing API paths.</li>
+</ul>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>As a user you depend on the facade crate <code>opendal</code> as before. Differences:</p>
+<ul>
+<li>To enable a backend, turn on the corresponding feature, for example <code>opendal = { version = "x.y", features = ["service-s3"] }</code>. The feature pulls in <code>opendal-service-s3</code>.</li>
+<li>Critical layers (error context, simulate, completeness, correctness check, capability check, immutable index, HTTP client) are always available via <code>opendal::layers</code> because they live in <code>opendal-core</code>.</li>
+<li>Non-critical layers are opt-in features, e.g., <code>"layer-logging"</code> pulls <code>opendal-layer-logging</code> and re-exports <code>LoggingLayer</code> under <code>opendal::layers::LoggingLayer</code>.</li>
+<li>API surface stays the same: <code>opendal::Operator</code>, <code>opendal::services::S3</code>, <code>opendal::layers::LoggingLayer</code> still work; only crate boundaries change under the hood.</li>
+</ul>
+<p>Migration for existing users:</p>
+<div class="example-wrap"><pre class="language-toml"><code># Old
+opendal = { version = "0.55", features = ["services-s3", "layers-logging"] }
+
+# New (facade keeps aliases for one major version)
+opendal = { version = "0.56", features = ["service-s3", "layer-logging"] }</code></pre></div><h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2><h3 id="crate-layout"><a class="doc-anchor" href="#crate-layout">§</a>Crate layout</h3>
+<ul>
+<li><code>opendal-core</code>
+<ul>
+<li>Modules: <code>types</code>, <code>raw</code>, <code>blocking</code>, <code>docs</code>, critical layers (ErrorContext, Simulate, Complete, CorrectnessCheck, CapabilityCheck, ImmutableIndex, HttpClient, optional TailCut).</li>
+<li>No service implementations, no non-critical layers.</li>
+<li>Exposes <code>OperatorRegistry</code> and <code>Scheme</code> but performs no builtin registrations.</li>
+</ul>
+</li>
+<li><code>opendal-service-{backend}</code>
+<ul>
+<li>Contains the backend’s <code>Builder</code>, <code>Config</code>, accessor implementation, scheme constant, and a <code>register(&amp;OperatorRegistry)</code> helper.</li>
+<li>Depends only on <code>opendal-core</code> (plus backend-specific deps).</li>
+</ul>
+</li>
+<li><code>opendal-layer-{name}</code>
+<ul>
+<li>Each non-critical layer in its own crate (or small groups when strongly coupled, e.g., oteltrace/otelmetrics).</li>
+<li>Depends on <code>opendal-core</code> and layer-specific deps.</li>
+</ul>
+</li>
+<li><code>opendal</code> facade
+<ul>
+<li>Depends on <code>opendal-core</code> (mandatory), <code>opendal-layer-*</code> and <code>opendal-service-*</code> as optional deps behind features.</li>
+<li>Re-exports <code>core::{Operator, Result, ...}</code>, critical layers, and optional services/layers.</li>
+<li>On build, the facade crate registers enabled services via a single <code>ctor</code> initializer to populate <code>DEFAULT_OPERATOR_REGISTRY</code>.</li>
+<li>Maintains feature aliases for one major version (e.g., <code>services-s3</code> -&gt; <code>service-s3</code>, <code>layers-logging</code> -&gt; <code>layer-logging</code>).</li>
+</ul>
+</li>
+</ul>
+<h3 id="feature-matrix"><a class="doc-anchor" href="#feature-matrix">§</a>Feature matrix</h3>
+<ul>
+<li>Core features: keep executor/runtime toggles (<code>executors-tokio</code>, <code>blocking</code>), internal helpers (<code>internal-path-cache</code>, <code>internal-tokio-rt</code>), plus minimal TLS/http knobs.</li>
+<li>Service features: <code>service-{backend}</code> live in facade, map 1:1 to <code>opendal-service-{backend}</code> optional dependency.</li>
+<li>Layer features: <code>layer-{name}</code> live in facade, map 1:1 to <code>opendal-layer-{name}</code> optional dependency; critical layers require no feature.</li>
+</ul>
+<h3 id="registry-and-scheme"><a class="doc-anchor" href="#registry-and-scheme">§</a>Registry and Scheme</h3>
+<ul>
+<li><code>Operator::from_uri</code> remains, but core contains no builtin registrations.</li>
+<li>Facade constructs registry at init by conditionally calling each service crate’s <code>register</code> based on enabled features.</li>
+<li><code>Scheme::enabled()</code> moves to facade to aggregate enabled services; core provides base enum and helper for custom schemes.</li>
+</ul>
+<h3 id="testing-and-ci"><a class="doc-anchor" href="#testing-and-ci">§</a>Testing and CI</h3>
+<ul>
+<li>Core tests remain for types/raw/critical layers.</li>
+<li>Each service crate carries unit tests plus behavior tests triggered via shared harness; a new <code>opendal-behavior</code> test crate can reuse the existing fixtures.</li>
+<li>Each layer crate keeps its own minimal tests; integration tests that combine layers/services run in facade or dedicated smoke suites.</li>
+<li>Workspace-level tasks (<code>cargo clippy</code>, <code>cargo fmt --check</code>) cover all crates; behavior matrix splits by service features to control runtime cost.</li>
+</ul>
+<h3 id="compatibility"><a class="doc-anchor" href="#compatibility">§</a>Compatibility</h3>
+<ul>
+<li>Public API paths stay stable through facade re-exports.</li>
+<li>Feature aliases maintained for one major release; deprecation warnings in docs and cargo feature descriptions.</li>
+<li>Crate names and versions remain under Apache OpenDAL namespace.</li>
+</ul>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<ul>
+<li>More crates increase release coordination overhead and CI matrix size.</li>
+<li>Users pinning to core-only without facade must manually enable services/layers they need.</li>
+<li>Potential longer resolve time in dependency solvers due to many optional dependencies.</li>
+</ul>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<ul>
+<li>Keeping critical layers in core avoids breaking invariants and reduces dependency churn on safety-sensitive code.</li>
+<li>Per-layer and per-service crates maximize compile-time selectivity and allow independent evolution.</li>
+<li>Alternative considered: one <code>opendal-layers</code> mega-crate; rejected to keep feature granularity and lighter dependency pull for single-layer use.</li>
+</ul>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<ul>
+<li>Rust ecosystem crates like <code>tokio</code> vs <code>tokio-util</code>, <code>tower</code> vs <code>tower-*</code> split utilities from core runtime.</li>
+<li>Storage SDKs (AWS SDK for Rust) split per-service crates to reduce bloat and compile time.</li>
+</ul>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<ul>
+<li>Exact set of critical layers that must stay in core (TailCut, Retry?) may need tuning after performance and safety review.</li>
+<li>Whether to group strongly coupled layers (otelmetrics/oteltrace) into one crate or keep fully separate.</li>
+<li>Behavior test harness packaging: shared crate vs duplicated fixtures.</li>
+</ul>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<ul>
+<li>Allow third-party service or layer crates to self-register via cargo features or a plugin registry.</li>
+<li>Provide a <code>minimal</code> facade profile that ships only core + registry glue for embedders.</li>
+<li>Introduce codegen to auto-wire service registrations to shrink manual glue in facade.</li>
+</ul>
+</div></details></section></div></main></body></html>

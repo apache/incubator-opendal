@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["HDFS_NATIVE_SCHEME"],"fn":["register_hdfs_native_service"],"struct":["HdfsNative","HdfsNativeConfig"]};

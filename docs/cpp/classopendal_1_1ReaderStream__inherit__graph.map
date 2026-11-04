@@ -1,0 +1,5 @@
+<map id="opendal::ReaderStream" name="opendal::ReaderStream">
+<area shape="rect" id="Node000001" title="ReaderStream is a stream wrapper of Reader which provides iostream interface. It wraps the Reader to ..." alt="" coords="5,81,180,109"/>
+<area shape="rect" id="Node000002" title=" " alt="" coords="43,5,142,33"/>
+<area shape="poly" id="edge1_Node000001_Node000002" title=" " alt="" coords="94,47,95,82,90,80,91,51"/>
+</map>

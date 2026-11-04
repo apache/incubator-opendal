@@ -1,0 +1,63 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Create dir"><title>opendal::docs::rfcs::rfc_0221_create_dir - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_0221_create_dir</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>0221_<wbr>create_<wbr>dir</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>0221_<wbr>create_<wbr>dir</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Create dir</p>
+<ul>
+<li>Proposal Name: <code>create-dir</code></li>
+<li>Start Date: 2022-04-06</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/221">apache/opendal#221</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/222">apache/opendal#222</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Add creating dir support for OpenDAL.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>Interoperability between OpenDAL services requires dir support. The object storage system will simulate dir operations with <code>/</code> via object ends. But we can’t share the same behavior with <code>fs</code>, as <code>mkdir</code> is a separate syscall.</p>
+<p>So we need to unify the behavior about dir across different services.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>After this proposal got merged, we will treat all paths that end with <code>/</code> as a dir.</p>
+<p>For example:</p>
+<ul>
+<li><code>read("abc/")</code> will return an <code>IsDir</code> error.</li>
+<li><code>write("abc/")</code> will return an <code>IsDir</code> error.</li>
+<li><code>stat("abc/")</code> will be guaranteed to return a dir or a <code>NotDir</code> error.</li>
+<li><code>delete("abc/")</code> will be guaranteed to delete a dir or <code>NotDir</code> / <code>NotEmpty</code> error.</li>
+<li><code>list("abc/")</code> will be guaranteed to list a dir or a <code>NotDir</code> error.</li>
+</ul>
+<p>And we will support create an empty object:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// create a dir object "abc/"
+</span><span class="kw">let _ </span>= op.object(<span class="string">"abc/"</span>).create().<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="comment">// create a file object "abc"
+</span><span class="kw">let _ </span>= op.object(<span class="string">"abc"</span>).create().<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div><h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>And we will add a new API called <code>create</code> to create an empty object.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">struct </span>OpCreate {
+    path: String,
+    mode: ObjectMode,
+}
+
+<span class="kw">pub trait </span>Accessor: Send + Sync + Debug {
+    <span class="kw">async fn </span>create(<span class="kw-2">&amp;</span><span class="self">self</span>, args: <span class="kw-2">&amp;</span>OpCreate) -&gt; <span class="prelude-ty">Result</span>&lt;Metadata&gt;;
+}</code></pre></div>
+<p><code>Object</code> will expose API like <code>create</code> which will call <code>Accessor::create()</code> internally.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>None</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>When writing this proposal, <a href="https://github.com/rust-lang/rust/issues/86442">io_error_more</a> is not stabilized yet. We can’t use <code>NotADirectory</code> nor <code>IsADirectory</code> directly.</p>
+<p>Using <code>from_raw_os_error</code> is unacceptable because we can’t carry our error context.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>std::io;
+
+<span class="kw">let </span>error = io::Error::from_raw_os_error(<span class="number">22</span>);
+<span class="macro">assert_eq!</span>(error.kind(), io::ErrorKind::InvalidInput);</code></pre></div>
+<p>So we will use <code>ErrorKind::Other</code> for now, which means our users can’t check the following errors:</p>
+<ul>
+<li><code>IsADirectory</code></li>
+<li><code>DirectoryNotEmpty</code></li>
+<li><code>NotADirectory</code></li>
+</ul>
+<p>Until they get stabilized.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>None</p>
+</div></details></section></div></main></body></html>

@@ -1,0 +1,162 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Limited Read"><title>opendal::docs::rfcs::rfc_7945_limited_read - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_7945_limited_read</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>7945_<wbr>limited_<wbr>read</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a><ul><li><a href="#public-api" title="Public API">Public API</a></li><li><a href="#request-and-completion-ownership" title="Request and completion ownership">Request and completion ownership</a></li><li><a href="#raw-read-contract" title="Raw read contract">Raw read contract</a></li><li><a href="#execution" title="Execution">Execution</a></li><li><a href="#compatibility-and-validation" title="Compatibility and validation">Compatibility and validation</a></li></ul></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>7945_<wbr>limited_<wbr>read</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Limited Read</p>
+<ul>
+<li>Proposal Name: <code>limited_read</code></li>
+<li>Start Date: 2026-07-24</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/7945">apache/opendal#7945</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/7938">apache/opendal#7938</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Add <code>limit</code> to <code>Operator::read_with</code> and <code>ReadOptions</code>.</p>
+<p><code>range</code> selects the bytes to read. <code>limit</code> returns at most the first <code>limit</code>
+selected bytes and accepts EOF after a valid starting byte. Bounded ranges
+without <code>limit</code> remain exact, and a forward selection with a non-zero limit that
+starts at or beyond EOF remains <code>RangeNotSatisfied</code>.</p>
+<p>For an absolute start, Core lowers the cap into the existing service
+<code>BytesRange</code>. For a suffix, Core preserves the suffix request and stops
+collecting at the cap. A private <code>exact</code> boolean controls completion validation;
+the raw read API and service request types remain unchanged.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>Callers often need only an object’s signature, header, or other leading metadata
+to detect its format.</p>
+<p>Today a caller can use <code>range(0..N)</code>, but a bounded range is exact. When its
+starting byte exists but its end crosses EOF, the read fails even if the
+available bytes are sufficient. Calling <code>stat</code> first avoids that error but adds
+a request and introduces a race between metadata lookup and data access.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>Use <code>limit</code> when fewer bytes than the cap are useful:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>header = op
+    .read_with(<span class="string">"path/to/file"</span>)
+    .limit(<span class="number">16 </span>* <span class="number">1024</span>)
+    .<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>If the object contains at least 16 KiB, this returns 16 KiB. If its non-empty
+content is shorter, this returns the whole object. For this forward read, a
+non-zero limit on an empty object returns <code>RangeNotSatisfied</code>. OpenDAL does not
+perform a <code>stat</code> before reading.</p>
+<p><code>limit</code> can start at an offset:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>data = op
+    .read_with(<span class="string">"path/to/file"</span>)
+    .range(<span class="number">4096</span>..)
+    .limit(<span class="number">1024</span>)
+    .<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>This returns at most 1024 bytes from offset 4096. A valid starting byte followed
+by EOF is successful; an offset at or beyond EOF returns <code>RangeNotSatisfied</code>.</p>
+<p><code>limit</code> also applies after a suffix range:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>data = op
+    .read_with(<span class="string">"path/to/file"</span>)
+    .range(BytesRange::suffix(<span class="number">1024</span>))
+    .limit(<span class="number">512</span>)
+    .<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>This selects the last 1024 bytes, or the whole object when it is shorter, then
+returns up to the first 512 selected bytes.</p>
+<p><code>range</code> without <code>limit</code> still requires the complete bounded range. Missing
+objects, failed conditions, permission failures, and transport errors also
+remain errors.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2><h3 id="public-api"><a class="doc-anchor" href="#public-api">§</a>Public API</h3>
+<p><code>ReadOptions</code> gains one field:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>ReadOptions {
+    <span class="kw">pub </span>range: BytesRange,
+    <span class="kw">pub </span>limit: <span class="prelude-ty">Option</span>&lt;u64&gt;,
+    <span class="comment">// Existing fields.
+</span>}</code></pre></div>
+<p><code>FutureRead</code> gains the matching builder:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">pub fn </span>limit(<span class="kw-2">mut </span><span class="self">self</span>, limit: u64) -&gt; <span class="self">Self </span>{
+    <span class="self">self</span>.args.limit = <span class="prelude-val">Some</span>(limit);
+    <span class="self">self
+</span>}</code></pre></div>
+<p>The order is fixed: <code>range</code> selects bytes, then <code>limit</code> caps the prefix returned
+from that selection. <code>limit</code> does not move the selection’s starting position.
+Core pushes the cap into the service range when the selection has an absolute
+start:</p>
+<div class="table"><table><thead><tr><th>Options</th><th>Service range</th><th>Completion</th></tr></thead><tbody>
+<tr><td>no <code>range</code>, <code>limit(n)</code></td><td>offset 0, size <code>n</code></td><td>at most <code>n</code></td></tr>
+<tr><td><code>range(offset..)</code>, <code>limit(n)</code></td><td>offset <code>offset</code>, size <code>n</code></td><td>at most <code>n</code></td></tr>
+<tr><td><code>range(start..end)</code>, <code>limit(n)</code></td><td>offset <code>start</code>, size <code>min(end - start, n)</code></td><td>at most that size</td></tr>
+<tr><td><code>suffix(s)</code>, <code>limit(n)</code></td><td>suffix <code>s</code></td><td>at most the first <code>n</code> selected bytes</td></tr>
+<tr><td>bounded <code>range</code> without <code>limit</code></td><td>unchanged</td><td>exact</td></tr>
+</tbody></table>
+</div>
+<p><code>limit(0)</code> returns an empty buffer without checking the object, consistent with
+an empty range. A non-zero forward limit on an empty object is
+<code>RangeNotSatisfied</code> because its first byte does not exist.</p>
+<p>Combining <code>limit</code> with an explicit <code>chunk</code> size or a <code>concurrent</code> value greater
+than one returns <code>ErrorKind::ConfigInvalid</code> before storage I/O.</p>
+<h3 id="request-and-completion-ownership"><a class="doc-anchor" href="#request-and-completion-ownership">§</a>Request and completion ownership</h3>
+<p>Core carries a private boolean named <code>exact</code>: it is <code>true</code> for a regular bounded
+non-suffix range and <code>false</code> for a limited, open-ended, or suffix range. The
+buffer stream tracks emitted bytes, slices the final buffer at the limit, and
+stops at the cap. At EOF, it checks the bounded range size only when <code>exact</code> is
+<code>true</code>.</p>
+<p>Services receive the existing operation choice and <code>BytesRange</code>: <code>open</code> for a
+stream or <code>read</code> for exact bounded materialization. For an absolute start, that
+range already contains the limit, so the service has all information needed to
+bound its I/O. The <code>exact</code> flag stays in Core because it changes only whether
+Core accepts clean EOF before the requested size.</p>
+<p>A suffix has no absolute start before the object length is known. <code>BytesRange</code>
+cannot express both the suffix and a cap on its prefix, so Core sends the suffix
+and caps the collected stream without <code>stat</code>. A service may transfer more than
+the limit; exact suffix-limit pushdown would require service-facing state.</p>
+<h3 id="raw-read-contract"><a class="doc-anchor" href="#raw-read-contract">§</a>Raw read contract</h3>
+<p>This proposal keeps the raw <code>oio::Read</code> API unchanged:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Read {
+    <span class="kw">fn </span>open(<span class="kw-2">&amp;</span><span class="self">self</span>, range: BytesRange) -&gt; ...;
+    <span class="kw">fn </span>read(<span class="kw-2">&amp;</span><span class="self">self</span>, range: BytesRange) -&gt; ...;
+}</code></pre></div>
+<p>The two existing methods already provide the required split:</p>
+<ul>
+<li><code>open(range)</code> returns the bytes available inside a satisfiable range and never
+crosses its boundary. For a non-empty bounded forward range, EOF after at
+least one requested byte is clean stream completion; an offset at or beyond
+EOF is <code>RangeNotSatisfied</code>.</li>
+<li><code>read(range)</code> remains an exact bounded read for chunked and concurrent
+planning. It returns the complete range or an error.</li>
+</ul>
+<p><code>PositionReadStream</code> returns <code>RangeNotSatisfied</code> if its first read for a
+non-empty bounded range returns no bytes, but treats a later empty read as clean
+completion. <code>PositionReader::read</code> keeps rejecting any EOF before its exact
+bounded read completes. Stream-based services follow the same rule.</p>
+<p><code>CompleteLayer::read</code> continues to require the exact bounded size.
+<code>CompleteLayer::open</code> rejects bytes beyond the requested range and, when
+<code>RpRead</code> contains the full object length, requires exactly the bytes available
+in a satisfiable range. Without that metadata, it relies on the service to
+distinguish clean EOF from a truncated response.</p>
+<p>HTTP services still validate the response body’s <code>Content-Length</code>, so accepting
+object EOF does not turn a truncated network response into success.</p>
+<h3 id="execution"><a class="doc-anchor" href="#execution">§</a>Execution</h3>
+<p>A limited read opens one stream and collects until the limit or EOF; it does not
+issue speculative exact chunks across EOF. An explicit <code>chunk</code> size or
+<code>concurrent</code> value greater than one is <code>ConfigInvalid</code>. No capability is needed
+because every readable service supports <code>open(range)</code>.</p>
+<p><code>presign_read_options</code> also rejects <code>limit</code> because OpenDAL cannot apply its
+completion check to a response executed by the caller.</p>
+<h3 id="compatibility-and-validation"><a class="doc-anchor" href="#compatibility-and-validation">§</a>Compatibility and validation</h3>
+<p>Existing reads omit <code>limit</code> and retain their behavior. Callers that construct
+<code>ReadOptions</code> without <code>..Default::default()</code> must initialize the new field.</p>
+<p>Tests must cover empty objects and forward and suffix ranges around the limit
+and EOF, including <code>RangeNotSatisfied</code> at or beyond EOF, unchanged exact-range
+and non-EOF errors, invalid chunked or concurrent combinations, and truncated
+HTTP bodies. Both stream-based and positioned-read services need coverage.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p><code>range</code> and <code>limit</code> are similar size controls with different EOF semantics.
+Suffix ranges may transfer more data than OpenDAL returns, and the initial
+implementation does not support parallel chunk planning.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<ul>
+<li>A separate <code>read_up_to</code> operation would duplicate the read options and builder
+surface; <code>limit</code> composes with them.</li>
+<li>Making every bounded range accept EOF would weaken file validation and safe
+concurrent chunk planning.</li>
+<li>Calling <code>stat</code> first adds latency and cannot make the read atomic with its
+metadata.</li>
+<li>A new raw method or planning type is unnecessary for absolute ranges because
+<code>open</code>, <code>read</code>, and the lowered <code>BytesRange</code> express the storage request. A
+private <code>exact</code> boolean expresses the remaining Core decision. Service-facing
+state solely for suffix-limit pushdown would expand every service’s contract
+for an optional optimization.</li>
+</ul>
+</div></details></section></div></main></body></html>

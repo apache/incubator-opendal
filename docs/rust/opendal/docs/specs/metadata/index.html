@@ -1,0 +1,55 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="The portable contract for owned metadata and result completion."><title>opendal::docs::specs::metadata - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module metadata</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module metadata</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#metadata" title="Metadata">Metadata</a><ul><li><a href="#construction-and-access" title="Construction and access">Construction and access</a></li><li><a href="#content-length" title="Content length">Content length</a></li><li><a href="#operation-boundary" title="Operation boundary">Operation boundary</a></li><li><a href="#historical-decisions" title="Historical decisions">Historical decisions</a></li></ul></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs::<wbr>specs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">specs</a></div><h1>Module <span>metadata</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>The portable contract for owned metadata and result completion.</p>
+<h2 id="metadata"><a class="doc-anchor" href="#metadata">§</a>Metadata</h2>
+<p><code>Metadata</code> is an owned, immutable description of a storage entry. It does not
+borrow from a response, lister, reader, or operation, so callers may retain it
+for any lifetime. Clones may share immutable storage internally. Consuming one
+clone through <code>Metadata::into_builder</code> and building a modified value does not
+change any other clone.</p>
+<h3 id="construction-and-access"><a class="doc-anchor" href="#construction-and-access">§</a>Construction and access</h3>
+<p>Callers construct metadata with <code>MetadataBuilder::file(content_length)</code>,
+<code>MetadataBuilder::dir()</code>, or <code>MetadataBuilder::unknown()</code>, then finish it with
+<code>MetadataBuilder::build</code>. Existing metadata can be consumed with
+<code>Metadata::into_builder</code>; <code>set_file(content_length)</code>, <code>set_dir()</code>, and
+<code>set_unknown()</code> change its mode before rebuilding it.</p>
+<p>User metadata is exposed through a borrowed <code>UserMetadata</code> view. The view
+supports lookup, length checks, and iteration without requiring a <code>HashMap</code>
+allocation. An absent user-metadata map and an explicitly supplied empty map
+remain distinguishable.</p>
+<p>Rust metadata and finalized operation arguments use compact blocks whose
+encoded size, including indexes, must not exceed <code>u16::MAX</code> bytes. Construction
+panics when a block exceeds this bound. Services and callers should enforce
+their own smaller protocol limits before reaching this representation boundary.</p>
+<h3 id="content-length"><a class="doc-anchor" href="#content-length">§</a>Content length</h3>
+<p>Every file <code>Metadata</code> contains the complete object length by construction.
+<code>MetadataBuilder::file(0)</code> represents an empty file. Directory and unknown
+metadata report zero.</p>
+<p>Raw services and intermediate layers use <code>Unknown</code> while either the entry mode
+or its full length is unavailable. They promote that value to <code>FILE</code> only at a
+boundary that owns an authoritative length:</p>
+<ul>
+<li>stat and read-response parsers construct <code>FILE</code> only after obtaining the
+complete object length from the service response.</li>
+<li>list completion stats unknown entries, resolves their mode, and promotes
+files with the stat result’s length.</li>
+<li>write completion uses the number of bytes written for replacements. Append
+adapters use the final object offset instead of the number of appended bytes.</li>
+<li>copy completion uses an authoritative service result or successful copy
+progress when the copy protocol provides one. Otherwise, it trusts a
+caller-asserted source length without reading source metadata, or reads source
+metadata before copying when no assertion is present. It does not issue a
+target <code>stat</code> and fails when none of these sources can provide an authoritative
+length.</li>
+</ul>
+<p>Delete markers that do not carry an object length use a content length of zero.</p>
+<h3 id="operation-boundary"><a class="doc-anchor" href="#operation-boundary">§</a>Operation boundary</h3>
+<p>Public operation options are mutable logical construction values. Before
+OpenDAL freezes them into raw <code>Op*</code> arguments, it resolves logical conditions
+such as <code>if_not_changed</code> against the composed service capability. Raw arguments
+contain only the primitive conditions that a service must execute and do not
+retain the source <code>Metadata</code>.</p>
+<h3 id="historical-decisions"><a class="doc-anchor" href="#historical-decisions">§</a>Historical decisions</h3>
+<ul>
+<li><a href="https://github.com/apache/opendal/blob/main/core/core/src/docs/rfcs/8194_compact_metadata_and_operation_args.md">RFC 8194: Compact metadata and operation arguments</a></li>
+<li><a href="https://github.com/apache/opendal/issues/8195">Tracking issue 8195</a></li>
+</ul>
+</div></details></section></div></main></body></html>

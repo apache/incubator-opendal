@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ONEDRIVE_SCHEME"],"fn":["register_onedrive_service"],"struct":["Onedrive","OnedriveConfig"]};

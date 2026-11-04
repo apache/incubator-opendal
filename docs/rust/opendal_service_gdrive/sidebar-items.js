@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["GDRIVE_SCHEME"],"fn":["register_gdrive_service"],"struct":["Gdrive","GdriveConfig"]};

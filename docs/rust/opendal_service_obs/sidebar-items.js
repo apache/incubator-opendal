@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["OBS_SCHEME"],"fn":["register_obs_service"],"struct":["Obs","ObsConfig"]};

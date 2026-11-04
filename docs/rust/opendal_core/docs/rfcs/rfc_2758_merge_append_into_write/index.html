@@ -1,0 +1,57 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Merge append into write"><title>opendal_core::docs::rfcs::rfc_2758_merge_append_into_write - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_2758_merge_append_into_write</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal_core/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal_core/index.html">opendal_<wbr>core</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>2758_<wbr>merge_<wbr>append_<wbr>into_<wbr>write</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal_<wbr>core::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal_core</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>2758_<wbr>merge_<wbr>append_<wbr>into_<wbr>write</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../../src/opendal_core/docs/rfcs/mod.rs.html#186">Source</a> </span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Merge append into write</p>
+<ul>
+<li>Proposal Name: <code>merge_append_into_write</code></li>
+<li>Start Date: 2023-08-02</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/2758">apache/opendal#2758</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/2760">apache/opendal#2760</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Merge the <code>appender</code> API into <code>writer</code> by introducing a new <code>writer_with.append(true)</code> method to enable append mode.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>Currently OpenDAL has separate <code>appender</code> and <code>writer</code> APIs:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>appender = op.appender_with(<span class="string">"file.txt"</span>).<span class="kw">await</span><span class="question-mark">?</span>; 
+
+appender.append(bs).<span class="kw">await</span><span class="question-mark">?</span>;
+appender.append(bs).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>This duplication forces users to learn two different APIs for writing data.</p>
+<p>By adding this change, we can:</p>
+<ul>
+<li>Simpler API surface - users only need to learn one writing API.</li>
+<li>Reduce code duplication between append and write implementations.</li>
+<li>Atomic append semantics are handled internally in <code>writer</code>.</li>
+<li>Reuse the <code>sink</code> api for both <code>overwrite</code> and <code>append</code> mode.</li>
+</ul>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>The new approach is to enable append mode on <code>writer</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>writer = op.writer_with(<span class="string">"file.txt"</span>).append(<span class="bool-val">true</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+
+writer.write(bs).<span class="kw">await</span><span class="question-mark">?</span>; <span class="comment">// appends to file
+</span>writer.write(bs).<span class="kw">await</span><span class="question-mark">?</span>; <span class="comment">// appends again</span></code></pre></div>
+<p>Calling <code>writer_with.append(true)</code> will start the writer in append mode. Subsequent <code>write()</code> calls will append rather than overwrite.</p>
+<p>There is no longer a separate <code>appender</code> API.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>We will add an <code>append</code> flag into <code>OpWrite</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>OpWrite {   
+    <span class="kw">pub fn </span>with_append(<span class="kw-2">mut </span><span class="self">self</span>, append: bool) -&gt; <span class="self">Self </span>{
+        <span class="self">self</span>.append = append;
+        <span class="self">self
+    </span>}
+}</code></pre></div>
+<p>All services need to check <code>append</code> flag and handle append mode accordingly. Services that not support append should return an <code>Unsupported</code> error instead.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<ul>
+<li><code>writer</code> API is more complex with the append mode flag.</li>
+<li>Internal implementation must handle both overwrite and append logic.</li>
+</ul>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>None</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>Python’s file open() supports an <code>"a"</code> mode flag to enable append-only writing.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>None</p>
+</div></details></section></div></main></body></html>

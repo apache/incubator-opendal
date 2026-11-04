@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["BufferIterator","Copier","Deleter","Lister","Operator","Reader","StdBytesIterator","StdReader","StdWriter","Writer"]};

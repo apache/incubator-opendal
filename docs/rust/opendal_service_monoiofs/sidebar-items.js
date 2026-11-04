@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MONOIOFS_SCHEME"],"fn":["register_monoiofs_service"],"struct":["Monoiofs","MonoiofsConfig"]};

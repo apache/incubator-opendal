@@ -1,0 +1,262 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Writer Copy From"><title>opendal::docs::rfcs::rfc_8109_writer_copy_from - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_8109_writer_copy_from</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>8109_<wbr>writer_<wbr>copy_<wbr>from</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a><ul><li><a href="#public-api" title="Public API">Public API</a></li><li><a href="#read-equivalence-and-source-consistency" title="Read equivalence and source consistency">Read equivalence and source consistency</a></li><li><a href="#lifecycle-and-observability" title="Lifecycle and observability">Lifecycle and observability</a></li><li><a href="#online-assembly" title="Online assembly">Online assembly</a></li><li><a href="#native-writer-contract" title="Native writer contract">Native writer contract</a></li><li><a href="#layer-contract" title="Layer contract">Layer contract</a></li></ul></li><li><a href="#compatibility-and-migration" title="Compatibility and migration">Compatibility and migration</a></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>8109_<wbr>writer_<wbr>copy_<wbr>from</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Writer Copy From</p>
+<ul>
+<li>Proposal Name: <code>writer_copy_from</code></li>
+<li>Start Date: 2026-08-19</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/8109">apache/opendal#8109</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/8134">apache/opendal#8134</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Add <code>Writer::copy_from</code> to append a range of an existing object to an open
+writer. The source path is resolved by the same <code>Operator</code> that created the
+writer. Calls to <code>write</code> and <code>copy_from</code> may be interleaved in any order, and
+their call order defines the destination byte stream.</p>
+<p>For every input sequence, the result matches reading each source through the
+same <code>Operator</code> with its supplied <code>ReadOptions</code> and writing those bytes in call
+order. OpenDAL may use <code>UploadPartCopy</code>, <code>PutBlockFromURL</code>, or another native
+operation when it preserves source conditions, destination options, ordering,
+and writer completion semantics. Native execution keeps unchanged bytes inside
+the storage service, while fallback streams bounded buffers through the client.
+Applications avoid client staging, backend-specific multipart copy, and custom
+boundary assembly.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>OpenDAL currently has two separate data paths. <code>Writer</code> accepts bytes held by
+the client, while <code>Operator::copy</code> and <code>Copier</code> create a destination from one
+complete source object. Neither API can insert an existing object range into an
+object that is still being constructed:</p>
+<div class="example-wrap"><pre class="language-text"><code>write(new_header)
+copy_from(old_object, body_range)
+write(new_footer)
+copy_from(another_object, payload_range)
+close()</code></pre></div>
+<p>This pattern occurs when a file format rewrites its header, footer, or index
+while retaining an encoded payload; when a database compacts immutable
+segments into a new snapshot; when an application replaces a range by joining
+an old prefix, a new patch, and an old suffix; and when distributed workers
+assemble uploaded results with client-generated boundary data.</p>
+<p>Without this operation, an application must download unchanged remote bytes
+and upload them to the same storage system. For large objects, that adds client
+bandwidth and memory pressure, latency, and another long data path that can
+fail. Applications may instead call S3 or Azure APIs directly, but doing so
+loses OpenDAL’s portability and its common retry, condition, layer, and
+observability semantics.</p>
+<p>This proposal makes existing remote bytes a writer input without making a
+cloud-specific copy primitive part of the public contract. Higher-level
+systems describe the ordered bytes that form the destination. OpenDAL decides
+which bytes can move inside the storage service and which boundary bytes must
+pass through the client. The same application therefore avoids most data
+round trips on a capable backend and retains correct read-to-write behavior on
+every other backend.</p>
+<p>OpenDAL also becomes the single place that handles multipart minimum sizes,
+physical range splitting, source conditions, concurrent part ordering, retry,
+and abort. File formats and databases do not need to reimplement those protocol
+details.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>Use <code>copy_from</code> together with <code>write</code> to construct a destination from local and
+remote bytes:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>writer = op.writer(<span class="string">"target"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+
+writer.write(header).<span class="kw">await</span><span class="question-mark">?</span>;
+writer.copy_from(<span class="string">"source"</span>, body_start..body_end).<span class="kw">await</span><span class="question-mark">?</span>;
+writer.write(footer).<span class="kw">await</span><span class="question-mark">?</span>;
+writer.close().<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>Use <code>copy_from_options</code> when the source must be read from a fixed version or
+under a condition:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal::options::ReadOptions;
+
+writer
+    .copy_from_options(
+        <span class="string">"source"</span>,
+        ReadOptions {
+            range: (body_start..body_end).into(),
+            if_match: <span class="prelude-val">Some</span>(source_etag),
+            ..Default::default()
+        },
+    )
+    .<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>The source path belongs to the same <code>Operator</code> as the writer. The source and
+destination may still resolve to different services through a routing layer;
+OpenDAL streams the source through the client when the composed service stack
+cannot preserve the operation as a native copy.</p>
+<p><code>copy_from</code> copies content only. Source metadata does not replace destination
+metadata, which remains controlled by the <code>WriteOptions</code> used to create the
+writer. An empty source range is a no-op.</p>
+<p><code>copy_from</code> shares the writer’s chunk and concurrency budgets with <code>write</code> and
+applies backpressure while it schedules the range. Successful return means that
+all work produced by the call has been scheduled except for the writer’s single
+retained logical suffix. It does not mean that the destination has been
+committed. As with <code>write</code>, <code>close</code> schedules the suffix, performs the final
+commit, and reports any deferred failure.</p>
+<p><code>copy_from</code> does not expose progress within one call. Applications split a
+large logical range into multiple bounded, ordered calls of at most 5 GiB each.
+Each successful return provides a checkpoint for recording progress, aborting
+the writer, or attributing an error to the next subrange. OpenDAL may still
+split a subrange into physical requests to satisfy service limits; those
+internal part boundaries do not become public progress events.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2><h3 id="public-api"><a class="doc-anchor" href="#public-api">§</a>Public API</h3>
+<p>Add two methods to the asynchronous <code>Writer</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Writer {
+    <span class="kw">pub async fn </span>copy_from(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        path: <span class="kw-2">&amp;</span>str,
+        range: <span class="kw">impl </span>Into&lt;BytesRange&gt;,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;;
+
+    <span class="kw">pub async fn </span>copy_from_options(
+        <span class="kw-2">&amp;mut </span><span class="self">self</span>,
+        path: <span class="kw-2">&amp;</span>str,
+        options: ReadOptions,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;;
+}</code></pre></div>
+<p><code>copy_from</code> constructs default <code>ReadOptions</code> with the supplied range.
+<code>copy_from_options</code> preserves the range, version, conditions, and execution
+options defined by <code>Operator::read_options</code>. <code>content_length_hint</code> remains an
+execution hint and does not identify a source object.</p>
+<p>The source path is normalized and resolved by the <code>WriteContext</code>’s composed
+<code>Servicer</code> and <code>OperationContext</code>. This RFC does not accept a <code>Reader</code> or a
+source <code>Operator</code> and does not attempt to determine whether two independently
+constructed operators address compatible storage.</p>
+<p>The public operation requires the existing read and write capabilities. An
+unbounded range also requires OpenDAL to discover its length before writer
+mutation. <code>Capability::write_can_copy_from</code> reports whether the composed
+service can execute eligible ranges natively. The public operation remains
+available through streaming fallback when this capability is false.</p>
+<p>Version 1 limits each <code>copy_from</code> call to 5 GiB. A bounded or suffix range whose
+declared length exceeds that limit returns an input error before writer
+mutation. OpenDAL resolves the length of an unbounded range before accepting
+it and applies the same limit. Applications assemble larger logical ranges with
+multiple calls.</p>
+<h3 id="read-equivalence-and-source-consistency"><a class="doc-anchor" href="#read-equivalence-and-source-consistency">§</a>Read equivalence and source consistency</h3>
+<p>For every accepted input, the destination bytes must equal the result of
+opening the source through the same <code>Operator</code> with the supplied <code>ReadOptions</code>
+and streaming that range into the writer. Native copy, boundary
+materialization, and complete streaming fallback must preserve this
+equivalence.</p>
+<p>OpenDAL must not discard a source version or condition to use a native path.
+Every metadata lookup, split native request, and fallback read uses the same
+applicable values. Without <code>version</code> or <code>if_match</code>, <code>copy_from</code> has the same
+weak consistency as an ordinary chunked read and does not add snapshot
+isolation.</p>
+<p>Native execution requires an absolute bounded range. OpenDAL may resolve a
+suffix or unbounded public range with a stat that uses the same version and
+applicable conditions. If it cannot safely resolve the range for native
+execution, it uses streaming fallback. For an unbounded range, the metadata
+lookup or the composed reader’s open response must also establish the length
+before destination mutation so OpenDAL can enforce the per-call limit;
+otherwise the operation returns <code>Unsupported</code>. Resolution does not add snapshot
+isolation: every subsequent request still uses the supplied conditions, and an
+unconditional copy retains ordinary read consistency.</p>
+<h3 id="lifecycle-and-observability"><a class="doc-anchor" href="#lifecycle-and-observability">§</a>Lifecycle and observability</h3>
+<p>The <code>Writer</code> owns the complete destination transaction across every <code>write</code> and
+<code>copy_from</code> call. <code>close</code> commits that transaction, and <code>abort</code> cancels it.
+<code>copy_from</code> does not create an independently closable or abortable copy handle.</p>
+<p>Tracing and metrics report logical, native, boundary-materialized, and streamed
+bytes so operators can distinguish accepted input from its physical transfer
+path.</p>
+<h3 id="online-assembly"><a class="doc-anchor" href="#online-assembly">§</a>Online assembly</h3>
+<p>The public <code>Writer</code> and <code>WriteGenerator</code> assemble an ordered sequence of buffers
+and bounded source ranges under one chunk and concurrency budget. A
+<code>copy_from</code> call drives its range until every eligible physical part has been
+scheduled, so arbitrary input is not deferred without bound until <code>close</code>.</p>
+<p>The generator retains one unscheduled logical suffix so that every scheduled
+physical part is legal as a non-final part. <code>close</code> schedules the suffix as the
+final part. Adjacent buffers may be combined, and contiguous ranges may be
+combined when their path and read arguments match.</p>
+<p>This retained suffix is required for arbitrary interleaving. For example, S3
+requires every non-final multipart part to be at least 5 MiB. Given a 3 MiB
+buffer followed by a remote range, OpenDAL reads only enough of the range to
+form a legal upload part, then uses <code>UploadPartCopy</code> for the remaining legal
+ranges. A backend without native range copy streams the entire range through
+the normal reader and writer paths.</p>
+<h3 id="native-writer-contract"><a class="doc-anchor" href="#native-writer-contract">§</a>Native writer contract</h3>
+<p>Extend <code>oio::Write</code> with an optional internal operation that accepts a source
+path, <code>OpRead</code>, and exactly one bounded physical <code>BytesRange</code>. Following
+RFC-7660, <code>OpRead</code> contains the source conditions but not the range. The raw
+operation rejects ranges that are not absolute and bounded. <code>Ok(())</code> means the
+writer accepted the range. Every error is an execution failure because the
+native operation may already have accepted a part. The writer enters its
+normal error state and remains abortable. Execution errors never trigger
+streaming fallback.</p>
+<p><code>WriteGenerator</code> reads <code>Capability::write_can_copy_from</code> when it creates the
+writer. When the capability is false or the writer appends, it uses streaming
+for the complete public call. Otherwise, it uses native execution for every
+eligible physical range. A service sets the capability only when every
+supported <code>OpRead</code> argument can be represented by its native operation.</p>
+<p>Multipart and block helpers schedule local uploads and remote copies in one
+ordered part queue under the same upload ID, part or block numbers, completion,
+and abort state. S3 and TOS map remote parts to <code>UploadPartCopy</code>; Azure Blob
+maps remote blocks to <code>PutBlockFromURL</code>. A writer containing only one remote
+range still creates and completes the multipart or block transaction unless a
+service provides a semantically equivalent specialized path.</p>
+<h3 id="layer-contract"><a class="doc-anchor" href="#layer-contract">§</a>Layer contract</h3>
+<p>The native operation passes through the complete <code>oio::Write</code> wrapper stack. A
+writer wrapper may forward it only when the layer is an identity transform for
+the source path and byte content and does not change the selected route target.
+Every other layer clears <code>Capability::write_can_copy_from</code>. The public <code>Writer</code>
+then opens the source through the complete composed reader stack and uses
+streaming fallback, preserving the layer’s read-to-write behavior.</p>
+<p>Assembly and fallback belong to the public <code>Writer</code> and <code>WriteGenerator</code>.
+Service writers only execute bounded native ranges inside their existing upload
+transaction. Retry repeats the same immutable range and part number, while
+tracing, metrics, and completion wrappers account for accepted logical, native,
+boundary-materialized, and streamed bytes.</p>
+<h2 id="compatibility-and-migration"><a class="doc-anchor" href="#compatibility-and-migration">§</a>Compatibility and migration</h2>
+<p>This proposal adds methods to the asynchronous <code>Writer</code>, an optional raw
+writer method, and <code>Capability::write_can_copy_from</code>. It does not change the
+blocking API, <code>write</code>, <code>write_from(Buf)</code>, <code>Operator::copy</code>, or <code>Copier</code>.</p>
+<p>The capability defaults to false, so existing services remain correct through
+read-to-write fallback. Layers that affect paths, routing, or bytes clear the
+capability. Services can then add native support incrementally. The raw method
+defaults to a terminal <code>ErrorKind::Unsupported</code> error so a false capability
+claim fails visibly instead of changing execution paths.</p>
+<p>Append writers accept <code>copy_from</code>. A service writer without a native append
+transaction uses streaming fallback for the complete public call.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>The writer retains one logical suffix descriptor and sometimes boundary bytes
+until a later input or <code>close</code> determines the final part layout. Scheduled I/O
+and its errors may remain pending until a later call or <code>close</code>.</p>
+<p>Automatic fallback can transfer more data through the client than a user
+expects from the word “copy”. Metrics and tracing make that behavior visible,
+but the API deliberately does not promise zero client transfer.</p>
+<p>Every writer wrapper gains another method to forward or reject. Path and
+content-transforming layers require particular care before native service
+support is enabled.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>A closed <code>compose</code> plan cannot represent an open writer in which local and
+remote inputs are discovered incrementally. Keeping the operation on <code>Writer</code>
+preserves streaming and backpressure.</p>
+<p>A public <code>CopySource</code> would duplicate path, range, version, and condition data
+already represented by <code>ReadOptions</code>. A public copy policy would expose a
+backend execution decision and still could not make arbitrary part boundaries
+native. Path plus <code>ReadOptions</code> is the smallest source contract needed by the
+same Operator.</p>
+<p>Accepting a <code>Reader</code> would implicitly broaden the operation to cross-Operator
+sources and make native compatibility depend on opaque reader and layer
+identity. This RFC keeps that problem out of the initial contract.</p>
+<p><code>Access</code> and <code>Copier</code> operate outside an already-open destination writer and
+cannot reuse its upload transaction. A separate raw subtrait or downcast would
+bypass writer wrappers that enforce retry, transformation, routing, and
+observability semantics.</p>
+<p>A native-only method would fail valid input sequences that a normal read and
+write can handle. Defining read-to-write equivalence makes the operation
+portable while retaining native copy as an optimization.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>S3 multipart uploads allow <code>UploadPart</code> and <code>UploadPartCopy</code> results in the same
+completion list. Azure Blob supports staging blocks from a URL before
+committing a block list. These APIs demonstrate the optimization but also
+expose different size, condition, and transaction rules. The proposed Writer
+contract normalizes those differences behind ordered byte-stream semantics.</p>
+<p>RFC-3017 removed the previous <code>oio::Write::copy_from(Reader)</code> because owning a
+stateful reader conflicted with buffering and retry. This proposal passes an
+immutable path and read arguments instead, so fallback reads and native
+requests can be recreated safely.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>Cross-Operator sources and a blocking API can be considered separately after
+the same-Operator asynchronous contract is implemented and validated. A future
+service capability may permit source and destination path equality when it
+guarantees that an open writer cannot affect reads until commit.</p>
+</div></details></section></div></main></body></html>

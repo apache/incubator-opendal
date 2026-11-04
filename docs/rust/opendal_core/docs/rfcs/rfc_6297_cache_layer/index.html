@@ -1,0 +1,253 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Cache Layer"><title>opendal_core::docs::rfcs::rfc_6297_cache_layer - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_6297_cache_layer</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal_core/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal_core/index.html">opendal_<wbr>core</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>6297_<wbr>cache_<wbr>layer</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a><ul><li><a href="#mental-model" title="Mental model">Mental model</a></li><li><a href="#basic-usage" title="Basic usage">Basic usage</a></li><li><a href="#route-based-caching" title="Route-based caching">Route-based caching</a></li></ul></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a><ul><li><a href="#public-api-surface" title="Public API surface">Public API surface</a></li><li><a href="#cache-consistency-model-best-effort" title="Cache consistency model (best effort)">Cache consistency model (best effort)</a></li><li><a href="#cache-key-shaping" title="Cache key shaping">Cache key shaping</a></li><li><a href="#out-of-scope" title="Out of scope">Out of scope</a></li></ul></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a><ul><li><a href="#why-cachepolicy-instead-of-boolean-options" title="Why CachePolicy instead of boolean options?">Why CachePolicy instead of boolean options?</a></li><li><a href="#why-accept-operator-instead-of-a-new-cacheservice-trait" title="Why accept Operator instead of a new CacheService trait?">Why accept Operator instead of a new CacheService trait?</a></li></ul></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal_<wbr>core::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal_core</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>6297_<wbr>cache_<wbr>layer</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../../src/opendal_core/docs/rfcs/mod.rs.html#290">Source</a> </span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Cache Layer</p>
+<ul>
+<li>Proposal Name: <code>cache_layer</code></li>
+<li>Start Date: 2025-06-16</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/6297">apache/opendal#6297</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/7107">apache/opendal#7107</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>This RFC proposes a Cache Layer for OpenDAL that composes:</p>
+<ul>
+<li>a <strong>source</strong> <code>Operator</code> (the backend you actually want to read/write), and</li>
+<li>a <strong>cache</strong> <code>Operator</code> (a faster backend, for example Memory/Moka/Redis), and</li>
+<li>a user-extensible <strong><code>CachePolicy</code></strong> that decides <em>whether to use cache</em>, <em>whether to fill</em>, and <em>how to shape cache objects</em> (e.g. whole-object vs chunked).</li>
+</ul>
+<p>The layer itself stays thin: policy controls cache behavior, while concrete cache backends control eviction/TTL/limits.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>Storage access performance varies greatly across different storage services. Remote object stores like S3 or GCS have much higher latency than local storage or in-memory caches. In many applications, particularly those with read-heavy workloads or repeated access to the same data, caching can significantly improve performance.</p>
+<p>Without a built-in cache layer, users have to implement common patterns repeatedly:</p>
+<ol>
+<li>Look up in cache</li>
+<li>On miss, read from source</li>
+<li>Decide whether/when/how to populate cache</li>
+<li>Handle best-effort consistency (e.g., invalidation on writes/deletes) themselves</li>
+</ol>
+<p>A Cache Layer inside OpenDAL can:</p>
+<ul>
+<li>Provide a unified and composable caching abstraction.</li>
+<li>Keep cache decisions user-controlled via policy (including bypass/fill/chunking).</li>
+<li>Reuse existing OpenDAL services as cache backends.</li>
+</ul>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2><h3 id="mental-model"><a class="doc-anchor" href="#mental-model">§</a>Mental model</h3>
+<p><code>CacheLayer</code> wraps a source <code>Operator</code> with a cache <code>Operator</code>. On each operation (read/stat/write/delete), the layer consults a <code>CachePolicy</code> to decide:</p>
+<ul>
+<li>whether to <strong>bypass</strong> cache entirely for this request, or <strong>use</strong> cache.</li>
+<li>if cache is used and a miss happens, whether to <strong>fill</strong> cache.</li>
+<li>whether to cache as a <strong>whole object</strong> or in <strong>chunks</strong> (range-aware / 1:M mapping between source object and cache entries).</li>
+</ul>
+<p>Cache eviction/TTL is handled by the chosen cache backend itself.</p>
+<h3 id="basic-usage"><a class="doc-anchor" href="#basic-usage">§</a>Basic usage</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal::{
+  layers::{CacheLayer, WholeCachePolicy},
+  services::Memory,
+  Operator,
+};
+
+<span class="attr">#[tokio::main]
+</span><span class="kw">async fn </span>main() -&gt; opendal::Result&lt;()&gt; {
+    <span class="kw">let </span>cache = Operator::new(Memory::default())<span class="question-mark">?</span>.finish();
+
+    <span class="kw">let </span>policy = WholeCachePolicy::new()
+        .fill_on_read_miss(<span class="bool-val">true</span>)
+        .invalidate_on_write(<span class="bool-val">true</span>)
+        .invalidate_on_delete(<span class="bool-val">true</span>);
+
+    <span class="kw">let </span>op = Operator::new(<span class="comment">/* source service builder */</span>)<span class="question-mark">?
+        </span>.layer(CacheLayer::new(cache, policy))
+        .finish();
+
+    <span class="kw">let _ </span>= op.read(<span class="string">"path/to/file"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="prelude-val">Ok</span>(())
+}</code></pre></div>
+<p>This example highlights the intended responsibilities:</p>
+<ul>
+<li><code>CacheLayer</code> is glue code that composes <code>source + cache + policy</code>.</li>
+<li><code>CachePolicy</code> decides behavior; the cache backend decides eviction/TTL.</li>
+</ul>
+<h3 id="route-based-caching"><a class="doc-anchor" href="#route-based-caching">§</a>Route-based caching</h3>
+<p><code>CacheLayer</code> does not select which paths should be cached. Path-based dispatch is handled by
+<code>RouteLayer</code>, which is available behind the <code>layers-route</code> feature.</p>
+<p>Users can build independent operator stacks for different path groups, each with its own cache
+policy, and then combine them with <code>RouteLayer</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal::{
+  layers::{CacheLayer, ChunkedCachePolicy, RouteLayer, WholeCachePolicy},
+  services::Memory,
+  Operator,
+};
+
+<span class="kw">fn </span>build_routed_operator() -&gt; opendal::Result&lt;Operator&gt; {
+    <span class="kw">let </span>default_op = Operator::new(<span class="comment">/* source service builder */</span>)<span class="question-mark">?</span>.finish();
+
+    <span class="kw">let </span>json_cache = Operator::new(Memory::default())<span class="question-mark">?</span>.finish();
+    <span class="kw">let </span>json_op = Operator::new(<span class="comment">/* source service builder */</span>)<span class="question-mark">?
+        </span>.layer(CacheLayer::new(json_cache, WholeCachePolicy::new()))
+        .finish();
+
+    <span class="kw">let </span>parquet_cache = Operator::new(Memory::default())<span class="question-mark">?</span>.finish();
+    <span class="kw">let </span>parquet_op = Operator::new(<span class="comment">/* source service builder */</span>)<span class="question-mark">?
+        </span>.layer(CacheLayer::new(
+            parquet_cache,
+            ChunkedCachePolicy::new(<span class="number">8 </span>* <span class="number">1024 </span>* <span class="number">1024</span>),
+        ))
+        .finish();
+
+    <span class="kw">let </span>op = default_op.layer(
+        RouteLayer::builder()
+            .route(<span class="string">"**/*.json"</span>, json_op)
+            .route(<span class="string">"**/*.parquet"</span>, parquet_op)
+            .build()<span class="question-mark">?</span>,
+    );
+
+    <span class="prelude-val">Ok</span>(op)
+}</code></pre></div>
+<p>This keeps routing and caching separated:</p>
+<ul>
+<li><code>RouteLayer</code> decides which operator stack handles a path.</li>
+<li><code>CacheLayer</code> decides how a selected stack uses its cache.</li>
+</ul>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2><h3 id="public-api-surface"><a class="doc-anchor" href="#public-api-surface">§</a>Public API surface</h3>
+<p>To keep the public API small and consistent with the rest of OpenDAL, the cache layer should accept <code>Operator</code> as inputs (both source and cache). Internally it can obtain the underlying accessor/dispatcher as needed.</p>
+<p>This RFC proposes:</p>
+<ul>
+<li><code>CacheLayer::new(cache: Operator, policy: impl CachePolicy) -&gt; CacheLayer</code></li>
+<li><code>CachePolicy</code> trait: defines evaluation and shaping behavior.</li>
+<li>Minimal supporting request/decision types (<code>Cache*Request</code>, <code>CacheReadDecision</code>, <code>CacheWriteDecision</code>, <code>CacheDeleteDecision</code>, <code>CacheLayout</code>).</li>
+</ul>
+<p>Notably, this design does <strong>not</strong> introduce a parallel “cache backend trait” separate from OpenDAL; the cache backend is just an <code>Operator</code>.</p>
+<h4 id="cachepolicy"><a class="doc-anchor" href="#cachepolicy">§</a>CachePolicy</h4>
+<p><code>CachePolicy</code> decides what to do for each operation. To keep decisions aligned with OpenDAL
+semantics, the policy receives a typed request that borrows the corresponding <code>Op*</code> options.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="attr">#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+</span><span class="kw">pub enum </span>CacheLayout {
+    Whole,
+    Chunked { size: u32 },
+}
+
+<span class="attr">#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+</span><span class="kw">pub enum </span>CacheReadDecision {
+    <span class="doccomment">/// Do not consult cache and do not fill it for this request.
+    </span>Bypass,
+    <span class="doccomment">/// Use cache; optionally define layout and whether to fill on miss.
+    </span>Use { layout: CacheLayout, fill: bool },
+}
+
+<span class="attr">#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+</span><span class="kw">pub enum </span>CacheWriteDecision {
+    <span class="doccomment">/// Do not consult cache and do not fill/invalidate it for this request.
+    </span>Bypass,
+    <span class="doccomment">/// Best-effort invalidation after a successful write.
+    </span>Invalidate { layout: CacheLayout },
+    <span class="doccomment">/// Write-through caching after a successful write.
+    </span>WriteThrough { layout: CacheLayout },
+}
+
+<span class="attr">#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+</span><span class="kw">pub enum </span>CacheDeleteDecision {
+    <span class="doccomment">/// Do not consult cache and do not invalidate it for this request.
+    </span>Bypass,
+    <span class="doccomment">/// Best-effort invalidation after a successful delete.
+    </span>Invalidate { layout: CacheLayout },
+}
+
+<span class="kw">pub struct </span>CacheReadRequest&lt;<span class="lifetime">'a</span>&gt; {
+    <span class="doccomment">/// Path as seen by OpenDAL.
+    </span><span class="kw">pub </span>path: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>str,
+    <span class="doccomment">/// Read options from OpenDAL.
+    </span><span class="kw">pub </span>op: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>OpRead,
+}
+
+<span class="kw">pub struct </span>CacheStatRequest&lt;<span class="lifetime">'a</span>&gt; {
+    <span class="doccomment">/// Path as seen by OpenDAL.
+    </span><span class="kw">pub </span>path: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>str,
+    <span class="doccomment">/// Stat options from OpenDAL.
+    </span><span class="kw">pub </span>op: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>OpStat,
+}
+
+<span class="kw">pub struct </span>CacheWriteRequest&lt;<span class="lifetime">'a</span>&gt; {
+    <span class="doccomment">/// Path as seen by OpenDAL.
+    </span><span class="kw">pub </span>path: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>str,
+    <span class="doccomment">/// Write options from OpenDAL.
+    </span><span class="kw">pub </span>op: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>OpWrite,
+}
+
+<span class="kw">pub struct </span>CacheDeleteRequest&lt;<span class="lifetime">'a</span>&gt; {
+    <span class="doccomment">/// Path as seen by OpenDAL.
+    </span><span class="kw">pub </span>path: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>str,
+    <span class="doccomment">/// Delete options from OpenDAL.
+    </span><span class="kw">pub </span>op: <span class="kw-2">&amp;</span><span class="lifetime">'a </span>OpDelete,
+}
+
+<span class="kw">pub trait </span>CachePolicy: Send + Sync + <span class="lifetime">'static </span>{
+    <span class="kw">fn </span>on_read(<span class="kw-2">&amp;</span><span class="self">self</span>, req: CacheReadRequest&lt;<span class="lifetime">'_</span>&gt;) -&gt; CacheReadDecision;
+    <span class="kw">fn </span>on_stat(<span class="kw-2">&amp;</span><span class="self">self</span>, req: CacheStatRequest&lt;<span class="lifetime">'_</span>&gt;) -&gt; CacheReadDecision;
+    <span class="kw">fn </span>on_write(<span class="kw-2">&amp;</span><span class="self">self</span>, req: CacheWriteRequest&lt;<span class="lifetime">'_</span>&gt;) -&gt; CacheWriteDecision;
+    <span class="kw">fn </span>on_delete(<span class="kw-2">&amp;</span><span class="self">self</span>, req: CacheDeleteRequest&lt;<span class="lifetime">'_</span>&gt;) -&gt; CacheDeleteDecision;
+}</code></pre></div>
+<p>OpenDAL may provide some basic policies:</p>
+<ul>
+<li><code>WholeCachePolicy</code>: whole-object caching for reads; optional fill; best-effort invalidation on write/delete.</li>
+<li><code>ChunkedCachePolicy</code>: range-aware chunk caching (1:M mapping from source object to cache keys).</li>
+<li><code>MetadataOnlyCachePolicy</code>: cache only metadata (stat) for selected paths.</li>
+</ul>
+<p>Users can implement <code>CachePolicy</code> to match their own access patterns (e.g. parquet/iceberg range scans, content immutability assumptions, etc).</p>
+<h3 id="cache-consistency-model-best-effort"><a class="doc-anchor" href="#cache-consistency-model-best-effort">§</a>Cache consistency model (best effort)</h3>
+<p>This layer provides <strong>best-effort</strong> consistency between cache and source:</p>
+<ul>
+<li>On <code>read</code>: may serve from cache when allowed by policy; on miss may fill depending on policy.</li>
+<li>On <code>write</code>: the layer should <strong>invalidate</strong> relevant cache entries after a successful write (best effort). If the write is cached (write-through), then cache will contain the new content. If write-through is disabled by policy, invalidation prevents serving stale data.</li>
+<li>On <code>delete</code>: the layer should <strong>invalidate</strong> relevant cache entries after a successful delete (best effort), to avoid serving deleted content from cache.</li>
+</ul>
+<p>For operations that return stateful objects, success is defined by OpenDAL’s operation lifecycle.
+For example, <code>delete</code> returns a <code>Deleter</code> that may batch entries and commit them during <code>close()</code>;
+cache invalidation must happen after the underlying delete has been committed successfully, not when
+the path is merely queued.</p>
+<p>Cache failures (e.g. Redis unavailable) should not fail the source operation by default; they only reduce caching effectiveness.</p>
+<h3 id="cache-key-shaping"><a class="doc-anchor" href="#cache-key-shaping">§</a>Cache key shaping</h3>
+<p>A cache entry key is not required to be identical to the source path:</p>
+<ul>
+<li>Whole-object caching can use <code>{path}</code> (optionally with a namespace prefix).</li>
+<li>Chunked caching can use <code>{path}@{offset}-{len}</code> (or an equivalent scheme).</li>
+</ul>
+<p>The shaping is driven by <code>CachePolicy</code> (via <code>CacheLayout</code> and request fields like range).</p>
+<p><code>CacheLayer</code> should use a namespace that cannot collide with normal user paths stored in the cache
+operator. Version and range information should be encoded into keys when the underlying operation
+uses versions or chunked layout.</p>
+<h3 id="out-of-scope"><a class="doc-anchor" href="#out-of-scope">§</a>Out of scope</h3>
+<ul>
+<li>Caching results of <code>list</code>.</li>
+<li>Providing strong consistency guarantees across external writers.</li>
+<li>Mandating specific eviction/TTL/size policies (left to cache backend).</li>
+</ul>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<ul>
+<li>Cache correctness depends on user policy choices (bypass/fill/chunking/invalidation).</li>
+<li>Best-effort invalidation does not handle external mutations to the source content.</li>
+<li>Chunked caching introduces additional complexity in key mapping and invalidation.</li>
+</ul>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="why-cachepolicy-instead-of-boolean-options"><a class="doc-anchor" href="#why-cachepolicy-instead-of-boolean-options">§</a>Why CachePolicy instead of boolean options?</h3>
+<p>Embedding booleans makes the cache layer grow “policy” over time (ranges, chunking, metadata-only, bypass rules).
+A <code>CachePolicy</code> keeps the layer thin and makes behavior user-extensible without expanding the layer’s public API for every new scenario.</p>
+<h3 id="why-accept-operator-instead-of-a-new-cacheservice-trait"><a class="doc-anchor" href="#why-accept-operator-instead-of-a-new-cacheservice-trait">§</a>Why accept Operator instead of a new CacheService trait?</h3>
+<p>Using <code>Operator</code> as the cache backend avoids creating a parallel storage abstraction surface and keeps cache backends consistent with existing OpenDAL services. Internally, the layer can convert <code>Operator</code> to the underlying accessor.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<ul>
+<li>Database and filesystem cache layers commonly separate “storage backend” from “policy/strategy”.</li>
+<li>Range/chunk caches are common for analytical formats (parquet/iceberg) to avoid whole-object read amplification.</li>
+</ul>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<ol>
+<li>Cache key namespace strategy: should we standardize a prefix (e.g. <code>__opendal_cache__/</code>) to prevent collisions?</li>
+<li>Range reads with chunked caching: how should partial hits and range alignment behave?</li>
+<li>Metadata caching boundary: which metadata fields should be trusted/required when serving from cache?</li>
+</ol>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<ul>
+<li>Tiered caching with different policies per layer (L1/L2) and optional promotion strategies.</li>
+<li>Built-in metrics (hit/miss, fill latency, invalidation failures).</li>
+<li>More advanced directives (e.g. “metadata-only”, “write-back”) when there are clear use cases.</li>
+<li>Configurable error handling strategy (best-effort vs strict mode for cache failures).</li>
+<li>Version-aware cache keys for backends that support object versioning.</li>
+</ul>
+</div></details></section></div></main></body></html>

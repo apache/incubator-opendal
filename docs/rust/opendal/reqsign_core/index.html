@@ -1,0 +1,133 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Re-export of the [`reqsign_core`] crate that services sign requests with."><title>opendal::reqsign_core - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../" data-static-root-path="../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../static.files/storage-41dd4d93.js"></script><script defer="" src="../../crates.js"></script><script defer="" src="../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Crate reqsign_core</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#overview" title="Overview">Overview</a></li><li><a href="#request-uri-contract" title="Request URI contract">Request URI contract</a></li><li><a href="#example" title="Example">Example</a></li><li><a href="#traits" title="Traits">Traits</a></li><li><a href="#utilities" title="Utilities">Utilities</a></li></ul><h3><a href="#modules">Crate Items</a></h3><ul class="block"><li><a href="#modules" title="Modules">Modules</a></li><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#enums" title="Enums">Enums</a></li><li><a href="#traits-1" title="Traits">Traits</a></li><li><a href="#types" title="Type Aliases">Type Aliases</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../index.html">opendal</a></div><h1>Crate <span>reqsign_<wbr>core</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><span class="item-info"><div class="stab portability">Available on <strong>crate feature <code>reqsign</code></strong> only.</div></span><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Re-export of the <a href="index.html" title="mod opendal::reqsign_core"><code>reqsign_core</code></a> crate that services sign requests with.</p>
+<p>Service builders that accept credentials from the application take <code>reqsign</code>
+types in their signatures, such as <code>ProvideCredentialChain</code> in
+<code>opendal_service_s3::S3::credential_provider_chain</code>. Implement providers
+against this re-export rather than depending on <code>reqsign-core</code> directly, so
+that the types always match the ones the services are built with.
+Core components for signing API requests.</p>
+<p>This crate provides the foundational types and traits for the reqsign ecosystem.
+It defines the core abstractions that enable flexible and extensible request signing.</p>
+<h3 id="overview"><a class="doc-anchor" href="#overview">§</a>Overview</h3>
+<p>The crate is built around several key concepts:</p>
+<ul>
+<li><strong>Context</strong>: A container that holds implementations for file reading, HTTP sending, and environment access</li>
+<li><strong>Traits</strong>: Abstract interfaces for credential loading (<code>ProvideCredential</code>) and request signing (<code>SignRequest</code>)</li>
+<li><strong>Signer</strong>: The main orchestrator that coordinates credential loading and request signing</li>
+</ul>
+<h3 id="request-uri-contract"><a class="doc-anchor" href="#request-uri-contract">§</a>Request URI contract</h3>
+<p>Built-in request signers expect the request URI to be a valid, wire-ready URI
+with an authority. Callers must construct the intended path and query structure
+and percent-encode data components exactly once before signing. Structural URI
+delimiters remain literal, while delimiter bytes that belong to data must already
+be encoded, such as <code>%2F</code> for a slash inside one path segment.</p>
+<p>Existing path and query representations are authoritative. Canonicalization is a
+service-specific, read-only view: header authentication preserves the URI, while
+query authentication appends protocol-encoded authentication fields without
+decoding, sorting, or rebuilding the existing URI.</p>
+<p><a href="struct.Signer.html#method.sign" title="method opendal::reqsign_core::Signer::sign"><code>Signer::sign</code></a> runs the service signer against a private candidate request head.
+On error, the caller’s method, URI, version, headers, and extensions remain
+unchanged. On success, only the URI and headers are committed; the caller retains
+ownership of the method, version, and extensions.</p>
+<p><code>expires_in</code> is a service-specific validity input, not a universal selector between
+header and query authentication. The service and credential type determine the
+authentication mode.</p>
+<p><a href="trait.SigningCredential.html#tymethod.is_valid" title="method opendal::reqsign_core::SigningCredential::is_valid"><code>SigningCredential::is_valid</code></a> controls whether a cached credential can be reused
+without refresh. <a href="trait.SigningCredential.html#method.is_valid_at" title="method opendal::reqsign_core::SigningCredential::is_valid_at"><code>SigningCredential::is_valid_at</code></a> checks exact usability at the
+timestamp returned by <a href="trait.SignRequest.html#method.required_valid_until" title="method opendal::reqsign_core::SignRequest::required_valid_until"><code>SignRequest::required_valid_until</code></a>. A refreshed credential
+only needs to satisfy the exact operation requirement. Credential refresh is
+serialized per shared cache, so concurrent cold or stale callers reuse a successful
+refresh. Refresh failures are not cached, so the next waiting or later caller can
+retry. Provider errors are returned without retrying internally or falling back to
+the old cached credential.</p>
+<h3 id="example"><a class="doc-anchor" href="#example">§</a>Example</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>reqsign_core::{Context, OsEnv, ProvideCredential, <span class="prelude-ty">Result</span>, SignRequest, Signer, SigningCredential};
+<span class="kw">use </span>http::request::Parts;
+<span class="kw">use </span>std::time::Duration;
+
+<span class="comment">// Define your credential type
+</span><span class="attr">#[derive(Clone, Debug)]
+</span><span class="kw">struct </span>MyCredential {
+    key: String,
+    secret: String,
+}
+
+<span class="kw">impl </span>SigningCredential <span class="kw">for </span>MyCredential {
+    <span class="kw">fn </span>is_valid(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; bool {
+        !<span class="self">self</span>.key.is_empty() &amp;&amp; !<span class="self">self</span>.secret.is_empty()
+    }
+}
+
+<span class="comment">// Implement credential loader
+</span><span class="attr">#[derive(Debug)]
+</span><span class="kw">struct </span>MyLoader;
+
+<span class="kw">impl </span>ProvideCredential <span class="kw">for </span>MyLoader {
+    <span class="kw">type </span>Credential = MyCredential;
+
+    <span class="kw">async fn </span>provide_credential(<span class="kw-2">&amp;</span><span class="self">self</span>, <span class="kw">_</span>: <span class="kw-2">&amp;</span>Context) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="prelude-ty">Option</span>&lt;<span class="self">Self</span>::Credential&gt;&gt; {
+        <span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(MyCredential {
+            key: <span class="string">"my-access-key"</span>.to_string(),
+            secret: <span class="string">"my-secret-key"</span>.to_string(),
+        }))
+    }
+}
+
+<span class="comment">// Implement request builder
+</span><span class="attr">#[derive(Debug)]
+</span><span class="kw">struct </span>MyBuilder;
+
+<span class="kw">impl </span>SignRequest <span class="kw">for </span>MyBuilder {
+    <span class="kw">type </span>Credential = MyCredential;
+
+    <span class="kw">async fn </span>sign_request(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        _ctx: <span class="kw-2">&amp;</span>Context,
+        req: <span class="kw-2">&amp;mut </span>Parts,
+        _cred: <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span><span class="self">Self</span>::Credential&gt;,
+        _expires_in: <span class="prelude-ty">Option</span>&lt;Duration&gt;,
+    ) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt; {
+        <span class="comment">// Add example header
+        </span>req.headers.insert(<span class="string">"x-custom-auth"</span>, <span class="string">"signed"</span>.parse()<span class="question-mark">?</span>);
+        <span class="prelude-val">Ok</span>(())
+    }
+}
+
+<span class="comment">// Create a context with your implementations
+</span><span class="kw">let </span>ctx = Context::new()
+    .with_file_read(MockFileRead)
+    .with_http_send(MockHttpSend)
+    .with_env(OsEnv);
+
+<span class="comment">// Create a signer
+</span><span class="kw">let </span>signer = Signer::new(ctx, MyLoader, MyBuilder);
+
+<span class="comment">// Sign your requests
+</span><span class="kw">let </span><span class="kw-2">mut </span>parts = http::Request::builder()
+    .method(<span class="string">"GET"</span>)
+    .uri(<span class="string">"https://example.com"</span>)
+    .body(())
+    .unwrap()
+    .into_parts()
+    .<span class="number">0</span>;
+
+signer.sign(<span class="kw-2">&amp;mut </span>parts, <span class="prelude-val">None</span>).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div><h3 id="traits"><a class="doc-anchor" href="#traits">§</a>Traits</h3>
+<p>This crate defines several important traits:</p>
+<ul>
+<li><a href="trait.FileRead.html" title="trait opendal::reqsign_core::FileRead"><code>FileRead</code></a>: For asynchronous file reading</li>
+<li><a href="trait.HttpSend.html" title="trait opendal::reqsign_core::HttpSend"><code>HttpSend</code></a>: For sending HTTP requests</li>
+<li><a href="trait.Env.html" title="trait opendal::reqsign_core::Env"><code>Env</code></a>: For environment variable access</li>
+<li><a href="trait.ProvideCredential.html" title="trait opendal::reqsign_core::ProvideCredential"><code>ProvideCredential</code></a>: For loading credentials from various sources</li>
+<li><a href="trait.SignRequest.html" title="trait opendal::reqsign_core::SignRequest"><code>SignRequest</code></a>: For building service-specific signing requests</li>
+<li><a href="trait.SigningCredential.html" title="trait opendal::reqsign_core::SigningCredential"><code>SigningCredential</code></a>: For validating credentials</li>
+</ul>
+<h3 id="utilities"><a class="doc-anchor" href="#utilities">§</a>Utilities</h3>
+<p>The crate also provides utility modules:</p>
+<ul>
+<li><a href="hash/index.html" title="mod opendal::reqsign_core::hash"><code>hash</code></a>: Cryptographic hashing utilities</li>
+<li><a href="time/index.html" title="mod opendal::reqsign_core::time"><code>time</code></a>: Time manipulation utilities</li>
+<li><a href="utils/index.html" title="mod opendal::reqsign_core::utils"><code>utils</code></a>: General utilities including data redaction</li>
+</ul>
+</div></details><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><dl class="item-table"><dt><a class="mod" href="error/index.html" title="mod opendal::reqsign_core::error">error</a></dt><dd>Error types for reqsign operations</dd><dt><a class="mod" href="hash/index.html" title="mod opendal::reqsign_core::hash">hash</a></dt><dd>Hash related utils.</dd><dt><a class="mod" href="jwt/index.html" title="mod opendal::reqsign_core::jwt">jwt</a><wbr><span class="stab portability" title="Available on crate feature `jwt` and non-WebAssembly only"><code>jwt</code> and non-WebAssembly</span></dt><dd>JWT encoding helpers.</dd><dt><a class="mod" href="time/index.html" title="mod opendal::reqsign_core::time">time</a></dt><dd>Time related utils.</dd><dt><a class="mod" href="utils/index.html" title="mod opendal::reqsign_core::utils">utils</a></dt><dd>Utility functions and types.</dd></dl><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.CommandOutput.html" title="struct opendal::reqsign_core::CommandOutput">Command<wbr>Output</a></dt><dd>CommandOutput represents the output of a command execution.</dd><dt><a class="struct" href="struct.Context.html" title="struct opendal::reqsign_core::Context">Context</a></dt><dd>Context provides the context for the request signing.</dd><dt><a class="struct" href="struct.Error.html" title="struct opendal::reqsign_core::Error">Error</a></dt><dd>The error type for reqsign operations</dd><dt><a class="struct" href="struct.Granter.html" title="struct opendal::reqsign_core::Granter">Granter</a></dt><dd>Loads a source credential and grants a bounded service credential.</dd><dt><a class="struct" href="struct.NoopCommandExecute.html" title="struct opendal::reqsign_core::NoopCommandExecute">Noop<wbr>Command<wbr>Execute</a></dt><dd>NoopCommandExecute is a no-op implementation that always returns an error.</dd><dt><a class="struct" href="struct.NoopEnv.html" title="struct opendal::reqsign_core::NoopEnv">NoopEnv</a></dt><dd>NoopEnv is a no-op implementation that always returns None/empty.</dd><dt><a class="struct" href="struct.NoopFileRead.html" title="struct opendal::reqsign_core::NoopFileRead">Noop<wbr>File<wbr>Read</a></dt><dd>NoopFileRead is a no-op implementation that always returns an error.</dd><dt><a class="struct" href="struct.NoopHttpSend.html" title="struct opendal::reqsign_core::NoopHttpSend">Noop<wbr>Http<wbr>Send</a></dt><dd>NoopHttpSend is a no-op implementation that always returns an error.</dd><dt><a class="struct" href="struct.OsEnv.html" title="struct opendal::reqsign_core::OsEnv">OsEnv</a></dt><dd>Implements Env for the OS context, both Unix style and Windows.</dd><dt><a class="struct" href="struct.ProvideCredentialChain.html" title="struct opendal::reqsign_core::ProvideCredentialChain">Provide<wbr>Credential<wbr>Chain</a></dt><dd>A chain of credential providers that will be tried in order.</dd><dt><a class="struct" href="struct.Signer.html" title="struct opendal::reqsign_core::Signer">Signer</a></dt><dd>Loads credentials and atomically signs request heads.</dd><dt><a class="struct" href="struct.SigningRequest.html" title="struct opendal::reqsign_core::SigningRequest">Signing<wbr>Request</a></dt><dd>A service-local canonicalization view and signed-header staging area.</dd><dt><a class="struct" href="struct.StaticEnv.html" title="struct opendal::reqsign_core::StaticEnv">Static<wbr>Env</a></dt><dd>StaticEnv provides a static env environment.</dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.ErrorKind.html" title="enum opendal::reqsign_core::ErrorKind">Error<wbr>Kind</a></dt><dd>The kind of error that occurred</dd><dt><a class="enum" href="enum.SigningMethod.html" title="enum opendal::reqsign_core::SigningMethod">Signing<wbr>Method</a></dt><dd>A service-selected authentication placement.</dd></dl><h2 id="traits-1" class="section-header">Traits<a href="#traits-1" class="anchor">§</a></h2><dl class="item-table"><dt><a class="trait" href="trait.CommandExecute.html" title="trait opendal::reqsign_core::CommandExecute">Command<wbr>Execute</a></dt><dd>CommandExecute is used to execute external commands for credential retrieval.</dd><dt><a class="trait" href="trait.CommandExecuteDyn.html" title="trait opendal::reqsign_core::CommandExecuteDyn">Command<wbr>Execute<wbr>Dyn</a></dt><dd>CommandExecuteDyn is the dyn version of <a href="trait.CommandExecute.html" title="trait opendal::reqsign_core::CommandExecute"><code>CommandExecute</code></a>.</dd><dt><a class="trait" href="trait.Env.html" title="trait opendal::reqsign_core::Env">Env</a></dt><dd>Permits parameterizing the home functions via the _from variants</dd><dt><a class="trait" href="trait.FileRead.html" title="trait opendal::reqsign_core::FileRead">File<wbr>Read</a></dt><dd>FileRead is used to read the file content entirely in <code>Vec&lt;u8&gt;</code>.</dd><dt><a class="trait" href="trait.FileReadDyn.html" title="trait opendal::reqsign_core::FileReadDyn">File<wbr>Read<wbr>Dyn</a></dt><dd>FileReadDyn is the dyn version of <a href="trait.FileRead.html" title="trait opendal::reqsign_core::FileRead"><code>FileRead</code></a>.</dd><dt><a class="trait" href="trait.GrantCredential.html" title="trait opendal::reqsign_core::GrantCredential">Grant<wbr>Credential</a></dt><dd>Service-specific credential granting.</dd><dt><a class="trait" href="trait.GrantCredentialDyn.html" title="trait opendal::reqsign_core::GrantCredentialDyn">Grant<wbr>Credential<wbr>Dyn</a></dt><dd>Dyn version of <a href="trait.GrantCredential.html" title="trait opendal::reqsign_core::GrantCredential"><code>GrantCredential</code></a>.</dd><dt><a class="trait" href="trait.HttpSend.html" title="trait opendal::reqsign_core::HttpSend">Http<wbr>Send</a></dt><dd>HttpSend is used to send http request during the signing process.</dd><dt><a class="trait" href="trait.HttpSendDyn.html" title="trait opendal::reqsign_core::HttpSendDyn">Http<wbr>Send<wbr>Dyn</a></dt><dd>HttpSendDyn is the dyn version of <a href="trait.HttpSend.html" title="trait opendal::reqsign_core::HttpSend"><code>HttpSend</code></a>.</dd><dt><a class="trait" href="trait.MaybeSend.html" title="trait opendal::reqsign_core::MaybeSend">Maybe<wbr>Send</a><wbr><span class="stab portability" title="Available on non-WebAssembly only">Non-WebAssembly</span></dt><dd>MaybeSend is a marker to determine whether a type is <code>Send</code> or not.</dd><dt><a class="trait" href="trait.ProvideCredential.html" title="trait opendal::reqsign_core::ProvideCredential">Provide<wbr>Credential</a></dt><dd>ProvideCredential is the trait used by signer to load the credential from the environment.
+`
+Service may require different credential to sign the request, for example, AWS require
+access key and secret key, while Google Cloud Storage require token.</dd><dt><a class="trait" href="trait.ProvideCredentialDyn.html" title="trait opendal::reqsign_core::ProvideCredentialDyn">Provide<wbr>Credential<wbr>Dyn</a></dt><dd>ProvideCredentialDyn is the dyn version of <a href="trait.ProvideCredential.html" title="trait opendal::reqsign_core::ProvideCredential"><code>ProvideCredential</code></a>.</dd><dt><a class="trait" href="trait.SignRequest.html" title="trait opendal::reqsign_core::SignRequest">Sign<wbr>Request</a></dt><dd>Service-specific request signing.</dd><dt><a class="trait" href="trait.SignRequestDyn.html" title="trait opendal::reqsign_core::SignRequestDyn">Sign<wbr>Request<wbr>Dyn</a></dt><dd>SignRequestDyn is the dyn version of <a href="trait.SignRequest.html" title="trait opendal::reqsign_core::SignRequest"><code>SignRequest</code></a>.</dd><dt><a class="trait" href="trait.SigningCredential.html" title="trait opendal::reqsign_core::SigningCredential">Signing<wbr>Credential</a></dt><dd>A credential that can distinguish cache freshness from exact usability.</dd></dl><h2 id="types" class="section-header">Type Aliases<a href="#types" class="anchor">§</a></h2><dl class="item-table"><dt><a class="type" href="type.BoxedFuture.html" title="type opendal::reqsign_core::BoxedFuture">Boxed<wbr>Future</a><wbr><span class="stab portability" title="Available on non-WebAssembly only">Non-WebAssembly</span></dt><dd>BoxedFuture is the type alias of [<code>futures::future::BoxFuture</code>].</dd><dt><a class="type" href="type.Result.html" title="type opendal::reqsign_core::Result">Result</a></dt><dd>Convenience type alias for Results</dd></dl></section></div></main></body></html>

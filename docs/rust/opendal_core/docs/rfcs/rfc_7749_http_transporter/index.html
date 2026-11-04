@@ -1,0 +1,201 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="HTTP Transporter"><title>opendal_core::docs::rfcs::rfc_7749_http_transporter - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_7749_http_transporter</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal_core/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal_core/index.html">opendal_<wbr>core</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>7749_<wbr>http_<wbr>transporter</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a></li><li><a href="#compatibility-and-migration" title="Compatibility and migration">Compatibility and migration</a></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal_<wbr>core::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal_core</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>7749_<wbr>http_<wbr>transporter</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../../src/opendal_core/docs/rfcs/mod.rs.html#334">Source</a> </span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>HTTP Transporter</p>
+<ul>
+<li>Proposal Name: <code>http_transporter</code></li>
+<li>Start Date: 2026-06-16</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/7749">apache/opendal#7749</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/0000">apache/opendal#0000</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Move OpenDAL’s HTTP transport abstraction out of <code>raw</code> and rename the current
+<code>HttpClient</code> / <code>HttpFetch</code> / <code>HttpFetcher</code> set to <code>HttpTransport</code> /
+<code>HttpTransportDyn</code> / <code>HttpTransporter</code>.</p>
+<p><code>opendal-core</code> defines only the HTTP transport contract and the erased transport
+handle. The default reqwest implementation moves into a new
+<code>opendal-http-transport-reqwest</code> crate. The <code>opendal</code> facade installs its default
+components through a single <code>install_default()</code> entrypoint: enabled services are
+registered into <code>OperatorRegistry</code>, and the default reqwest transport is
+installed when the <code>http-transport-reqwest</code> feature is enabled.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p><code>Operator::http_client(self, client: HttpClient)</code> has made <code>HttpClient</code> part of
+OpenDAL’s public API, but the type is still owned by <code>raw/http_util</code> and exported
+through <code>opendal::raw</code>. This contradicts the raw API boundary: raw APIs are for
+service and layer implementors and are less stable than the public operator API.</p>
+<p>The current names also expose implementation details as user concepts. Users
+want to replace the HTTP transport, but the API asks them to understand
+<code>HttpClient</code> as a handle, <code>HttpFetch</code> as an implementation trait, and
+<code>HttpFetcher</code> as an erased alias. The HTTP plane in operator composition is a
+transport slot plus layer wrappers; the public vocabulary should say transport.</p>
+<p><code>opendal-core</code> also depends on reqwest today. The global reqwest client,
+<code>impl HttpFetch for reqwest::Client</code>, and reqwest TLS features all live inside
+core. Direct <code>opendal-core</code> users therefore inherit reqwest, hyper, and rustls
+even when they provide their own HTTP stack. Reqwest version upgrades and TLS
+feature changes should not be part of the core API maintenance surface.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>Users that configure a custom HTTP implementation use one transport concept:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>transport = HttpTransporter::new(my_transport);
+<span class="kw">let </span>op = Operator::new(builder)<span class="question-mark">?</span>.http_transport(transport);</code></pre></div>
+<p>A custom implementation implements <code>HttpTransport</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>HttpTransport: Send + Sync + Unpin + <span class="lifetime">'static </span>{
+    <span class="attr">#[cfg(not(target_arch = <span class="string">"wasm32"</span>))]
+    </span><span class="kw">fn </span>fetch(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        req: Request&lt;Buffer&gt;,
+    ) -&gt; <span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;Response&lt;HttpBody&gt;&gt;&gt; + Send;
+
+    <span class="attr">#[cfg(target_arch = <span class="string">"wasm32"</span>)]
+    </span><span class="kw">fn </span>fetch(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        req: Request&lt;Buffer&gt;,
+    ) -&gt; <span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;Response&lt;HttpBody&gt;&gt;&gt;;
+}</code></pre></div>
+<p><code>HttpTransporter</code> is the clone-cheap erased handle used by operators, layers,
+and operation contexts:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="attr">#[derive(Clone)]
+</span><span class="kw">pub struct </span>HttpTransporter {
+    inner: Arc&lt;<span class="kw">dyn </span>HttpTransportDyn&gt;,
+}
+
+<span class="kw">impl </span>HttpTransporter {
+    <span class="kw">pub fn </span>new(transport: <span class="kw">impl </span>HttpTransport) -&gt; <span class="self">Self</span>;
+    <span class="kw">pub fn </span>install_default(transport: <span class="kw">impl </span>HttpTransport);
+    <span class="kw">pub async fn </span>fetch(<span class="kw-2">&amp;</span><span class="self">self</span>, req: Request&lt;Buffer&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;Response&lt;HttpBody&gt;&gt;;
+    <span class="kw">pub async fn </span>send(<span class="kw-2">&amp;</span><span class="self">self</span>, req: Request&lt;Buffer&gt;) -&gt; <span class="prelude-ty">Result</span>&lt;Response&lt;Buffer&gt;&gt;;
+}
+
+<span class="kw">impl </span>Default <span class="kw">for </span>HttpTransporter {
+    <span class="kw">fn </span>default() -&gt; <span class="self">Self</span>;
+}</code></pre></div>
+<p><code>HttpTransporter::default()</code> returns a lazy default handle. It does not require a
+default transport to be installed during operator construction. If an HTTP
+request is made without any installed default transport, the request returns
+<code>ConfigInvalid</code>. Non-HTTP services can still be constructed and used without a
+default HTTP transport.</p>
+<p>The facade installs default global components through:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub fn </span>install_default() {
+    install_default_operator_registry();
+
+    <span class="attr">#[cfg(feature = <span class="string">"http-transport-reqwest"</span>)]
+    </span>opendal_core::HttpTransporter::install_default(
+        opendal_http_transport_reqwest::ReqwestTransport::default(),
+    );
+}</code></pre></div>
+<p>The existing public <code>init_default_registry()</code> API remains as a compatibility
+entry. It only registers services and does not install the default HTTP
+transport. New code that wants the facade default behavior should call
+<code>opendal::install_default()</code>.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p><code>core/core/src/types/mod.rs</code> gets a private source module and explicit public
+exports:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">mod </span>http_transport;
+<span class="kw">pub use </span>http_transport::HttpBody;
+<span class="kw">pub use </span>http_transport::HttpTransport;
+<span class="kw">pub use </span>http_transport::HttpTransporter;</code></pre></div>
+<p>The stable public paths are <code>opendal::HttpTransport</code>,
+<code>opendal::HttpTransporter</code>, and <code>opendal::HttpBody</code>. There is no public
+<code>opendal::http_transport</code> module.</p>
+<p><code>HttpTransportDyn</code> is the private object-safe adapter. It boxes the future
+returned by <code>HttpTransport::fetch</code>, but users implement <code>HttpTransport</code> directly
+and never name <code>HttpTransportDyn</code>.</p>
+<p>The reqwest implementation lives in <code>opendal-http-transport-reqwest</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>ReqwestTransport {
+    client: reqwest::Client,
+}
+
+<span class="kw">impl </span>HttpTransport <span class="kw">for </span>ReqwestTransport { ... }
+<span class="kw">impl </span>Default <span class="kw">for </span>ReqwestTransport { ... }
+<span class="kw">impl </span>From&lt;reqwest::Client&gt; <span class="kw">for </span>ReqwestTransport { ... }</code></pre></div>
+<p><code>opendal-core</code> removes <code>reqwest</code>, <code>GLOBAL_REQWEST_CLIENT</code>,
+<code>impl HttpFetch for reqwest::Client</code>, and the reqwest TLS features. The facade
+keeps reqwest-related feature names if needed, but they forward to
+<code>opendal-http-transport-reqwest</code>.</p>
+<p>Operator composition keeps the same invariant: an operator is rebuilt from
+<code>base service + base HTTP transport + base executor + layers</code>. Replacing the base
+transport with <code>.http_transport(...)</code> must preserve already configured HTTP
+wrappers because layers are replayed over the new base.</p>
+<p>The naming changes are mechanical:</p>
+<ul>
+<li><code>HttpClient</code> becomes <code>HttpTransporter</code></li>
+<li><code>HttpFetch</code> becomes <code>HttpTransport</code></li>
+<li><code>HttpFetchDyn</code> becomes private <code>HttpTransportDyn</code></li>
+<li><code>HttpFetcher</code> is removed as a public concept</li>
+<li><code>Operator::http_client</code> becomes <code>Operator::http_transport</code></li>
+<li><code>OperationContext::http_client</code> becomes <code>OperationContext::http_transport</code></li>
+<li><code>Layer::apply_http_fetch</code> becomes <code>Layer::apply_http_transport</code></li>
+<li><code>HttpClientHttpSend</code> becomes internal <code>HttpTransporterHttpSend</code></li>
+</ul>
+<h2 id="compatibility-and-migration"><a class="doc-anchor" href="#compatibility-and-migration">§</a>Compatibility and migration</h2>
+<p>This is a breaking raw API cleanup. <code>HttpClient</code>, <code>HttpFetch</code>, <code>HttpFetchDyn</code>,
+and <code>HttpFetcher</code> disappear from the public design. Existing code migrates from:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>op.http_client(HttpClient::with(client))</code></pre></div>
+<p>to:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>op.http_transport(HttpTransporter::new(transport))</code></pre></div>
+<p>Default <code>opendal</code> facade users keep the same out-of-box behavior under default
+features because the facade installs <code>ReqwestTransport</code> through
+<code>install_default()</code>. Direct <code>opendal-core</code> users must either install a default
+transport with <code>HttpTransporter::install_default(...)</code> or configure an operator
+with <code>.http_transport(...)</code>.</p>
+<p><code>HttpTransporter::install_default</code> is first-wins, returns no error, and does not
+overwrite an already installed default. The facade installs its default before
+<code>main</code> when <code>auto-register-services</code> is enabled. Users that need process-wide
+replacement must disable <code>auto-register-services</code>, install their transport
+themselves, and call <code>init_default_registry()</code> explicitly when URI-based
+construction is needed. Otherwise, they should use operator-level
+<code>.http_transport(...)</code>.</p>
+<p>The operator-registry-only public entry <code>init_default_registry()</code> remains for
+compatibility. It does not install HTTP transport. The facade
+<code>auto-register-services</code> ctor calls <code>install_default()</code> so the default facade
+behavior remains complete.</p>
+<p><code>reqwest-rustls-tls</code> and <code>reqwest-rustls-no-provider-tls</code> are removed from
+<code>opendal-core</code> and forwarded from the facade to <code>opendal-http-transport-reqwest</code>.
+A CI dependency check should assert that <code>opendal-core</code> does not depend on
+reqwest under any feature combination.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>This is a raw API breaking change for third-party service and layer authors.
+The migration is mostly mechanical, but every HTTP-aware layer and every service
+that calls <code>ctx.http_client()</code> must be touched.</p>
+<p>Splitting reqwest into its own crate adds another workspace package and another
+published artifact. Release tooling must publish the transport crate before the
+facade package that depends on it.</p>
+<p>The process-wide default transport remains global state. The design keeps it
+minimal and first-wins, but users that need strict control must disable facade
+auto-installation and own default initialization or configure transports per
+operator.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>Keeping the name <code>HttpClient</code> would minimize the rename but preserve the wrong
+concept. The value is not a concrete HTTP client like <code>reqwest::Client</code>; it is
+the transport plane used by OpenDAL services and layers.</p>
+<p>Keeping <code>reqwest</code> as an optional dependency of <code>opendal-core</code> would reduce the
+number of crates, but it would still keep reqwest feature choices, TLS policy,
+and security updates inside the core maintenance surface. A separate transport
+crate makes the core contract independent from the default implementation.</p>
+<p>Making <code>HttpTransporter</code> a type alias for <code>Arc&lt;dyn HttpTransportDyn&gt;</code> would be
+smaller, but it would expose the erased representation and leave no place for
+<code>Default</code>, <code>install_default</code>, <code>fetch</code>, <code>send</code>, opaque <code>Debug</code>, or future
+transport-handle behavior. A newtype keeps the public contract narrow.</p>
+<p>Adding a public <code>opendal::http_transport</code> module would expose the source-module
+layout as a stable path. Existing OpenDAL public types are re-exported from the
+crate root, so this RFC follows the same pattern.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>OpenDAL already uses facade auto-registration for service construction:
+<code>opendal</code> registers enabled services into <code>OperatorRegistry</code>, while
+<code>opendal-core</code> provides the registry and construction contract. This RFC applies
+the same split to the default HTTP transport: core owns the contract, and the
+facade installs the default implementation.</p>
+<p>The existing <code>Executor</code> type remains a newtype around its runtime implementation.
+This RFC does not change executor behavior, but <code>HttpTransporter</code> follows the
+same handle pattern instead of exposing an <code>Arc&lt;dyn Trait&gt;</code> alias directly.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>Additional official HTTP transport crates can be added without changing
+<code>opendal-core</code>, for example transports backed by another HTTP stack or by a
+platform-native client.</p>
+<p>The executor default installation model may later be aligned with
+<code>HttpTransporter::install_default</code>, but that is outside the scope of this RFC.</p>
+</div></details></section></div></main></body></html>

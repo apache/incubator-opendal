@@ -1,0 +1,1627 @@
+@charset "UTF-8";
+/* Copyright (c) 2016 The odoc contributors. All rights reserved.
+   Distributed under the ISC license, see terms at the end of the file.
+   odoc 3.2.2 */
+
+/* Fonts */
+/* noticia-text-regular - latin */
+@font-face {
+  font-family: 'Noticia Text';
+  font-style: normal;
+  font-weight: 400;
+  src: url('fonts/noticia-text-v15-latin-regular.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+
+/* noticia-text-italic - latin */
+@font-face {
+  font-family: 'Noticia Text';
+  font-style: italic;
+  font-weight: 400;
+  src: url('fonts/noticia-text-v15-latin-italic.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+
+/* noticia-text-700 - latin */
+@font-face {
+  font-family: 'Noticia Text';
+  font-style: normal;
+  font-weight: 700;
+  src: url('fonts/noticia-text-v15-latin-700.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+
+/* fira-mono-regular - latin */
+@font-face {
+  font-family: 'Fira Mono';
+  font-style: normal;
+  font-weight: 400;
+  src: url('fonts/fira-mono-v14-latin-regular.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+
+/* fira-mono-500 - latin */
+@font-face {
+  font-family: 'Fira Mono';
+  font-style: normal;
+  font-weight: 500;
+  src: url('fonts/fira-mono-v14-latin-500.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+
+/* fira-sans-regular - latin */
+@font-face {
+  font-family: 'Fira Sans';
+  font-style: normal;
+  font-weight: 400;
+  src: url('fonts/fira-sans-v17-latin-regular.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+
+/* fira-sans-italic - latin */
+@font-face {
+  font-family: 'Fira Sans';
+  font-style: italic;
+  font-weight: 400;
+  src: url('fonts/fira-sans-v17-latin-italic.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+
+/* fira-sans-500 - latin */
+@font-face {
+  font-family: 'Fira Sans';
+  font-style: normal;
+  font-weight: 500;
+  src: url('fonts/fira-sans-v17-latin-500.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+
+/* fira-sans-500italic - latin */
+@font-face {
+  font-family: 'Fira Sans';
+  font-style: italic;
+  font-weight: 500;
+  src: url('fonts/fira-sans-v17-latin-500italic.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+
+/* fira-sans-700 - latin */
+@font-face {
+  font-family: 'Fira Sans';
+  font-style: normal;
+  font-weight: 700;
+  src: url('fonts/fira-sans-v17-latin-700.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+
+/* fira-sans-700italic - latin */
+@font-face {
+  font-family: 'Fira Sans';
+  font-style: italic;
+  font-weight: 700;
+  src: url('fonts/fira-sans-v17-latin-700italic.woff2') format('woff2'); /* Chrome 36+, Opera 23+, Firefox 39+, Safari 12+, iOS 10+ */
+}
+
+
+:root,
+.light:root {
+
+  scroll-padding-top: calc(var(--search-bar-height) + var(--search-padding-top) + 1em);
+
+  /* light gruvbox theme colors */
+  --bg_h: #f9f5d7;
+  --bg:   #f6f8fa; /*#fbf1c7;*/
+  --bg_s: #f2e5bc;
+  --bg1:  #ebdbb2;
+  --bg2:  #d5c4a1;
+  --bg3:  #bdae93;
+  --bg4:  #a89984;
+
+  --fg:  #282828;
+  --fg1: #3c3836;
+  --fg2: #504945;
+  --fg3: #665c54;
+  --fg4: #7c6f64;
+
+  --red:    #9d0006;
+  --green:  #79740e;
+  --yellow: #b57614;
+  --blue:   #076678;
+  --purple: #8f3f71;
+  --aqua:   #427b58;
+  --orange: #af3a03;
+  --gray:   #928374;
+
+  --red-dim:    #cc2412;
+  --green-dim:  #98971a;
+  --yellow-dim: #d79921;
+  --blue-dim:   #458598;
+  --purple-dim: #b16286;
+  --aqua-dim:   #689d6a;
+  --orange-dim: #d65d0e;
+  --gray-dim:   #7c6f64;
+
+  /* odoc colors */
+  --odoc-blue: #5c9cf5;
+  --odoc-bg: #FFFFFF;
+  --odoc-bg1: #f6f8fa;
+  --odoc-fg: #333333;
+  --odoc-fg1: #1F2D3D;
+
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* dark gruvbox theme colors */
+    --bg_h: #1d2021;
+    --bg:   #282828;
+    --bg_s: #32302f;
+    --bg1:  #3c3836;
+    --bg2:  #504945;
+    --bg3:  #665c54;
+    --bg4:  #7c6f64;
+
+    --fg:  #fbf1c7;
+    --fg1: #ebdbb2;
+    --fg2: #d5c4a1;
+    --fg3: #bdae93;
+    --fg4: #a89984;
+
+    --red:    #fb4934;
+    --green:  #b8bb26;
+    --yellow: #fabd2f;
+    --blue:   #83a598;
+    --purple: #d3869b;
+    --aqua:   #8ec07c;
+    --gray:   #928374;
+    --orange: #fe8019;
+
+    --red-dim:    #cc2412;
+    --green-dim:  #98971a;
+    --yellow-dim: #d79921;
+    --blue-dim:   #458588;
+    --purple-dim: #b16286;
+    --aqua-dim:   #689d6a;
+    --gray-dim:   #a89984;
+    --orange-dim: #d65d0e;
+
+    /* odoc colors */
+    --odoc-blue: #5c9cf5;
+    --odoc-bg: #202020;
+    --odoc-bg1: #252525;
+    --odoc-fg: #bebebe;
+    --odoc-fg1: #777;
+  }
+}
+
+:root {
+  --main-background: var(--odoc-bg);
+  --color: var(--odoc-fg);
+  --anchor-hover: var(--fg1);
+  --anchor-color: var(--bg2);
+  --xref-shadow: var(--red-dim);
+  --xref-unresolved: var(--blue-dim);
+  --header-shadow: var(--bg3);
+  --by-name-version-color: var(--bg4);
+  --by-name-nav-link-color: var(--fg2);
+  --target-background: color-mix(in srgb, var(--main-background) 70%, var(--odoc-blue) 30%);
+  --target-border: var(--odoc-blue);
+  --pre-border-color: var(--fg4);
+  --link-color: var(--odoc-blue);
+  --source-link-color: var(--fg4);
+
+
+  --toc-color: var(--fg);
+  --toc-before-color: var(--odoc-fg1);
+  --toc-background: var(--odoc-bg1);
+  --toc-list-border: var(--fg1);
+
+  --hljs-bg: var(--code-background);
+  --hljs-link: var(--fg2);
+  --source-code-keyword: var(--orange);
+  --hljs-regexp: var(--yellow);
+  --hljs-title: var(--yellow-dim);
+
+  --spec-label-color: var(--aqua);
+  --spec-summary-background: var(--code-background);
+  --spec-summary-border-color: var(--odoc-blue);
+  --spec-summary-hover-background: var(--odoc-bg1);
+  --spec-details-after-background: var(--odoc-bg1);
+  --spec-details-after-border: var(--fg3);
+  --search-results-border: var(--fg1);
+  --search-results-shadow: var(--bg3);
+  --search-highlight-color: var(--odoc-blue);
+  --search-snake-color: var(--odoc-blue);
+  /* code colors */
+  --code-color: var(--fg);
+  --code-background: var(--bg);
+  --li-code-background: var(--bg);
+  --li-code-color: var(--fg);
+
+
+  --source-line-column: var(--fg3);
+  --source-line-column-bg: var(--bg_h);
+
+  --source-code-comment: var(--gray);
+  --source-code-docstring: var(--green-dim);
+  --source-code-lident: var(--fg1);
+  --source-code-uident: var(--blue);
+  --source-code-literal: var(--yellow);
+  --source-code-keyword: var(--red);
+  --source-code-underscore: var(--fg3);
+  --source-code-operator: var(--purple);
+  --source-code-parens: var(--orange-dim);
+  --source-code-separator: var(--orange-dim);
+
+  --hljs-variable: var(--yellow);
+  --hljs-literal: var(--red);
+  --hljs-name: var(--green-dim);
+  --hljs-tag: var(--fg4);
+  --hljs-attr: var(--purple);
+  --hljs-addition: var(--green-dim);
+  --hljs-addition-bg: color-mix(in srgb, var(--hljs-addition) 10%, var(--hljs-bg) 90%);
+  --hljs-deletion: var(--red-dim);
+  --hljs-deletion-bg: color-mix(in srgb, var(--hljs-deletion) 10%, var(--hljs-bg) 90%);
+
+
+
+}
+
+/* Reset a few things. */
+
+html, body, div, span, applet, object, iframe, h1, h2, h3, h4, h5, h6, p, blockquote, pre, a, abbr, acronym, address, big, cite, code, del, dfn, em, img, ins, kbd, q, s, samp, small, strike, strong, sub, sup, tt, var, b, u, i, center, dl, dt, dd, ol, ul, li, fieldset, form, label, legend, table, caption, tbody, tfoot, thead, tr, th, td, article, aside, canvas, details, embed, figure, figcaption, footer, header, hgroup, menu, nav, output, ruby, section, summary, time, mark, audio, video {
+  padding: 0;
+  border: 0;
+  font: inherit;
+  vertical-align: baseline;
+
+}
+
+table {
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+*, *:before, *:after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 15px;
+  scroll-behavior: smooth;
+}
+
+body {
+  text-align: left;
+  color: var(--color);
+  background-color: var(--main-background);
+  font-family: "Noticia Text", Georgia, serif;
+  line-height: 1.5;
+}
+
+body {
+  margin-left: auto;
+  margin-right: auto;
+  padding: 0 4ex;
+  margin-top: 0;
+}
+
+body.odoc {
+  max-width: 181ex;
+  display: grid;
+  grid-template-columns: min-content 1fr min-content;
+  grid-template-areas:
+    "search-bar nav      ."
+    "toc-global  preamble toc-local"
+    "toc-global  content  toc-local";
+  column-gap: 4ex;
+  grid-template-rows: auto auto 1fr;
+}
+
+body.odoc:has(> .odoc-search:focus-within) {
+  grid-template-areas:
+  "search-bar search-bar search-bar"
+  ".          nav        ."
+  "toc-global  preamble   toc-local"
+  "toc-global  content    toc-local";
+}
+
+body.odoc:not(:has(> .odoc-tocs .odoc-global-toc)) {
+  grid-template-areas:
+  "search-bar search-bar"
+  "nav        ."
+  "preamble   toc-local"
+  "content    toc-local";
+  grid-template-columns: 1fr min-content;
+}
+
+/* When there is no global sidebar */
+body.odoc:not(:has(> .odoc-tocs .odoc-global-toc)) nav.odoc-nav {
+  padding-top: 0;
+}
+
+/* When there is no global sidebbar and the searchbar is focused */
+body.odoc:not(:has(> .odoc-tocs .odoc-global-toc)) nav.odoc-nav:has(+ .odoc-search:focus-within) {
+  padding-top: var(--search-padding-top);
+}
+
+nav.odoc-nav:has(+ .odoc-search:focus-within) {
+  padding-top: 0;
+}
+
+body.odoc-src {
+  display: grid;
+  grid-template-columns: min-content 1fr;
+  grid-template-areas:
+    "search-bar nav      "
+    "toc-global preamble"
+    "toc-global content ";
+  column-gap: 4ex;
+  grid-template-rows: auto auto 1fr;
+}
+
+.odoc-content {
+  grid-area: content;
+}
+
+.odoc-content > *:first-child {
+  margin-top: 0;
+}
+
+.odoc-preamble > *:first-child {
+  /* This make the first thing in the preamble align with the sidebar */
+  padding-top: 0;
+  margin-top: 0;
+}
+
+/* Add margin after the preamble if it contains more than one element. */
+header.odoc-preamble:has(> :nth-child(2)) {
+  margin-bottom: 30px;
+}
+
+header.odoc-preamble {
+  grid-area: preamble;
+}
+
+nav {
+  font-family: "Fira Sans", sans-serif;
+}
+
+nav.odoc-nav {
+  grid-area: nav;
+  padding-top: var(--search-padding-top);
+  padding-bottom: var(--search-padding-top);
+}
+
+/* Basic markup elements */
+
+b, strong {
+  font-weight: bold;
+}
+
+i {
+  font-style: italic;
+}
+
+em, i em.odd{
+  font-style: italic;
+}
+
+em.odd, i em {
+  font-style: normal;
+}
+
+sup {
+  vertical-align: super;
+}
+
+sub {
+  vertical-align: sub;
+}
+
+sup, sub {
+  font-size: 12px;
+  line-height: 0;
+  margin-left: 0.2ex;
+}
+
+ul, ol {
+  list-style-position: outside
+}
+
+ul>li {
+  margin-left: 22px;
+}
+
+ol>li {
+  margin-left: 27.2px;
+}
+
+li>*:first-child {
+  margin-top: 0
+}
+
+/* Text alignements, this should be forbidden. */
+
+.left {
+  text-align: left;
+}
+
+.right {
+  text-align: right;
+}
+
+.center {
+  text-align: center;
+}
+
+/* Links and anchors */
+
+a {
+  text-decoration: none;
+  color: var(--link-color);
+}
+
+.odoc-src pre a {
+  color: inherit;
+}
+
+a:hover:not(.img-link) {
+  box-shadow: 0 1px 0 0 var(--link-color);
+}
+
+/* Linked highlight */
+*:target, .current_unit {
+  background-color: var(--target-background) !important;
+  border-radius: 1px;
+  border: var(--target-border) 1px solid !important;
+}
+
+*:hover > a.anchor {
+  visibility: visible;
+}
+
+a.anchor:before {
+  content: "#";
+}
+
+a.anchor:hover {
+  box-shadow: none;
+  text-decoration: none;
+  color: var(--anchor-hover);
+}
+
+a.anchor {
+  visibility: hidden;
+  position: absolute;
+  /* top: 0px; */
+  /* margin-left: -3ex; */
+  margin-left: -1.3em;
+  font-weight: normal;
+  font-style: normal;
+  padding-right: 0.4em;
+  padding-left: 0.4em;
+  /* To remain selectable */
+  color: var(--anchor-color);
+}
+
+.spec > a.anchor {
+  margin-left: -2.3em;
+  padding-right: 0.9em;
+}
+
+.xref-unresolved {
+  color: var(--xref-unresolved);
+}
+.xref-unresolved:hover {
+  box-shadow: 0 1px 0 0 var(--xref-shadow);
+}
+
+/* Source links float inside preformated text or headings. */
+a.source_link {
+  float: right;
+  color: var(--source-link-color);
+  font-family: "Fira Sans", sans-serif;
+  font-size: initial;
+}
+
+/* Section and document divisions.
+   Until at least 4.03 many of the modules of the stdlib start at .h7,
+   we restart the sequence there like h2  */
+
+h1, h2, h3, h4, h5, h6, .h7, .h8, .h9, .h10 {
+  font-family: "Fira Sans", sans-serif;
+  font-weight: 400;
+  padding-top: 0.1em;
+  line-height: 1.2;
+  overflow-wrap: break-word;
+}
+
+.odoc-preamble h1 {
+  margin-top: 10px;
+}
+
+h1 {
+  font-weight: 500;
+  font-size: 2.441em;
+}
+
+h1 {
+  font-weight: 500;
+  font-size: 1.953em;
+  box-shadow: 0 1px 0 0 var(--header-shadow);
+}
+
+h2 {
+  font-size: 1.563em;
+}
+
+h3 {
+  font-size: 1.25em;
+}
+
+small, .font_small {
+  font-size: 0.8em;
+}
+
+h1 code, h1 tt {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+h2 code, h2 tt {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+h3 code, h3 tt {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+h3 code, h3 tt {
+  font-size: inherit;
+  font-weight: inherit;
+}
+
+h4 {
+  font-size: 1.12em;
+}
+
+/* Comment delimiters, hidden but accessible to screen readers and
+   selected for copy/pasting */
+
+/* Taken from bootstrap */
+/* See also https://stackoverflow.com/a/27769435/4220738 */
+.comment-delim {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Preformatted and code */
+
+tt, code, pre {
+  font-family: "Fira Mono", monospace;
+  font-weight: 400;
+}
+
+.odoc pre {
+  padding: 0.1em;
+  border: 1px solid var(--pre-border-color);
+  border-radius: 5px;
+  overflow-x: auto;
+  text-indent: initial;
+}
+
+.odoc p code,
+.odoc li code {
+  background-color: var(--li-code-background);
+  color: var(--li-code-color);
+  border-radius: 3px;
+  padding: 0 0.3ex;
+}
+
+p a > code, li a > code {
+  color: var(--link-color);
+}
+
+.odoc code {
+  white-space: pre-wrap;
+}
+
+/* Code blocks (e.g. Examples) */
+
+.odoc pre code {
+  font-size: 0.893rem;
+}
+
+/* Code lexemes */
+
+.keyword {
+  font-weight: 500;
+}
+
+.arrow { white-space: nowrap }
+
+/* Module member specification */
+
+.spec {
+  background-color: var(--spec-summary-background);
+  border-radius: 3px;
+  border-left: 4px solid var(--spec-summary-border-color);
+  border-right: 5px solid transparent;
+  padding: 0.35em 0.5em;
+}
+
+.spec .label, .spec .optlabel {
+  color: var(--spec-label-color);
+}
+
+li:not(:last-child) > .def-doc {
+  margin-bottom: 15px;
+}
+
+/* Spacing between items */
+div.odoc-spec,.odoc-include {
+  margin-bottom: 2em;
+}
+
+.spec.type .variant p, .spec.type .record p {
+  margin: 5px;
+}
+
+.spec.type .variant, .spec.type .record {
+  margin-left: 2ch;
+}
+
+.spec.type li.variant, .spec.type li.record {
+  list-style: none;
+}
+
+.spec.type .record > code, .spec.type .variant > code {
+  min-width: 40%;
+}
+
+.spec.type > ol {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.spec.type .record > .def-doc, .spec.type .variant > .def-doc {
+  min-width:50%;
+  padding: 0.25em 0.5em;
+  margin-left: 10%;
+  border-radius: 3px;
+  background: var(--main-background);
+  box-shadow: 1px 1px 2px lightgrey;
+}
+
+div.def {
+  margin-top: 0;
+  text-indent: -2ex;
+  padding-left: 2ex;
+}
+
+div.def-doc>*:first-child {
+  margin-top: 0;
+}
+
+/* Collapsible inlined include and module */
+
+.odoc-include details {
+  position: relative;
+}
+
+.odoc-include.shadowed-include {
+  display: none;
+}
+
+.odoc-include details:after {
+  z-index: -100;
+  display: block;
+  content: " ";
+  position: absolute;
+  border-radius: 0 1ex 1ex 0;
+  right: -20px;
+  top: 1px;
+  bottom: 1px;
+  width: 15px;
+  background: var(--spec-details-after-background, rgba(0, 4, 15, 0.05));
+  box-shadow: 0 0px 0 1px var(--spec-details-after-border, rgba(204, 204, 204, 0.53));
+}
+
+.odoc-include summary {
+  position: relative;
+  margin-bottom: 1em;
+  cursor: pointer;
+  outline: none;
+}
+
+.odoc-include summary:hover {
+  background-color: var(--spec-summary-hover-background);
+}
+
+/* FIXME: Does not work in Firefox. */
+.odoc-include summary::-webkit-details-marker {
+  color: #888; /* todo : use color from palette */
+  transform: scaleX(-1);
+  position: absolute;
+  top: calc(50% - 5px);
+  height: 11px;
+  right: -29px;
+}
+
+/* Records and variants FIXME */
+
+div.def table {
+  text-indent: 0em;
+  padding: 0;
+  margin-left: -2ex;
+}
+
+td.def {
+  padding-left: 2ex;
+}
+
+td.def-doc *:first-child {
+  margin-top: 0em;
+}
+
+/* Lists of @tags */
+
+.at-tags { list-style-type: none; margin-left: -3ex; }
+.at-tags li { padding-left: 3ex; text-indent: -3ex; }
+.at-tags .at-tag { text-transform: capitalize }
+
+/* Alert emoji */
+
+.alert::before, .deprecated::before {
+  content: '⚠️ ' / '';
+}
+
+/* Since emoji */
+
+.since::before {
+  content: '🕚 ' / '';
+}
+
+/* Lists of modules */
+
+.modules { list-style-type: none; margin-left: -3ex; }
+.modules li { padding-left: 3ex; text-indent: -3ex; margin-top: 5px }
+.modules .synopsis { padding-left: 1ch; }
+
+/* Odig package index */
+
+.packages { list-style-type: none; margin-left: -3ex; }
+.packages li { padding-left: 3ex; text-indent: -3ex }
+.packages li a.anchor { padding-right: 0.5ch; padding-left: 3ch; }
+.packages .version { font-size: 10px; color: var(--by-name-version-color); }
+.packages .synopsis { padding-left: 1ch }
+
+.by-name nav a {
+  text-transform: uppercase;
+  font-size: 18px;
+  margin-right: 1ex;
+  color: var(--by-name-nav-link-color,);
+  display: inline-block;
+}
+
+.by-tag nav a {
+  margin-right: 1ex;
+  color: var(--by-name-nav-link-color);
+  display: inline-block;
+}
+
+.by-tag ol { list-style-type: none; }
+.by-tag ol.tags li { margin-left: 1ch; display: inline-block }
+.by-tag td:first-child { text-transform: uppercase; }
+
+/* Odig package page */
+
+.package nav, h1 nav {
+  display: inline;
+  font-size: 14px;
+  font-weight: normal;
+}
+
+.package .version, h1 .version {
+  font-size: 14px;
+}
+
+.package.info {
+  margin: 0;
+}
+
+.package.info td:first-child {
+  font-style: italic;
+  padding-right: 2ex;
+}
+
+.package.info ul {
+  list-style-type: none;
+  display: inline;
+  margin: 0;
+}
+
+.package.info li {
+  display: inline-block;
+  margin: 0;
+  margin-right: 1ex;
+}
+
+#info-authors li, #info-maintainers li {
+  display: block;
+}
+
+/* Sidebar and TOC */
+
+.odoc-toc:before {
+  display: block;
+  content: "Contents";
+  text-transform: uppercase;
+  font-size: 1em;
+  margin: 1.414em 0 0.5em;
+  font-weight: 500;
+  color: var(--toc-before-color);
+  line-height: 1.2;
+}
+
+.odoc-toc.odoc-local-toc:has(~ .odoc-global-toc):before {
+  content: "Local content";
+
+}
+.odoc-toc.odoc-global-toc:has(~ .odoc-local-toc):before {
+  content: "Global content";
+}
+
+/* When a search bar is present, we need the sticky sidebar to be a bit lower,
+   so `top` is higher  */
+
+body.odoc:has( .odoc-search) .odoc-toc {
+  --toc-top: calc(var(--search-bar-height) + 2 * var(--search-padding-top));
+  max-height: calc(100vh - 2 * var(--toc-top));
+  top: var(--toc-top)
+}
+
+.odoc-tocs {
+  display: contents;
+}
+
+.odoc-local-toc {
+  grid-area: toc-local;
+}
+
+.odoc-global-toc {
+  grid-area: toc-global;
+}
+
+.odoc-toc {
+  --toc-top: 20px;
+  width: 42ex;
+  background: var(--toc-background);
+  overflow: auto;
+  color: var(--toc-color);
+  padding-left: 2ex;
+  padding-right: 2ex;
+  height: fit-content;
+  border: solid 1px var(--border);
+  border-radius: 5px;
+  position:sticky;
+  max-height: calc(100vh - 2 * var(--toc-top));
+  top: var(--toc-top)
+}
+
+.odoc-toc ul li a {
+  font-family: "Fira Sans", sans-serif;
+  font-size: 0.95em;
+  color: var(--color);
+  font-weight: 400;
+  line-height: 1.2em;
+  display: block;
+}
+
+.odoc-toc.odoc-global-toc > ul > li {
+    margin-left:0;
+}
+
+.odoc-toc.odoc-global-toc > ul > li > ul > li {
+    margin-left:0;
+    padding-left:0;
+    border: 0;
+    margin-top: 10px;
+    margin-bottom: 10px;
+}
+
+.odoc-toc.odoc-global-toc > ul > li > ul > li {
+    font-weight: 500;
+}
+
+.odoc-toc.odoc-global-toc > ul > li > ul > li > a {
+    font-weight: inherit;
+    font-size: inherit;
+}
+
+.odoc-toc.odoc-global-toc > ul > li > a {
+  font-size: 1.2em;
+}
+
+:root {
+  --search-bar-height: 25px;
+  --search-padding-top: 1rem;
+}
+
+.odoc-search {
+  position: sticky;
+  top: 0;
+  background: var(--main-background);
+  /* This amounts to fit-content when the search is not active, but when you
+  have the search results displayed, you do not want the height of the search
+  container to change.  */
+  height: calc(var(--search-bar-height) + 2 * var(--search-padding-top));
+  width: 100%;
+  padding-top: var(--search-padding-top);
+  padding-bottom: var(--search-padding-top);
+  z-index: 1;
+  grid-area: search-bar;
+
+}
+
+
+.odoc-search .search-inner {
+  width: 100%;
+  position: relative;
+  left: 0;
+  display: grid;
+  /* The second column is for the search snake, which has 0 width */
+  grid-template-columns: 1fr 0fr;
+  grid-row-gap: 1rem;
+  /* The second row is for the search results. It has a width, but only */
+  grid-template-rows: min-content 0px;
+  background: transparent;
+}
+
+.odoc-search .search-bar {
+  position: relative;
+  z-index: 2;
+  font-size: 1em;
+  transition: font-size 0.3s;
+  box-shadow: 0px 0px 0.2rem 0.3em var(--main-background);
+  height: var(--search-bar-height);
+  border: 1px solid var(--fg4);
+  /* inputs are of fixed size by default, even if you display:block them */
+  width: 100%;
+  color: var(--odoc-fg);
+  background: var(--odoc-bg1);
+  border-radius: 5px;
+  outline: none;
+}
+
+.odoc-search:focus-within {
+  width: 100%;
+}
+
+.odoc-search:focus-within .search-bar {
+  font-size: 1.1em;
+  border-color: var(--search-highlight-color);
+}
+
+.search-bar:focus-visible {
+  outline: 2px solid var(--search-highlight-color);
+}
+
+.search-bar::placeholder {
+  color: var(--fg3);
+}
+
+.odoc-search:not(:focus-within) .search-result {
+  display: none;
+}
+
+.odoc-search .search-result:empty {
+  display: none;
+}
+
+.odoc-search .search-result {
+  grid-row: 2;
+  background: var(--toc-background);
+  position: absolute;
+  left: 0;
+  right: 0;
+  border: solid;
+  border-color: var(--search-results-border);
+  border-width: 1px;
+  border-radius: 6px;
+  box-shadow: 0 3px 10px 2px var(--search-results-shadow), 0 0 3px 4px var(--main-background), 0px -1rem 0px 0px var(--main-background);
+  /* Works better on smallish screens with this */
+  max-height: calc(min(40rem, 50vh));
+  overflow-y: auto;
+}
+
+
+.odoc-search .search-no-result {
+  color: var(--color);
+  border-bottom: var(--search-results-border) solid 1px;
+  background-color: inherit;
+  outline: 0;
+  padding: 10px;
+  padding-right: 0.5rem;
+}
+
+.search-bar-container {
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1rem solid var(--main-background);
+}
+
+.search-snake {
+  grid-row: 1;
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  width: 0;
+  z-index: 2;
+  position: relative;
+  left: 0;
+  margin-top: 4px;
+  margin-bottom: 4px;
+  /* Otherwise the search snake flickers for very fast searches. */
+  transition: opacity 0.2s;
+  opacity: 0;
+}
+
+.search-snake.search-busy {
+  opacity: 1;
+}
+
+.search-snake:before {
+  content: " ";
+  display: block;
+  aspect-ratio: 1 / 1;
+  height: 100%;
+  margin-right: 4px;
+  border-radius: 50%;
+  border: 3px solid #aaa;
+  border-color: var(--search-snake-color) transparent var(--search-snake-color) transparent;
+  animation: search-snake 1.2s linear infinite;
+  position: absolute;
+  right: 0;
+}
+
+@keyframes search-snake {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+:root {
+  --kind-font-size-factor: 0.8;
+}
+
+.odoc-search .search-entry {
+  color: var(--color);
+  display: grid;
+  /* Possible kinds are the following :
+     "doc" "type" "mod" "exn" "class" "meth" "cons" "sig" "cons" "field" "val"
+     and "ext".
+     As the longest is 5 characters (and the font monospace), we give 5
+     character size to the column. However the font used for kind is a little
+     smaller, so we adjust by this factor.
+     */
+  grid-template-columns: [kinds] calc(var(--kind-font-size-factor) * 5ch) [titles] 1fr;
+  column-gap: 0.5rem;
+  border-bottom: var(--search-results-border) solid 1px;
+  background-color: inherit;
+  outline: 0;
+  padding: 0.4rem 0.4rem 0.7rem 0.7rem;
+}
+.odoc-search .search-entry p {
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.odoc-search .search-result .search-entry:focus-visible {
+  box-shadow: none;
+  background-color: var(--target-background);
+}
+
+.odoc-search .search-entry:hover {
+  box-shadow: none;
+  background-color: var(--main-background);
+}
+
+.odoc-search .search-entry .entry-kind {
+  grid-row: 1/2;
+  grid-column: 1/2;
+  line-height: 1.4rem;
+  font-size: calc(var(--kind-font-size-factor) * 1em);
+  font-weight: bold;
+  text-align: right;
+  position: relative;
+  bottom: 0;
+}
+
+.odoc-search .search-entry pre {
+  border: none;
+  margin: 0;
+}
+
+.odoc-search .search-entry pre code {
+  font-size: 1em;
+  background-color: var(--code-background);
+  color: var(--code-color);
+  border-radius: 3px;
+  padding: 0 0.3ex;
+}
+
+.odoc-search .search-entry .entry-title {
+  width: 100%;
+  display: block;
+  grid-column: 2/2;
+  grid-row: 1/2;
+  align-self: end;
+  line-height: 1.4rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.odoc-search .entry-name {
+  font-weight: bold;
+}
+
+.odoc-search .prefix-name {
+  font-weight: bold;
+}
+
+.odoc-search .search-entry .prefix-name {
+  opacity: 0.7;
+}
+
+.odoc-search .entry-rhs {
+  white-space: nowrap;
+}
+
+.odoc-search .search-entry .entry-content {
+  flex-grow: 1;
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.odoc-search .search-entry .entry-comment {
+  max-height: 1.5em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.95em;
+  grid-row: 2/2;
+  grid-column: 2/2;
+}
+
+.odoc-search .search-entry .entry-comment ul {
+  white-space: nowrap;
+  display: inline;
+}
+
+.odoc-search .search-entry .entry-comment li {
+  display: inline;
+  white-space: nowrap;
+}
+
+.odoc-search .search-entry .entry-comment ul>li::before {
+  content: '•';
+}
+
+.odoc-search .search-entry .entry-comment div {
+  display: inline;
+  white-space: nowrap;
+}
+
+.odoc-search .search-entry .entry-comment p {
+  display: inline;
+  white-space: nowrap;
+}
+
+.odoc-search .search-entry .entry-comment code {
+  display: inline;
+  white-space: nowrap;
+}
+
+/* First level titles */
+
+.odoc-toc>ul>li>a {
+  font-weight: 500;
+}
+
+.odoc-toc ul li ul {
+  margin: 0px;
+  padding-top: 0.25em;
+}
+
+.odoc-toc ul {
+  list-style-type: none;
+}
+
+.odoc-toc ul li {
+  padding: 0.25em 0;
+}
+
+.odoc-toc>ul>li {
+  margin-left: 0;
+  margin-bottom: 0.3em;
+}
+
+.odoc-toc ul li li {
+  border-left: 1px solid var(--toc-list-border);
+  margin-left: 5px;
+  padding-left: 12px;
+}
+
+/* Tables */
+
+.odoc-table {
+  margin: 1em;
+}
+
+.odoc-table td,
+.odoc-table th {
+  padding-left: 0.5em;
+  padding-right: 0.5em;
+  border: 1px solid black;
+}
+
+.odoc-table th {
+  font-weight: bold;
+}
+
+/* Mobile adjustements. */
+
+@media only screen and (max-width: 210ex) {
+  body.odoc {
+    max-width: 132ex;
+    grid-template-areas:
+      "search-bar nav"
+      "sidebar    preamble"
+      "sidebar    content";
+  }
+  body.odoc .odoc-tocs {
+      display: flex;
+      grid-area: sidebar;
+      flex-direction : column;
+      gap: 20px;
+  }
+  body.odoc .odoc-tocs .odoc-toc {
+    position: unset;
+    max-height: unset;
+  }
+  body.odoc:has(.odoc-search:focus-within) {
+    grid-template-areas:
+      "search-bar search-bar"
+      ".          nav"
+      "sidebar    preamble"
+      "sidebar    content";
+  }
+  body.odoc:not(:has(> .odoc-tocs .odoc-global-toc)) {
+    grid-template-areas:
+    "search-bar nav"
+    "sidebar    preamble"
+    "sidebar    content";
+    grid-template-columns: min-content 1fr;
+  }
+}
+
+@media only screen and (max-width: 110ex) {
+  body.odoc {
+    margin: 2em;
+    padding: 0;
+    grid-template-areas:
+      "search-bar"
+      "nav"
+      "preamble"
+      "toc-local"
+      "content"
+      "toc-global";
+    grid-template-columns: 1fr;
+  }
+  body.odoc:has(> .odoc-search:focus-within) {
+    /* This is the same as when there is no focus on the search bar, this is
+    just to prevent the default "wide layout" rule from changing anything. */
+    grid-template-areas:
+      "search-bar"
+      "nav"
+      "preamble"
+      "toc-local"
+      "content"
+      "toc-global";
+    grid-template-columns: 1fr;
+  }
+  body.odoc:not(:has(> .odoc-tocs .odoc-global-toc)) {
+    grid-template-areas:
+      "search-bar"
+      "nav"
+      "preamble"
+      "toc-local"
+      "content"
+      "toc-global";
+    grid-template-columns: 1fr;
+  }
+  body.odoc .odoc-search {
+    position: relative;
+    height: calc(var(--search-bar-height) + 2 * var(--search-padding-top));
+  }
+  body.odoc nav.odoc-nav {
+    padding-top: 0;
+    padding-bottom: var(--search-padding-top);
+  }
+  body.odoc .odoc-tocs {
+    display: contents;
+  }
+  body.odoc .odoc-tocs .odoc-toc {
+    position: static;
+    width: auto;
+    min-width: unset;
+    max-width: unset;
+    max-height: unset;
+    border: none;
+    padding: 0.2em 1em;
+    border-radius: 5px;
+    margin-bottom: 2em;
+  }
+}
+
+/* Print adjustements. */
+
+@media print {
+  body {
+    color: black;
+    background: white;
+  }
+
+  body nav:first-child {
+    visibility: hidden;
+  }
+}
+
+/* Source code. */
+
+.source_container {
+  display: flex;
+  grid-area: content;
+  margin-top: 0;
+}
+
+.source_line_column {
+  padding-right: 0.5em;
+  text-align: right;
+  color: var(--source-line-column);
+  background: var(--source-line-column-bg);
+}
+
+.source_line {
+  padding: 0 1em;
+}
+
+.source_code {
+  flex-grow: 1;
+  background: var(--code-background);
+  padding: 0 0.3em;
+  color: var(--code-color);
+}
+
+/* Source directories */
+
+.odoc-directory::before {
+  content: "📁";
+  margin: 0.3em;
+  font-size: 1.3em;
+}
+
+.odoc-file::before {
+  content: "📄";
+  margin: 0.3em;
+  font-size: 1.3em;
+}
+
+.odoc-folder-list {
+  list-style: none;
+}
+
+/* Syntax highlighting (based on github-gist) */
+
+.hljs {
+  display: block;
+  background: var(--code-background);
+  padding: 0.5em;
+  color: var(--color);
+  overflow-x: auto;
+}
+
+.hljs-comment,
+.hljs-meta {
+  color: var(--source-code-comment);
+}
+
+.hljs-string,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-strong,
+.hljs-emphasis,
+.hljs-quote,
+.hljs-literal {
+  color: var(--source-code-literal);
+}
+
+.hljs-keyword,
+.hljs-selector-tag {
+  color: var(--source-code-keyword);
+}
+
+.hljs-type,
+.hljs-class .hljs-title {
+  color: var(--source-code-uident);
+  font-weight: 500;
+}
+
+.hljs-symbol,
+.hljs-bullet,
+.hljs-attribute {
+  color: var(--hljs-literal);
+}
+
+.hljs-section,
+.hljs-name {
+  color: var(--hljs-name);
+}
+
+.hljs-tag {
+  color: var(--hljs-tag);
+}
+
+.hljs-attr,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: var(--hljs-attr);
+}
+
+.hljs-addition {
+  color: var(--hljs-addition);
+  background-color: var(--hljs-addition-bg);
+}
+
+.hljs-deletion {
+  color: var(--hljs-deletion);
+  background-color: var(--hljs-deletion-bg);
+}
+
+.hljs-link {
+  text-decoration: underline;
+}
+
+/* Keywords */
+.AND, .ANDOP, .AS, .ASSERT,
+.BAR, .BEGIN,
+.CLASS, .CONSTRAINT,
+.DO, .DONE, .DOWNTO,
+.ELSE, .END, .EXCEPTION, .EXTERNAL,
+.FOR, .FUN, .FUNCTION, .FUNCTOR,
+.IF, .IN, .INCLUDE, .INHERIT, .INITIALIZER,
+.LAZY, .LESSMINUS, .LET, .LETOP,
+.MATCH, .METHOD, .MINUSGREATER, .MODULE, .MUTABLE,
+.NEW, .NONREC,
+.OBJECT, .OF, .OPEN,
+.PERCENT, .PRIVATE,
+.REC,
+.SEMISEMI, .SIG, .STRUCT,
+.THEN, .TO, .TRY, .TYPE,
+.VAL, .VIRTUAL,
+.WHEN, .WITH, .WHILE
+{
+  color: var(--source-code-keyword);;
+}
+
+/* Separators */
+.COMMA, .COLON, .COLONGREATER, .SEMI {
+  color: var(--source-code-separator);
+}
+
+/* Parens
+   `begin` and `end ` are excluded because `end` is used in other, more
+   keyword-y contexts*/
+.BARRBRACKET,
+.LBRACE,
+.LBRACELESS,
+.LBRACKET,
+.LBRACKETAT,
+.LBRACKETATAT,
+.LBRACKETATATAT,
+.LBRACKETBAR,
+.LBRACKETGREATER,
+.LBRACKETLESS,
+.LBRACKETPERCENT,
+.LBRACKETPERCENTPERCENT,
+.LPAREN,
+.RBRACE,
+.RBRACKET,
+.RPAREN
+{
+  color: var(--source-code-parens);
+}
+
+/* Prefix operators */
+.ASSERT, .BANG, .PREFIXOP,
+/* Infix operators.
+   A choice had to be made for equal `=` which is both a keyword and an operator.
+   It looked better having it as an operator, because when it is a keyword,
+   there are already loads of keyword around.
+   It would look even nicer if there was a way to distinguish between these
+   two cases.*/
+.INFIXOP0, .INFIXOP1, .INFIXOP2, .INFIXOP3, .INFIXOP4,
+.BARBAR, .PLUS, .STAR, .AMPERAMPER, .AMPERAND, .COLONEQUAL, .GREATER, .LESS,
+.MINUS, .MINUSDOT, .MINUSGREATER, .OR, .PLUSDOT, .PLUSEQ, .EQUAL
+{
+  color: var(--source-code-operator);
+}
+
+/* Upper case ident
+   `true` and `false` are considered uident here, because you can bind them in a
+   constructor defintion :
+   ```ocaml
+   type my_bool =
+     | true of string
+     | false
+     | Other of int
+   ```
+*/
+.UIDENT, .COLONCOLON, .TRUE, .FALSE {
+  color: var(--source-code-uident);
+
+}
+
+/* Lower case idents.
+   Quotes are here because of `type 'a t = 'a list`,
+   and question mark and tildes because of
+   ```ocaml
+   let f ~a ?b () = Option.map a b
+   ```
+*/
+.LIDENT, .QUESTION, .QUOTE, .TILDE {
+  color: var(--source-code-lident);
+}
+
+/* Litterals */
+ .STRING, .CHAR, .INT, .FLOAT, .QUOTED_STRING_EXPR, .QUOTED_STRING_ITEM {
+  color: var(--source-code-literal);
+}
+
+.UNDERSCORE {
+  color: var(--source-code-underscore);
+}
+
+.DOCSTRING {
+  color: var(--source-code-docstring);
+}
+
+.COMMENT {
+  color: var(--source-code-comment);
+}
+
+/*---------------------------------------------------------------------------
+   Copyright (c) 2016 The odoc contributors
+
+   Permission to use, copy, modify, and/or distribute this software for any
+   purpose with or without fee is hereby granted, provided that the above
+   copyright notice and this permission notice appear in all copies.
+
+   THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+   WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+   MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+   ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+   WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+   ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+   OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+  ---------------------------------------------------------------------------*/

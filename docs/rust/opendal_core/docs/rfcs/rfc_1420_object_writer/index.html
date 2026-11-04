@@ -1,0 +1,95 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Object writer"><title>opendal_core::docs::rfcs::rfc_1420_object_writer - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_1420_object_writer</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal_core/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal_core/index.html">opendal_<wbr>core</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>1420_<wbr>object_<wbr>writer</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a><ul><li><a href="#complex-multipart-operations" title="Complex multipart operations">Complex multipart operations</a></li><li><a href="#lack-of-retry-support" title="Lack of retry support">Lack of retry support</a></li></ul></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a><ul><li><a href="#why-accept-bytes" title="Why accept `Bytes`?">Why accept <code>Bytes</code>?</a></li></ul></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a><ul><li><a href="#vectored-write" title="Vectored Write">Vectored Write</a></li><li><a href="#write-from-stream" title="Write From Stream">Write From Stream</a></li></ul></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal_<wbr>core::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal_core</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>1420_<wbr>object_<wbr>writer</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../../src/opendal_core/docs/rfcs/mod.rs.html#158">Source</a> </span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Object writer</p>
+<ul>
+<li>Proposal Name: <code>object_writer</code></li>
+<li>Start Date: 2023-02-27</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/1420">apache/opendal#1420</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/1421">apache/opendal#1421</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Adding <code>ObjectWriter</code> to improve support for multipart uploads, as well as enable retry options for write operations.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>OpenDAL works well for <code>read</code> operations:</p>
+<ul>
+<li>OpenDAL can seek over content even on services like S3.</li>
+<li>OpenDAL can retry read from the failing point without extra read cost.</li>
+</ul>
+<p>However, OpenDAL is not good at <code>write</code>:</p>
+<h3 id="complex-multipart-operations"><a class="doc-anchor" href="#complex-multipart-operations">§</a>Complex multipart operations</h3>
+<p>OpenDAL supports multipart operations but it’s very hard to use:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">let </span>object_multipart = o.create_multipart().<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let </span>part_0 = object_multipart.write(<span class="number">0</span>, content_0).<span class="kw">await</span><span class="question-mark">?</span>;
+...
+<span class="kw">let </span>part_x = object_multipart.write(x, content_x).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let </span>new_object = object_multipart.complete(<span class="macro">vec!</span>[part_0,...,part_x]).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>Users should possess the knowledge of the multipart API to effectively use it.</p>
+<p>To exacerbate the situation, the multipart API is not standardized and only some object storage services offer support for it. Unfortunately, we cannot even provide support for it on the local file system.</p>
+<h3 id="lack-of-retry-support"><a class="doc-anchor" href="#lack-of-retry-support">§</a>Lack of retry support</h3>
+<p>OpenDAL can’t retry <code>write</code> operations because we accept an <code>Box&lt;dyn AsyncRead&gt;</code>. Once we pass this read into other functions, we consumed it.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">async fn </span>write(<span class="kw-2">&amp;</span><span class="self">self</span>, path: <span class="kw-2">&amp;</span>str, args: OpWrite, r: input::Reader) -&gt; <span class="prelude-ty">Result</span>&lt;RpWrite&gt; {
+    <span class="self">self</span>.inner.write(path, args, r).<span class="kw">await
+</span>}</code></pre></div>
+<p>By introducing the <code>ObjectWriter</code> feature, we anticipate resolving all the associated inquiries simultaneously.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p><code>ObjectWriter</code> will provide the following APIs:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>ObjectWriter {
+    <span class="kw">pub async </span>write(<span class="kw-2">&amp;mut </span><span class="self">self</span>, bs: Bytes) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;;
+    <span class="kw">pub async </span>close(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;;
+}</code></pre></div>
+<p>After <code>ObjectWriter</code> has been constructed, users can use it as a normal writer:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>w = o.writer().<span class="kw">await</span><span class="question-mark">?</span>;
+w.write(bs1).<span class="kw">await</span><span class="question-mark">?</span>;
+w.write(bs2).<span class="kw">await</span><span class="question-mark">?</span>;
+w.close().<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p><code>ObjectWriter</code> also implements <code>AsyncWrite</code> trait which will allow users to use <code>io::copy</code> as well:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>w = o.writer().<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let _ </span>= io::copy_buf(r, o).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div><h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>OpenDAL will add a new trait called <code>output::Writer</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Write: Unpin + Send + Sync {
+    <span class="kw">pub async </span>write(<span class="kw-2">&amp;mut </span><span class="self">self</span>, bs: Bytes) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;;
+
+    <span class="kw">pub async </span>initiate(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;;
+    <span class="kw">pub async </span>append(<span class="kw-2">&amp;mut </span><span class="self">self</span>, bs: Bytes) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;;
+
+    <span class="kw">pub async </span>close(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;;
+}</code></pre></div>
+<ul>
+<li><code>write</code> is used to write full content.</li>
+<li><code>initiate</code> is used to initiate a multipart writer.</li>
+<li><code>append</code> is used to append more content into this writer.</li>
+<li><code>close</code> is used to close and construct the final file.</li>
+</ul>
+<p>And <code>Accessor</code> will change the <code>write</code> API into:</p>
+<div class="example-wrap"><pre class="language-diff"><code>pub trait Accessor {
++    type Writer: output::Write;
+
+-    async fn write(&amp;self, path: &amp;str, args: OpWrite, r: input::Reader) -&gt; Result&lt;RpWrite&gt;;
++    async fn write(&amp;self, path: &amp;str, args: OpWrite) -&gt; Result&lt;(RpWrite, Self::Writer)&gt;
+}</code></pre></div><h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>More heavy work for service implementers.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="why-accept-bytes"><a class="doc-anchor" href="#why-accept-bytes">§</a>Why accept <code>Bytes</code>?</h3>
+<p>OpenDAL’s write is similar to <code>io::Write::write_all</code> which will always consume the whole input and return errors if something is wrong. By accepting <code>Bytes</code>, we can reduce the extra <code>Clone</code> between user land to OpenDAL’s services/layers.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2><h3 id="vectored-write"><a class="doc-anchor" href="#vectored-write">§</a>Vectored Write</h3>
+<p>We can add <code>write_vectored</code> support in the future:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Write: Unpin + Send + Sync {
+    <span class="kw">pub async </span>write_vectored(<span class="kw-2">&amp;mut </span><span class="self">self</span>, bs: <span class="kw-2">&amp;</span>[Bytes]) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;;
+}</code></pre></div>
+<p>Take <code>s3</code> services as an example, we can upload different parts at the same time.</p>
+<h3 id="write-from-stream"><a class="doc-anchor" href="#write-from-stream">§</a>Write From Stream</h3>
+<p>We can add <code>write_from</code> support in the future:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Write: Unpin + Send + Sync {
+    <span class="kw">pub async </span>write_from(<span class="kw-2">&amp;mut </span><span class="self">self</span>, r: BytesStream, size: u64) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;;
+}</code></pre></div>
+<p>By implementing this feature, users don’t need to hold a large buffer inside memory.</p>
+</div></details></section></div></main></body></html>

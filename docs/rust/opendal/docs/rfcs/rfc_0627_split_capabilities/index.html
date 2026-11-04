@@ -1,0 +1,71 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Split capabilities"><title>opendal::docs::rfcs::rfc_0627_split_capabilities - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_0627_split_capabilities</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>0627_<wbr>split_<wbr>capabilities</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a><ul><li><a href="#read-only-services" title="Read-only Services">Read-only Services</a></li><li><a href="#add-new-capabilities-with-layers" title="Add new capabilities with Layers">Add new capabilities with Layers</a></li></ul></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>0627_<wbr>split_<wbr>capabilities</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Split capabilities</p>
+<ul>
+<li>Proposal Name: <code>split-capabilities</code></li>
+<li>Start Date: 2022-09-04</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/627">apache/opendal#627</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/628">apache/opendal#628</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Split basic operations into <code>read</code>, <code>write</code>, and <code>list</code> capabilities.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>In <a href="./0409-accessor-capabilities.md">RFC-0409: Accessor Capabilities</a>, we introduce the ideas of <code>Accessor Capabilities</code>. Services could have different capabilities, and users can check them via:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>meta = op.metadata();
+<span class="kw">let _</span>: bool = meta.can_presign();
+<span class="kw">let _</span>: bool = meta.can_multipart(); </code></pre></div>
+<p>If users call not supported capabilities, OpenDAL will return <a href="https://doc.rust-lang.org/stable/std/io/enum.ErrorKind.html#variant.Unsupported"><code>io::ErrorKind::Unsupported</code></a> instead.</p>
+<p>Along with that RFC, we also introduce an idea about <code>Basic Operations</code>: the operations that all services must support, including:</p>
+<ul>
+<li>metadata</li>
+<li>create</li>
+<li>read</li>
+<li>write</li>
+<li>delete</li>
+<li>list</li>
+</ul>
+<p>However, not all storage services support them. In our existing services, exception includes:</p>
+<ul>
+<li>HTTP services don’t support <code>write</code>, <code>delete</code>, and <code>list</code>.</li>
+<li>IPFS HTTP gateway doesn’t support <code>write</code> and <code>delete</code>.
+<ul>
+<li>NOTE: ipfs has a writable HTTP gateway, but there is no available instance.</li>
+</ul>
+</li>
+<li>fs could be read-only if mounted as <code>RO</code>.</li>
+<li>object storage like <code>s3</code> and <code>gcs</code> could not have enough permission.</li>
+<li>cache services may not support <code>list</code>.</li>
+</ul>
+<p>So in this RFC, we want to remove the idea about <code>Basic Operations</code> and convert them into different capabilities:</p>
+<ul>
+<li><code>read</code>: <code>read</code> and <code>stat</code></li>
+<li><code>write</code>: <code>write</code> and <code>delete</code></li>
+<li><code>list</code>: <code>list</code></li>
+</ul>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>No public API changes.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>This RFC will add three new capabilities:</p>
+<ul>
+<li><code>read</code>: <code>read</code> and <code>stat</code></li>
+<li><code>write</code>: <code>write</code> and <code>delete</code></li>
+<li><code>list</code>: <code>list</code></li>
+</ul>
+<p>After this change, all services must declare the features they support.</p>
+<p>Most of this RFCs work is to refactor the tests. This RFC will refactor the behavior tests into several parts based on capabilities.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>None</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2><h3 id="read-only-services"><a class="doc-anchor" href="#read-only-services">§</a>Read-only Services</h3>
+<p>OpenDAL can implement read-only services after this change:</p>
+<ul>
+<li>HTTP Service</li>
+<li>IPFS HTTP Gateway</li>
+</ul>
+<h3 id="add-new-capabilities-with-layers"><a class="doc-anchor" href="#add-new-capabilities-with-layers">§</a>Add new capabilities with Layers</h3>
+<p>We can implement a layer that can add <code>list</code> capability for underlying storage services. For example, <code>IndexLayer</code> for HTTP services.</p>
+</div></details></section></div></main></body></html>

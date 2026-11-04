@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["B2_SCHEME"],"fn":["register_b2_service"],"struct":["B2","B2Config"]};

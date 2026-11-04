@@ -1,0 +1,104 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Capability Override Layer"><title>opendal::docs::rfcs::rfc_6707_capability_override_layer - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_6707_capability_override_layer</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>6707_<wbr>capability_<wbr>override_<wbr>layer</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a><ul><li><a href="#layer-structure" title="Layer structure">Layer structure</a></li><li><a href="#layer-placement" title="Layer placement">Layer placement</a></li><li><a href="#api-exposure" title="API exposure">API exposure</a></li><li><a href="#deprecations-and-migration" title="Deprecations and migration">Deprecations and migration</a></li></ul></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>6707_<wbr>capability_<wbr>override_<wbr>layer</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Capability Override Layer</p>
+<ul>
+<li>Proposal Name: capability_override_layer</li>
+<li>Start Date: 2025-10-20</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/6707">apache/opendal#6707</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/6708">apache/opendal#6708</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Introduce a tiny <code>CapabilityOverrideLayer</code> that lets integrators adjust an accessor’s <em>full</em> capability by supplying a closure that mutates the existing <a href="../../types/capability.rs"><code>Capability</code></a> instance. The layer supplements the default pipeline and replaces the service-specific configuration toggles such as <code>delete_max_size</code>, <code>disable_stat_with_override</code>, or <code>write_with_if_match</code>. We will deprecate those fields and direct users (and our own behavior harness) to the new layer instead.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>Today we scatter capability tweaks across several service configs. S3 alone exposes <code>delete_max_size</code>, <code>disable_stat_with_override</code>, and <code>disable_write_with_if_match</code> on <code>S3Config</code> (see <code>core/src/services/s3/config.rs:184-208</code>). OSS and Azblob mirror the same knobs in their configs (<code>core/src/services/oss/config.rs:76-78</code>, <code>core/src/services/azblob/config.rs:78</code>). These options exist only to downgrade capabilities when a compatible service lacks full S3 semantics. They dilute the purpose of configuration, create redundancy between services, and complicate documentation.</p>
+<p>Our behavior tests already bypass those configs and mutate the capability directly via <code>info().update_full_capability(...)</code> to emulate lower limits (<code>core/tests/behavior/async_delete.rs:288-329</code>). That ad-hoc pattern hints that the real need is an explicit hook to patch capabilities after construction, not extra config fields.</p>
+<p>We want a single, explicit, and reusable spot for such adjustments that stays outside service implementations and keeps native capabilities untouched.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>With this RFC, builders stay focused on connection details while users layer capability overrides explicitly:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal::layers::CapabilityOverrideLayer;
+<span class="kw">use </span>opendal::services::S3;
+
+<span class="kw">let </span>op = Operator::new(S3::default().bucket(<span class="string">"demo"</span>))<span class="question-mark">?
+    </span>.layer(CapabilityOverrideLayer::new(|<span class="kw-2">mut </span>cap| {
+        <span class="comment">// Cloudflare R2 rejects large batch deletes and stat overrides
+        </span>cap.delete_max_size = <span class="prelude-val">Some</span>(<span class="number">700</span>);
+        cap.stat_with_override_cache_control = <span class="bool-val">false</span>;
+        cap.stat_with_override_content_disposition = <span class="bool-val">false</span>;
+        cap.stat_with_override_content_type = <span class="bool-val">false</span>;
+        cap.write_with_if_match = <span class="bool-val">false</span>;
+        cap
+    }))
+    .finish();</code></pre></div>
+<p>The closure receives the current <code>Capability</code> (already filled by the backend) and must return the adjusted value. Only the accessor’s <em>full</em> capability is patched; native capability remains intact so completion layers can still infer what the backend supports natively (<code>core/src/layers/complete.rs:23-62</code>). Downstream layers—<code>CorrectnessCheckLayer</code>, retry, delete helpers—observe the overridden full capability (<code>core/src/layers/correctness_check.rs:23-115</code>), so they continue to guard unsupported options.</p>
+<p>Behavior tests and diagnostic tools can read environment variables and pass a closure to the same layer instead of mutating capability structs manually.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2><h3 id="layer-structure"><a class="doc-anchor" href="#layer-structure">§</a>Layer structure</h3>
+<p>The implementation introduces:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>CapabilityOverrideLayer {
+    apply: Arc&lt;<span class="kw">dyn </span>Fn(Capability) -&gt; Capability + Send + Sync&gt;,
+}</code></pre></div>
+<ul>
+<li><code>CapabilityOverrideLayer::new</code> accepts any closure that maps the current capability to the desired full capability.</li>
+<li><code>Layer::layer</code> clones the closure, reads <code>info.full_capability()</code>, applies the function, and writes the result back via <code>info.update_full_capability</code>. Native capability is untouched.</li>
+<li>The layer returns the original accessor unwrapped, so it composes with existing layers transparently.</li>
+</ul>
+<h3 id="layer-placement"><a class="doc-anchor" href="#layer-placement">§</a>Layer placement</h3>
+<p><code>Operator::new</code> currently installs <code>ErrorContextLayer → CompleteLayer → CorrectnessCheckLayer</code>. We insert <code>CapabilityOverrideLayer</code> between error context and completion:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>ErrorContextLayer
+→ CapabilityOverrideLayer
+→ CompleteLayer
+→ CorrectnessCheckLayer</code></pre></div>
+<p>Positioning before <code>CompleteLayer</code> let us patch the full capability before completion synthesizes derived operations (e.g., auto-creating directories). Completion still reads the native capability to decide what to fill in, so we do not break its invariants.</p>
+<h3 id="api-exposure"><a class="doc-anchor" href="#api-exposure">§</a>API exposure</h3>
+<ul>
+<li>Rust: expose <code>CapabilityOverrideLayer</code> within <code>opendal::layers</code>.</li>
+<li>Other language bindings wrap the same primitive with a thin helper that accepts a closure-equivalent (e.g., a lambda or struct of booleans) and forwards to the Rust layer through FFI.</li>
+<li>No new <code>OperatorBuilder</code> method is required; users call <code>.layer(...)</code> explicitly.</li>
+</ul>
+<h3 id="deprecations-and-migration"><a class="doc-anchor" href="#deprecations-and-migration">§</a>Deprecations and migration</h3>
+<p>The following config fields become deprecated aliases that internally forward to <code>CapabilityOverrideLayer</code> until they are removed:</p>
+<ul>
+<li><code>S3Config::{batch_max_operations, delete_max_size, disable_stat_with_override, disable_write_with_if_match}</code> (<code>core/src/services/s3/config.rs:184-208</code>)</li>
+<li><code>OssConfig::{batch_max_operations, delete_max_size}</code> (<code>core/src/services/oss/config.rs:76-78</code>)</li>
+<li><code>AzblobConfig::batch_max_operations</code> (<code>core/src/services/azblob/config.rs:78</code>)</li>
+</ul>
+<p>Migration path:</p>
+<ol>
+<li>Emit a warning when these fields are set, pointing to the new layer-based approach.</li>
+<li>In a compatibility shim, convert the old configuration into a <code>CapabilityOverrideLayer</code> injected automatically (only while the fields exist).</li>
+<li>Behavior tests stop calling <code>info().update_full_capability</code> manually and instead always register the layer, keeping env-driven overrides centralised.</li>
+<li>Remove the fields in a later release once downstream bindings migrate.</li>
+</ol>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<ul>
+<li>Users must write code (a closure) rather than toggling a config string. For trivial overrides this is more verbose, especially in non-Rust bindings.</li>
+<li>The approach assumes callers are comfortable with the capability semantics; there is no compile-time guarantee that they only <em>downgrade</em> capabilities.</li>
+</ul>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>Alternatives considered:</p>
+<ol>
+<li><strong>Retain per-service config toggles</strong>. This keeps the status quo but perpetuates redundancy and drifts farther from capability-centric design (<code>core/src/docs/rfcs/0409_accessor_capabilities.md</code>, <code>core/src/docs/rfcs/2852_native_capability.md</code>).</li>
+<li><strong>Parse override values during config deserialization.</strong> That hides the layer but still demands new schema for each field and duplicates logic across services.</li>
+<li><strong>Automatic detection at runtime.</strong> Allowing writes to fail before downgrading capabilities complicates error handling and caching, and is harder to reason about.</li>
+</ol>
+<p>The chosen design centralises capability edits, keeps services agnostic, and matches the lightweight infrastructure we already use inside tests.</p>
+<p>Not acting would leave us with an ever-growing list of service-specific toggles and scattered override logic, making future capability changes harder.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<ul>
+<li>Our own RFCs on capabilities already advocate for a layered approach (<code>core/src/docs/rfcs/0409_accessor_capabilities.md</code>, <code>core/src/docs/rfcs/2852_native_capability.md</code>). This proposal follows that direction by giving layers first-class control.</li>
+<li>The behavior test harness demonstrates manual capability mutation (<code>core/tests/behavior/async_delete.rs:288-329</code>), validating that adjusting <code>full_capability</code> is viable today; we generalise it into a formal layer.</li>
+</ul>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<ul>
+<li>How should non-Rust bindings expose the closure-based API ergonomically? Do we offer predefined helpers for common toggles?</li>
+<li>What is the precise deprecation schedule for each config field, and how noisy should the warnings be?</li>
+<li>Do we need guardrails to prevent capability <em>upgrades</em> that claim support the backend truly lacks?</li>
+</ul>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<ul>
+<li>Provide convenience constructors such as <code>CapabilityOverrideLayer::disable_stat_overrides()</code> or <code>::limit_delete(max)</code> to ease usage from other languages.</li>
+<li>Offer an environment-driven helper (<code>CapabilityOverrideLayer::from_env</code>) for CLI tools and tests.</li>
+<li>Build curated profiles for popular S3-compatible services (Cloudflare R2, Wasabi, etc.) once the foundational layer lands.</li>
+<li>Investigate runtime detection or telemetry that suggests required overrides to users instead of manual discovery.</li>
+</ul>
+</div></details></section></div></main></body></html>

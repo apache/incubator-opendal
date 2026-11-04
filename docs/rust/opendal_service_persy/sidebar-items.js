@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["PERSY_SCHEME"],"fn":["register_persy_service"],"struct":["Persy","PersyConfig"]};

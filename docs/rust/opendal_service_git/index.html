@@ -1,0 +1,55 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Apache OpenDAL™ Git Service"><title>opendal_service_git - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../" data-static-root-path="../static.files/" data-current-crate="opendal_service_git" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js" ><script src="../static.files/storage-41dd4d93.js"></script><script defer src="../crates.js"></script><script defer src="../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Crate opendal_service_git</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><h2><a href="../opendal_service_git/index.html">opendal_<wbr>service_<wbr>git</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#apache-opendal-git-service" title="Apache OpenDAL™ Git Service">Apache OpenDAL™ Git Service</a><ul><li><a href="#use-through-opendal" title="Use through `opendal`">Use through <code>opendal</code></a></li><li><a href="#use-with-opendal-core" title="Use with `opendal-core`">Use with <code>opendal-core</code></a></li><li><a href="#notes" title="Notes">Notes</a></li><li><a href="#documentation" title="Documentation">Documentation</a></li><li><a href="#license" title="License">License</a></li></ul></li></ul><h3><a href="#structs">Crate Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#constants" title="Constants">Constants</a></li><li><a href="#functions" title="Functions">Functions</a></li></ul></section><div id="rustdoc-modnav"></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><h1>Crate <span>opendal_<wbr>service_<wbr>git</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../src/opendal_service_git/lib.rs.html#18-52">Source</a> </span></div><details class="toggle top-doc" open><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h2 id="apache-opendal-git-service"><a class="doc-anchor" href="#apache-opendal-git-service">§</a>Apache OpenDAL™ Git Service</h2>
+<p><code>opendal-service-git</code> provides read-only access to a Git repository at a fixed
+reference with optional Git LFS resolution.</p>
+<p>The service resolves the configured reference once per operator and keeps that
+immutable snapshot. It uses a temporary Git object database and does not create
+or update a working tree. <code>HEAD</code> uses a shallow clone; an explicit branch, tag,
+or commit uses a full clone.</p>
+<h3 id="use-through-opendal"><a class="doc-anchor" href="#use-through-opendal">§</a>Use through <code>opendal</code></h3>
+<p>Applications can enable this service through the <code>opendal</code> facade with the
+<code>services-git</code> feature:</p>
+<div class="example-wrap"><pre class="language-shell"><code>cargo add opendal --features services-git</code></pre></div>
+<p>The service is available as <code>opendal::services::Git</code>. Configure the builder,
+then pass it to <code>opendal::Operator::new</code>.</p>
+<h3 id="use-with-opendal-core"><a class="doc-anchor" href="#use-with-opendal-core">§</a>Use with <code>opendal-core</code></h3>
+<p>Add the split crates directly:</p>
+<div class="example-wrap"><pre class="language-shell"><code>cargo add opendal-core opendal-service-git</code></pre></div>
+<p>Pass a configured builder to <code>Operator::new</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal_core::{Operator, OperatorRegistry, <span class="prelude-ty">Result</span>};
+<span class="kw">use </span>opendal_service_git::{register_git_service, Git};
+
+<span class="kw">fn </span>build_operator(builder: Git) -&gt; <span class="prelude-ty">Result</span>&lt;Operator&gt; {
+    Operator::new(builder)
+}
+
+<span class="kw">fn </span>register_service() {
+    register_git_service(OperatorRegistry::get());
+}</code></pre></div>
+<p>Services that use HTTP also require an HTTP transport in <code>OperationContext</code>.
+The Git fetch uses the transport configured by gix; LFS batch and payload
+requests use the composed OpenDAL HTTP transport.</p>
+<p>Git fetch and object access use <code>tokio::task::spawn_blocking</code>. Run this service
+within a Tokio runtime.</p>
+<h3 id="notes"><a class="doc-anchor" href="#notes">§</a>Notes</h3>
+<ul>
+<li>A configured reference is resolved once and is not refreshed.</li>
+<li><code>resolve_lfs=false</code> returns the LFS pointer file itself.</li>
+<li>LFS resolution requires an HTTPS repository URL without userinfo, a query,
+or a fragment. Use the username and password options for authentication.</li>
+<li>LFS payloads are streamed from the composed HTTP transport.</li>
+<li>Repository credentials are not sent to cross-origin LFS download actions.</li>
+<li>Submodule entries return <code>Unsupported</code>.</li>
+<li>No language binding is enabled for this service by this crate alone.</li>
+</ul>
+<h3 id="documentation"><a class="doc-anchor" href="#documentation">§</a>Documentation</h3>
+<ul>
+<li><a href="https://opendal.apache.org/services/git">Service configuration and examples</a></li>
+<li><a href="https://docs.rs/opendal-service-git">Rust API documentation</a></li>
+<li><a href="https://opendal.apache.org/docs/">Apache OpenDAL documentation</a></li>
+</ul>
+<h3 id="license"><a class="doc-anchor" href="#license">§</a>License</h3>
+<p>Licensed under the Apache License, Version 2.0.</p>
+</div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.Git.html" title="struct opendal_service_git::Git">Git</a></dt><dd>Git service support with optional transparent Git LFS resolution.
+This service provides read-only access to a Git repository at a fixed
+reference, with optional Git LFS resolution.</dd><dt><a class="struct" href="struct.GitConfig.html" title="struct opendal_service_git::GitConfig">GitConfig</a></dt><dd>Configuration for Git service support.</dd></dl><h2 id="constants" class="section-header">Constants<a href="#constants" class="anchor">§</a></h2><dl class="item-table"><dt><a class="constant" href="constant.GIT_SCHEME.html" title="constant opendal_service_git::GIT_SCHEME">GIT_<wbr>SCHEME</a></dt><dd>URI scheme registered for the Git service.</dd></dl><h2 id="functions" class="section-header">Functions<a href="#functions" class="anchor">§</a></h2><dl class="item-table"><dt><a class="fn" href="fn.register_git_service.html" title="fn opendal_service_git::register_git_service">register_<wbr>git_<wbr>service</a></dt><dd>Register the Git service with an operator registry.</dd></dl></section></div></main></body></html>

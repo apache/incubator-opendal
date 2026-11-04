@@ -1,0 +1,213 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Read Returns Metadata"><title>opendal::docs::rfcs::rfc_5871_read_returns_metadata - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_5871_read_returns_metadata</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>5871_<wbr>read_<wbr>returns_<wbr>metadata</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a><ul><li><a href="#reader-api" title="Reader API">Reader API</a></li><li><a href="#stream-api" title="Stream API">Stream API</a></li><li><a href="#changes-to-rawrpread" title="Changes to `raw::RpRead`">Changes to <code>raw::RpRead</code></a></li><li><a href="#content_length-semantics" title="`content_length` Semantics"><code>content_length</code> Semantics</a></li><li><a href="#implementation-details" title="Implementation Details">Implementation Details</a></li><li><a href="#stream-state" title="Stream State">Stream State</a></li><li><a href="#object_store_opendal-integration" title="`object_store_opendal` Integration"><code>object_store_opendal</code> Integration</a></li></ul></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>5871_<wbr>read_<wbr>returns_<wbr>metadata</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Read Returns Metadata</p>
+<ul>
+<li>Proposal Name: <code>read_returns_metadata</code></li>
+<li>Start Date: 2025-03-24</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/5871">apache/opendal#5871</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/5872">apache/opendal#5872</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Expose metadata returned natively by read operations without requiring users or adapters to issue a separate <code>stat</code> request.</p>
+<p>Read metadata is bound to a concrete read stream. Calling <code>metadata().await</code> on the stream opens the underlying read request, stores the returned reader, and caches metadata if the service returned it. Subsequent stream consumption reuses the same reader.</p>
+<p><code>Reader</code> also maintains a best-effort cache of complete object metadata that has been observed from successful read opens.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>Today, users who need metadata while reading must issue an additional <code>stat()</code> request. This is inefficient for services that already return useful metadata from their read APIs, such as S3 <code>GetObject</code>, GCS object download, and Azure Blob download. It can also observe a different object version if the object changes between read and stat.</p>
+<p>However, not every service can return metadata as part of read open. Forcing those services to call <code>stat</code>, <code>size</code>, or <code>metadata</code> internally would move the extra request into OpenDAL’s core read path and make normal reads more expensive.</p>
+<p>This is especially important for adapters such as <code>object_store_opendal</code>. <code>object_store::GetResult</code> must contain <code>ObjectMeta</code>, returned range, attributes, and a streaming payload at the time <code>get_opts()</code> returns. A stat-first implementation can satisfy that contract, but it adds an extra request before every ranged read. OpenDAL should expose read-open object metadata when it is available, so these adapters can avoid redundant <code>stat</code> on metadata-capable services while preserving the existing fallback for other services.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>Existing high-level read APIs continue to work as before:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">let </span>data = op.reader(<span class="string">"path/to/file"</span>).<span class="kw">await</span><span class="question-mark">?</span>.read(..).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>Callers that need metadata create a stream and call <code>metadata().await</code> before consuming it:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">use </span>futures::TryStreamExt;
+
+<span class="kw">let </span><span class="kw-2">mut </span>stream = op
+    .reader(<span class="string">"path/to/file"</span>)
+    .<span class="kw">await</span><span class="question-mark">?
+    </span>.into_bytes_stream(<span class="number">1024</span>..<span class="number">2048</span>)
+    .<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="kw">let </span>meta = stream.metadata().<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">if let </span><span class="prelude-val">Some</span>(etag) = meta.etag() {
+    <span class="macro">println!</span>(<span class="string">"ETag: {etag}"</span>);
+}
+
+<span class="kw">let </span>data = stream.try_collect::&lt;Vec&lt;<span class="kw">_</span>&gt;&gt;().<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p><code>metadata().await</code> opens the read request if it has not been opened yet. If the underlying service returns metadata while opening the read, the stream caches both the metadata and the underlying reader, so consuming the stream afterwards does not open a second read request.</p>
+<p>If the service does not return metadata while opening the read, <code>metadata().await</code> returns <code>ErrorKind::Unsupported</code>. The opened reader is still reused by later stream consumption.</p>
+<p>If users do not call <code>metadata().await</code>, streams keep their existing lazy behavior: the underlying read request is opened when the stream is first polled.</p>
+<p><code>Reader</code> also exposes the complete object metadata it has already observed:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">let </span>reader = op.reader(<span class="string">"path/to/file"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let </span>data = reader.read(<span class="number">1024</span>..<span class="number">2048</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="kw">if let </span><span class="prelude-val">Some</span>(meta) = reader.metadata() {
+    <span class="macro">println!</span>(<span class="string">"object size: {}"</span>, meta.content_length());
+}</code></pre></div>
+<p><code>Reader::metadata()</code> does not perform I/O. It returns <code>None</code> until a read opened by this reader has observed enough information to build complete object metadata. It also returns <code>None</code> for services that do not return metadata while opening read operations.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2><h3 id="reader-api"><a class="doc-anchor" href="#reader-api">§</a>Reader API</h3>
+<p>Add a cache-only metadata accessor to <code>Reader</code>:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Reader {
+    <span class="kw">pub fn </span>metadata(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;Metadata&gt;;
+}</code></pre></div>
+<p><code>Reader::metadata()</code> returns complete object metadata observed from previous successful read opens by this reader.</p>
+<p>Semantics:</p>
+<ul>
+<li>It never performs I/O.</li>
+<li>It initially returns <code>None</code>.</li>
+<li>It returns object metadata.</li>
+<li>Its <code>content_length</code> is always the full object size.</li>
+<li>It is updated from metadata returned by successful read opens.</li>
+<li>It remains <code>None</code> if the service does not return metadata while opening read operations.</li>
+<li>If several reads are opened by the same reader, the cache stores the first object metadata observed by those reads.</li>
+</ul>
+<p>This API is an ergonomic cache for users who read through <code>Reader::read(...)</code> and then want the complete object metadata observed along the way.</p>
+<h3 id="stream-api"><a class="doc-anchor" href="#stream-api">§</a>Stream API</h3>
+<p>Add metadata accessors to read stream types:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>BufferStream {
+    <span class="kw">pub async fn </span>metadata(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;Metadata&gt;;
+}
+
+<span class="kw">impl </span>FuturesBytesStream {
+    <span class="kw">pub async fn </span>metadata(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;Metadata&gt;;
+}</code></pre></div>
+<p>Semantics:</p>
+<ul>
+<li>The returned metadata describes the object being read.</li>
+<li>Its <code>content_length</code> is always the full object size, even for ranged reads.</li>
+<li>The first <code>metadata().await</code> call prepares the stream by opening the underlying read request.</li>
+<li>The stream stores the returned <code>oio::Reader</code> and caches <code>raw::RpRead::metadata</code> if present.</li>
+<li>Later <code>metadata().await</code> calls return the cached metadata.</li>
+<li>Later <code>poll_next</code> calls consume the cached reader and must not open the same read request again.</li>
+<li><code>metadata().await</code> does not read the response body. It only opens the read and observes response metadata.</li>
+<li>If <code>raw::RpRead::metadata</code> is absent, <code>metadata().await</code> returns <code>ErrorKind::Unsupported</code>.</li>
+</ul>
+<h3 id="changes-to-rawrpread"><a class="doc-anchor" href="#changes-to-rawrpread">§</a>Changes to <code>raw::RpRead</code></h3>
+<p><code>raw::RpRead</code> becomes an optional metadata carrier for a successful read open:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>RpRead {
+    metadata: <span class="prelude-ty">Option</span>&lt;Metadata&gt;,
+}
+
+<span class="kw">impl </span>RpRead {
+    <span class="kw">pub fn </span>new(metadata: Metadata) -&gt; <span class="self">Self</span>;
+
+    <span class="kw">pub fn </span>metadata(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;<span class="kw-2">&amp;</span>Metadata&gt;;
+
+    <span class="kw">pub fn </span>into_metadata(<span class="self">self</span>) -&gt; <span class="prelude-ty">Option</span>&lt;Metadata&gt;;
+}</code></pre></div>
+<p>Services should set <code>RpRead::metadata</code> only when the read operation natively returns enough information to build complete object metadata. They must not issue an extra request only to fill <code>RpRead::metadata</code>.</p>
+<p><code>RpRead::size()</code> and <code>RpRead::range()</code> should be removed. Metadata should expose object metadata only; returned ranges are derived from the read request and the object size.</p>
+<p>Callers that need the object size should use:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code>rp.metadata().map(|m| m.content_length())</code></pre></div><h3 id="content_length-semantics"><a class="doc-anchor" href="#content_length-semantics">§</a><code>content_length</code> Semantics</h3>
+<p><code>Metadata::content_length</code> always describes the full object size.</p>
+<div class="example-wrap"><pre class="language-text"><code>content_length = full object size</code></pre></div>
+<p>For example, reading <code>1024..2048</code> from a 10 MiB object should still produce:</p>
+<div class="example-wrap"><pre class="language-text"><code>content_length = 10485760</code></pre></div>
+<p>HTTP response mapping:</p>
+<div class="example-wrap"><pre class="language-text"><code>HTTP 200 + Content-Length: N
+  -&gt; content_length = N
+
+HTTP 206 + Content-Range: bytes start-end/total
+  -&gt; content_length = total
+
+HTTP 206 + Content-Range: bytes start-end/*
+  -&gt; content_length cannot be derived from the response alone
+
+HTTP 206 + Content-Length: M, no Content-Range
+  -&gt; content_length cannot be derived from the response alone</code></pre></div>
+<p>Backends must not expose HTTP <code>Content-Range</code> through public <code>Metadata</code>. They may parse it internally to populate the full object size.</p>
+<h3 id="implementation-details"><a class="doc-anchor" href="#implementation-details">§</a>Implementation Details</h3>
+<p>For services that return metadata in read responses:</p>
+<ul>
+<li>Capture metadata from the read response.</li>
+<li>Populate <code>content_length</code> with the full object size. HTTP services may derive it from <code>Content-Length</code> for full responses or from <code>Content-Range</code> for ranged responses.</li>
+<li>Populate fields such as <code>content_type</code>, <code>etag</code>, <code>version</code>, <code>last_modified</code>, and user metadata when available from the response.</li>
+</ul>
+<p>For services whose read primitive does not naturally return metadata:</p>
+<ul>
+<li>Return <code>RpRead::default()</code>.</li>
+<li>Do not call <code>stat</code>, <code>size</code>, <code>metadata</code>, <code>seek</code>, or equivalent extra APIs only to populate <code>RpRead::metadata</code>.</li>
+<li>Keep any existing service-specific requests that are required for read correctness itself, such as resolving an open-ended range that the underlying API cannot express.</li>
+</ul>
+<h3 id="stream-state"><a class="doc-anchor" href="#stream-state">§</a>Stream State</h3>
+<p><code>BufferStream</code> should internally support a prepare/open step:</p>
+<div class="example-wrap"><pre class="language-text"><code>metadata().await
+  -&gt; prepare/open if needed
+  -&gt; accessor.read(path, args_with_range).await
+  -&gt; cache RpRead.metadata if present
+  -&gt; update Reader metadata cache if metadata is present
+  -&gt; cache returned oio::Reader
+  -&gt; return cached metadata, or Unsupported if metadata is absent
+
+poll_next()
+  -&gt; open if needed
+  -&gt; consume cached or newly opened oio::Reader</code></pre></div>
+<p>For non-chunked streaming reads, one stream maps to one underlying <code>accessor.read</code>.</p>
+<p>For chunked or concurrent reads, a single physical read response may only return one chunk body, but its metadata still describes the full object.</p>
+<h3 id="object_store_opendal-integration"><a class="doc-anchor" href="#object_store_opendal-integration">§</a><code>object_store_opendal</code> Integration</h3>
+<p>With stream-bound metadata, <code>object_store_opendal::get_opts</code> can avoid the stat-first path for full, bounded, and offset reads:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">let </span>reader = <span class="self">self</span>.inner.reader_with(<span class="kw-2">&amp;</span>raw_location)
+    .version(...)
+    .if_match(...)
+    .if_none_match(...)
+    .if_modified_since(...)
+    .if_unmodified_since(...)
+    .<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="kw">let </span><span class="kw-2">mut </span>stream = reader.into_bytes_stream(read_range.clone()).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let </span>meta = stream.metadata().<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="kw">let </span>result = GetResult {
+    payload: GetResultPayload::Stream(Box::pin(stream.map_err(...))),
+    meta: ObjectMeta {
+        location: location.clone(),
+        last_modified: meta.last_modified().and_then(timestamp_to_datetime).unwrap_or_default(),
+        size: meta.content_length(),
+        e_tag: meta.etag().map(ToString::to_string),
+        version: meta.version().map(ToString::to_string),
+    },
+    range: build_returned_range(read_range, meta.content_length()),
+    attributes: build_attributes(<span class="kw-2">&amp;</span>meta),
+};</code></pre></div>
+<p>Cases that still need stat-first behavior:</p>
+<ul>
+<li><code>head = true</code>, because the caller explicitly asks for no body.</li>
+<li>suffix ranges, because OpenDAL’s public range input does not currently express suffix ranges.</li>
+<li>read streams whose services do not return metadata while opening the read operation.</li>
+<li>responses that cannot provide the full object size required by <code>ObjectMeta::size</code>.</li>
+<li>compatibility paths that intentionally preserve existing out-of-range behavior.</li>
+</ul>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<ul>
+<li><code>metadata().await</code> is best-effort across services instead of universally available.</li>
+<li>Adapters that require metadata still need a fallback path for services without read-open metadata.</li>
+<li>Stream implementations become more complex because they need a reusable prepare/open state.</li>
+</ul>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>This design keeps existing <code>Reader::read()</code> and <code>Operator::read()</code> return types unchanged. Users can opt into read-open metadata by working with read streams, or inspect the complete object metadata already observed by <code>Reader</code>.</p>
+<p>Using <code>Reader::metadata()</code> as the only metadata API is not enough: it is not tied to a concrete read open and cannot satisfy APIs that must return metadata before handing out a streaming payload. Another alternative is returning a new <code>ReadResult</code> carrier from read APIs, but that would be a broader public API change and would duplicate the existing stream abstraction.</p>
+<p>Making <code>RpRead::metadata</code> mandatory was rejected because it forces services without native read metadata to add extra status calls to the read path. That violates OpenDAL’s zero-extra-cost read design.</p>
+<p>Removing <code>RpRead::size()</code> and <code>RpRead::range()</code> avoids a second metadata surface. Object size is represented by <code>metadata.content_length()</code>, and returned range information is derived from the read request.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>Similar patterns exist in other storage SDKs:</p>
+<ul>
+<li><code>object_store</code> returns metadata in <code>GetResult</code> from <code>get_opts</code>.</li>
+<li>AWS S3 SDK returns response metadata in <code>GetObjectOutput</code>.</li>
+<li>Azure Blob SDK returns properties and metadata in download responses.</li>
+</ul>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<ul>
+<li>Whether OpenDAL should add a public suffix-range input in the future so suffix reads can also use the no-stat path.</li>
+<li>Whether OpenDAL should expose a capability bit for services that can return read-open metadata.</li>
+</ul>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<ul>
+<li><code>object_store_opendal</code> can use stream metadata to avoid stat-first bounded range reads when services support read-open metadata.</li>
+<li><code>ReadContext::parse_into_range</code> can use user-provided content length hints to avoid additional stat calls for open-ended ranges.</li>
+</ul>
+</div></details></section></div></main></body></html>

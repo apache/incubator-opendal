@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ROCKSDB_SCHEME"],"fn":["register_rocksdb_service"],"struct":["Rocksdb","RocksdbConfig"]};

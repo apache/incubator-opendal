@@ -1,0 +1,89 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Remove Native Blocking"><title>opendal_core::docs::rfcs::rfc_6189_remove_native_blocking - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_6189_remove_native_blocking</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal_core/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal_core/index.html">opendal_<wbr>core</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>6189_<wbr>remove_<wbr>native_<wbr>blocking</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal_<wbr>core::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal_core</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>6189_<wbr>remove_<wbr>native_<wbr>blocking</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../../src/opendal_core/docs/rfcs/mod.rs.html#278">Source</a> </span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Remove Native Blocking</p>
+<ul>
+<li>Proposal Name: <code>remove_native_blocking</code></li>
+<li>Start Date: 2025-05-15</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/6189">apache/opendal#6189</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/6190">apache/opendal#6190</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Remove native blocking support from OpenDAL and use <code>block_on</code> in the async runtime instead.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>OpenDAL projects offer both native async and blocking support. This means we can provide true blocking functionality when services are capable of it. The advantage is that users who only require blocking operations can enjoy optimal performance. For example, <code>fs</code> offers native blocking support, allowing users to utilize <code>fs</code> without any additional overhead or performance loss compared to using <code>tokio_fs</code>.</p>
+<p>However, this approach has several drawbacks:</p>
+<ul>
+<li>Huge maintenance burden: We need to maintain two versions of the same code, which is a significant overhead.</li>
+<li>Increased complexity: The codebase becomes more complex, making it harder to understand and maintain.</li>
+<li>API inconsistency: The API for blocking and async operations may differ, leading to confusion for users, for example, concurrent reading support is not available in blocking APIs.</li>
+</ul>
+<p>Apart from the above drawbacks, we also find that the following facts:</p>
+<ul>
+<li>Only a few services have native blocking support, such as <code>fs</code>, <code>memory</code> and <code>moka</code>.</li>
+<li>Only a few users are using <code>blocking::Operator</code> (based on <a href="https://github.com/search?q=opendal%3A%3Ablocking::Operator&amp;type=code">search results from github</a>)</li>
+</ul>
+<p>So I propose to remove the native blocking support from OpenDAL and use <code>block_on</code> in the async runtime instead. This will simplify the codebase, reduce maintenance overhead, and provide a more consistent API for users.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>I plan to move <code>blocking::Operator</code> to the <code>opendal::blocking</code> module, which will offer a blocking interface for users. The <code>blocking::Operator</code> will utilize <code>block_on</code> within an async runtime to execute asynchronous operations in a blocking way.</p>
+<ul>
+<li><code>opendal::blocking::Operator</code> will become <code>opendal::blocking::Operator</code></li>
+<li><code>opendal::BlockingReader</code> will become <code>opendal::blocking::Reader</code></li>
+<li><code>opendal::BlockingWriter</code> will become <code>opendal::blocking::Writer</code></li>
+<li><code>opendal::BlockingLister</code> will become <code>opendal::blocking::Lister</code></li>
+<li><code>opendal::BlockingDeleter</code> will become <code>opendal::blocking::Deleter</code></li>
+</ul>
+<p>The public API will remain unchanged. The only impacts for users are as follows:</p>
+<ul>
+<li><code>blocking::Operator</code> can no longer be used in an async context</li>
+<li>An async runtime is now required to use the blocking APIs</li>
+</ul>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>I plan to remove all blocking APIs in <code>oio::Access</code>:</p>
+<div class="example-wrap"><pre class="language-diff"><code>pub trait Access: Send + Sync + Debug + Unpin + 'static { 
+  ...
+
+  - fn blocking_create_dir(&amp;self, path: &amp;str, args: OpCreateDir) -&gt; Result&lt;RpCreateDir&gt; {
+  -     self.as_ref().blocking_create_dir(path, args)
+  - }
+  - 
+  - fn blocking_stat(&amp;self, path: &amp;str, args: OpStat) -&gt; Result&lt;RpStat&gt; {
+  -     self.as_ref().blocking_stat(path, args)
+  - }
+  - 
+  - fn blocking_read(&amp;self, path: &amp;str, args: OpRead) -&gt; Result&lt;(RpRead, Self::BlockingReader)&gt; {
+  -     self.as_ref().blocking_read(path, args)
+  - }
+  - 
+  - fn blocking_write(&amp;self, path: &amp;str, args: OpWrite) -&gt; Result&lt;(RpWrite, Self::BlockingWriter)&gt; {
+  -     self.as_ref().blocking_write(path, args)
+  - }
+  - 
+  - fn blocking_delete(&amp;self) -&gt; Result&lt;(RpDelete, Self::BlockingDeleter)&gt; {
+  -     self.as_ref().blocking_delete()
+  - }
+  - 
+  - fn blocking_list(&amp;self, path: &amp;str, args: OpList) -&gt; Result&lt;(RpList, Self::BlockingLister)&gt; {
+  -     self.as_ref().blocking_list(path, args)
+  - }
+  - 
+  - fn blocking_copy(&amp;self, from: &amp;str, to: &amp;str, args: OpCopy) -&gt; Result&lt;RpCopy&gt; {
+  -     self.as_ref().blocking_copy(from, to, args)
+  - }
+  - 
+  - fn blocking_rename(&amp;self, from: &amp;str, to: &amp;str, args: OpRename) -&gt; Result&lt;RpRename&gt; {
+  -     self.as_ref().blocking_rename(from, to, args)
+  - }
+}</code></pre></div>
+<p>Due to this change, we will remove all blocking implementations in services and layers. All existing public APIs that start with <code>Blocking</code> will be moved into the <code>blocking</code> module. For example, <code>opendal::blocking::Operator</code> will be relocated to <code>opendal::blocking::Operator</code>.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>Users who rely on blocking APIs will need to adapt their code to use the new <code>blocking</code> module. Users might lost the performance benefits of using native blocking APIs, as they will now be using <code>block_on</code> in an async runtime.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<ul>
+<li>We could keep the native blocking support, but this would increase the maintenance burden and complexity of the codebase.</li>
+<li>We could provide a separate crate for blocking APIs, but this would lead to API inconsistency and confusion for users.</li>
+</ul>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p><code>reqwest</code> is using the same approach. It provides a blocking client in <code>reqwest::blocking</code> module, which is a wrapper around the async client. This allows users to use blocking APIs without the need for native blocking support.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>None</p>
+</div></details></section></div></main></body></html>

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ALIYUN_DRIVE_SCHEME"],"fn":["register_aliyun_drive_service"],"struct":["AliyunDrive","AliyunDriveConfig"]};

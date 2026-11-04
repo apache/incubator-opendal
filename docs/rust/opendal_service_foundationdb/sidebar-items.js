@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FOUNDATIONDB_SCHEME"],"fn":["register_foundationdb_service"],"struct":["Foundationdb","FoundationdbConfig"]};

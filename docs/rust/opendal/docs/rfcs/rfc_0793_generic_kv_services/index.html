@@ -1,0 +1,151 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Generic KV services"><title>opendal::docs::rfcs::rfc_0793_generic_kv_services - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_0793_generic_kv_services</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>0793_<wbr>generic_<wbr>kv_<wbr>services</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a><ul><li><a href="#spec" title="Spec">Spec</a></li></ul></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>0793_<wbr>generic_<wbr>kv_<wbr>services</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Generic KV services</p>
+<ul>
+<li>Proposal Name: <code>generic-kv-services</code></li>
+<li>Start Date: 2022-10-03</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/793">apache/opendal#793</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/794">apache/opendal#794</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Add generic kv services support OpenDAL.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>OpenDAL now has some kv services support:</p>
+<ul>
+<li>memory</li>
+<li>redis</li>
+</ul>
+<p>However, maintaining them is complex and very easy to be wrong. We don’t want to implement similar logic for every kv
+service. This RFC intends to introduce a generic kv service so that we can:</p>
+<ul>
+<li>Implement OpenDAL Accessor on this generic kv service</li>
+<li>Add new kv service support via generic kv API.</li>
+</ul>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>No user-side changes.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>OpenDAL will introduce a generic kv service:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">trait </span>KeyValueAccessor {
+    <span class="kw">async fn </span>get(<span class="kw-2">&amp;</span><span class="self">self</span>, key: <span class="kw-2">&amp;</span>[u8]) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="prelude-ty">Option</span>&lt;Vec&lt;u8&gt;&gt;&gt;;
+    <span class="kw">async fn </span>set(<span class="kw-2">&amp;</span><span class="self">self</span>, key: <span class="kw-2">&amp;</span>[u8], value: <span class="kw-2">&amp;</span>[u8]) -&gt; <span class="prelude-ty">Result</span>&lt;()&gt;;
+}</code></pre></div>
+<p>We will implement the OpenDAL service on <code>KeyValueAccessor</code>. To add new kv service support, users only need to implement
+it against <code>KeyValueAccessor</code>.</p>
+<h3 id="spec"><a class="doc-anchor" href="#spec">§</a>Spec</h3>
+<p>This RFC is mainly inspired
+by <a href="https://github.com/Hexilee/tifs/blob/main/contribution/design.md">TiFS: FUSE based on TiKV</a>. We will use the
+same <code>ScopedKey</code> idea in <code>TiFS</code>.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub enum </span>ScopedKey {
+    Meta,
+    Inode(u64),
+    Block {
+        ino: u64,
+        block: u64,
+    },
+    Entry {
+        parent: u64,
+        name: String,
+    },
+}</code></pre></div>
+<p>We can encode a scoped key into a byte array as a key. Following is the common layout of an encoded key.</p>
+<div class="example-wrap"><pre class="language-text"><code>+ 1byte +&lt;----------------------------+ dynamic size +------------------------------------&gt;+
+|       |                                                                                  |
+|       |                                                                                  |
+|       |                                                                                  |
+|       |                                                                                  |
+|       |                                                                                  |
+|       |                                                                                  |
+|       v                                                                                  v
++------------------------------------------------------------------------------------------+
+|       |                                                                                  |
+| scope |                                       body                                       |
+|       |                                                                                  |
++-------+----------------------------------------------------------------------------------+</code></pre></div><h4 id="meta"><a class="doc-anchor" href="#meta">§</a>Meta</h4>
+<p>There is only one key in the meta scope. The meta key is designed to store metadata of our filesystem. Following is the
+layout of an encoded meta key.</p>
+<div class="example-wrap"><pre class="language-text"><code>+ 1byte +
+|       |
+|       |
+|       |
+|       |
+|       |
+|       |
+|       v
++-------+
+|       |
+|   0   |
+|       |
++-------+</code></pre></div>
+<p>This key will store data:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>Meta {
+    inode_next: u64,
+}</code></pre></div>
+<p>The meta-structure contains only an auto-increasing counter <code>inode_next</code>, designed to generate an inode number.</p>
+<h4 id="inode"><a class="doc-anchor" href="#inode">§</a>Inode</h4>
+<p>Keys in the inode scope are designed to store attributes of files. Following is the layout of an encoded inode key.</p>
+<div class="example-wrap"><pre class="language-text"><code>+ 1byte +&lt;-------------------------------+ 8bytes +---------------------------------------&gt;+
+|       |                                                                                  |
+|       |                                                                                  |
+|       |                                                                                  |
+|       |                                                                                  |
+|       |                                                                                  |
+|       |                                                                                  |
+|       v                                                                                  v
++------------------------------------------------------------------------------------------+
+|       |                                                                                  |
+|   1   |                               inode number                                       |
+|       |                                                                                  |
++-------+----------------------------------------------------------------------------------+</code></pre></div>
+<p>This key will store data:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>Inode {
+    meta: Metadata,
+    blocks: HashMap&lt;u64, u32&gt;,
+}</code></pre></div>
+<p>blocks is the map from <code>block_id</code> -&gt; <code>size</code>. We will use this map to calculate the correct blocks to read.</p>
+<h4 id="block"><a class="doc-anchor" href="#block">§</a>Block</h4>
+<p>Keys in the block scope are designed to store blocks of a file. Following is the layout of an encoded block key.</p>
+<div class="example-wrap"><pre class="language-text"><code>+ 1byte +&lt;----------------- 8bytes ----------------&gt;+&lt;------------------- 8bytes -----------------&gt;+
+|       |                                           |                                              |
+|       |                                           |                                              |
+|       |                                           |                                              |
+|       |                                           |                                              |
+|       |                                           |                                              |
+|       |                                           |                                              |
+|       v                                           v                                              v
++--------------------------------------------------------------------------------------------------+
+|       |                                           |                                              |
+|   2   |              inode number                 |                  block index                 |
+|       |                                           |                                              |
++-------+-------------------------------------------+----------------------------------------------+</code></pre></div><h4 id="entry"><a class="doc-anchor" href="#entry">§</a>Entry</h4>
+<p>Keys in the file index scope are designed to store the entry of the file. Following is the layout of an encoded file
+entry key.</p>
+<div class="example-wrap"><pre class="language-text"><code>+ 1byte +&lt;----------------- 8bytes ----------------&gt;+&lt;-------------- dynamic size ----------------&gt;+
+|       |                                           |                                              |
+|       |                                           |                                              |
+|       |                                           |                                              |
+|       |                                           |                                              |
+|       |                                           |                                              |
+|       |                                           |                                              |
+|       v                                           v                                              v
++--------------------------------------------------------------------------------------------------+
+|       |                                           |                                              |
+|   3   |     inode number of parent directory      |         file name in utf-8 encoding          |
+|       |                                           |                                              |
++-------+-------------------------------------------+----------------------------------------------+</code></pre></div>
+<p>Store the correct inode number for this file.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>Index {
+    <span class="kw">pub </span>ino: u64,
+}</code></pre></div><h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>None.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>None.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<p>None.</p>
+</div></details></section></div></main></body></html>

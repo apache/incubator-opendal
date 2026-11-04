@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["SWIFT_SCHEME"],"fn":["register_swift_service"],"struct":["Swift","SwiftConfig"]};

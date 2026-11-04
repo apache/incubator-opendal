@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["COMPFS_SCHEME"],"fn":["register_compfs_service"],"struct":["Compfs","CompfsConfig"]};

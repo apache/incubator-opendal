@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["IPFS_SCHEME"],"fn":["register_ipfs_service"],"struct":["Ipfs","IpfsConfig"]};

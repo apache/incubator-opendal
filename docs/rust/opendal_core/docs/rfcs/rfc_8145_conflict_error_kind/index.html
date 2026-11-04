@@ -1,0 +1,171 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Conflict Error Kind"><title>opendal_core::docs::rfcs::rfc_8145_conflict_error_kind - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_8145_conflict_error_kind</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal_core/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal_core/index.html">opendal_<wbr>core</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>8145_<wbr>conflict_<wbr>error_<wbr>kind</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a><ul><li><a href="#public-error-contract" title="Public error contract">Public error contract</a></li><li><a href="#service-error-mapping" title="Service error mapping">Service error mapping</a></li><li><a href="#retry-contract" title="Retry contract">Retry contract</a></li></ul></li><li><a href="#compatibility-and-migration" title="Compatibility and migration">Compatibility and migration</a></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a></li><li><a href="#prior-art" title="Prior art">Prior art</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal_<wbr>core::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal_core</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>8145_<wbr>conflict_<wbr>error_<wbr>kind</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../../src/opendal_core/docs/rfcs/mod.rs.html#354">Source</a> </span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Conflict Error Kind</p>
+<ul>
+<li>Proposal Name: <code>conflict_error_kind</code></li>
+<li>Start Date: 2026-08-25</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/8145">apache/opendal#8145</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/0000">apache/opendal#0000</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Add <code>ErrorKind::Conflict</code> for operations that cannot commit against a
+resource’s current or transitional state. Narrow <code>ConditionNotMatch</code> to mean
+that a condition supplied for the OpenDAL operation evaluated to false.</p>
+<p>Error kind and retry status remain independent. A conflict is temporary only
+when OpenDAL can safely replay the same operation at the layer that receives
+the error. Conflicts that require refreshing state or restarting a multipart
+session remain permanent for <code>RetryLayer</code>.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>Conditional failure and operation conflict require different recovery. A
+failed condition tells the caller that its expected resource state is no
+longer current. A conflict tells the caller that the service could not commit
+the request against its current state, but does not establish that the
+caller’s condition evaluated to false.</p>
+<p>HTTP defines <code>412 Precondition Failed</code> for conditions that evaluate to false
+and <code>409 Conflict</code> for requests that conflict with the current resource state.
+Object storage services preserve this distinction while assigning different
+recovery rules. For example, Amazon S3 returns <code>412</code> when an <code>If-Match</code> value
+does not match, but can return <code>409 ConditionalRequestConflict</code> when a
+concurrent operation interrupts a conditional write. Google Cloud Storage
+uses <code>412 conditionNotMet</code> for failed generation preconditions and <code>409 conflict</code> for concurrent changes that prevent a commit. Azure Blob Storage
+uses <code>304</code> or <code>412</code> for failed conditional headers, while its <code>409</code> errors
+cover states such as pending copies, leases, immutability policies, and blob
+type mismatches.</p>
+<p>Status-only mappings erase these semantics. They can also select an invalid
+retry scope: S3 allows a <code>PutObject</code> request to be retried after
+<code>ConditionalRequestConflict</code>, but requires a new multipart upload and new
+parts after the same error from <code>CompleteMultipartUpload</code>.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>OpenDAL reports three related resource-state outcomes:</p>
+<ul>
+<li><code>ConditionNotMatch</code> means a condition explicitly attached to the operation
+evaluated to false. This includes ETag and time conditions, <code>if_not_exists</code>,
+conditional <code>304</code> responses, and native no-replace errors translated for an
+OpenDAL conditional operation.</li>
+<li><code>Conflict</code> means a valid operation could not commit because of the current or
+transitional resource state. It does not imply that retrying the same call
+is safe.</li>
+<li><code>AlreadyExists</code> means an unconditional create-style operation requires a new
+resource but its target already exists.</li>
+</ul>
+<p>Concurrency does not determine the error kind by itself. If two conditional
+creates race and the service serializes the loser by evaluating
+<code>if_not_exists</code> as false, OpenDAL returns <code>ConditionNotMatch</code>. If the service
+cannot commit because another operation is in progress, OpenDAL returns
+<code>Conflict</code>.</p>
+<p>Callers handle the outcomes separately:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">match </span>result {
+    <span class="prelude-val">Ok</span>(value) =&gt; use_value(value),
+    <span class="prelude-val">Err</span>(err) <span class="kw">if </span>err.kind() == ErrorKind::ConditionNotMatch =&gt; {
+        refresh_expected_state().<span class="kw">await</span><span class="question-mark">?</span>;
+    }
+    <span class="prelude-val">Err</span>(err) <span class="kw">if </span>err.kind() == ErrorKind::Conflict =&gt; {
+        resolve_or_restart_operation(err).<span class="kw">await</span><span class="question-mark">?</span>;
+    }
+    <span class="prelude-val">Err</span>(err) =&gt; <span class="kw">return </span><span class="prelude-val">Err</span>(err),
+}</code></pre></div>
+<p><code>Error::is_temporary()</code> continues to control <code>RetryLayer</code>. Callers must not
+infer retryability from <code>ErrorKind::Conflict</code> alone.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2><h3 id="public-error-contract"><a class="doc-anchor" href="#public-error-contract">§</a>Public error contract</h3>
+<p><code>ErrorKind</code> gains one variant:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="doccomment">/// The operation conflicts with the current or transitional state of the
+/// resource.
+///
+/// This error kind does not indicate whether retrying the same operation is
+/// safe. Inspect the error's retry status for that decision.
+</span>Conflict,</code></pre></div>
+<p><code>ConditionNotMatch</code> has the following normative meaning:</p>
+<blockquote>
+<p>A condition supplied through the OpenDAL operation evaluated to false at
+the authoritative service or native operation boundary.</p>
+</blockquote>
+<p>Observation operations such as stat and read preserve <code>NotFound</code> when the
+authoritative service reports that the target is missing. Mutation operations
+interpret target absence according to the documented condition predicate. For
+example, a conditional delete returns <code>ConditionNotMatch</code> when a positive
+match requires a live target, while a negative match succeeds as an idempotent
+no-op.</p>
+<p>The condition can originate from a public option such as <code>if_match</code>,
+<code>if_none_match</code>, or <code>if_not_exists</code>. A backend may translate a native
+<code>AlreadyExists</code> result to <code>ConditionNotMatch</code> when that result authoritatively
+enforces an explicit OpenDAL condition. Conditions internal to a service
+implementation do not qualify unless they implement a documented OpenDAL
+operation contract.</p>
+<h3 id="service-error-mapping"><a class="doc-anchor" href="#service-error-mapping">§</a>Service error mapping</h3>
+<p>Services classify errors by native error code and operation context before
+using an HTTP status fallback. The response status alone is insufficient when
+a provider assigns multiple meanings to the same status.</p>
+<p>Initial mappings follow these rules:</p>
+<div class="table"><table><thead><tr><th>Service response</th><th>OpenDAL kind</th><th>Retry status</th></tr></thead><tbody>
+<tr><td>HTTP <code>304</code>, or <code>412</code> caused by an OpenDAL condition</td><td><code>ConditionNotMatch</code></td><td>Permanent</td></tr>
+<tr><td>S3 <code>PreconditionFailed</code></td><td><code>ConditionNotMatch</code></td><td>Permanent</td></tr>
+<tr><td>S3 <code>ConditionalRequestConflict</code> or <code>OperationAborted</code></td><td><code>Conflict</code></td><td>Operation-dependent</td></tr>
+<tr><td>GCS <code>conditionNotMet</code></td><td><code>ConditionNotMatch</code></td><td>Permanent</td></tr>
+<tr><td>GCS <code>conflict</code></td><td><code>Conflict</code></td><td>Operation-dependent</td></tr>
+<tr><td>Azure <code>ConditionNotMet</code>, <code>SourceConditionNotMet</code>, or <code>TargetConditionNotMet</code></td><td><code>ConditionNotMatch</code></td><td>Permanent</td></tr>
+<tr><td>Azure state-conflict error codes</td><td><code>Conflict</code> or a more specific existing kind</td><td>Error-code-dependent</td></tr>
+</tbody></table>
+</div>
+<p>Provider responses that use <code>412</code> for policy, lifecycle, or resource-type
+requirements retain a more suitable kind instead of becoming
+<code>ConditionNotMatch</code>. An Azure <code>BlobAlreadyExists</code> response becomes
+<code>ConditionNotMatch</code> when it enforces an explicit <code>if_not_exists</code> operation and
+<code>AlreadyExists</code> for an unconditional create-style operation.</p>
+<p>Unknown <code>409</code> and <code>412</code> responses use <code>Unexpected</code> unless the protocol defines
+a portable fallback. The original service error code and response remain in
+the error message or context.</p>
+<h3 id="retry-contract"><a class="doc-anchor" href="#retry-contract">§</a>Retry contract</h3>
+<p><code>set_temporary()</code> means the receiving OpenDAL layer can safely replay the same
+operation method with its retained state. It does not mean that a broader
+workflow could eventually succeed.</p>
+<p>S3 <code>PutObject</code> with <code>ConditionalRequestConflict</code> is <code>Conflict</code> and temporary
+because the complete request body can be replayed. S3
+<code>CompleteMultipartUpload</code> with the same error is <code>Conflict</code> but is not
+temporary for <code>Writer::close</code>: recovery requires <code>CreateMultipartUpload</code> and
+re-uploading every part, which the close call cannot reconstruct. A future
+writer implementation may mark it temporary only if it owns enough data and
+state to perform that complete recovery internally.</p>
+<h2 id="compatibility-and-migration"><a class="doc-anchor" href="#compatibility-and-migration">§</a>Compatibility and migration</h2>
+<p>The Rust <code>ErrorKind</code> enum is non-exhaustive. Bindings add <code>Conflict</code> without
+renumbering existing error values. Existing conditional operations continue
+to return <code>ConditionNotMatch</code> when their conditions evaluate to false.</p>
+<p>Applications that currently interpret every <code>ConditionNotMatch</code> as a lost
+conditional update become more accurate: native operation conflicts move to
+<code>Conflict</code>. Applications that relied on automatic retries for those responses
+retain retries only where replaying the same operation is valid.</p>
+<p>The existing <code>ConditionNotMatch</code> name remains unchanged to avoid a cross-
+binding rename. Its documentation adopts the narrower contract. A future
+breaking release may rename it to the grammatically clearer
+<code>ConditionNotMet</code> without changing semantics.</p>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<p>Every binding must expose another public error code. Service parsers also need
+native-code-aware mappings and, in some cases, operation context to select
+retry status. Backends with incomplete error documentation will continue to
+return <code>Unexpected</code> until their behavior is verified.</p>
+<p>Some responses previously grouped under <code>ConditionNotMatch</code> change kind. This
+is an observable behavior correction for callers that branch on errors.</p>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>Retry status cannot replace <code>Conflict</code>: it describes whether the current layer
+can replay an operation, not why the operation failed. The same conflict kind
+can require immediate replay, state refresh, session restart, or an external
+configuration change.</p>
+<p>Mapping every HTTP <code>409</code> to <code>Conflict</code> would preserve HTTP terminology but
+would discard more precise provider errors such as <code>AlreadyExists</code> and would
+misclassify provider-specific uses of <code>409</code>. Native error codes remain the
+authoritative classification input.</p>
+<p>Replacing <code>ConditionNotMatch</code> with <code>Conflict</code> would merge a stable
+compare-and-swap outcome with failures whose recovery is service- and
+operation-dependent. Returning a typed conditional outcome instead of an error
+would require parallel result types across read, stat, write, copy, delete,
+and rename APIs without addressing operation conflicts.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p><a href="https://www.rfc-editor.org/rfc/rfc9110.html#section-15.5.10">RFC 9110</a>
+separates resource-state conflicts from failed request preconditions. The
+<a href="https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html">Amazon S3 conditional write
+contract</a>,
+<a href="https://cloud.google.com/storage/docs/request-preconditions">Google Cloud Storage precondition
+contract</a>, and
+<a href="https://learn.microsoft.com/rest/api/storageservices/specifying-conditional-headers-for-blob-service-operations">Azure Blob conditional header
+contract</a>
+apply the same distinction while defining service-specific retry behavior.</p>
+</div></details></section></div></main></body></html>

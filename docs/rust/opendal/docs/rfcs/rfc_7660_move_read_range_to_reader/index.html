@@ -1,0 +1,475 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Move Read Range To Reader"><title>opendal::docs::rfcs::rfc_7660_move_read_range_to_reader - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_7660_move_read_range_to_reader</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>7660_<wbr>move_<wbr>read_<wbr>range_<wbr>to_<wbr>reader</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a><ul><li><a href="#raw-read-contract" title="Raw read contract">Raw read contract</a></li><li><a href="#reader-and-range-stream-split" title="Reader and range stream split">Reader and range stream split</a></li><li><a href="#range-operation-semantics" title="Range operation semantics">Range operation semantics</a></li><li><a href="#cursor-independent-concurrency" title="Cursor-independent concurrency">Cursor-independent concurrency</a></li><li><a href="#public-operator-path" title="Public operator path">Public operator path</a></li><li><a href="#read-context" title="Read context">Read context</a></li><li><a href="#layers" title="Layers">Layers</a></li><li><a href="#presign-read" title="Presign read">Presign read</a></li><li><a href="#backend-implementation-model" title="Backend implementation model">Backend implementation model</a></li><li><a href="#compatibility-and-migration" title="Compatibility and migration">Compatibility and migration</a></li><li><a href="#validation" title="Validation">Validation</a></li></ul></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a><ul><li><a href="#keep-readrange-as-an-exact-bounded-range-operation" title="Keep `read(range)` as an exact bounded range operation">Keep <code>read(range)</code> as an exact bounded range operation</a></li><li><a href="#add-accessopen_read_at" title="Add `Access::open_read_at`">Add <code>Access::open_read_at</code></a></li><li><a href="#add-a-public-capability-for-read_at" title="Add a public capability for `read_at`">Add a public capability for <code>read_at</code></a></li><li><a href="#allow-shared-cursor-with-internal-locking" title="Allow shared cursor with internal locking">Allow shared cursor with internal locking</a></li><li><a href="#add-optional-read_at-to-range-streams" title="Add optional `read_at` to range streams">Add optional <code>read_at</code> to range streams</a></li><li><a href="#add-readplan-beside-accessread" title="Add `ReadPlan` beside `Access::read`">Add <code>ReadPlan</code> beside <code>Access::read</code></a></li></ul></li><li><a href="#prior-art" title="Prior art">Prior art</a><ul><li><a href="#rfc-4382-range-based-read-api" title="RFC-4382 Range Based Read API">RFC-4382 Range Based Read API</a></li><li><a href="#object_store" title="object_store">object_store</a></li></ul></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a><ul><li><a href="#fetch-batching-policy" title="Fetch batching policy">Fetch batching policy</a></li><li><a href="#native-preferred-read-size" title="Native preferred read size">Native preferred read size</a></li><li><a href="#handle-based-benchmark-target" title="Handle based benchmark target">Handle based benchmark target</a></li></ul></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>7660_<wbr>move_<wbr>read_<wbr>range_<wbr>to_<wbr>reader</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Move Read Range To Reader</p>
+<ul>
+<li>Proposal Name: <code>move_read_range_to_reader</code></li>
+<li>Start Date: 2026-06-01</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/7660">apache/opendal#7660</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/7661">apache/opendal#7661</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Change OpenDAL’s raw read contract so byte ranges are selected by the raw reader
+instead of <code>Access::read</code>.</p>
+<p>Today <code>Access::read(path, OpRead { range, .. })</code> opens one concrete range
+stream. This works well for HTTP object stores, where each range read is an
+independent request. It is a poor fit for services such as <code>fs</code>, <code>sftp</code>,
+<code>hdfs</code>, <code>hdfs-native</code>, and <code>monoiofs</code>, where the service may keep an opened
+handle and execute multiple cursor-independent range reads against it. The
+current core reader planner still calls <code>Access::read</code> for every planned range,
+forcing those services to repeatedly open and close handles.</p>
+<p>This RFC keeps the <code>Access::read</code> operation, but changes its contract:</p>
+<ul>
+<li><code>Access::read(path, OpRead)</code> creates a reusable raw <code>oio::Read</code> for the path
+and read condition set.</li>
+<li><code>oio::Read::open(range)</code> opens a range-scoped byte stream.</li>
+<li><code>oio::Read::read(range)</code> reads one bounded planner range into one <code>Buffer</code>.</li>
+</ul>
+<p>The public <code>Operator::read</code>, <code>Operator::reader</code>, <code>Reader::read</code>,
+<code>Reader::fetch</code>, and stream conversion APIs keep their existing user-facing
+shape. The change is in the raw contract and the internal execution plan.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>OpenDAL’s public <code>Reader</code> is already range based and cloneable. Users can call:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>reader = op.reader(<span class="string">"path/to/file"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="kw">let </span>head = reader.read(<span class="number">0</span>..<span class="number">1024</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let </span>tail = reader.read(<span class="number">4096</span>..<span class="number">8192</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let </span>parts = reader.fetch(<span class="macro">vec!</span>[<span class="number">0</span>..<span class="number">1024</span>, <span class="number">4096</span>..<span class="number">8192</span>]).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>However, the current implementation plans these public calls by generating new
+raw range streams. <code>ReadGenerator::next_reader</code> and <code>ChunkedReader</code> both call
+<code>Access::read(path, args.with_range(range))</code> for every range. For <code>s3</code>, <code>gcs</code>,
+and <code>azblob</code>, this is natural because each range is a new HTTP request. For
+handle based services, this means every range repeats open and seek work even
+when the target data can be represented by a reusable handle.</p>
+<p>The root cause is that <code>Access::read</code> is modeled as a transport-level range
+request. OpenDAL needs a storage-neutral raw model:</p>
+<ul>
+<li>Object stores can implement a raw reader that issues an independent ranged
+request for each range operation.</li>
+<li>File-like services can implement a raw reader that opens once lazily and uses
+cursor-independent positioned reads.</li>
+<li>Services that cannot perform cursor-independent reads can keep opening one
+independent stream per range and still conform to the contract.</li>
+<li>In-memory or database-backed services can implement a raw reader that slices
+cached values directly.</li>
+</ul>
+<p>This keeps the public range-based reader model from RFC-4382 while removing the
+S3-specific assumption from the raw API.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>Users do not need a new API.</p>
+<p>Single reads still work:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>data = op.read(<span class="string">"path/to/file"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let </span>part = op.read_with(<span class="string">"path/to/file"</span>).range(<span class="number">1024</span>..<span class="number">2048</span>).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>Reusable readers still work:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>reader = op.reader(<span class="string">"path/to/file"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+
+<span class="kw">let </span>first = reader.read(<span class="number">0</span>..<span class="number">1024</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let </span>second = reader.read(<span class="number">4096</span>..<span class="number">8192</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">let </span>ranges = reader.fetch(<span class="macro">vec!</span>[<span class="number">0</span>..<span class="number">1024</span>, <span class="number">4096</span>..<span class="number">8192</span>]).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>The difference is internal. OpenDAL creates one reusable raw reader for
+<code>reader("path/to/file")</code>. After that, range operations are executed by this raw
+reader instead of reopening through <code>Access::read</code> for every range.</p>
+<p>For HTTP object stores, the raw reader stores the path and read arguments, then
+sends a new ranged request for each range. Behavior and cost stay the same.</p>
+<p>For handle based services, the raw reader may lazily open the file handle once
+and reuse it for subsequent range reads. A reusable handle must not be driven by
+a shared seek cursor. It must use cursor-independent reads such as <code>pread</code> /
+<code>read_at</code>, or fall back to independent per-range opens.</p>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2><h3 id="raw-read-contract"><a class="doc-anchor" href="#raw-read-contract">§</a>Raw read contract</h3>
+<p><code>Access::read</code> remains the raw read operation:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Access: Send + Sync + Debug + Unpin + <span class="lifetime">'static </span>{
+    <span class="kw">type </span>Reader: oio::Read;
+
+    <span class="kw">fn </span>read(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        path: <span class="kw-2">&amp;</span>str,
+        args: OpRead,
+    ) -&gt; <span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;(RpRead, <span class="self">Self</span>::Reader)&gt;&gt; + MaybeSend;
+}</code></pre></div>
+<p>The meaning changes:</p>
+<ul>
+<li><code>path</code> and <code>OpRead</code> select a path and read condition set.</li>
+<li>The returned <code>Self::Reader</code> is a reusable raw read executor for that path and
+condition set.</li>
+<li>No range is selected by <code>Access::read</code>.</li>
+</ul>
+<p><code>OpRead</code> should no longer contain <code>BytesRange</code>:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>OpRead {
+    if_match: <span class="prelude-ty">Option</span>&lt;String&gt;,
+    if_none_match: <span class="prelude-ty">Option</span>&lt;String&gt;,
+    if_modified_since: <span class="prelude-ty">Option</span>&lt;Timestamp&gt;,
+    if_unmodified_since: <span class="prelude-ty">Option</span>&lt;Timestamp&gt;,
+    override_content_type: <span class="prelude-ty">Option</span>&lt;String&gt;,
+    override_cache_control: <span class="prelude-ty">Option</span>&lt;String&gt;,
+    override_content_disposition: <span class="prelude-ty">Option</span>&lt;String&gt;,
+    version: <span class="prelude-ty">Option</span>&lt;String&gt;,
+}</code></pre></div>
+<p><code>OpReader</code> remains an internal execution policy used by OpenDAL’s public
+<code>Reader</code>. It controls <code>concurrent</code>, <code>chunk</code>, <code>gap</code>, <code>prefetch</code>, and
+<code>content_length_hint</code>. It must not become part of the backend <code>Access::read</code>
+contract.</p>
+<p><code>ReadOptions</code> and <code>ReaderOptions</code> should be converted differently:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>From&lt;options::ReadOptions&gt; <span class="kw">for </span>(BytesRange, OpRead, OpReader);
+<span class="kw">impl </span>From&lt;options::ReaderOptions&gt; <span class="kw">for </span>(OpRead, OpReader);</code></pre></div><h3 id="reader-and-range-stream-split"><a class="doc-anchor" href="#reader-and-range-stream-split">§</a>Reader and range stream split</h3>
+<p>The current <code>oio::Read</code> is a range-scoped byte stream. It should be split into a
+range stream concept and a reusable raw reader concept.</p>
+<p>The range stream keeps the current stateful <code>read(&amp;mut self)</code> shape:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">pub type </span>ReadStream = Box&lt;<span class="kw">dyn </span>ReadStreamDyn&gt;;
+
+<span class="kw">pub trait </span>ReadStream: Unpin + Send + Sync {
+    <span class="kw">fn </span>read(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;Buffer&gt;&gt; + MaybeSend;
+
+    <span class="kw">fn </span>read_all(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;Buffer&gt;&gt; + MaybeSend {
+        <span class="kw">async </span>{
+            <span class="kw">let </span><span class="kw-2">mut </span>bufs = <span class="macro">vec!</span>[];
+            <span class="kw">loop </span>{
+                <span class="kw">match </span><span class="self">self</span>.read().<span class="kw">await </span>{
+                    <span class="prelude-val">Ok</span>(buf) <span class="kw">if </span>buf.is_empty() =&gt; <span class="kw">break</span>,
+                    <span class="prelude-val">Ok</span>(buf) =&gt; bufs.push(buf),
+                    <span class="prelude-val">Err</span>(err) =&gt; <span class="kw">return </span><span class="prelude-val">Err</span>(err),
+                }
+            }
+            <span class="prelude-val">Ok</span>(bufs.into_iter().flatten().collect())
+        }
+    }
+}</code></pre></div>
+<p>The new <code>oio::Read</code> becomes the reusable raw reader:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">pub trait </span>Read: Send + Sync + Debug + Unpin + <span class="lifetime">'static </span>{
+    <span class="kw">fn </span>open(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        range: BytesRange,
+    ) -&gt; <span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;(RpRead, ReadStream)&gt;&gt; + MaybeSend;
+
+    <span class="kw">fn </span>read(
+        <span class="kw-2">&amp;</span><span class="self">self</span>,
+        range: BytesRange,
+    ) -&gt; <span class="kw">impl </span>Future&lt;Output = <span class="prelude-ty">Result</span>&lt;(RpRead, Buffer)&gt;&gt; + MaybeSend {
+        <span class="kw">async </span>{
+            <span class="kw">if </span>range.size().is_none() {
+                <span class="kw">return </span><span class="prelude-val">Err</span>(Error::new(
+                    ErrorKind::Unsupported,
+                    <span class="string">"read requires a bounded range"</span>,
+                ));
+            }
+
+            <span class="kw">let </span>(rp, <span class="kw-2">mut </span>stream) = <span class="self">self</span>.open(range).<span class="kw">await</span><span class="question-mark">?</span>;
+            <span class="kw">let </span>buffer = stream.read_all().<span class="kw">await</span><span class="question-mark">?</span>;
+            <span class="prelude-val">Ok</span>((rp, buffer))
+        }
+    }
+
+}</code></pre></div>
+<p>The exact object-safe <code>ReadDyn</code> and <code>ReadStreamDyn</code> forms should follow the
+existing <code>oio::Read</code> / <code>ReadDyn</code> pattern. This RFC requires <code>&amp;self</code> range
+operations, but it does not require the type-erased reader itself to be
+<code>Arc&lt;dyn ReadDyn&gt;</code>. Layers and read contexts may choose the ownership container
+they need for wrapping and cloning.</p>
+<h3 id="range-operation-semantics"><a class="doc-anchor" href="#range-operation-semantics">§</a>Range operation semantics</h3>
+<p><code>open</code> and <code>read</code> are the two raw range operations:</p>
+<ul>
+<li><code>open(range)</code> opens a range stream. It may accept bounded or unbounded ranges.
+It is the primitive for streaming and backpressure.</li>
+<li><code>read(range)</code> reads one bounded planner range and returns exactly one
+materialized <code>Buffer</code>.</li>
+</ul>
+<p>This is the adapter-level <code>oio::Read</code> contract. Native services usually
+implement either <code>StreamRead::open</code> or <code>PositionRead::read_at</code>; <code>StreamReader</code>
+and <code>PositionReader</code> then provide the full <code>oio::Read</code> contract.</p>
+<p><code>read</code> is not a syscall-style partial read. <code>oio::Read</code> implementations should
+not return a short buffer just because one underlying syscall or network read
+returned fewer bytes than requested. For a valid bounded planner range, <code>read</code>
+should either return the complete range content or return an error.</p>
+<p>The public <code>Reader::read</code> can still accept a large user range. The core planner
+must not blindly pass that large range to raw <code>read</code>. It should choose between
+<code>open</code> and planned bounded <code>read</code> calls based on <code>OpReader</code> policy, range shape,
+and stream conversion needs.</p>
+<p>The public <code>Reader::fetch</code> can keep its existing behavior:</p>
+<ol>
+<li>Merge requested ranges according to <code>OpReader::gap</code>.</li>
+<li>Split the merged ranges into bounded execution ranges.</li>
+<li>Schedule those execution ranges according to <code>OpReader::concurrent</code> and
+<code>OpReader::prefetch</code>.</li>
+<li>Execute concurrent <code>raw_reader.read(range)</code> calls.</li>
+<li>Slice merged buffers back into the original requested ranges.</li>
+</ol>
+<h3 id="cursor-independent-concurrency"><a class="doc-anchor" href="#cursor-independent-concurrency">§</a>Cursor-independent concurrency</h3>
+<p>Raw reader range operations take <code>&amp;self</code>, so core and layers may call them
+concurrently. A reusable raw reader must therefore be cursor-independent.</p>
+<p>Backends must not implement reusable range reads by serializing access to a
+shared seek cursor, for example:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>handle = <span class="self">self</span>.handle.lock().<span class="kw">await</span>;
+handle.seek(range.offset()).<span class="kw">await</span><span class="question-mark">?</span>;
+handle.read_exact(range.size()).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>This pattern is rejected because it hides a global cursor behind <code>&amp;self</code>, makes
+timeout and retry semantics harder to reason about, and defeats core
+<code>concurrent</code>, <code>prefetch</code>, and <code>fetch</code> planning.</p>
+<p>A backend should use one of these implementation models instead:</p>
+<ul>
+<li>independent per-range requests, such as HTTP range GET requests;</li>
+<li>positioned reads on a reusable handle, such as <code>pread</code> or <code>read_at</code>;</li>
+<li>independent per-range opens when the service cannot provide
+cursor-independent positioned reads.</li>
+</ul>
+<p>The last option preserves correctness without gaining handle reuse. This RFC
+does not require every service to optimize handle reuse immediately.</p>
+<h3 id="public-operator-path"><a class="doc-anchor" href="#public-operator-path">§</a>Public operator path</h3>
+<p><code>Operator::read_options</code> should split public options into read args, the user
+range, and execution policy:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">async fn </span>read_inner(acc: Accessor, path: String, opts: ReadOptions) -&gt; <span class="prelude-ty">Result</span>&lt;Buffer&gt; {
+    <span class="kw">let </span>(range, op_read, op_reader) = opts.into();
+    <span class="kw">let </span>(rp, raw_reader) = acc.read(<span class="kw-2">&amp;</span>path, op_read).<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="kw">let </span>reader = Reader::new(acc, path, raw_reader, op_reader, rp);
+    reader.read(range.to_range()).<span class="kw">await
+</span>}</code></pre></div>
+<p><code>Operator::reader_options</code> should create the reusable raw reader once:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">async fn </span>reader_inner(acc: Accessor, path: String, opts: ReaderOptions) -&gt; <span class="prelude-ty">Result</span>&lt;Reader&gt; {
+    <span class="kw">let </span>(op_read, op_reader) = opts.into();
+    <span class="kw">let </span>(rp, raw_reader) = acc.read(<span class="kw-2">&amp;</span>path, op_read).<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="prelude-val">Ok</span>(Reader::new(acc, path, raw_reader, op_reader, rp))
+}</code></pre></div>
+<p>For services where <code>Access::read</code> currently performs remote I/O, the returned
+raw reader should be lazy. This preserves the lazy reader behavior: creating
+<code>op.reader(path)</code> should not require opening the underlying data request.</p>
+<h3 id="read-context"><a class="doc-anchor" href="#read-context">§</a>Read context</h3>
+<p><code>ReadContext</code> should hold the reusable raw reader:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>ReadContext {
+    acc: Accessor,
+    path: String,
+    args: OpRead,
+    options: OpReader,
+    reader: oio::Reader,
+    metadata: OnceLock&lt;Metadata&gt;,
+}</code></pre></div>
+<p><code>acc</code>, <code>path</code>, and <code>args</code> are still useful for planning, especially when
+OpenDAL needs <code>stat</code> to resolve unbounded ranges for chunked reads or
+<code>AsyncSeek</code> adapters. Actual raw range I/O should go through <code>reader.open</code> or
+<code>reader.read</code>, not through repeated <code>acc.read</code> calls.</p>
+<p><code>Reader::metadata()</code> remains cache-only. The cache is updated from <code>RpRead</code>
+returned by <code>Access::read</code>, <code>open</code>, or <code>read</code>. Lazy backends may return
+<code>RpRead::default()</code> from <code>Access::read</code> and fill metadata after the first raw
+range operation. Public <code>Reader::fetch</code> observes metadata from the planned raw
+<code>read</code> calls it executes.</p>
+<h3 id="layers"><a class="doc-anchor" href="#layers">§</a>Layers</h3>
+<p>Existing layers continue to wrap <code>Access::read</code>, but the wrapping point moves
+from a range stream to a reusable raw reader.</p>
+<h4 id="type-eraser"><a class="doc-anchor" href="#type-eraser">§</a>Type eraser</h4>
+<p>The type eraser should erase raw readers using the chosen object-safe container:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">async fn </span>read(<span class="kw-2">&amp;</span><span class="self">self</span>, path: <span class="kw-2">&amp;</span>str, args: OpRead) -&gt; <span class="prelude-ty">Result</span>&lt;(RpRead, oio::Reader)&gt; {
+    <span class="self">self</span>.inner
+        .read(path, args)
+        .<span class="kw">await
+        </span>.map(|(rp, r)| (rp, Box::new(r) <span class="kw">as </span>oio::Reader))
+}</code></pre></div>
+<p>This example uses <code>Box</code>; the final container can change if a layer needs shared
+ownership for wrapping. The contract is about <code>&amp;self</code> range operations, not a
+specific type alias.</p>
+<h4 id="complete-layer"><a class="doc-anchor" href="#complete-layer">§</a>Complete layer</h4>
+<p><code>CompleteLayer</code> currently reads <code>args.range().size()</code> in <code>Access::read</code> and
+wraps the returned range stream. After this RFC, range size is only known when
+<code>open</code> or <code>read</code> is called.</p>
+<p><code>CompleteLayer</code> should wrap the raw reader and validate each returned range
+body:</p>
+<ul>
+<li><code>open(range)</code> wraps the returned <code>ReadStream</code> with <code>CompleteReadStream</code>.</li>
+<li><code>read(range)</code> checks the returned buffer length.</li>
+</ul>
+<h4 id="error-context-layer"><a class="doc-anchor" href="#error-context-layer">§</a>Error context layer</h4>
+<p><code>ErrorContextLayer</code> should wrap the raw reader and attach operation context to
+every range operation:</p>
+<ul>
+<li>service</li>
+<li>path</li>
+<li>range</li>
+<li>already-read bytes for streams</li>
+</ul>
+<h4 id="retry-layer"><a class="doc-anchor" href="#retry-layer">§</a>Retry layer</h4>
+<p><code>RetryLayer</code> currently stores <code>OpRead</code> and advances <code>args.range_mut()</code> after
+each successful stream read. After this RFC, range progress must move from
+<code>OpRead</code> into range operation wrappers.</p>
+<p>The new retry model should be:</p>
+<ul>
+<li>retry <code>Access::read(path, OpRead)</code> while creating the reusable raw reader;</li>
+<li>retry <code>raw_reader.open(range)</code> when opening a range stream fails before bytes
+are returned;</li>
+<li>wrap the returned <code>ReadStream</code> and track bytes already emitted;</li>
+<li>if a stream read fails with a temporary error, reopen the same raw reader with
+the remaining range and continue;</li>
+<li>retry <code>read(range)</code> as an exact bounded range operation.</li>
+</ul>
+<p>Because <code>read</code> is an exact bounded range operation, retrying it is idempotent
+for the same path and read condition set.</p>
+<h4 id="correctness-check-layer"><a class="doc-anchor" href="#correctness-check-layer">§</a>Correctness check layer</h4>
+<p><code>CorrectnessCheckLayer</code> can keep checking <code>read_with_*</code> capabilities in
+<code>Access::read</code>, because those options still belong to the path and read
+condition set.</p>
+<h3 id="presign-read"><a class="doc-anchor" href="#presign-read">§</a>Presign read</h3>
+<p>Presigned reads still describe one concrete request, so they still need a range.
+This range should not move back into <code>OpRead</code>. Instead,
+<code>PresignOperation::Read</code> should carry range separately:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">pub enum </span>PresignOperation {
+    Read {
+        range: BytesRange,
+        args: OpRead,
+    },
+    <span class="comment">// ...
+</span>}</code></pre></div>
+<p><code>presign_read_options</code> converts <code>ReadOptions</code> into <code>(BytesRange, OpRead, OpReader)</code> and discards <code>OpReader</code>.</p>
+<h3 id="backend-implementation-model"><a class="doc-anchor" href="#backend-implementation-model">§</a>Backend implementation model</h3><h4 id="http-object-stores"><a class="doc-anchor" href="#http-object-stores">§</a>HTTP object stores</h4>
+<p>Services like <code>s3</code>, <code>gcs</code>, <code>azblob</code>, <code>oss</code>, and <code>http</code> should return a raw
+reader that stores <code>core</code>, <code>path</code>, and <code>OpRead</code>.</p>
+<p>Each <code>open(range)</code> sends the same request that the current <code>Access::read</code> sends
+today. For example, S3’s current logic:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">let </span>resp = <span class="self">self</span>.core.s3_get_object(path, args.range(), <span class="kw-2">&amp;</span>args).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>becomes reader logic:</p>
+
+<div class="example-wrap ignore"><a href="#" class="tooltip" title="This example is not tested">ⓘ</a><pre class="rust rust-example-rendered"><code><span class="kw">let </span>resp = <span class="self">self</span>.core.s3_get_object(<span class="kw-2">&amp;</span><span class="self">self</span>.path, range, <span class="kw-2">&amp;</span><span class="self">self</span>.args).<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>This keeps object-store behavior unchanged.</p>
+<h4 id="memory-and-database-like-services"><a class="doc-anchor" href="#memory-and-database-like-services">§</a>Memory and database-like services</h4>
+<p>Services that already have the data content in memory can implement
+<code>StreamRead</code> by opening a stream over the selected slice. Their
+<code>StreamReader</code> adapter will provide bounded <code>read(range)</code>.</p>
+<h4 id="handle-based-services"><a class="doc-anchor" href="#handle-based-services">§</a>Handle based services</h4>
+<p><code>fs</code>, <code>hdfs</code>, <code>hdfs-native</code>, <code>sftp</code>, and <code>monoiofs</code> can reuse opened handles only when
+their implementation can perform cursor-independent reads:</p>
+<ul>
+<li><code>fs</code>: lazily open a file and use platform positioned reads.</li>
+<li><code>hdfs</code>: reuse a handle only if the client API supports cursor-independent
+positioned reads.</li>
+<li><code>hdfs-native</code>: store <code>FileReader</code> and use cursor-independent range APIs.</li>
+<li><code>monoiofs</code>: reuse its existing worker model that already performs <code>read_at</code>.</li>
+<li><code>sftp</code>: reuse a handle only if the client API supports concurrent positioned
+reads for that handle.</li>
+</ul>
+<p>Services that cannot provide cursor-independent positioned reads should keep
+opening an independent range stream in <code>open(range)</code>. They remain correct and
+can still benefit from the new core contract later when the service gains an
+appropriate positioned-read primitive.</p>
+<h3 id="compatibility-and-migration"><a class="doc-anchor" href="#compatibility-and-migration">§</a>Compatibility and migration</h3>
+<p>This RFC does not change public OpenDAL APIs. Existing users of <code>Operator</code> and
+public <code>Reader</code> keep the same user-facing behavior.</p>
+<p>The raw API is breaking:</p>
+<ul>
+<li>third-party <code>Access</code> implementations must remove range handling from
+<code>Access::read</code>;</li>
+<li>current range-scoped readers must become <code>ReadStream</code>;</li>
+<li>services must return reusable raw readers;</li>
+<li>layers must wrap reusable raw readers and range operation results.</li>
+</ul>
+<p>Migration can be staged mechanically:</p>
+<ol>
+<li>Introduce <code>ReadStream</code> and the new raw <code>Read</code> trait shape.</li>
+<li>Move <code>BytesRange</code> out of <code>OpRead</code>.</li>
+<li>Update type erasure and core read context.</li>
+<li>Convert object-store services by moving current <code>Access::read</code> request logic
+into <code>open(range)</code>.</li>
+<li>Convert memory-like services by slicing in <code>read(range)</code>.</li>
+<li>Convert handle based services first with independent per-range opens, then
+add positioned-read optimization where supported.</li>
+<li>Rewrite <code>RetryLayer</code> around range operation wrappers.</li>
+</ol>
+<h3 id="validation"><a class="doc-anchor" href="#validation">§</a>Validation</h3>
+<p>The implementation should be considered complete when:</p>
+<ul>
+<li>behavior tests for existing read, reader, stream, seek, and fetch paths still
+pass;</li>
+<li>a service test or unit test proves <code>op.reader(path)</code> does not perform data I/O
+before the first range operation;</li>
+<li>a handle based service test proves repeated planned range reads do not reopen
+the handle when positioned reads are supported;</li>
+<li>retry tests cover <code>open(range)</code>, <code>ReadStream</code> progress retry, and
+<code>read(range)</code>;</li>
+<li>complete layer tests cover short buffers from <code>read</code>.</li>
+</ul>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<ul>
+<li>This is a breaking raw API change. Third-party <code>Access</code> implementations must
+be updated.</li>
+<li>It touches many services because every <code>Access::read</code> implementation currently
+receives a range.</li>
+<li>The rename from range-scoped <code>oio::Read</code> to <code>oio::ReadStream</code> is large but
+necessary to avoid overloading one trait with two meanings.</li>
+<li><code>RetryLayer</code> must be redesigned around range operation progress instead of
+<code>OpRead.range_mut()</code>.</li>
+<li>Handle reuse only improves services that can provide cursor-independent
+positioned reads. Other handle based services remain correct but may keep the
+old per-range open cost.</li>
+</ul>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="keep-readrange-as-an-exact-bounded-range-operation"><a class="doc-anchor" href="#keep-readrange-as-an-exact-bounded-range-operation">§</a>Keep <code>read(range)</code> as an exact bounded range operation</h3>
+<p><code>read(range)</code> is kept as a raw primitive because it allows backends such as <code>fs</code>
+to perform concurrent positioned reads into buffers. It is intentionally not a
+syscall-style <code>read_at(offset, max_size)</code> that may return a short buffer.</p>
+<p>Partial-read syscall semantics would push fill loops, EOF handling, retry
+progress, and request sizing into core and layers. OpenDAL already has
+<code>open(range)</code> for streaming and backpressure. The raw <code>read(range)</code> primitive
+should instead express a complete, core-planned, bounded range read.</p>
+<h3 id="add-accessopen_read_at"><a class="doc-anchor" href="#add-accessopen_read_at">§</a>Add <code>Access::open_read_at</code></h3>
+<p>Rejected. It adds a parallel backend operation for an execution optimization.
+OpenDAL’s raw operation surface should stay centered on semantic operations:
+<code>stat</code>, <code>read</code>, <code>write</code>, <code>list</code>, <code>delete</code>, <code>copy</code>, and <code>rename</code>.</p>
+<h3 id="add-a-public-capability-for-read_at"><a class="doc-anchor" href="#add-a-public-capability-for-read_at">§</a>Add a public capability for <code>read_at</code></h3>
+<p>Rejected. Users do not get a new public operation. Whether a backend reuses an
+opened handle is an internal execution detail. Public <code>Capability</code> should only
+describe user-visible behavior.</p>
+<h3 id="allow-shared-cursor-with-internal-locking"><a class="doc-anchor" href="#allow-shared-cursor-with-internal-locking">§</a>Allow shared cursor with internal locking</h3>
+<p>Rejected. Serializing <code>seek + read</code> behind a lock preserves cursor state inside
+a supposedly concurrent raw reader. It makes timeout and retry behavior harder
+to reason about and hides backend limitations from core planning. Backends that
+cannot provide cursor-independent range reads should use independent per-range
+opens instead.</p>
+<h3 id="add-optional-read_at-to-range-streams"><a class="doc-anchor" href="#add-optional-read_at-to-range-streams">§</a>Add optional <code>read_at</code> to range streams</h3>
+<p>Rejected. A range stream is already scoped to one byte range. Deriving other
+ranges from it gives one stream two responsibilities and makes layer wrapping
+harder. The reusable raw reader should be the place that knows how to execute
+additional ranges.</p>
+<h3 id="add-readplan-beside-accessread"><a class="doc-anchor" href="#add-readplan-beside-accessread">§</a>Add <code>ReadPlan</code> beside <code>Access::read</code></h3>
+<p>Rejected. It improves execution planning but keeps the old range-scoped
+<code>Access::read</code> as the primary contract. This RFC fixes the raw contract instead
+of adding a second planning hook.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2><h3 id="rfc-4382-range-based-read-api"><a class="doc-anchor" href="#rfc-4382-range-based-read-api">§</a>RFC-4382 Range Based Read API</h3>
+<p>RFC-4382 moved OpenDAL’s public <code>Reader</code> toward stateless range reads. It also
+noted that returning a <code>Reader</code> should allow storage services like <code>fs</code> to
+reduce extra <code>open</code> syscalls, and listed future <code>read_ranges</code> and native
+<code>read_at</code> support.</p>
+<p>The current raw contract did not fully realize that intent because range
+selection stayed in <code>Access::read</code>. This RFC keeps RFC-4382’s public direction
+and moves the raw contract to the place where handle reuse and batch range reads
+can be implemented.</p>
+<h3 id="object_store"><a class="doc-anchor" href="#object_store">§</a>object_store</h3>
+<p><code>object_store</code> exposes both single-range and multi-range reads through
+<code>get_range</code> and <code>get_ranges</code>. OpenDAL’s public <code>Reader::fetch</code> serves a similar
+user-facing purpose. The accepted raw contract does not expose a batch
+primitive; public fetch is planned by core and executed through bounded raw
+<code>read(range)</code> calls.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2><h3 id="fetch-batching-policy"><a class="doc-anchor" href="#fetch-batching-policy">§</a>Fetch batching policy</h3>
+<p>The initial implementation can preserve current public behavior by batching
+merged ranges according to <code>OpReader::concurrent</code>. We should benchmark whether
+the default policy should prefer fewer larger bounded raw reads or one task per
+merged range for different backend classes.</p>
+<h3 id="native-preferred-read-size"><a class="doc-anchor" href="#native-preferred-read-size">§</a>Native preferred read size</h3>
+<p>This RFC keeps <code>OpReader</code> as OpenDAL’s execution policy and does not introduce
+backend preferred read sizes. A later RFC can revisit service-provided execution
+hints if we have enough benchmark evidence.</p>
+<h3 id="handle-based-benchmark-target"><a class="doc-anchor" href="#handle-based-benchmark-target">§</a>Handle based benchmark target</h3>
+<p>The biggest expected benefit is for services where opening a handle has network
+or process coordination cost, such as <code>sftp</code> and HDFS-like services. The exact
+benchmark target and workload should be selected before implementation starts.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<ul>
+<li>Native multi-range HTTP requests for services that support them.</li>
+<li>Platform-specific positioned read implementations for <code>fs</code>.</li>
+<li>Better <code>fetch</code> batching heuristics based on workload and service class.</li>
+<li>Integration with future completion-based I/O support.</li>
+</ul>
+</div></details></section></div></main></body></html>

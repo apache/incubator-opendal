@@ -1,0 +1,109 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Remove metakey"><title>opendal::docs::rfcs::rfc_5314_remove_metakey - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_5314_remove_metakey</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal/index.html">opendal</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>5314_<wbr>remove_<wbr>metakey</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a></li><li><a href="#prior-art" title="Prior art">Prior art</a></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>5314_<wbr>remove_<wbr>metakey</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Remove metakey</p>
+<ul>
+<li>Proposal Name: <code>remove_metakey</code></li>
+<li>Start Date: 2024-11-12</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/5313">apache/opendal#5313</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/5314">apache/opendal#5314</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Remove the <code>Metakey</code> concept from OpenDAL and replace it with a simpler and more predictable metadata handling mechanism.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>The current <code>Metakey</code> design has several issues:</p>
+<ol>
+<li>Performance Impact: Users often initiate costly operations unintentionally, such as using <code>Metakey::Full</code>, which results in extra stat calls</li>
+<li>Usability Issues: Users often try to access metadata that hasn’t been explicitly requested</li>
+<li>API Confusion: There’s a conflict between <code>Metakey::Version</code> and the new <code>version(bool)</code> parameter</li>
+<li>Implementation Complexity: Service developers struggle to implement <code>Metakey</code> correctly</li>
+</ol>
+<p>The goal is a simpler, more intuitive API that prevents common mistakes and improves performance as standard.</p>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2>
+<p>Instead of using <code>Metakey</code> to specify which metadata fields to fetch, services will now declare their metadata capabilities upfront through a new <code>MetadataCapability</code> struct:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>entries = op.list(<span class="string">"path"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">for </span>entry <span class="kw">in </span>entries {
+    <span class="kw">if </span>op.metadata_capability().content_type {
+        <span class="macro">println!</span>(<span class="string">"Content-Type: {}"</span>, entry.metadata().content_type());
+    }
+}</code></pre></div>
+<p>If users need additional metadata not provided by <code>list</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>entries = op.list(<span class="string">"path"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+<span class="kw">for </span>entry <span class="kw">in </span>entries {
+    <span class="kw">let </span><span class="kw-2">mut </span>meta = entry.metadata();
+    <span class="kw">if </span>!op.metadata_capability().etag {
+        meta = op.stat(<span class="kw-2">&amp;</span>entry.path()).<span class="kw">await</span><span class="question-mark">?</span>;
+    }
+    <span class="macro">println!</span>(<span class="string">"Content-Type: {}"</span>, meta.etag());
+}</code></pre></div>
+<p>For existing OpenDAL users, the main changes are:</p>
+<ul>
+<li>Remove all <code>metakey()</code> calls from their code</li>
+<li>Use <code>metadata_capability()</code> to check available metadata</li>
+<li>Explicitly call <code>stat()</code> when needed</li>
+</ul>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2>
+<p>The implementation involves:</p>
+<ol>
+<li>Remove the <code>Metakey</code> enum</li>
+<li>Add new <code>MetadataCapability</code> struct:</li>
+</ol>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>MetadataCapability {
+    <span class="kw">pub </span>content_length: bool,
+    <span class="kw">pub </span>content_type: bool,
+    <span class="kw">pub </span>last_modified: bool,
+    <span class="kw">pub </span>etag: bool,
+    <span class="kw">pub </span>mode: bool,
+    <span class="kw">pub </span>version: bool,
+    ...
+}</code></pre></div>
+<ol start="3">
+<li>Add method to Operator to query capabilities:</li>
+</ol>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl </span>Operator {
+    <span class="kw">pub fn </span>metadata_capability(<span class="kw-2">&amp;</span><span class="self">self</span>) -&gt; MetadataCapability;
+}</code></pre></div>
+<ol start="4">
+<li>Modify list operation to avoid implicit stat calls</li>
+<li>Update all service implementations to declare their metadata capabilities</li>
+</ol>
+<p>Each service implementation will need to:</p>
+<ul>
+<li>Remove <code>Metakey</code> handling logic</li>
+<li>Implement <code>metadata_capability()</code> to accurately indicate the metadata provided by default</li>
+<li>Ensure list operations return metadata that’s always available without extra API calls</li>
+</ul>
+<h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2>
+<ul>
+<li>Breaking change for existing users</li>
+<li>Loss of fine-grained control over metadata fetching</li>
+<li>Potential increased API calls if users need multiple metadata fields</li>
+</ul>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2>
+<p>This design is superior because:</p>
+<ul>
+<li>Prevents performance pitfalls by default</li>
+<li>Makes metadata availability explicitly</li>
+<li>Simplifies service implementation</li>
+<li>Provides clearer mental model</li>
+</ul>
+<p>Alternatives considered:</p>
+<ol>
+<li>Keep <code>Metakey</code> but make it more restrictive</li>
+<li>Add warnings for potentially costly operations</li>
+<li>Make stat calls async/lazy</li>
+</ol>
+<p>Not making this change would continue the current issues of performance problems and API misuse.</p>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2>
+<p>None</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2>
+<p>None</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2>
+<ul>
+<li>Add metadata prefetching optimization</li>
+<li>Add metadata caching layer</li>
+<li>Support for custom metadata fields</li>
+<li>Automated capability detection</li>
+</ul>
+</div></details></section></div></main></body></html>

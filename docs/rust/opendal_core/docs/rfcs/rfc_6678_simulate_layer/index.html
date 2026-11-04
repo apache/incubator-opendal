@@ -1,0 +1,387 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Simulate Layer"><title>opendal_core::docs::rfcs::rfc_6678_simulate_layer - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module rfc_6678_simulate_layer</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal_core/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal_core/index.html">opendal_<wbr>core</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module rfc_<wbr>6678_<wbr>simulate_<wbr>layer</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#summary" title="Summary">Summary</a></li><li><a href="#motivation" title="Motivation">Motivation</a></li><li><a href="#guide-level-explanation" title="Guide-level explanation">Guide-level explanation</a><ul><li><a href="#for-rust-users" title="For Rust users">For Rust users</a></li><li><a href="#for-binding-users-pythonjavaruby" title="For binding users (Python/Java/Ruby)">For binding users (Python/Java/Ruby)</a></li><li><a href="#migration-path" title="Migration path">Migration path</a></li></ul></li><li><a href="#reference-level-explanation" title="Reference-level explanation">Reference-level explanation</a><ul><li><a href="#architecture-changes" title="Architecture changes">Architecture changes</a></li><li><a href="#simulatelayer-implementation" title="SimulateLayer implementation">SimulateLayer implementation</a></li><li><a href="#feature-flag-for-migration" title="Feature flag for migration">Feature flag for migration</a></li><li><a href="#capability-updates" title="Capability updates">Capability updates</a></li><li><a href="#bindings-integration" title="Bindings integration">Bindings integration</a></li><li><a href="#list-start_after-simulation" title="List start_after simulation">List start_after simulation</a></li></ul></li><li><a href="#drawbacks" title="Drawbacks">Drawbacks</a><ul><li><a href="#breaking-change-risk" title="Breaking change risk">Breaking change risk</a></li><li><a href="#documentation-burden" title="Documentation burden">Documentation burden</a></li><li><a href="#potential-performance-regression-for-some-users" title="Potential performance regression for some users">Potential performance regression for some users</a></li></ul></li><li><a href="#rationale-and-alternatives" title="Rationale and alternatives">Rationale and alternatives</a><ul><li><a href="#why-this-design" title="Why this design?">Why this design?</a></li><li><a href="#alternative-1-keep-completelayer-add-disable-flags" title="Alternative 1: Keep CompleteLayer, add disable flags">Alternative 1: Keep CompleteLayer, add disable flags</a></li><li><a href="#alternative-2-service-specific-default-simulation" title="Alternative 2: Service-specific default simulation">Alternative 2: Service-specific default simulation</a></li><li><a href="#alternative-3-split-into-multiple-layers" title="Alternative 3: Split into multiple layers">Alternative 3: Split into multiple layers</a></li><li><a href="#alternative-4-builder-pattern" title="Alternative 4: Builder pattern">Alternative 4: Builder pattern</a></li><li><a href="#what-if-we-dont-do-this" title="What if we don’t do this?">What if we don’t do this?</a></li></ul></li><li><a href="#prior-art" title="Prior art">Prior art</a><ul><li><a href="#rust-ecosystem" title="Rust ecosystem">Rust ecosystem</a></li><li><a href="#other-storage-libraries" title="Other storage libraries">Other storage libraries</a></li></ul></li><li><a href="#unresolved-questions" title="Unresolved questions">Unresolved questions</a><ul><li><a href="#when-to-remove-readerwriter-wrappers" title="When to remove reader/writer wrappers?">When to remove reader/writer wrappers?</a></li><li><a href="#should-we-provide-migration-tooling" title="Should we provide migration tooling?">Should we provide migration tooling?</a></li><li><a href="#binding-specific-configuration" title="Binding-specific configuration?">Binding-specific configuration?</a></li></ul></li><li><a href="#future-possibilities" title="Future possibilities">Future possibilities</a><ul><li><a href="#automatic-simulation-detection" title="Automatic simulation detection">Automatic simulation detection</a></li><li><a href="#conditional-simulation-based-on-operations" title="Conditional simulation based on operations">Conditional simulation based on operations</a></li><li><a href="#simulation-statistics" title="Simulation statistics">Simulation statistics</a></li><li><a href="#list-limit-simulation" title="List limit simulation">List limit simulation</a></li><li><a href="#versioning-simulation" title="Versioning simulation">Versioning simulation</a></li><li><a href="#plugin-system-for-custom-simulations" title="Plugin system for custom simulations">Plugin system for custom simulations</a></li><li><a href="#zero-cost-simulation-layer" title="Zero-cost simulation layer">Zero-cost simulation layer</a></li></ul></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal_<wbr>core::<wbr>docs::<wbr>rfcs</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal_core</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">rfcs</a></div><h1>Module <span>rfc_<wbr>6678_<wbr>simulate_<wbr>layer</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../../src/opendal_core/docs/rfcs/mod.rs.html#294">Source</a> </span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Simulate Layer</p>
+<ul>
+<li>Proposal Name: <code>simulate_layer</code></li>
+<li>Start Date: 2025-10-16</li>
+<li>RFC PR: <a href="https://github.com/apache/opendal/pull/6678">apache/opendal#6678</a></li>
+<li>Tracking Issue: <a href="https://github.com/apache/opendal/issues/6681">apache/opendal#6681</a></li>
+</ul>
+<h2 id="summary"><a class="doc-anchor" href="#summary">§</a>Summary</h2>
+<p>Introduce a public <code>SimulateLayer</code> to replace the internal <code>CompleteLayer</code>, giving users explicit control over capability simulation while maintaining backward compatibility through a phased migration strategy.</p>
+<h2 id="motivation"><a class="doc-anchor" href="#motivation">§</a>Motivation</h2>
+<p>Currently, OpenDAL automatically applies <code>CompleteLayer</code> internally to simulate missing capabilities for all backends. While this provides a seamless “batteries-included” experience, it has several limitations:</p>
+<ol>
+<li>
+<p><strong>Lack of user control</strong>: Users cannot opt-out of simulations they don’t need, even in performance-sensitive scenarios where native-only operations are preferred.</p>
+</li>
+<li>
+<p><strong>Hidden complexity</strong>: The <code>CompleteLayer</code> has grown to 385 lines handling multiple concerns (list recursive, stat dir, create_dir, reader/writer wrappers), making it difficult to maintain and understand.</p>
+</li>
+<li>
+<p><strong>All-or-nothing approach</strong>: Users either get all simulations or none. There’s no way to selectively enable only the simulations they need.</p>
+</li>
+<li>
+<p><strong>Binding limitations</strong>: While Python/Java/Ruby bindings automatically benefit from simulations, they also cannot disable them, potentially causing unexpected behavior when users expect native backend semantics.</p>
+</li>
+<li>
+<p><strong>Missing features</strong>: Some useful simulations (like <code>start_after</code> for fs backend, reported in #6676) are not implemented because adding more logic to <code>CompleteLayer</code> would make it even more complex.</p>
+</li>
+</ol>
+<p>This proposal aims to:</p>
+<ul>
+<li>Make capability simulation <strong>explicit and user-controllable</strong></li>
+<li><strong>Reduce complexity</strong> by separating concerns</li>
+<li>Provide a <strong>clear migration path</strong> that maintains backward compatibility</li>
+<li>Enable <strong>fine-grained control</strong> over which simulations to apply</li>
+</ul>
+<h2 id="guide-level-explanation"><a class="doc-anchor" href="#guide-level-explanation">§</a>Guide-level explanation</h2><h3 id="for-rust-users"><a class="doc-anchor" href="#for-rust-users">§</a>For Rust users</h3>
+<p>After this change, capability simulation becomes explicit through <code>SimulateLayer</code>:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>opendal::layers::SimulateLayer;
+<span class="kw">use </span>opendal::services::Fs;
+<span class="kw">use </span>opendal::Operator;
+
+<span class="comment">// Default: all simulations enabled
+</span><span class="kw">let </span>op = Operator::new(Fs::default())<span class="question-mark">?
+    </span>.layer(SimulateLayer::default())
+    .finish();
+
+<span class="comment">// Selective simulation with method chaining
+</span><span class="kw">let </span>op = Operator::new(Fs::default())<span class="question-mark">?
+    </span>.layer(
+        SimulateLayer::default()
+            .with_list_recursive(<span class="bool-val">true</span>)      <span class="comment">// Enable recursive listing simulation
+            </span>.with_list_start_after(<span class="bool-val">true</span>)    <span class="comment">// Enable start_after simulation
+            </span>.with_stat_dir(<span class="bool-val">false</span>)           <span class="comment">// Disable stat dir simulation
+            </span>.with_create_dir(<span class="bool-val">false</span>)         <span class="comment">// Disable create_dir simulation
+    </span>)
+    .finish();
+
+<span class="comment">// Performance-critical: no simulation overhead
+</span><span class="kw">let </span>op = Operator::new(S3::default())<span class="question-mark">?
+    </span><span class="comment">// Don't add SimulateLayer - use native capabilities only
+    </span>.finish();</code></pre></div><h3 id="for-binding-users-pythonjavaruby"><a class="doc-anchor" href="#for-binding-users-pythonjavaruby">§</a>For binding users (Python/Java/Ruby)</h3>
+<p>Binding users will see <strong>no breaking changes</strong> during the migration. Simulations will continue to work automatically:</p>
+<div class="example-wrap"><pre class="language-python"><code># Python - works the same way
+operator = opendal.Operator("fs", root="/tmp")
+files = list(operator.list("", start_after="file.txt"))  # Just works</code></pre></div><h3 id="migration-path"><a class="doc-anchor" href="#migration-path">§</a>Migration path</h3><h4 id="phase-1-next-version-soft-transition---0-3-months"><a class="doc-anchor" href="#phase-1-next-version-soft-transition---0-3-months">§</a>Phase 1: Next version (Soft transition - 0-3 months)</h4>
+<ul>
+<li><code>SimulateLayer</code> is introduced as a <strong>public layer</strong></li>
+<li><code>CompleteLayer</code> remains internal, controlled by <code>auto-simulate</code> feature (enabled by default)</li>
+<li>Documentation encourages explicit use of <code>SimulateLayer</code></li>
+<li>No breaking changes</li>
+</ul>
+<div class="example-wrap"><pre class="language-toml"><code># Still works with auto-simulate enabled by default
+[dependencies]
+opendal = "0.x"</code></pre></div><h4 id="phase-2-next-2-3-versions-transition-period---3-6-months"><a class="doc-anchor" href="#phase-2-next-2-3-versions-transition-period---3-6-months">§</a>Phase 2: Next 2-3 versions (Transition period - 3-6 months)</h4>
+<ul>
+<li>Deprecation warnings added for implicit simulation</li>
+<li>Migration guide published</li>
+<li>Examples updated to use explicit <code>SimulateLayer</code></li>
+<li>Users can test with <code>default-features = false</code> to disable auto-simulate</li>
+</ul>
+<div class="example-wrap"><pre class="language-toml"><code># Opt-out of auto-simulate to prepare for migration
+[dependencies]
+opendal = { version = "0.x", default-features = false }</code></pre></div><h4 id="phase-3-next-minor-version-after-transition-breaking-change---6-months"><a class="doc-anchor" href="#phase-3-next-minor-version-after-transition-breaking-change---6-months">§</a>Phase 3: Next minor version after transition (Breaking change - 6 months)</h4>
+<ul>
+<li><code>auto-simulate</code> feature <strong>disabled by default</strong></li>
+<li>Users must explicitly add <code>SimulateLayer</code> or opt-in with <code>features = ["auto-simulate"]</code></li>
+</ul>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// Required after this version
+</span><span class="kw">let </span>op = Operator::new(Fs::default())<span class="question-mark">?
+    </span>.layer(SimulateLayer::default())
+    .finish();</code></pre></div><h4 id="phase-4-next-major-version-clean-slate---12-months"><a class="doc-anchor" href="#phase-4-next-major-version-clean-slate---12-months">§</a>Phase 4: Next major version (Clean slate - 12 months)</h4>
+<ul>
+<li><code>CompleteLayer</code> and <code>auto-simulate</code> feature completely removed</li>
+<li>Bindings automatically apply <code>SimulateLayer</code> internally</li>
+<li>Core library requires explicit simulation</li>
+</ul>
+<h2 id="reference-level-explanation"><a class="doc-anchor" href="#reference-level-explanation">§</a>Reference-level explanation</h2><h3 id="architecture-changes"><a class="doc-anchor" href="#architecture-changes">§</a>Architecture changes</h3><h4 id="current-architecture"><a class="doc-anchor" href="#current-architecture">§</a>Current architecture</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>Backend → CompleteLayer (auto-applied) → User
+          ↓
+          • list recursive simulation
+          • stat dir simulation  
+          • create_dir simulation
+          • reader/writer wrappers
+          • (all forced, no user control)</code></pre></div><h4 id="new-architecture"><a class="doc-anchor" href="#new-architecture">§</a>New architecture</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code>Backend → [SimulateLayer (user-controlled)] → User
+          ↓
+          • list recursive simulation (configurable)
+          • list start_after simulation (configurable)
+          • stat dir simulation (configurable)
+          • create_dir simulation (configurable)
+          • reader/writer wrappers (kept <span class="kw">in </span>CompleteLayer or removed)</code></pre></div><h3 id="simulatelayer-implementation"><a class="doc-anchor" href="#simulatelayer-implementation">§</a>SimulateLayer implementation</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// core/src/layers/simulate.rs
+
+</span><span class="attr">#[derive(Debug, Clone)]
+</span><span class="kw">pub struct </span>SimulateLayer {
+    list_recursive: bool,
+    list_start_after: bool,
+    list_limit: bool,        <span class="comment">// Future
+    </span>stat_dir: bool,
+    create_dir: bool,
+}
+
+<span class="kw">impl </span>Default <span class="kw">for </span>SimulateLayer {
+    <span class="kw">fn </span>default() -&gt; <span class="self">Self </span>{
+        <span class="self">Self </span>{
+            list_recursive: <span class="bool-val">true</span>,
+            list_start_after: <span class="bool-val">true</span>,
+            list_limit: <span class="bool-val">false</span>,
+            stat_dir: <span class="bool-val">true</span>,
+            create_dir: <span class="bool-val">true</span>,
+        }
+    }
+}
+
+<span class="kw">impl </span>SimulateLayer {
+    <span class="doccomment">/// Enable/disable recursive listing simulation (default: true)
+    </span><span class="kw">pub fn </span>with_list_recursive(<span class="kw-2">mut </span><span class="self">self</span>, enabled: bool) -&gt; <span class="self">Self </span>{
+        <span class="self">self</span>.list_recursive = enabled;
+        <span class="self">self
+    </span>}
+    
+    <span class="doccomment">/// Enable/disable start_after simulation (default: true)
+    </span><span class="kw">pub fn </span>with_list_start_after(<span class="kw-2">mut </span><span class="self">self</span>, enabled: bool) -&gt; <span class="self">Self </span>{
+        <span class="self">self</span>.list_start_after = enabled;
+        <span class="self">self
+    </span>}
+    
+    <span class="doccomment">/// Enable/disable stat directory simulation (default: true)
+    </span><span class="kw">pub fn </span>with_stat_dir(<span class="kw-2">mut </span><span class="self">self</span>, enabled: bool) -&gt; <span class="self">Self </span>{
+        <span class="self">self</span>.stat_dir = enabled;
+        <span class="self">self
+    </span>}
+    
+    <span class="doccomment">/// Enable/disable create_dir simulation (default: true)
+    </span><span class="kw">pub fn </span>with_create_dir(<span class="kw-2">mut </span><span class="self">self</span>, enabled: bool) -&gt; <span class="self">Self </span>{
+        <span class="self">self</span>.create_dir = enabled;
+        <span class="self">self
+    </span>}
+}</code></pre></div><h3 id="feature-flag-for-migration"><a class="doc-anchor" href="#feature-flag-for-migration">§</a>Feature flag for migration</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// core/src/types/operator/builder.rs
+
+</span><span class="kw">impl</span>&lt;A: Builder&gt; Operator {
+    <span class="kw">pub fn </span>new(accessor: A) -&gt; OperatorBuilder&lt;<span class="kw">impl </span>Access&gt; {
+        <span class="kw">let </span>builder = OperatorBuilder { accessor }
+            .layer(ErrorContextLayer);
+        
+        <span class="attr">#[cfg(feature = <span class="string">"auto-simulate"</span>)]
+        </span><span class="kw">let </span>builder = builder.layer(CompleteLayer);
+        
+        builder.layer(CorrectnessCheckLayer)
+    }
+}
+
+<span class="comment">// Cargo.toml
+</span>[features]
+default = [<span class="string">"auto-simulate"</span>]  # Next version to Phase <span class="number">3
+</span>auto-simulate = []</code></pre></div><h3 id="capability-updates"><a class="doc-anchor" href="#capability-updates">§</a>Capability updates</h3>
+<p>Services that don’t natively support certain features will have their <code>full_capability</code> updated when <code>SimulateLayer</code> is applied:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">impl</span>&lt;A: Access&gt; Layer&lt;A&gt; <span class="kw">for </span>SimulateLayer {
+    <span class="kw">fn </span>layer(<span class="kw-2">&amp;</span><span class="self">self</span>, inner: A) -&gt; <span class="self">Self</span>::LayeredAccess {
+        <span class="kw">let </span>info = inner.info();
+        
+        info.update_full_capability(|<span class="kw-2">mut </span>cap| {
+            <span class="kw">if </span><span class="self">self</span>.list_start_after &amp;&amp; cap.list {
+                cap.list_with_start_after = <span class="bool-val">true</span>;
+            }
+            <span class="kw">if </span><span class="self">self</span>.list_recursive &amp;&amp; cap.list {
+                cap.list_with_recursive = <span class="bool-val">true</span>;
+            }
+            <span class="kw">if </span><span class="self">self</span>.create_dir &amp;&amp; cap.list &amp;&amp; cap.write_can_empty {
+                cap.create_dir = <span class="bool-val">true</span>;
+            }
+            cap
+        });
+        
+        SimulateAccessor { 
+            inner: Arc::new(inner), 
+            info, 
+            config: <span class="self">self</span>.clone() 
+        }
+    }
+}</code></pre></div><h3 id="bindings-integration"><a class="doc-anchor" href="#bindings-integration">§</a>Bindings integration</h3>
+<p>Bindings will automatically apply <code>SimulateLayer</code> to maintain backward compatibility:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// bindings/python/src/operator.rs
+
+</span><span class="kw">impl </span>Operator {
+    <span class="kw">pub fn </span>new(scheme: <span class="kw-2">&amp;</span>str, options: HashMap&lt;String, String&gt;) -&gt; PyResult&lt;<span class="self">Self</span>&gt; {
+        <span class="kw">let </span>op = ocore::Operator::new(accessor)<span class="question-mark">?
+            </span>.layer(ocore::layers::SimulateLayer::default())  <span class="comment">// Auto-apply in bindings
+            </span>.finish();
+        <span class="prelude-val">Ok</span>(<span class="self">Self </span>{ core: op })
+    }
+}</code></pre></div><h3 id="list-start_after-simulation"><a class="doc-anchor" href="#list-start_after-simulation">§</a>List start_after simulation</h3>
+<p>As a concrete example, here’s how <code>start_after</code> will be simulated:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">pub struct </span>StartAfterLister&lt;L&gt; {
+    inner: L,
+    start_after: String,
+    skipped: bool,
+}
+
+<span class="kw">impl</span>&lt;L: oio::List&gt; oio::List <span class="kw">for </span>StartAfterLister&lt;L&gt; {
+    <span class="kw">async fn </span>next(<span class="kw-2">&amp;mut </span><span class="self">self</span>) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="prelude-ty">Option</span>&lt;oio::Entry&gt;&gt; {
+        <span class="kw">loop </span>{
+            <span class="kw">let </span><span class="prelude-val">Some</span>(entry) = <span class="self">self</span>.inner.next().<span class="kw">await</span><span class="question-mark">? </span><span class="kw">else </span>{
+                <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>);
+            };
+            
+            <span class="comment">// Skip entries until we find one &gt; start_after
+            </span><span class="kw">if </span>!<span class="self">self</span>.skipped {
+                <span class="kw">if </span>entry.path() &lt;= <span class="self">self</span>.start_after.as_str() {
+                    <span class="kw">continue</span>;
+                }
+                <span class="self">self</span>.skipped = <span class="bool-val">true</span>;
+            }
+            
+            <span class="kw">return </span><span class="prelude-val">Ok</span>(<span class="prelude-val">Some</span>(entry));
+        }
+    }
+}</code></pre></div><h2 id="drawbacks"><a class="doc-anchor" href="#drawbacks">§</a>Drawbacks</h2><h3 id="breaking-change-risk"><a class="doc-anchor" href="#breaking-change-risk">§</a>Breaking change risk</h3>
+<p>Even with a phased migration, changing from implicit to explicit simulation is fundamentally a breaking change. Users who don’t follow the migration guide will face compilation errors after Phase 3.</p>
+<p><strong>Mitigation</strong>:</p>
+<ul>
+<li>6-month transition period with clear deprecation warnings</li>
+<li>Comprehensive migration guide with automated tools</li>
+<li><code>auto-simulate</code> feature for temporary backward compatibility</li>
+</ul>
+<h3 id="documentation-burden"><a class="doc-anchor" href="#documentation-burden">§</a>Documentation burden</h3>
+<p>This change requires updating extensive documentation, examples, and tutorials across all bindings.</p>
+<p><strong>Mitigation</strong>:</p>
+<ul>
+<li>Automated documentation generation</li>
+<li>Version-specific migration guides</li>
+<li>Community support during transition</li>
+</ul>
+<h3 id="potential-performance-regression-for-some-users"><a class="doc-anchor" href="#potential-performance-regression-for-some-users">§</a>Potential performance regression for some users</h3>
+<p>Users who upgrade without understanding the change might add <code>SimulateLayer::default()</code> everywhere, even for backends that don’t need it, adding unnecessary overhead.</p>
+<p><strong>Mitigation</strong>:</p>
+<ul>
+<li>Clear documentation about which backends benefit from simulation</li>
+<li>Performance recommendations in the migration guide</li>
+<li>Compiler warnings for unnecessary simulations (future enhancement)</li>
+</ul>
+<h2 id="rationale-and-alternatives"><a class="doc-anchor" href="#rationale-and-alternatives">§</a>Rationale and alternatives</h2><h3 id="why-this-design"><a class="doc-anchor" href="#why-this-design">§</a>Why this design?</h3>
+<ol>
+<li>
+<p><strong>Explicit over implicit</strong>: Users should consciously decide what simulations to use, leading to better understanding and fewer surprises.</p>
+</li>
+<li>
+<p><strong>Gradual migration</strong>: The phased approach minimizes disruption while giving the community time to adapt.</p>
+</li>
+<li>
+<p><strong>Binding compatibility</strong>: Automatic application in bindings ensures that non-Rust users aren’t affected.</p>
+</li>
+<li>
+<p><strong>Extensibility</strong>: The method chaining pattern makes it easy to add new simulations (like <code>list_with_limit</code>) without breaking changes.</p>
+</li>
+</ol>
+<h3 id="alternative-1-keep-completelayer-add-disable-flags"><a class="doc-anchor" href="#alternative-1-keep-completelayer-add-disable-flags">§</a>Alternative 1: Keep CompleteLayer, add disable flags</h3>
+<p>Instead of a new layer, add flags to disable specific simulations in <code>CompleteLayer</code>.</p>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li>Doesn’t address the “all-or-nothing” problem fundamentally</li>
+<li>Still forces all users to pay for simulation machinery even if disabled</li>
+<li>Doesn’t improve code organization or maintainability</li>
+</ul>
+<h3 id="alternative-2-service-specific-default-simulation"><a class="doc-anchor" href="#alternative-2-service-specific-default-simulation">§</a>Alternative 2: Service-specific default simulation</h3>
+<p>Each service declares which simulations it needs, applied automatically.</p>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li>Less transparent - users don’t know what’s being simulated</li>
+<li>Service maintainers must decide defaults, which may not match user needs</li>
+<li>Doesn’t allow per-application customization</li>
+</ul>
+<h3 id="alternative-3-split-into-multiple-layers"><a class="doc-anchor" href="#alternative-3-split-into-multiple-layers">§</a>Alternative 3: Split into multiple layers</h3>
+<p>Create separate layers: <code>ListSimulateLayer</code>, <code>StatSimulateLayer</code>, <code>CreateDirSimulateLayer</code>.</p>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li>Too granular for most users</li>
+<li>Verbose: <code>.layer(ListSimulateLayer).layer(StatSimulateLayer)...</code></li>
+<li>Doesn’t align with OpenDAL’s “batteries included” philosophy</li>
+<li><code>SimulateLayer</code> with method chaining provides the same granularity when needed</li>
+</ul>
+<h3 id="alternative-4-builder-pattern"><a class="doc-anchor" href="#alternative-4-builder-pattern">§</a>Alternative 4: Builder pattern</h3>
+<p>Use a separate builder type like <code>SimulateLayer::builder().with_xxx().build()</code>.</p>
+<p><strong>Rejected because</strong>:</p>
+<ul>
+<li>More verbose than necessary for simple use cases</li>
+<li>Method chaining on the layer itself is more ergonomic</li>
+<li>OpenDAL already uses method chaining in many places (e.g., <code>OpList</code>)</li>
+</ul>
+<h3 id="what-if-we-dont-do-this"><a class="doc-anchor" href="#what-if-we-dont-do-this">§</a>What if we don’t do this?</h3>
+<ol>
+<li><code>CompleteLayer</code> continues to grow in complexity</li>
+<li>New simulations (like <code>start_after</code> for fs) remain unimplemented</li>
+<li>Performance-sensitive users continue to be frustrated by forced overhead</li>
+<li>OpenDAL becomes harder to maintain and understand</li>
+</ol>
+<h2 id="prior-art"><a class="doc-anchor" href="#prior-art">§</a>Prior art</h2><h3 id="rust-ecosystem"><a class="doc-anchor" href="#rust-ecosystem">§</a>Rust ecosystem</h3>
+<ul>
+<li><strong>Tower</strong> (HTTP middleware): Uses explicit middleware with builder pattern</li>
+<li><strong>Actix-web</strong>: Middleware are opt-in with clear APIs</li>
+<li><strong>Reqwest</strong>: Features are controlled via Cargo features, not runtime</li>
+</ul>
+<h3 id="other-storage-libraries"><a class="doc-anchor" href="#other-storage-libraries">§</a>Other storage libraries</h3>
+<ul>
+<li><strong>AWS SDK</strong>: Capabilities are documented but not abstracted</li>
+<li><strong>GCS Client</strong>: No simulation layer - users must handle missing features</li>
+<li><strong>MinIO SDK</strong>: Provides compatibility helpers as separate modules</li>
+</ul>
+<p>OpenDAL’s approach is unique in providing transparent simulation, and this RFC aims to maintain that advantage while adding user control.</p>
+<h2 id="unresolved-questions"><a class="doc-anchor" href="#unresolved-questions">§</a>Unresolved questions</h2><h3 id="when-to-remove-readerwriter-wrappers"><a class="doc-anchor" href="#when-to-remove-readerwriter-wrappers">§</a>When to remove reader/writer wrappers?</h3>
+<p><code>CompleteLayer</code> currently includes <code>CompleteReader</code> and <code>CompleteWriter</code> that validate read/write sizes. Should these:</p>
+<ol>
+<li>Stay in a minimal <code>CompleteLayer</code> (still auto-applied)?</li>
+<li>Move to <code>SimulateLayer</code>?</li>
+<li>Move to a separate <code>ValidateLayer</code>?</li>
+</ol>
+<p><strong>Proposed resolution</strong>: Keep in minimal <code>CompleteLayer</code> during transition, revisit in next major version.</p>
+<h3 id="should-we-provide-migration-tooling"><a class="doc-anchor" href="#should-we-provide-migration-tooling">§</a>Should we provide migration tooling?</h3>
+<p>Should we build <code>cargo-opendal migrate</code> or similar tools to automatically update code?</p>
+<p><strong>Proposed resolution</strong>: Defer to Phase 2, assess based on community feedback.</p>
+<h3 id="binding-specific-configuration"><a class="doc-anchor" href="#binding-specific-configuration">§</a>Binding-specific configuration?</h3>
+<p>Should Python users be able to configure <code>SimulateLayer</code> through binding APIs?</p>
+<div class="example-wrap"><pre class="language-python"><code># Hypothetical API
+operator = opendal.Operator(
+    "fs", 
+    root="/tmp",
+    simulate={"list_start_after": True, "stat_dir": False}
+)</code></pre></div>
+<p><strong>Proposed resolution</strong>: Not in initial implementation. Can be added in future based on demand.</p>
+<h2 id="future-possibilities"><a class="doc-anchor" href="#future-possibilities">§</a>Future possibilities</h2><h3 id="automatic-simulation-detection"><a class="doc-anchor" href="#automatic-simulation-detection">§</a>Automatic simulation detection</h3>
+<p>Add compile-time or runtime warnings when <code>SimulateLayer</code> is used with backends that don’t need it:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// Future enhancement
+</span><span class="kw">let </span>op = Operator::new(S3::default())<span class="question-mark">?
+    </span>.layer(SimulateLayer::default())  <span class="comment">// Warning: S3 supports all features natively
+    </span>.finish();</code></pre></div><h3 id="conditional-simulation-based-on-operations"><a class="doc-anchor" href="#conditional-simulation-based-on-operations">§</a>Conditional simulation based on operations</h3>
+<p>Allow enabling simulations only for specific operations:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// Future API
+</span>SimulateLayer::default()
+    .simulate_only_for(<span class="kw-2">&amp;</span>[<span class="string">"list"</span>, <span class="string">"stat"</span>])</code></pre></div><h3 id="simulation-statistics"><a class="doc-anchor" href="#simulation-statistics">§</a>Simulation statistics</h3>
+<p>Expose metrics about which simulations are being used:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// Future API
+</span><span class="kw">let </span>stats = op.simulation_stats();
+<span class="macro">println!</span>(<span class="string">"start_after simulated: {} times"</span>, stats.start_after_count);</code></pre></div><h3 id="list-limit-simulation"><a class="doc-anchor" href="#list-limit-simulation">§</a>List limit simulation</h3>
+<p>Extend simulation to <code>list_with_limit</code> for backends that don’t support it natively (requires client-side buffering).</p>
+<h3 id="versioning-simulation"><a class="doc-anchor" href="#versioning-simulation">§</a>Versioning simulation</h3>
+<p>Extend simulation to <code>list_with_versions</code> for backends that don’t support versioning natively (requires metadata storage).</p>
+<h3 id="plugin-system-for-custom-simulations"><a class="doc-anchor" href="#plugin-system-for-custom-simulations">§</a>Plugin system for custom simulations</h3>
+<p>Allow users to provide custom simulation logic:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// Far future API
+</span>SimulateLayer::default()
+    .with_custom_simulator(MyCustomSimulator::new())</code></pre></div><h3 id="zero-cost-simulation-layer"><a class="doc-anchor" href="#zero-cost-simulation-layer">§</a>Zero-cost simulation layer</h3>
+<p>Use const generics or compile-time feature detection to make simulation truly zero-cost when all features are native:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// Speculative future optimization
+</span><span class="kw">let </span>op = Operator::new(S3::default())<span class="question-mark">?
+    </span>.layer(SimulateLayer::default())  <span class="comment">// Optimized away at compile time for S3
+    </span>.finish();</code></pre></div></div></details></section></div></main></body></html>

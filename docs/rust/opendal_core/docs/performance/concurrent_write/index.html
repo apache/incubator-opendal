@@ -1,0 +1,95 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Concurrent Writes"><title>opendal_core::docs::performance::concurrent_write - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../../" data-static-root-path="../../../../static.files/" data-current-crate="opendal_core" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../sidebar-items.js"></script><script defer="" src="../../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Module concurrent_write</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../../opendal_core/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../../opendal_core/index.html">opendal_<wbr>core</a><span class="version">0.59.5</span></h2></div><div class="sidebar-elems"><section id="rustdoc-toc"><h2 class="location"><a href="#">Module concurrent_<wbr>write</a></h2><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#concurrent-writes" title="Concurrent Writes">Concurrent Writes</a><ul><li><a href="#tuning" title="Tuning">Tuning</a></li><li><a href="#one-shot-and-adapter-apis" title="One-shot and adapter APIs">One-shot and adapter APIs</a></li></ul></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal_<wbr>core::<wbr>docs::<wbr>performance</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../../index.html">opendal_core</a>::<wbr><a href="../../index.html">docs</a>::<wbr><a href="../index.html">performance</a></div><h1>Module <span>concurrent_<wbr>write</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"><a class="src" href="../../../../src/opendal_core/docs/performance/mod.rs.html#31">Source</a> </span></div><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><h2 id="concurrent-writes"><a class="doc-anchor" href="#concurrent-writes">§</a>Concurrent Writes</h2>
+<p>OpenDAL writes parts sequentially by default. This keeps memory and request
+pressure low, but one in-flight request often cannot fill the available
+bandwidth on a high-latency path.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>writer = op.writer(<span class="string">"large-object.bin"</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+writer.write(first).<span class="kw">await</span><span class="question-mark">?</span>;
+writer.write(second).<span class="kw">await</span><span class="question-mark">?</span>;
+writer.close().<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>Set <code>concurrent</code> above <code>1</code> to let services with multipart or block-based write
+support upload independent parts in parallel:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span><span class="kw-2">mut </span>writer = op
+    .writer_with(<span class="string">"large-object.bin"</span>)
+    .concurrent(<span class="number">8</span>)
+    .<span class="kw">await</span><span class="question-mark">?</span>;
+
+writer.write(first).<span class="kw">await</span><span class="question-mark">?</span>;
+writer.write(second).<span class="kw">await</span><span class="question-mark">?</span>;
+writer.close().<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>For multipart and block writers, OpenDAL schedules part uploads through its
+<a href="../../../struct.Executor.html" title="struct opendal_core::Executor"><code>Executor</code></a> and tracks their results in a task queue. A write
+call can return while earlier parts are still in flight when the queue has
+capacity. <a href="../../../struct.Writer.html#method.close" title="method opendal_core::Writer::close"><code>Writer::close</code></a> drains the queue and performs
+the final commit, so applications must always check the result from <code>close</code>.</p>
+<p>The storage service determines the native mechanism. S3 uses multipart upload,
+while Azure Blob uses block upload. Services without a concurrent write path
+continue to execute sequentially even when the option is present. Check
+<a href="../../../struct.Capability.html#structfield.write_can_multi" title="field opendal_core::Capability::write_can_multi"><code>Capability::write_can_multi</code></a> before
+tuning multipart or block writes.</p>
+<h3 id="tuning"><a class="doc-anchor" href="#tuning">§</a>Tuning</h3>
+<p>Concurrent writes have two controls:</p>
+<ul>
+<li><code>concurrent</code> is the maximum number of part uploads OpenDAL attempts to keep
+in flight. The default is <code>1</code>, and values below <code>1</code> are normalized to <code>1</code>.</li>
+<li><code>chunk</code> is the target size of each part. Its default and valid range depend on
+the service.</li>
+</ul>
+<h4 id="concurrent"><a class="doc-anchor" href="#concurrent">§</a><code>concurrent</code></h4>
+<p><code>concurrent</code> is an upper bound, not a guaranteed level. Setting it to <code>8</code> does
+not create eight active requests unless the input arrives quickly enough and
+the object contains enough parts. Object size, request latency, and service
+support can all reduce the observed concurrency.</p>
+<p>Start with <code>2</code> or <code>4</code>, then try <code>8</code> while measuring the real workload. Higher
+concurrency can improve bandwidth utilization, but it also increases in-flight
+requests, buffered data, and pressure on service request limits. Once the
+network or service is saturated, increasing it further can reduce throughput by
+causing throttling and retries.</p>
+<h4 id="chunk"><a class="doc-anchor" href="#chunk">§</a><code>chunk</code></h4>
+<p>OpenDAL buffers small writes until it can form a part of the configured size.
+This avoids issuing one storage request for every small input buffer. The final
+part may be smaller.</p>
+<p>Larger chunks reduce request count and per-request overhead, but use more memory
+per in-flight part and require more data to be retried after a failed upload.
+Smaller chunks begin parallel work sooner, but increase request rate and may be
+invalid for the service. For example, S3 multipart upload has a 5 MiB minimum
+part size; OpenDAL raises smaller configured values to the service minimum.</p>
+<p>Inspect <a href="../../../struct.Capability.html#structfield.write_multi_min_size" title="field opendal_core::Capability::write_multi_min_size"><code>Capability::write_multi_min_size</code></a>
+and <a href="../../../struct.Capability.html#structfield.write_multi_max_size" title="field opendal_core::Capability::write_multi_max_size"><code>Capability::write_multi_max_size</code></a>
+before overriding the service default. For large object-storage uploads, 8 MiB
+is a useful starting point, followed by measurements at the expected object
+sizes and concurrency.</p>
+<h3 id="one-shot-and-adapter-apis"><a class="doc-anchor" href="#one-shot-and-adapter-apis">§</a>One-shot and adapter APIs</h3>
+<p><code>write_with</code> can split one in-memory buffer into concurrent parts:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">let </span>_metadata = op
+    .write_with(<span class="string">"large-object.bin"</span>, data)
+    .chunk(<span class="number">8 </span>* <span class="number">1024 </span>* <span class="number">1024</span>)
+    .concurrent(<span class="number">4</span>)
+    .<span class="kw">await</span><span class="question-mark">?</span>;</code></pre></div>
+<p>A configured writer keeps the same chunking and concurrency behavior after it
+is converted with <a href="../../../struct.Writer.html#method.into_sink" title="method opendal_core::Writer::into_sink"><code>Writer::into_sink</code></a>,
+<a href="../../../struct.Writer.html#method.into_bytes_sink" title="method opendal_core::Writer::into_bytes_sink"><code>Writer::into_bytes_sink</code></a>, or
+<a href="../../../struct.Writer.html#method.into_futures_async_write" title="method opendal_core::Writer::into_futures_async_write"><code>Writer::into_futures_async_write</code></a>.</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>std::io;
+
+<span class="kw">use </span>futures::SinkExt;
+<span class="kw">use </span>opendal_core::{Buffer, Operator};
+
+<span class="kw">async fn </span>upload_with_sink(op: Operator, data: Buffer) -&gt; io::Result&lt;()&gt; {
+    <span class="kw">let </span><span class="kw-2">mut </span>sink = op
+        .writer_with(<span class="string">"large-object.bin"</span>)
+        .chunk(<span class="number">8 </span>* <span class="number">1024 </span>* <span class="number">1024</span>)
+        .concurrent(<span class="number">4</span>)
+        .<span class="kw">await</span><span class="question-mark">?
+        </span>.into_sink();
+
+    sink.send(data).<span class="kw">await</span><span class="question-mark">?</span>;
+    sink.close().<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="prelude-val">Ok</span>(())
+}</code></pre></div>
+<p>Measure end-to-end throughput and completion latency together with peak memory,
+request count, retries, throttling, and the result from the final close.</p>
+</div></details></section></div></main></body></html>
