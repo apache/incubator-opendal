@@ -122,7 +122,13 @@ impl<T: Default> ErrorPolicy<T, Error> for ThrowException {
             }
 
             let payload = downcast_payload(payload);
-            env.fatal_error(JNIString::new(payload).as_ref());
+            match env.throw_new(
+                jni_str!("java/lang/RuntimeException"),
+                JNIString::new(payload),
+            ) {
+                Ok(()) | Err(jni::errors::Error::JavaException) => {}
+                Err(err) => return Err(err),
+            }
         }
         Ok(T::default())
     }
