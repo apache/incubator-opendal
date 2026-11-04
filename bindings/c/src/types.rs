@@ -348,6 +348,16 @@ impl opendal_delete_options {
     }
 }
 
+impl From<&opendal_delete_options> for options::DeleteOptions {
+    fn from(value: &opendal_delete_options) -> Self {
+        Self {
+            version: unsafe { optional_cstr(value.version) },
+            recursive: value.recursive,
+            ..Default::default()
+        }
+    }
+}
+
 /// \brief A key-value pair for write user metadata.
 #[repr(C)]
 pub struct opendal_write_user_metadata_pair {

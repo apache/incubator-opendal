@@ -158,6 +158,87 @@ err = op.Delete("dir/", opendal.DeleteWithRecursive(true))    // path and everyt
 
 `Delete` succeeds even if the path does not exist.
 
+## Delete many paths
+
+```go
+err := op.Remove([]string{"a.txt", "b.txt", "c.txt"})
+```
+
+`Remove` deletes the paths in batches on services that support batch deletion,
+such as S3. It hands the whole slice to the C library in one call, so prefer it
+over looping when you already know the paths. It is not atomic: queueing stops at
+the first path the service rejects, but an earlier batch may already be gone.
+
+Use `WithDeleter` when you queue paths as you discover them, or when you need
+per-path options. It flushes the queue when your function returns nil, skips the
+flush when your function returns an error, and releases the deleter either way —
+including when your function panics:
+
+```go
+err := op.WithDeleter(func(d *opendal.Deleter) error {
+	for _, path := range paths {
+		// Delete only queues a path; nothing is removed until the flush.
+		if err := d.Delete(path); err != nil {
+			return err
+		}
+	}
+	return nil
+})
+```
+
+Skipping the flush is not a rollback. Services without batch delete support
+remove each path as `Delete` queues it, and batch services flush on their own
+once a batch fills, so treat a failed `WithDeleter` as "some of these paths may
+be gone."
+
+Per-path options are the reason to reach for a `Deleter` rather than `Remove`.
+`Remove` always deletes the current version of each path, so deleting specific
+versions needs a deleter:
+
+```go
+err := op.WithDeleter(func(d *opendal.Deleter) error {
+	return d.Delete("a.txt", opendal.DeleteWithVersion("v1"))
+})
+```
+
+Driving the deleter yourself gives you `Flush`, which reports the deletions
+without releasing the deleter, so you can retry a failed batch. Queue paths one
+at a time only when you discover them as you go; for a slice you already hold,
+`Remove` crosses into the C library once instead of once per path:
+
+```go
+func deleteAsDiscovered(op *opendal.Operator, paths []string) error {
+	deleter, err := op.Deleter()
+	if err != nil {
+		return err
+	}
+	// Release the deleter on every path out of this function. It is a no-op
+	// after Close, which releases on its own. Without it the handle leaks: the
+	// binding installs no finalizer.
+	defer deleter.Discard()
+
+	for _, path := range paths {
+		if err := deleter.Delete(path); err != nil {
+			return err
+		}
+	}
+	// Flush keeps the paths it could not delete queued, so retrying it does not
+	// rebuild the queue.
+	var flushErr error
+	for range 3 {
+		if flushErr = deleter.Flush(); flushErr == nil {
+			break
+		}
+	}
+	if flushErr != nil {
+		return flushErr
+	}
+	// Close flushes once more and always releases, so its error is your last
+	// report that the deletions failed. Check it instead of deferring it.
+	return deleter.Close()
+}
+```
+
 ## Create a directory
 
 ```go

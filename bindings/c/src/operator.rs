@@ -807,23 +807,7 @@ pub unsafe extern "C" fn opendal_operator_delete_with(
     let delete_opts = if opts.is_null() {
         core::options::DeleteOptions::default()
     } else {
-        let o = &*opts;
-        let version = if o.version.is_null() {
-            None
-        } else {
-            Some(
-                std::ffi::CStr::from_ptr(o.version)
-                    .to_str()
-                    .expect("malformed version")
-                    .to_owned(),
-            )
-        };
-        core::options::DeleteOptions {
-            version,
-            recursive: o.recursive,
-            if_match: None,
-            ..Default::default()
-        }
+        core::options::DeleteOptions::from(&*opts)
     };
     match op.deref().delete_options(path, delete_opts) {
         Ok(_) => std::ptr::null_mut(),
@@ -1539,6 +1523,37 @@ pub unsafe extern "C" fn opendal_operator_copier_with(
         },
         Err(err) => opendal_result_operator_copier {
             copier: std::ptr::null_mut(),
+            error: opendal_error::new(err),
+        },
+    }
+}
+
+/// \brief Blocking create a deleter to remove many paths.
+///
+/// The returned deleter queues paths and uses the batch deletion support of the
+/// service when it has any. Call `opendal_deleter_delete` for every path, then
+/// `opendal_deleter_flush` to hand the queue to the service and wait for the
+/// deletions, and `opendal_deleter_free` to release it.
+///
+/// @param op The opendal_operator created previously
+/// @see opendal_operator
+/// @see opendal_deleter
+/// @see opendal_result_operator_deleter
+/// @return opendal_result_operator_deleter, containing a deleter and an opendal_error.
+/// If the operation succeeds, the `deleter` field holds a valid deleter and the `error`
+/// field is null. Otherwise, the `deleter` will be null and the `error` will be set
+/// correspondingly.
+#[no_mangle]
+pub unsafe extern "C" fn opendal_operator_deleter(
+    op: &opendal_operator,
+) -> opendal_result_operator_deleter {
+    match op.deref().deleter() {
+        Ok(deleter) => opendal_result_operator_deleter {
+            deleter: Box::into_raw(Box::new(opendal_deleter::new(deleter))),
+            error: std::ptr::null_mut(),
+        },
+        Err(err) => opendal_result_operator_deleter {
+            deleter: std::ptr::null_mut(),
             error: opendal_error::new(err),
         },
     }

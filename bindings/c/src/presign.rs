@@ -227,23 +227,7 @@ pub unsafe extern "C" fn opendal_operator_presign_delete_with(
     let opts = if opts.is_null() {
         core::options::DeleteOptions::default()
     } else {
-        let opts = &*opts;
-        let version = if opts.version.is_null() {
-            None
-        } else {
-            Some(
-                CStr::from_ptr(opts.version)
-                    .to_str()
-                    .expect("malformed version")
-                    .to_owned(),
-            )
-        };
-        core::options::DeleteOptions {
-            version,
-            recursive: opts.recursive,
-            if_match: None,
-            ..Default::default()
-        }
+        core::options::DeleteOptions::from(&*opts)
     };
 
     make_presign_result(op.presign_delete_options(path, duration, opts))

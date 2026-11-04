@@ -209,6 +209,20 @@ pub struct opendal_result_operator_copier {
     pub error: *mut opendal_error,
 }
 
+/// \brief The result type returned by opendal_operator_deleter().
+///
+/// Fields:
+/// * `deleter`: the deleter used to remove many paths by calling
+///   opendal_deleter_delete() repeatedly; only valid when `error` is null.
+/// * `error`: the error of the operation; null when the operation succeeds.
+#[repr(C)]
+pub struct opendal_result_operator_deleter {
+    /// The pointer for opendal_deleter
+    pub deleter: *mut opendal_deleter,
+    /// The error, if ok, it is null
+    pub error: *mut opendal_error,
+}
+
 /// \brief The result type returned by opendal_copier_next().
 ///
 /// A copy is driven by calling opendal_copier_next() repeatedly: each call
