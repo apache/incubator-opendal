@@ -24,10 +24,8 @@ use reqsign_azure_storage::DefaultCredentialProvider;
 use reqsign_azure_storage::RequestSigner;
 use reqsign_azure_storage::StaticCredentialProvider;
 use reqsign_core::Context;
-use reqsign_core::Env as _;
 use reqsign_core::OsEnv;
 use reqsign_core::Signer;
-use reqsign_core::StaticEnv;
 use reqsign_file_read_tokio::TokioFileRead;
 
 use super::AZFILE_SCHEME;
@@ -192,28 +190,7 @@ impl Builder for AzfileBuilder {
             ),
         }?;
 
-        let mut envs = std::collections::HashMap::new();
-        envs.insert("AZBLOB_ACCOUNT_NAME".to_string(), account_name.clone());
-        envs.insert(
-            "AZURE_STORAGE_ACCOUNT_NAME".to_string(),
-            account_name.clone(),
-        );
-
-        if let Some(v) = &self.config.account_key {
-            envs.insert("AZBLOB_ACCOUNT_KEY".to_string(), v.clone());
-            envs.insert("AZURE_STORAGE_ACCOUNT_KEY".to_string(), v.clone());
-        }
-        if let Some(v) = &self.config.sas_token {
-            envs.insert("AZURE_STORAGE_SAS_TOKEN".to_string(), v.clone());
-        }
-
-        let os_env = OsEnv;
-        let ctx = Context::new()
-            .with_file_read(TokioFileRead)
-            .with_env(StaticEnv {
-                home_dir: os_env.home_dir(),
-                envs,
-            });
+        let ctx = Context::new().with_file_read(TokioFileRead).with_env(OsEnv);
 
         let mut credential = DefaultCredentialProvider::new();
         if let Some(account_key) = self.config.account_key.as_deref() {
