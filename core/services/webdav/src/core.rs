@@ -258,6 +258,50 @@ impl WebdavCore {
         ctx.http_transport().send(req).await
     }
 
+    /// Send a partial PUT request carrying `Content-Range`.
+    ///
+    /// The chunk is written at `offset` inside an existing file. The complete
+    /// length is unknown while streaming, so the header uses `*`.
+    ///
+    /// # Reference
+    /// - [Apache-style PUT with Content-Range](https://github.com/messense/dav-server-rs/tree/main/doc/Apache-PUT-with-Content-Range.md)
+    pub async fn webdav_put_range(
+        &self,
+        ctx: &OperationContext,
+        path: &str,
+        offset: u64,
+        args: &OpWrite,
+        body: Buffer,
+    ) -> Result<Response<Buffer>> {
+        let path = build_rooted_abs_path(&self.root, path);
+        let url = format!("{}{}", self.endpoint, percent_encode_path(&path));
+
+        let mut req = Request::put(&url);
+
+        if let Some(v) = &self.authorization {
+            req = req.header(header::AUTHORIZATION, v)
+        }
+
+        let size = body.len() as u64;
+        req = req.header(header::CONTENT_LENGTH, size);
+        req = req.header(
+            header::CONTENT_RANGE,
+            format!("bytes {}-{}/*", offset, offset + size - 1),
+        );
+
+        if let Some(v) = args.content_type() {
+            req = req.header(header::CONTENT_TYPE, v)
+        }
+
+        let req = req
+            .extension(Operation::Write)
+            .extension(ServiceOperation("Put"))
+            .body(body)
+            .map_err(new_request_build_error)?;
+
+        ctx.http_transport().send(req).await
+    }
+
     /// Set user-defined metadata using WebDAV PROPPATCH method.
     ///
     /// This method uses the OpenDAL custom namespace to store user metadata

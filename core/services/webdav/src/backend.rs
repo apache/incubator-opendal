@@ -215,6 +215,7 @@ impl Builder for WebdavBuilder {
                 read_with_if_unmodified_since: true,
 
                 write: true,
+                write_can_multi: true,
                 write_can_empty: true,
                 write_with_user_metadata: true,
 
@@ -259,7 +260,7 @@ pub struct WebdavBackend {
 
 impl Service for WebdavBackend {
     type Reader = oio::StreamReader<WebdavReader>;
-    type Writer = oio::OneShotWriter<WebdavWriter>;
+    type Writer = WebdavWriter;
     type Lister = oio::PageLister<WebdavLister>;
     type Deleter = oio::OneShotDeleter<WebdavDeleter>;
     type Copier = oio::OneShotCopier;
@@ -301,14 +302,7 @@ impl Service for WebdavBackend {
     }
 
     fn write(&self, ctx: &OperationContext, path: &str, args: OpWrite) -> Result<Self::Writer> {
-        let output: oio::OneShotWriter<WebdavWriter> = {
-            Ok(oio::OneShotWriter::new(WebdavWriter::new(
-                self.core.clone(),
-                ctx.clone(),
-                args,
-                path.to_string(),
-            )))
-        }?;
+        let output = WebdavWriter::new(self.core.clone(), ctx.clone(), args, path.to_string());
 
         Ok(output)
     }

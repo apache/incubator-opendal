@@ -41,4 +41,5 @@ quick-xml = { workspace = true, features = ["serialize", "overlapped-lists"] }
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
+futures = { workspace = true, features = ["std", "async-await"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
