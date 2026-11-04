@@ -776,6 +776,23 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_reader_read_with_chunk_zero() -> Result<()> {
+        let op = Operator::new(services::Memory::default()).unwrap();
+        let path = "test_file";
+
+        let content = gen_fixed_bytes(1024);
+        op.write(path, content.clone())
+            .await
+            .expect("write must succeed");
+
+        let reader = op.reader_with(path).chunk(0).await.unwrap();
+        let buf = reader.read(..).await.expect("read to end must succeed");
+
+        assert_eq!(buf.to_bytes(), content);
+        Ok(())
+    }
+
+    #[tokio::test]
     async fn test_reader_read_with_concurrent() -> Result<()> {
         let op = Operator::via_iter(services::MEMORY_SCHEME, [])?;
         let path = "test_file";
@@ -963,6 +980,27 @@ mod tests {
                 content[range.start as usize..range.end as usize]
             );
         }
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_fetch_with_chunk_zero() -> Result<()> {
+        let op = Operator::new(services::Memory::default()).unwrap();
+        let path = "test_file";
+
+        let content = gen_fixed_bytes(1024);
+        op.write(path, content.clone())
+            .await
+            .expect("write must succeed");
+
+        let reader = op.reader_with(path).chunk(0).await.unwrap();
+        let bufs = reader
+            .fetch(vec![0..100, 200..300])
+            .await
+            .expect("fetch must succeed");
+
+        assert_eq!(bufs[0].to_bytes(), content[0..100]);
+        assert_eq!(bufs[1].to_bytes(), content[200..300]);
         Ok(())
     }
 

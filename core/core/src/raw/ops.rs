@@ -659,7 +659,7 @@ impl From<options::ReadOptions> for (BytesRange, OpRead, OpReader) {
         let range = value.range;
         let reader = OpReader {
             concurrent: value.concurrent.max(1),
-            chunk: value.chunk,
+            chunk: value.chunk.map(|v| v.max(1)),
             gap: value.gap,
             prefetch: 0,
         };
@@ -671,7 +671,7 @@ impl From<options::ReaderOptions> for (OpRead, OpReader) {
     fn from(value: options::ReaderOptions) -> Self {
         let reader = OpReader {
             concurrent: value.concurrent.max(1),
-            chunk: value.chunk,
+            chunk: value.chunk.map(|v| v.max(1)),
             gap: value.gap,
             prefetch: value.prefetch,
         };
@@ -888,7 +888,7 @@ impl OpWrite {
         }
 
         let writer = OpWriter {
-            chunk: options.chunk,
+            chunk: options.chunk.map(|v| v.max(1)),
         };
         let user_metadata = options.user_metadata.take().map(sorted_user_metadata);
         let mut flags = 0;
@@ -1057,7 +1057,7 @@ impl OpWriter {
     /// operations like multipart uploads. So the chunk size may be larger than
     /// the given buffer size.
     pub fn with_chunk(mut self, chunk: usize) -> Self {
-        self.chunk = Some(chunk);
+        self.chunk = Some(chunk.max(1));
         self
     }
 }

@@ -456,6 +456,22 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_writer_write_with_chunk_zero() {
+        let op = Operator::new(services::Memory::default()).unwrap();
+        let path = "test_file";
+
+        let content = vec![b'x'; 4096];
+        op.write_with(path, content.clone())
+            .chunk(0)
+            .await
+            .expect("write with chunk 0 must succeed");
+
+        let buf = op.read(path).await.expect("read to end mut succeed");
+
+        assert_eq!(buf.to_bytes(), content);
+    }
+
+    #[tokio::test]
     async fn test_writer_write_from() {
         let op = Operator::new(services::Memory::default()).unwrap();
         let path = "test_file";
