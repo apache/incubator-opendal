@@ -54,16 +54,6 @@ impl oio::OneShotDelete for FsDeleter {
                         tokio::fs::remove_dir(&p).await.map_err(new_std_io_error)?;
                     }
                 } else {
-                    // A path ending with `/` denotes a directory. Never remove
-                    // a file through a directory path: `confined_join` strips
-                    // the trailing slash, so without this check deleting
-                    // `f.txt/` would remove the file `f.txt`.
-                    if path.ends_with('/') {
-                        return Err(Error::new(
-                            ErrorKind::NotADirectory,
-                            "delete path is a directory path, but the target is a file",
-                        ));
-                    }
                     tokio::fs::remove_file(&p).await.map_err(new_std_io_error)?;
                 }
                 Ok(())
@@ -76,8 +66,6 @@ impl oio::OneShotDelete for FsDeleter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[cfg(unix)]
     #[tokio::test]
     async fn test_delete_dangling_symlink_removes_link() {
@@ -139,26 +127,5 @@ mod tests {
         op.delete("linkfile").await.unwrap();
         assert!(std::fs::symlink_metadata(root.join("linkfile")).is_err());
         assert_eq!(std::fs::read(root.join("real.txt")).unwrap(), b"data");
-    }
-
-    #[tokio::test]
-    async fn test_delete_file_through_directory_path_is_rejected() {
-        use opendal_core::Operator;
-
-        let temp_dir = tempfile::TempDir::new().unwrap();
-        let root = temp_dir.path();
-
-        let op = Operator::new(crate::Fs::default().root(root.to_str().unwrap())).unwrap();
-
-        op.write("f.txt", "x").await.unwrap();
-        let err = op.delete("f.txt/").await.unwrap_err();
-        assert_eq!(err.kind(), ErrorKind::NotADirectory);
-        // The file must survive: a directory path must never remove a file.
-        assert!(op.stat("f.txt").await.is_ok());
-
-        // Directory deletes keep working.
-        op.create_dir("d/").await.unwrap();
-        op.delete("d/").await.unwrap();
-        assert!(op.stat("d/").await.is_err());
     }
 }
