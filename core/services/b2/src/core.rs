@@ -91,7 +91,10 @@ impl B2Core {
 
         {
             let mut signer = self.signer.write().await;
-            let req = Request::get("https://api.backblazeb2.com/b2api/v2/b2_authorize_account")
+            // Use API v4 so that Multi-Bucket Application Keys can authenticate.
+            // Such keys are rejected by the v1/v2/v3 endpoints with
+            // "This request is not currently supported on API version number N".
+            let req = Request::get("https://api.backblazeb2.com/b2api/v4/b2_authorize_account")
                 .header(
                     header::AUTHORIZATION,
                     format_authorization_by_basic(
@@ -113,8 +116,8 @@ impl B2Core {
                             .map_err(new_json_deserialize_error)?;
                     signer.auth_info = AuthInfo {
                         authorization_token: token.authorization_token.clone(),
-                        api_url: token.api_url.clone(),
-                        download_url: token.download_url.clone(),
+                        api_url: token.api_info.storage_api.api_url.clone(),
+                        download_url: token.api_info.storage_api.download_url.clone(),
                         // This authorization token is valid for at most 24 hours.
                         expires_in: Timestamp::now() + Duration::from_secs(20 * 60 * 60),
                     };
@@ -718,7 +721,25 @@ pub struct AuthorizeAccountResponse {
     /// An authorization token to use with all calls, other than b2_authorize_account, that need an Authorization header. This authorization token is valid for at most 24 hours.
     /// So we should call b2_authorize_account every 24 hours.
     pub authorization_token: String,
+    /// The information needed for each API suite, as returned by API v3 and later.
+    pub api_info: ApiInfo,
+}
+
+/// API information returned by `b2_authorize_account`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ApiInfo {
+    /// The information needed for the B2 Native API.
+    pub storage_api: StorageApiInfo,
+}
+
+/// B2 Native API information returned by `b2_authorize_account`.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StorageApiInfo {
+    /// The base URL to use for all API calls except for uploading and downloading files.
     pub api_url: String,
+    /// The base URL to use for downloading files.
     pub download_url: String,
 }
 
@@ -944,6 +965,42 @@ mod tests {
 
         let code = "not_found";
         assert_eq!(parse_b2_error_code(code), None);
+    }
+
+    #[test]
+    fn test_authorize_account_v4_response() {
+        // v4 response shape, including a Multi-Bucket Application Key scope.
+        let resp: AuthorizeAccountResponse = serde_json::from_str(
+            r#"{
+                "accountId": "account-id",
+                "authorizationToken": "auth-token",
+                "apiInfo": {
+                    "storageApi": {
+                        "apiUrl": "https://api001.backblazeb2.com",
+                        "downloadUrl": "https://f001.backblazeb2.com",
+                        "allowed": {
+                            "buckets": [
+                                {"id": "bucket-id-1", "name": "bucket-1"},
+                                {"id": "bucket-id-2", "name": "bucket-2"}
+                            ],
+                            "capabilities": ["listFiles", "readFiles", "writeFiles"],
+                            "namePrefix": null
+                        }
+                    }
+                }
+            }"#,
+        )
+        .unwrap();
+
+        assert_eq!(resp.authorization_token, "auth-token");
+        assert_eq!(
+            resp.api_info.storage_api.api_url,
+            "https://api001.backblazeb2.com"
+        );
+        assert_eq!(
+            resp.api_info.storage_api.download_url,
+            "https://f001.backblazeb2.com"
+        );
     }
 
     #[tokio::test]
