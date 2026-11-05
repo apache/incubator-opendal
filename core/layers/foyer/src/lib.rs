@@ -19,6 +19,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
+mod copier;
 mod deleter;
 mod error;
 mod full;
@@ -157,8 +158,16 @@ impl Code for FoyerValue {
 /// - `delete`: [`FoyerLayer`] removes cached data after a successful delete when the deleter
 ///   closes. A failed delete is not invalidated. Cache invalidation happens before the underlying
 ///   deleter is closed, so the data remains invalidated if closing the deleter fails.
-/// - Other operations: [`FoyerLayer`] passes operations such as `list`, `copy`,
-///   and `rename` to the service without caching their results.
+/// - `copy`: [`FoyerLayer`] removes the destination's cached data after a successful copy.
+///   A failed copy is not invalidated.
+/// - `rename`: [`FoyerLayer`] removes the source's cached data after a successful rename,
+///   and removes the destination's cached data when it overwrites an existing object.
+///   A failed rename is not invalidated.
+/// - Other operations: [`FoyerLayer`] passes operations such as `list` to the service
+///   without caching their results.
+///
+/// Copy and rename invalidate only version-less cache entries, matching delete:
+/// entries for specific versions name immutable versions and are left alone.
 ///
 /// # Range Reads
 ///
@@ -287,7 +296,7 @@ impl Service for FoyerService {
     type Writer = Writer<oio::Writer>;
     type Lister = oio::Lister;
     type Deleter = Deleter<oio::Deleter>;
-    type Copier = oio::Copier;
+    type Copier = copier::Copier<oio::Copier>;
     type Composer = ();
 
     fn info(&self) -> ServiceInfo {
@@ -346,7 +355,9 @@ impl Service for FoyerService {
         to: &str,
         args: OpCopy,
     ) -> Result<Self::Copier> {
-        self.inner.copy(ctx, from, to, args)
+        let inner = self.operation_inner(ctx);
+        let copier = inner.srv.copy(&inner.ctx, from, to, args)?;
+        Ok(copier::Copier::new(copier, inner, to))
     }
 
     fn list(&self, ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
@@ -373,7 +384,33 @@ impl Service for FoyerService {
         to: &str,
         args: OpRename,
     ) -> Result<RpRename> {
-        self.inner.rename(ctx, from, to, args).await
+        let inner = self.operation_inner(ctx);
+        let rp = inner.srv.rename(&inner.ctx, from, to, args).await?;
+        // The source no longer exists: drop its cached entry and mark it
+        // deleted, mirroring a successful delete.
+        let from_key = FoyerKey {
+            path: from.to_string(),
+            version: None,
+        };
+        inner.cache.remove(&from_key);
+        inner
+            .deleted_keys
+            .lock()
+            .expect("deleted keys lock poisoned")
+            .insert(from_key);
+        // The destination now holds new content: drop any stale cached entry
+        // and clear a previous deleted mark, mirroring a successful write.
+        let to_key = FoyerKey {
+            path: to.to_string(),
+            version: None,
+        };
+        inner.cache.remove(&to_key);
+        inner
+            .deleted_keys
+            .lock()
+            .expect("deleted keys lock poisoned")
+            .remove(&to_key);
+        Ok(rp)
     }
 
     async fn restore(
@@ -396,8 +433,6 @@ impl Service for FoyerService {
     ) -> Result<RpPresign> {
         self.inner.presign(ctx, path, args).await
     }
-
-    // TODO(MrCroxx): Implement copy, rename with foyer cache.
 }
 
 #[cfg(test)]
@@ -409,6 +444,7 @@ mod tests {
     use opendal_core::raw::oio::Read as _;
     use opendal_core::raw::oio::ReadStream as _;
     use opendal_core::{Buffer, Operator, services::Memory};
+    use opendal_service_fs::Fs;
     use size::consts::MiB;
     use std::io::Cursor;
     use std::sync::Arc;
@@ -924,5 +960,67 @@ mod tests {
                 "decode(encode(key)) should equal original key"
             );
         }
+    }
+
+    async fn fs_foyer_op(dir: &tempfile::TempDir) -> Operator {
+        Operator::new(Fs::default().root(dir.path().to_str().unwrap()))
+            .unwrap()
+            .layer(FoyerLayer::new(memory_cache().await))
+    }
+
+    #[tokio::test]
+    async fn test_rename_invalidates_cached_entries() {
+        let dir = tempfile::tempdir().unwrap();
+        let op = fs_foyer_op(&dir).await;
+
+        op.write("a", vec![b'a'; 10]).await.unwrap();
+        let _ = op.read("a").await.unwrap();
+        op.rename("a", "b").await.unwrap();
+
+        assert!(op.read("a").await.is_err());
+        assert_eq!(op.read("b").await.unwrap().to_vec(), vec![b'a'; 10]);
+    }
+
+    #[tokio::test]
+    async fn test_rename_overwrites_cached_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let op = fs_foyer_op(&dir).await;
+
+        op.write("b", vec![b'1'; 10]).await.unwrap();
+        let _ = op.read("b").await.unwrap();
+        op.write("a", vec![b'2'; 10]).await.unwrap();
+        op.rename("a", "b").await.unwrap();
+
+        assert!(op.read("a").await.is_err());
+        assert_eq!(op.read("b").await.unwrap().to_vec(), vec![b'2'; 10]);
+    }
+
+    #[tokio::test]
+    async fn test_copy_invalidates_cached_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let op = fs_foyer_op(&dir).await;
+
+        op.write("b", vec![b'1'; 10]).await.unwrap();
+        let _ = op.read("b").await.unwrap();
+        op.write("a", vec![b'2'; 10]).await.unwrap();
+        op.copy("a", "b").await.unwrap();
+
+        assert_eq!(op.read("b").await.unwrap().to_vec(), vec![b'2'; 10]);
+    }
+
+    #[tokio::test]
+    async fn test_failed_copy_and_rename_do_not_invalidate() {
+        let dir = tempfile::tempdir().unwrap();
+        let op = fs_foyer_op(&dir).await;
+
+        op.write("b", vec![b'1'; 10]).await.unwrap();
+        let _ = op.read("b").await.unwrap();
+        assert!(op.copy("missing", "b").await.is_err());
+        assert_eq!(op.read("b").await.unwrap().to_vec(), vec![b'1'; 10]);
+
+        op.write("a", vec![b'a'; 10]).await.unwrap();
+        let _ = op.read("a").await.unwrap();
+        assert!(op.rename("missing", "c").await.is_err());
+        assert_eq!(op.read("a").await.unwrap().to_vec(), vec![b'a'; 10]);
     }
 }
