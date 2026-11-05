@@ -90,14 +90,12 @@ pub fn build_rel_path(root: &str, path: &str) -> String {
 ///
 /// # Normalize Rules
 ///
-/// - All whitespace will be trimmed: ` abc/def ` => `abc/def`
 /// - All leading / will be trimmed: `///abc` => `abc`
 /// - Internal // will be replaced by /: `abc///def` => `abc/def`
 /// - Empty path will be `/`: `` => `/`
 pub fn normalize_path(path: &str) -> String {
-    // - all whitespace has been trimmed.
     // - all leading `/` has been trimmed.
-    let path = path.trim().trim_start_matches('/');
+    let path = path.trim_start_matches('/');
 
     // Fast line for empty path.
     if path.is_empty() {
@@ -284,7 +282,16 @@ mod tests {
             ("abs dir path with extra /", "///abc/def/", "abc/def/"),
             ("file path contains ///", "abc///def", "abc/def"),
             ("dir path contains ///", "abc///def///", "abc/def/"),
-            ("file with whitespace", "abc/def   ", "abc/def"),
+            (
+                "file path contains trailing whitespace",
+                "abc/def   ",
+                "abc/def   ",
+            ),
+            (
+                "file path contains leading whitespace",
+                "   abc/def",
+                "   abc/def",
+            ),
         ];
 
         for (name, input, expect) in cases {

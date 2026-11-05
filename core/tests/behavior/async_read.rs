@@ -51,6 +51,7 @@ pub fn tests(op: &Operator, tests: &mut Vec<Trial>) {
             test_read_with_if_unmodified_since,
             test_read_with_dir_path,
             test_read_with_special_chars,
+            test_read_with_trailing_space,
             test_read_with_override_cache_control,
             test_read_with_override_content_disposition,
             test_read_with_override_content_type,
@@ -724,6 +725,22 @@ pub async fn test_read_with_dir_path(op: Operator) -> anyhow::Result<()> {
 /// Read file with special chars should succeed.
 pub async fn test_read_with_special_chars(op: Operator) -> anyhow::Result<()> {
     let path = format!("{} !@#$%^&()_+-=;',.txt", uuid::Uuid::new_v4());
+    let (path, content, size) = TEST_FIXTURE.new_file_with_path(op.clone(), &path);
+
+    op.write(&path, content.clone())
+        .await
+        .expect("write must succeed");
+
+    let bs = op.read(&path).await?.to_bytes();
+    assert_eq!(size, bs.len(), "read size");
+    assert_eq!(sha256_digest(&bs), sha256_digest(&content), "read content");
+
+    Ok(())
+}
+
+/// Read file with trailing space should succeed.
+pub async fn test_read_with_trailing_space(op: Operator) -> anyhow::Result<()> {
+    let path = format!("{} ", uuid::Uuid::new_v4());
     let (path, content, size) = TEST_FIXTURE.new_file_with_path(op.clone(), &path);
 
     op.write(&path, content.clone())
