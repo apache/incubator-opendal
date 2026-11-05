@@ -26,7 +26,7 @@ license = "Apache-2.0"
 repository = "https://github.com/apache/opendal"
 rust-version = "1.91"
 # Release candidate builds derive prerelease versions from tags in release_python.yml.
-version = "0.47.12"
+version = "0.47.13"
 
 [features]
 default = [

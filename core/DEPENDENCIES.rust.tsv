@@ -17,7 +17,7 @@ cc@1.4.0	X									X
 cfg-if@1.0.4	X									X			
 chacha20@0.10.0	X									X			
 cmake@0.1.58	X									X			
-cmov@0.5.3	X									X			
+cmov@0.5.4	X									X			
 combine@4.6.7										X			
 const-oid@0.10.2	X									X			
 const-random@0.1.18	X									X			
@@ -32,7 +32,7 @@ crunchy@0.2.4										X
 crypto-common@0.1.7	X									X			
 crypto-common@0.2.1	X									X			
 ctor@1.0.11	X									X			
-ctutils@0.4.2	X									X			
+ctutils@0.4.7	X									X			
 dashmap@6.2.1										X			
 digest@0.10.7	X									X			
 digest@0.11.3	X									X			
@@ -74,7 +74,7 @@ http@1.4.2	X									X
 http-body@1.1.0										X			
 http-body-util@0.1.3										X			
 httparse@1.10.1	X									X			
-hybrid-array@0.4.12	X									X			
+hybrid-array@0.4.15	X									X			
 hyper@1.9.0										X			
 hyper-rustls@0.27.9	X							X		X			
 hyper-timeout@0.5.2	X									X			
@@ -115,18 +115,18 @@ memchr@2.8.2										X			X
 mime@0.3.17	X									X			
 mio@1.2.0										X			
 once_cell@1.21.4	X									X			
-opendal@0.59.5	X												
-opendal-core@0.59.5	X												
-opendal-http-transport-reqwest@0.59.5	X												
-opendal-layer-concurrent-limit@0.59.5	X												
-opendal-layer-logging@0.59.5	X												
-opendal-layer-retry@0.59.5	X												
-opendal-layer-timeout@0.59.5	X												
-opendal-service-fs@0.59.5	X												
-opendal-service-goosefs@0.59.5	X												
-opendal-service-opfs@0.59.5	X												
-opendal-service-s3@0.59.5	X												
-opendal-testkit@0.59.5	X												
+opendal@0.59.6	X												
+opendal-core@0.59.6	X												
+opendal-http-transport-reqwest@0.59.6	X												
+opendal-layer-concurrent-limit@0.59.6	X												
+opendal-layer-logging@0.59.6	X												
+opendal-layer-retry@0.59.6	X												
+opendal-layer-timeout@0.59.6	X												
+opendal-service-fs@0.59.6	X												
+opendal-service-goosefs@0.59.6	X												
+opendal-service-opfs@0.59.6	X												
+opendal-service-s3@0.59.6	X												
+opendal-testkit@0.59.6	X												
 openssl-probe@0.2.1	X									X			
 ordered-multimap@0.7.3										X			
 parking_lot_core@0.9.12	X									X			

@@ -1,3 +1,7 @@
+# v0.59.6
+
+- [Changes since v0.59.5](https://github.com/apache/opendal/compare/v0.59.5...532050ac3c099dd8591cde652a8ed1aaf03ba418)
+
 # v0.59.5
 
 - [Release notes](https://github.com/apache/opendal/releases/tag/v0.59.5)

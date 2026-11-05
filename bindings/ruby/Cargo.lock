@@ -1387,7 +1387,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "opendal"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "ctor",
  "opendal-core",
@@ -1415,7 +1415,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-core"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "anyhow",
  "asyncband",
@@ -1439,7 +1439,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-http-transport-reqwest"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "bytes",
  "futures",
@@ -1451,7 +1451,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-layer-concurrent-limit"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "asyncband",
  "futures",
@@ -1461,7 +1461,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-layer-logging"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "log",
  "opendal-core",
@@ -1469,7 +1469,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-layer-retry"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "backon",
  "log",
@@ -1478,7 +1478,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-layer-throttle"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "governor",
  "opendal-core",
@@ -1486,7 +1486,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-layer-timeout"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "opendal-core",
  "tokio",
@@ -1494,7 +1494,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-ruby"
-version = "0.1.16"
+version = "0.1.17"
 dependencies = [
  "bytes",
  "magnus",
@@ -1506,7 +1506,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-azblob"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "base64 0.23.0",
  "bytes",
@@ -1525,7 +1525,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-azdls"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "asyncband",
  "base64 0.23.0",
@@ -1544,7 +1544,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-azfile"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "bytes",
  "http",
@@ -1560,7 +1560,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-azure-common"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "http",
  "opendal-core",
@@ -1568,7 +1568,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-cos"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "bytes",
  "http",
@@ -1583,7 +1583,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-fs"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "bytes",
  "log",
@@ -1595,7 +1595,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-gcs"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "async-trait",
  "bytes",
@@ -1615,7 +1615,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-ghac"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "bytes",
  "ghac",
@@ -1633,7 +1633,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-http"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "http",
  "log",
@@ -1643,7 +1643,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-ipmfs"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "bytes",
  "http",
@@ -1655,7 +1655,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-obs"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "bytes",
  "http",
@@ -1670,7 +1670,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-oss"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "bytes",
  "http",
@@ -1685,7 +1685,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-s3"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "base64 0.23.0",
  "bytes",
@@ -1704,7 +1704,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-webdav"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "anyhow",
  "bytes",
@@ -1717,7 +1717,7 @@ dependencies = [
 
 [[package]]
 name = "opendal-service-webhdfs"
-version = "0.59.5"
+version = "0.59.6"
 dependencies = [
  "anyhow",
  "asyncband",

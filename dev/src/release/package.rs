@@ -87,27 +87,27 @@ fn make_package(path: &str, version: &str, dependencies: Vec<Package>) -> Packag
 
 /// List all packages that are ready for release.
 pub fn all_packages() -> Vec<Package> {
-    let core = make_package("core", "0.59.5", vec![]);
+    let core = make_package("core", "0.59.6", vec![]);
 
     // Integrations
-    let dav_server = make_package("integrations/dav-server", "0.7.11", vec![core.clone()])
+    let dav_server = make_package("integrations/dav-server", "0.7.12", vec![core.clone()])
         .with_public_compat_dependencies(&["opendal-core"]);
-    let object_store = make_package("integrations/object_store", "0.60.5", vec![core.clone()])
+    let object_store = make_package("integrations/object_store", "0.60.6", vec![core.clone()])
         .with_public_compat_dependencies(&["opendal", "object_store"]);
-    let parquet = make_package("integrations/parquet", "0.10.5", vec![core.clone()])
+    let parquet = make_package("integrations/parquet", "0.10.6", vec![core.clone()])
         .with_public_compat_dependencies(&["opendal", "parquet"]);
-    let unftp_sbe = make_package("integrations/unftp-sbe", "0.4.11", vec![core.clone()]);
+    let unftp_sbe = make_package("integrations/unftp-sbe", "0.4.12", vec![core.clone()]);
 
     // Binaries moved to separate repositories; no longer released from this repo
 
     // Bindings
-    let c = make_package("bindings/c", "0.47.8", vec![core.clone()]);
-    let cpp = make_package("bindings/cpp", "0.45.35", vec![core.clone()]);
-    let java = make_package("bindings/java", "0.50.8", vec![core.clone()]);
-    let nodejs = make_package("bindings/nodejs", "0.49.13", vec![core.clone()]);
-    let python = make_package("bindings/python", "0.47.12", vec![core.clone()]);
-    let ruby = make_package("bindings/ruby", "0.1.16", vec![core.clone()]);
-    let dotnet = make_package("bindings/dotnet", "0.3.1", vec![core.clone()]);
+    let c = make_package("bindings/c", "0.47.9", vec![core.clone()]);
+    let cpp = make_package("bindings/cpp", "0.45.36", vec![core.clone()]);
+    let java = make_package("bindings/java", "0.50.9", vec![core.clone()]);
+    let nodejs = make_package("bindings/nodejs", "0.49.14", vec![core.clone()]);
+    let python = make_package("bindings/python", "0.47.13", vec![core.clone()]);
+    let ruby = make_package("bindings/ruby", "0.1.17", vec![core.clone()]);
+    let dotnet = make_package("bindings/dotnet", "0.3.2", vec![core.clone()]);
 
     vec![
         core,

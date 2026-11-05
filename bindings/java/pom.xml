@@ -31,7 +31,7 @@
 
     <groupId>org.apache.opendal</groupId>
     <artifactId>opendal</artifactId>
-    <version>0.50.8</version> <!-- update version number -->
+    <version>0.50.9</version> <!-- update version number -->
 
     <name>Apache OpenDAL™</name>
     <description>

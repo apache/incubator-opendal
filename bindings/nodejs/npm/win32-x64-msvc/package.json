@@ -1,6 +1,6 @@
 {
   "name": "@opendal/lib-win32-x64-msvc",
-  "version": "0.49.13",
+  "version": "0.49.14",
   "cpu": [
     "x64"
   ],

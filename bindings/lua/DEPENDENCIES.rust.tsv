@@ -3,11 +3,11 @@ aes@0.8.4	X									X
 aho-corasick@1.1.5										X			X
 anyhow@1.0.104	X									X			
 async-trait@0.1.92	X									X			
-asyncband@0.7.3	X												
+asyncband@0.7.4	X												
 atomic-waker@1.1.2	X									X			
 autocfg@1.5.1	X									X			
-aws-lc-rs@1.18.2	X							X					
-aws-lc-sys@0.46.0	X			X				X		X	X		
+aws-lc-rs@1.19.0	X							X					
+aws-lc-sys@0.47.0	X			X				X		X	X		
 backon@1.6.0	X												
 base64@0.23.1	X									X			
 base64ct@1.8.3	X									X			
@@ -19,7 +19,7 @@ bstr@1.13.1	X									X
 bumpalo@3.20.3	X									X			
 bytes@1.12.1										X			
 cbc@0.1.2	X									X			
-cc@1.8.0	X									X			
+cc@1.11.0	X									X			
 cfg-if@1.0.5	X									X			
 cipher@0.4.4	X									X			
 cmake@0.1.58	X									X			
@@ -38,7 +38,7 @@ crunchy@0.2.4										X
 crypto-common@0.1.7	X									X			
 crypto-common@0.2.2	X									X			
 ctor@1.0.13	X									X			
-ctutils@0.4.3	X									X			
+ctutils@0.4.8	X									X			
 der@0.7.10	X									X			
 digest@0.10.7	X									X			
 digest@0.11.3	X									X			
@@ -48,7 +48,7 @@ dunce@1.0.5	X					X					X
 either@1.19.0	X									X			
 errno@0.3.14	X									X			
 fastrand@2.5.0	X									X			
-find-msvc-tools@0.1.14	X									X			
+find-msvc-tools@0.1.15	X									X			
 form_urlencoded@1.2.2	X									X			
 fs_extra@1.3.0										X			
 futures@0.3.34	X									X			
@@ -77,21 +77,21 @@ hybrid-array@0.4.15	X									X
 hyper@1.12.0										X			
 hyper-rustls@0.27.10	X							X		X			
 hyper-util@0.1.21										X			
-icu_collections@2.3.0												X	
-icu_locale_core@2.3.0												X	
-icu_normalizer@2.3.0												X	
-icu_normalizer_data@2.3.0												X	
-icu_properties@2.3.0												X	
-icu_properties_data@2.3.0												X	
-icu_provider@2.3.1												X	
+icu_collections@2.4.0												X	
+icu_locale_core@2.4.0												X	
+icu_normalizer@2.4.0												X	
+icu_normalizer_data@2.4.0												X	
+icu_properties@2.4.0												X	
+icu_properties_data@2.4.0												X	
+icu_provider@2.4.0												X	
 idna@1.1.0	X									X			
 idna_adapter@1.2.2	X									X			
 inout@0.1.4	X									X			
 ipnet@2.12.2	X									X			
 itertools@0.14.0	X									X			
 itoa@1.0.18	X									X			
-jiff@0.2.38										X			X
-jiff-core@0.1.1										X			X
+jiff@0.2.39										X			X
+jiff-core@0.1.2										X			X
 jiff-tzdb@0.1.9										X			X
 jiff-tzdb-platform@0.1.3										X			X
 jni@0.22.4	X									X			
@@ -99,7 +99,7 @@ jni-macros@0.22.4	X									X
 jni-sys@0.4.1	X									X			
 jni-sys-macros@0.4.1	X									X			
 jobserver@0.1.35	X									X			
-js-sys@0.3.106	X									X			
+js-sys@0.3.107	X									X			
 lazy_static@1.5.1	X									X			
 libc@0.2.191	X									X			
 libm@0.2.16										X			
@@ -108,7 +108,7 @@ linktime-proc-macro@0.2.3	X									X
 linux-raw-sys@0.12.1	X	X								X			
 litemap@0.8.3												X	
 lock_api@0.4.14	X									X			
-log@0.4.34	X									X			
+log@0.4.35	X									X			
 md-5@0.11.0	X									X			
 memchr@2.8.3										X			X
 mio@1.2.4										X			
@@ -120,30 +120,30 @@ num-integer@0.1.47	X									X
 num-iter@0.1.46	X									X			
 num-traits@0.2.19	X									X			
 once_cell@1.21.4	X									X			
-opendal@0.59.5	X												
-opendal-core@0.59.5	X												
-opendal-http-transport-reqwest@0.59.5	X												
-opendal-layer-concurrent-limit@0.59.5	X												
-opendal-layer-logging@0.59.5	X												
-opendal-layer-retry@0.59.5	X												
-opendal-layer-timeout@0.59.5	X												
+opendal@0.59.6	X												
+opendal-core@0.59.6	X												
+opendal-http-transport-reqwest@0.59.6	X												
+opendal-layer-concurrent-limit@0.59.6	X												
+opendal-layer-logging@0.59.6	X												
+opendal-layer-retry@0.59.6	X												
+opendal-layer-timeout@0.59.6	X												
 opendal-lua@0.0.0	X												
-opendal-service-azblob@0.59.5	X												
-opendal-service-azdls@0.59.5	X												
-opendal-service-azfile@0.59.5	X												
-opendal-service-azure-common@0.59.5	X												
-opendal-service-cos@0.59.5	X												
-opendal-service-fs@0.59.5	X												
-opendal-service-gcs@0.59.5	X												
-opendal-service-ghac@0.59.5	X												
-opendal-service-http@0.59.5	X												
-opendal-service-ipmfs@0.59.5	X												
-opendal-service-obs@0.59.5	X												
-opendal-service-oss@0.59.5	X												
-opendal-service-s3@0.59.5	X												
-opendal-service-webdav@0.59.5	X												
-opendal-service-webhdfs@0.59.5	X												
-openssl-probe@0.2.1	X									X			
+opendal-service-azblob@0.59.6	X												
+opendal-service-azdls@0.59.6	X												
+opendal-service-azfile@0.59.6	X												
+opendal-service-azure-common@0.59.6	X												
+opendal-service-cos@0.59.6	X												
+opendal-service-fs@0.59.6	X												
+opendal-service-gcs@0.59.6	X												
+opendal-service-ghac@0.59.6	X												
+opendal-service-http@0.59.6	X												
+opendal-service-ipmfs@0.59.6	X												
+opendal-service-obs@0.59.6	X												
+opendal-service-oss@0.59.6	X												
+opendal-service-s3@0.59.6	X												
+opendal-service-webdav@0.59.6	X												
+opendal-service-webhdfs@0.59.6	X												
+openssl-probe@0.2.2	X									X			
 ordered-multimap@0.7.3										X			
 parking_lot@0.12.5	X									X			
 parking_lot_core@0.9.12	X									X			
@@ -189,13 +189,13 @@ rsa@0.9.10	X									X
 rust-ini@0.21.3										X			
 rustc-hash@2.1.3	X									X			
 rustc_version@0.4.1	X									X			
-rustix@1.1.5	X	X								X			
+rustix@1.1.6	X	X								X			
 rustls@0.23.46	X							X		X			
 rustls-native-certs@0.8.5	X							X		X			
 rustls-pki-types@1.15.1	X									X			
 rustls-platform-verifier@0.7.1	X									X			
 rustls-platform-verifier-android@0.2.0	X									X			
-rustls-webpki@0.103.15								X					
+rustls-webpki@0.103.16								X					
 rustversion@1.0.23	X									X			
 ryu@1.0.23	X				X								
 salsa20@0.10.2	X									X			
@@ -220,7 +220,7 @@ signature@2.2.0	X									X
 simd_cesu8@1.2.0	X									X			
 simdutf8@0.1.5	X									X			
 slab@0.4.12										X			
-smallvec@1.16.3	X									X			
+smallvec@1.16.4	X									X			
 socket2@0.6.5	X									X			
 spin@0.10.1										X			
 spin@0.9.9										X			
@@ -234,8 +234,8 @@ synstructure@0.14.0										X
 thiserror@2.0.21	X									X			
 thiserror-impl@2.0.21	X									X			
 tiny-keccak@2.0.2						X							
-tinystr@0.8.4												X	
-tokio@1.53.3										X			
+tinystr@0.8.5												X	
+tokio@1.54.1										X			
 tokio-macros@2.7.2										X			
 tokio-rustls@0.26.6	X									X			
 tokio-util@0.7.20										X			
@@ -250,33 +250,34 @@ typenum@1.20.1	X									X
 unicode-ident@1.0.27	X									X		X	
 untrusted@0.9.0								X					
 url@2.5.8	X									X			
-utf8_iter@1.0.4	X									X			
-uuid@1.28.0	X									X			
+utf8_iter@1.1.0	X									X			
+utf_types@1.0.0	X									X			
+uuid@1.29.0	X									X			
 version_check@0.9.5	X									X			
 walkdir@2.5.0										X			X
 want@0.3.2										X			
 wasi@0.11.1+wasi-snapshot-preview1	X	X								X			
-wasm-bindgen@0.2.129	X									X			
-wasm-bindgen-futures@0.4.79	X									X			
-wasm-bindgen-macro@0.2.129	X									X			
-wasm-bindgen-macro-support@0.2.129	X									X			
-wasm-bindgen-shared@0.2.129	X									X			
+wasm-bindgen@0.2.130	X									X			
+wasm-bindgen-futures@0.4.80	X									X			
+wasm-bindgen-macro@0.2.130	X									X			
+wasm-bindgen-macro-support@0.2.130	X									X			
+wasm-bindgen-shared@0.2.130	X									X			
 wasm-streams@0.5.0	X									X			
-web-sys@0.3.106	X									X			
+web-sys@0.3.107	X									X			
 web-time@1.1.0	X									X			
-webpki-root-certs@1.0.9							X						
+webpki-root-certs@1.0.11							X						
 winapi-util@0.1.11										X			X
 windows-link@0.2.1	X									X			
 windows-sys@0.61.2	X									X			
 writeable@0.6.4												X	
-xattr@1.6.1	X									X			
-yoke@0.8.3												X	
+xattr@1.7.0	X									X			
+yoke@0.8.4												X	
 yoke-derive@0.8.4												X	
 zerocopy@0.8.63	X		X							X			
 zerofrom@0.1.8												X	
 zerofrom-derive@0.1.8												X	
 zeroize@1.9.1	X									X			
 zerotrie@0.2.5												X	
-zerovec@0.11.8												X	
-zerovec-derive@0.11.6												X	
+zerovec@0.11.9												X	
+zerovec-derive@0.11.7												X	
 zmij@1.0.23										X			
