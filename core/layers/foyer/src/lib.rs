@@ -19,6 +19,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 #![cfg_attr(docsrs, doc(auto_cfg))]
 #![deny(missing_docs)]
+mod copier;
 mod deleter;
 mod error;
 mod full;
@@ -35,7 +36,8 @@ use foyer::{Code, HybridCache, Result as FoyerResult};
 use opendal_core::raw::*;
 use opendal_core::*;
 
-pub use deleter::Deleter;
+pub use copier::Copier;
+use deleter::Deleter;
 pub use writer::Writer;
 
 /// [`FoyerKey`] is a key for the foyer cache. It implements foyer's [`Code`] trait
@@ -262,6 +264,24 @@ pub(crate) struct Inner {
     pub(crate) deleted_keys: Arc<Mutex<HashSet<FoyerKey>>>,
 }
 
+impl Inner {
+    /// Drop the cached entry for `path` and keep reads away from the cache until
+    /// the next write through this layer, the same way a delete does. Used after
+    /// a rename (source and destination) and a copy (destination), whose results
+    /// are not cached but whose old entries would otherwise be served (#8489).
+    pub(crate) fn invalidate(&self, path: &str) {
+        let key = FoyerKey {
+            path: path.to_string(),
+            version: None,
+        };
+        self.cache.remove(&key);
+        self.deleted_keys
+            .lock()
+            .expect("deleted keys lock poisoned")
+            .insert(key);
+    }
+}
+
 #[derive(Debug)]
 #[doc(hidden)]
 pub struct FoyerService {
@@ -287,7 +307,7 @@ impl Service for FoyerService {
     type Writer = Writer<oio::Writer>;
     type Lister = oio::Lister;
     type Deleter = Deleter<oio::Deleter>;
-    type Copier = oio::Copier;
+    type Copier = Copier<oio::Copier>;
     type Composer = ();
 
     fn info(&self) -> ServiceInfo {
@@ -346,7 +366,8 @@ impl Service for FoyerService {
         to: &str,
         args: OpCopy,
     ) -> Result<Self::Copier> {
-        self.inner.copy(ctx, from, to, args)
+        let c = self.inner.copy(ctx, from, to, args)?;
+        Ok(Copier::new(c, to.to_string(), self.operation_inner(ctx)))
     }
 
     fn list(&self, ctx: &OperationContext, path: &str, args: OpList) -> Result<Self::Lister> {
@@ -373,7 +394,11 @@ impl Service for FoyerService {
         to: &str,
         args: OpRename,
     ) -> Result<RpRename> {
-        self.inner.rename(ctx, from, to, args).await
+        let rp = self.inner.rename(ctx, from, to, args).await?;
+        let inner = self.operation_inner(ctx);
+        inner.invalidate(from);
+        inner.invalidate(to);
+        Ok(rp)
     }
 
     async fn restore(
@@ -396,8 +421,6 @@ impl Service for FoyerService {
     ) -> Result<RpPresign> {
         self.inner.presign(ctx, path, args).await
     }
-
-    // TODO(MrCroxx): Implement copy, rename with foyer cache.
 }
 
 #[cfg(test)]
@@ -615,6 +638,53 @@ mod tests {
 
     fn service_context(_: &Servicer) -> OperationContext {
         OperationContext::new()
+    }
+
+    // https://github.com/apache/opendal/issues/8489
+    #[tokio::test]
+    async fn test_rename_invalidates_source_and_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = memory_cache().await;
+        let op =
+            Operator::new(opendal_service_fs::Fs::default().root(dir.path().to_str().unwrap()))
+                .unwrap()
+                .layer(FoyerLayer::new(cache));
+
+        op.write("a", vec![b'a'; 10]).await.unwrap();
+        op.write("b", vec![b'b'; 10]).await.unwrap();
+        assert_eq!(op.read("a").await.unwrap().to_vec(), vec![b'a'; 10]);
+        assert_eq!(op.read("b").await.unwrap().to_vec(), vec![b'b'; 10]);
+
+        op.rename("a", "b").await.unwrap();
+
+        assert!(
+            op.read("a").await.is_err(),
+            "the source is gone after rename"
+        );
+        assert_eq!(op.read("b").await.unwrap().to_vec(), vec![b'a'; 10]);
+
+        // A later write through the layer caches the destination again.
+        op.write("b", vec![b'c'; 10]).await.unwrap();
+        assert_eq!(op.read("b").await.unwrap().to_vec(), vec![b'c'; 10]);
+    }
+
+    #[tokio::test]
+    async fn test_copy_invalidates_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let cache = memory_cache().await;
+        let op =
+            Operator::new(opendal_service_fs::Fs::default().root(dir.path().to_str().unwrap()))
+                .unwrap()
+                .layer(FoyerLayer::new(cache));
+
+        op.write("b", vec![b'1'; 10]).await.unwrap();
+        assert_eq!(op.read("b").await.unwrap().to_vec(), vec![b'1'; 10]);
+        op.write("a", vec![b'2'; 10]).await.unwrap();
+
+        op.copy("a", "b").await.unwrap();
+
+        assert_eq!(op.read("b").await.unwrap().to_vec(), vec![b'2'; 10]);
+        assert_eq!(op.read("a").await.unwrap().to_vec(), vec![b'2'; 10]);
     }
 
     #[tokio::test]

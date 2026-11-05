@@ -7403,6 +7403,7 @@ version = "0.59.5"
 dependencies = [
  "foyer",
  "opendal-core",
+ "opendal-service-fs",
  "size",
  "tempfile",
  "tokio",
