@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["HF_SCHEME","HUGGINGFACE_SCHEME"],"fn":["register_hf_service"],"struct":["Hf","HfConfig"]};

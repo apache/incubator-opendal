@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["OperatorFuture"],"type":["FutureCompose","FutureComposer","FutureCopier","FutureCopy","FutureDelete","FutureDeleter","FutureList","FutureLister","FuturePresignDelete","FuturePresignRead","FuturePresignStat","FuturePresignWrite","FutureRead","FutureReader","FutureRename","FutureRestore","FutureStat","FutureWrite","FutureWriter"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["Credential","DefaultCredentialProvider","DefaultCredentialProviderBuilder","EnvCredentialProvider","FileCredentialProvider","RequestSigner","ServiceAccount","StaticCredentialProvider","Token","TokenCredentialProvider","VmMetadataCredentialProvider","WellKnownCredentialProvider"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["D1_SCHEME"],"fn":["register_d1_service"],"struct":["D1","D1Config"]};

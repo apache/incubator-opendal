@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["AZDLS_SCHEME"],"fn":["register_azdls_service"],"struct":["Azdls","AzdlsConfig"]};

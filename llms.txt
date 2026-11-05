@@ -1,0 +1,508 @@
+# Apache OpenDAL™: One Layer, All Storage.
+
+> OpenDAL (/ˈoʊ.pən.dæl/, pronounced "OH-puhn-dal") is an Open Data Access Layer that enables seamless interaction with diverse storage services.
+
+OpenDAL's development is guided by its vision of One Layer, All Storage and its core principles: Open Community, Solid Foundation, Fast Access, Object Storage First, and Extensible Architecture. Read the explained vision at OpenDAL Vision.
+
+## Table of Contents
+
+### opendal
+
+- [opendal](https://opendal.apache.org/docs/rust/opendal/)
+- [services](https://opendal.apache.org/docs/rust/src/opendal/lib.rs.html)
+- [layers](https://opendal.apache.org/docs/rust/src/opendal/lib.rs.html)
+- [init_default_registry](https://opendal.apache.org/docs/rust/src/opendal/lib.rs.html)
+- [install_default](https://opendal.apache.org/docs/rust/src/opendal/lib.rs.html)
+- [opendal](https://opendal.apache.org/docs/rust/src/opendal/lib.rs.html)
+
+### Docs
+
+- [One Layer, All Storage | Apache OpenDAL™](https://opendal.apache.org/): Apache OpenDAL™ is an Open Data Access Layer that gives every language a unified, zero-cost way to access object storage, file systems, cloud SaaS, databases, protocols and key-value services.
+- [Welcome to Apache OpenDAL™ | Apache OpenDAL™](https://opendal.apache.org/docs/): OpenDAL represents Open Data Access Layer. Our vision is One Layer, All Storage.
+- [Apache OpenDAL™ Downloads | Apache OpenDAL™](https://opendal.apache.org/download/): The official Apache OpenDAL releases are provided as source artifacts.
+- [Search | Apache OpenDAL™](https://opendal.apache.org/search/): Search Apache OpenDAL documentation, services, and project pages.
+- [Services | Apache OpenDAL™](https://opendal.apache.org/services/): Browse every storage service OpenDAL supports, with a copy-paste configuration reference for each binding.
+- [Concepts | Apache OpenDAL™](https://opendal.apache.org/docs/concepts/): The shared model behind every OpenDAL API — the storage semantics and path and operation concepts every binding expresses through its own native API.
+- [Rust Core | Apache OpenDAL™](https://opendal.apache.org/docs/core/): The Rust core library that powers OpenDAL — install it, see what it supports, and where to go next.
+- [OpenDAL Specifications | Apache OpenDAL™](https://opendal.apache.org/docs/specifications/): Portable behavior contracts that OpenDAL promises across supporting services.
+- [Vision | Apache OpenDAL™](https://opendal.apache.org/docs/vision/): Charter
+- [aliyun-drive | Services | Apache OpenDAL™](https://opendal.apache.org/services/aliyun-drive/): Configuration reference and copy-paste setup for the OpenDAL aliyun-drive service.
+- [alluxio | Services | Apache OpenDAL™](https://opendal.apache.org/services/alluxio/): Configuration reference and copy-paste setup for the OpenDAL alluxio service.
+- [azblob | Services | Apache OpenDAL™](https://opendal.apache.org/services/azblob/): Configuration reference and copy-paste setup for the OpenDAL azblob service.
+- [azdls | Services | Apache OpenDAL™](https://opendal.apache.org/services/azdls/): Configuration reference and copy-paste setup for the OpenDAL azdls service.
+- [azfile | Services | Apache OpenDAL™](https://opendal.apache.org/services/azfile/): Configuration reference and copy-paste setup for the OpenDAL azfile service.
+- [b2 | Services | Apache OpenDAL™](https://opendal.apache.org/services/b2/): Configuration reference and copy-paste setup for the OpenDAL b2 service.
+- [cacache | Services | Apache OpenDAL™](https://opendal.apache.org/services/cacache/): Configuration reference and copy-paste setup for the OpenDAL cacache service.
+- [cloudflare-kv | Services | Apache OpenDAL™](https://opendal.apache.org/services/cloudflare-kv/): Configuration reference and copy-paste setup for the OpenDAL cloudflare-kv service.
+- [compfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/compfs/): Configuration reference and copy-paste setup for the OpenDAL compfs service.
+- [cos | Services | Apache OpenDAL™](https://opendal.apache.org/services/cos/): Configuration reference and copy-paste setup for the OpenDAL cos service.
+- [d1 | Services | Apache OpenDAL™](https://opendal.apache.org/services/d1/): Configuration reference and copy-paste setup for the OpenDAL d1 service.
+- [dashmap | Services | Apache OpenDAL™](https://opendal.apache.org/services/dashmap/): Configuration reference and copy-paste setup for the OpenDAL dashmap service.
+- [dbfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/dbfs/): Configuration reference and copy-paste setup for the OpenDAL dbfs service.
+- [dropbox | Services | Apache OpenDAL™](https://opendal.apache.org/services/dropbox/): Configuration reference and copy-paste setup for the OpenDAL dropbox service.
+- [etcd | Services | Apache OpenDAL™](https://opendal.apache.org/services/etcd/): Configuration reference and copy-paste setup for the OpenDAL etcd service.
+- [foundationdb | Services | Apache OpenDAL™](https://opendal.apache.org/services/foundationdb/): Configuration reference and copy-paste setup for the OpenDAL foundationdb service.
+- [foyer | Services | Apache OpenDAL™](https://opendal.apache.org/services/foyer/): Configuration reference and copy-paste setup for the OpenDAL foyer service.
+- [fs | Services | Apache OpenDAL™](https://opendal.apache.org/services/fs/): Configuration reference and copy-paste setup for the OpenDAL fs service.
+- [ftp | Services | Apache OpenDAL™](https://opendal.apache.org/services/ftp/): Configuration reference and copy-paste setup for the OpenDAL ftp service.
+- [gcs-grpc | Services | Apache OpenDAL™](https://opendal.apache.org/services/gcs-grpc/): Configuration reference and copy-paste setup for the OpenDAL gcs-grpc service.
+- [gcs | Services | Apache OpenDAL™](https://opendal.apache.org/services/gcs/): Configuration reference and copy-paste setup for the OpenDAL gcs service.
+- [gdrive | Services | Apache OpenDAL™](https://opendal.apache.org/services/gdrive/): Configuration reference and copy-paste setup for the OpenDAL gdrive service.
+- [ghac | Services | Apache OpenDAL™](https://opendal.apache.org/services/ghac/): Configuration reference and copy-paste setup for the OpenDAL ghac service.
+- [git | Services | Apache OpenDAL™](https://opendal.apache.org/services/git/): Configuration reference and copy-paste setup for the OpenDAL git service.
+- [github | Services | Apache OpenDAL™](https://opendal.apache.org/services/github/): Configuration reference and copy-paste setup for the OpenDAL github service.
+- [goosefs | Services | Apache OpenDAL™](https://opendal.apache.org/services/goosefs/): Configuration reference and copy-paste setup for the OpenDAL goosefs service.
+- [gridfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/gridfs/): Configuration reference and copy-paste setup for the OpenDAL gridfs service.
+- [hdfs-native | Services | Apache OpenDAL™](https://opendal.apache.org/services/hdfs-native/): Configuration reference and copy-paste setup for the OpenDAL hdfs-native service.
+- [hdfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/hdfs/): Configuration reference and copy-paste setup for the OpenDAL hdfs service.
+- [hf | Services | Apache OpenDAL™](https://opendal.apache.org/services/hf/): Configuration reference and copy-paste setup for the OpenDAL hf service.
+- [http | Services | Apache OpenDAL™](https://opendal.apache.org/services/http/): Configuration reference and copy-paste setup for the OpenDAL http service.
+- [ipfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/ipfs/): Configuration reference and copy-paste setup for the OpenDAL ipfs service.
+- [ipmfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/ipmfs/): Configuration reference and copy-paste setup for the OpenDAL ipmfs service.
+- [koofr | Services | Apache OpenDAL™](https://opendal.apache.org/services/koofr/): Configuration reference and copy-paste setup for the OpenDAL koofr service.
+- [lakefs | Services | Apache OpenDAL™](https://opendal.apache.org/services/lakefs/): Configuration reference and copy-paste setup for the OpenDAL lakefs service.
+- [memcached | Services | Apache OpenDAL™](https://opendal.apache.org/services/memcached/): Configuration reference and copy-paste setup for the OpenDAL memcached service.
+- [memory | Services | Apache OpenDAL™](https://opendal.apache.org/services/memory/): Configuration reference and copy-paste setup for the OpenDAL memory service.
+- [mini-moka | Services | Apache OpenDAL™](https://opendal.apache.org/services/mini-moka/): Configuration reference and copy-paste setup for the OpenDAL mini-moka service.
+- [moka | Services | Apache OpenDAL™](https://opendal.apache.org/services/moka/): Configuration reference and copy-paste setup for the OpenDAL moka service.
+- [mongodb | Services | Apache OpenDAL™](https://opendal.apache.org/services/mongodb/): Configuration reference and copy-paste setup for the OpenDAL mongodb service.
+- [monoiofs | Services | Apache OpenDAL™](https://opendal.apache.org/services/monoiofs/): Configuration reference and copy-paste setup for the OpenDAL monoiofs service.
+- [mysql | Services | Apache OpenDAL™](https://opendal.apache.org/services/mysql/): Configuration reference and copy-paste setup for the OpenDAL mysql service.
+- [obs | Services | Apache OpenDAL™](https://opendal.apache.org/services/obs/): Configuration reference and copy-paste setup for the OpenDAL obs service.
+- [onedrive | Services | Apache OpenDAL™](https://opendal.apache.org/services/onedrive/): Configuration reference and copy-paste setup for the OpenDAL onedrive service.
+- [opfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/opfs/): Configuration reference and copy-paste setup for the OpenDAL opfs service.
+- [oss | Services | Apache OpenDAL™](https://opendal.apache.org/services/oss/): Configuration reference and copy-paste setup for the OpenDAL oss service.
+- [pcloud | Services | Apache OpenDAL™](https://opendal.apache.org/services/pcloud/): Configuration reference and copy-paste setup for the OpenDAL pcloud service.
+- [persy | Services | Apache OpenDAL™](https://opendal.apache.org/services/persy/): Configuration reference and copy-paste setup for the OpenDAL persy service.
+- [postgresql | Services | Apache OpenDAL™](https://opendal.apache.org/services/postgresql/): Configuration reference and copy-paste setup for the OpenDAL postgresql service.
+- [redb | Services | Apache OpenDAL™](https://opendal.apache.org/services/redb/): Configuration reference and copy-paste setup for the OpenDAL redb service.
+- [redis | Services | Apache OpenDAL™](https://opendal.apache.org/services/redis/): Configuration reference and copy-paste setup for the OpenDAL redis service.
+- [rocksdb | Services | Apache OpenDAL™](https://opendal.apache.org/services/rocksdb/): Configuration reference and copy-paste setup for the OpenDAL rocksdb service.
+- [s3 | Services | Apache OpenDAL™](https://opendal.apache.org/services/s3/): Configuration reference and copy-paste setup for the OpenDAL s3 service.
+- [seafile | Services | Apache OpenDAL™](https://opendal.apache.org/services/seafile/): Configuration reference and copy-paste setup for the OpenDAL seafile service.
+- [sftp | Services | Apache OpenDAL™](https://opendal.apache.org/services/sftp/): Configuration reference and copy-paste setup for the OpenDAL sftp service.
+- [sled | Services | Apache OpenDAL™](https://opendal.apache.org/services/sled/): Configuration reference and copy-paste setup for the OpenDAL sled service.
+- [smb | Services | Apache OpenDAL™](https://opendal.apache.org/services/smb/): Configuration reference and copy-paste setup for the OpenDAL smb service.
+- [sqlite | Services | Apache OpenDAL™](https://opendal.apache.org/services/sqlite/): Configuration reference and copy-paste setup for the OpenDAL sqlite service.
+- [surrealdb | Services | Apache OpenDAL™](https://opendal.apache.org/services/surrealdb/): Configuration reference and copy-paste setup for the OpenDAL surrealdb service.
+- [swift | Services | Apache OpenDAL™](https://opendal.apache.org/services/swift/): Configuration reference and copy-paste setup for the OpenDAL swift service.
+- [tikv | Services | Apache OpenDAL™](https://opendal.apache.org/services/tikv/): Configuration reference and copy-paste setup for the OpenDAL tikv service.
+- [tos | Services | Apache OpenDAL™](https://opendal.apache.org/services/tos/): Configuration reference and copy-paste setup for the OpenDAL tos service.
+- [upyun | Services | Apache OpenDAL™](https://opendal.apache.org/services/upyun/): Configuration reference and copy-paste setup for the OpenDAL upyun service.
+- [vercel-artifacts | Services | Apache OpenDAL™](https://opendal.apache.org/services/vercel-artifacts/): Configuration reference and copy-paste setup for the OpenDAL vercel-artifacts service.
+- [vercel-blob | Services | Apache OpenDAL™](https://opendal.apache.org/services/vercel-blob/): Configuration reference and copy-paste setup for the OpenDAL vercel-blob service.
+- [webdav | Services | Apache OpenDAL™](https://opendal.apache.org/services/webdav/): Configuration reference and copy-paste setup for the OpenDAL webdav service.
+- [webhdfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/webhdfs/): Configuration reference and copy-paste setup for the OpenDAL webhdfs service.
+- [yandex-disk | Services | Apache OpenDAL™](https://opendal.apache.org/services/yandex-disk/): Configuration reference and copy-paste setup for the OpenDAL yandex-disk service.
+- [C | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/c/): The OpenDAL C binding — experimental, built from source, blocking API over 50+ storage backends.
+- [C++ | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/cpp/): The OpenDAL C++ binding — experimental/WIP, built from source via CMake.
+- [D | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/d/): The OpenDAL D binding — early-stage and experimental, built from source on top of the C binding.
+- [Dart | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/dart/): The OpenDAL Dart binding — experimental, stdlib-style API for accessing storage services from Dart/Flutter.
+- [.NET | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/dotnet/): The OpenDAL .NET binding — install it, see what it supports, and where to go next.
+- [Go | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/go/): The OpenDAL Go binding — install it, see what it supports, and where to go next.
+- [Haskell | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/haskell/): The OpenDAL Haskell binding — experimental status, capabilities, and where to start.
+- [Java | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/java/): The OpenDAL Java binding — install it, see what it supports, and where to go next.
+- [Lua | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/lua/): The OpenDAL Lua binding — experimental status, what it supports, how to build it, and where to go next.
+- [Node.js | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/nodejs/): The OpenDAL Node.js binding — install it, see what it supports, and where to go next.
+- [OCaml | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/ocaml/): The OpenDAL OCaml binding — experimental WIP, build it from source, and see what it exposes.
+- [PHP | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/php/): The OpenDAL PHP binding — experimental extension built from Rust source, how to install it, and where to go next.
+- [Python | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/python/): The OpenDAL Python binding — install it, see what it supports, and where to go next.
+- [Ruby | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/ruby/): The OpenDAL Ruby binding — install it, see what it supports, and where to go next.
+- [Swift | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/swift/): The OpenDAL Swift binding — experimental status, what it supports, how to build it, and where to go next.
+- [Zig | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/zig/): The OpenDAL Zig binding — early-stage, built from source, wraps the C API to expose blocking storage operations.
+- [Connecting to your storage | Apache OpenDAL™](https://opendal.apache.org/docs/core/connecting/): Build an OpenDAL operator for any backend — typed builders, key-value config, URIs, credentials, and feature flags.
+- [Getting started | Apache OpenDAL™](https://opendal.apache.org/docs/core/getting-started/): Run your first OpenDAL program in Rust, then point it at a real storage backend.
+- [Going to production | Apache OpenDAL™](https://opendal.apache.org/docs/core/production/): Make OpenDAL robust in production — retries, timeouts, concurrency limits, error handling, and observability.
+- [Common tasks | Apache OpenDAL™](https://opendal.apache.org/docs/core/tasks/): Task-oriented recipes for OpenDAL in Rust — read, write, conditional operations, stream, list, delete, copy, and presign.
+- [Conditional operations | Apache OpenDAL™](https://opendal.apache.org/docs/specifications/conditional-operations/): Portable predicate, error, and atomicity semantics for conditional operations.
+- [Metadata | Apache OpenDAL™](https://opendal.apache.org/docs/specifications/metadata/): Portable ownership, construction, content length, and operation-boundary semantics for metadata.
+- [aliyun-drive | Services | Apache OpenDAL™](https://opendal.apache.org/services/aliyun-drive/go/): Configuration reference and copy-paste setup for the OpenDAL aliyun-drive service.
+- [aliyun-drive | Services | Apache OpenDAL™](https://opendal.apache.org/services/aliyun-drive/java/): Configuration reference and copy-paste setup for the OpenDAL aliyun-drive service.
+- [aliyun-drive | Services | Apache OpenDAL™](https://opendal.apache.org/services/aliyun-drive/nodejs/): Configuration reference and copy-paste setup for the OpenDAL aliyun-drive service.
+- [aliyun-drive | Services | Apache OpenDAL™](https://opendal.apache.org/services/aliyun-drive/python/): Configuration reference and copy-paste setup for the OpenDAL aliyun-drive service.
+- [aliyun-drive | Services | Apache OpenDAL™](https://opendal.apache.org/services/aliyun-drive/rust/): Configuration reference and copy-paste setup for the OpenDAL aliyun-drive service.
+- [alluxio | Services | Apache OpenDAL™](https://opendal.apache.org/services/alluxio/go/): Configuration reference and copy-paste setup for the OpenDAL alluxio service.
+- [alluxio | Services | Apache OpenDAL™](https://opendal.apache.org/services/alluxio/java/): Configuration reference and copy-paste setup for the OpenDAL alluxio service.
+- [alluxio | Services | Apache OpenDAL™](https://opendal.apache.org/services/alluxio/nodejs/): Configuration reference and copy-paste setup for the OpenDAL alluxio service.
+- [alluxio | Services | Apache OpenDAL™](https://opendal.apache.org/services/alluxio/python/): Configuration reference and copy-paste setup for the OpenDAL alluxio service.
+- [alluxio | Services | Apache OpenDAL™](https://opendal.apache.org/services/alluxio/rust/): Configuration reference and copy-paste setup for the OpenDAL alluxio service.
+- [azblob | Services | Apache OpenDAL™](https://opendal.apache.org/services/azblob/go/): Configuration reference and copy-paste setup for the OpenDAL azblob service.
+- [azblob | Services | Apache OpenDAL™](https://opendal.apache.org/services/azblob/java/): Configuration reference and copy-paste setup for the OpenDAL azblob service.
+- [azblob | Services | Apache OpenDAL™](https://opendal.apache.org/services/azblob/nodejs/): Configuration reference and copy-paste setup for the OpenDAL azblob service.
+- [azblob | Services | Apache OpenDAL™](https://opendal.apache.org/services/azblob/python/): Configuration reference and copy-paste setup for the OpenDAL azblob service.
+- [azblob | Services | Apache OpenDAL™](https://opendal.apache.org/services/azblob/ruby/): Configuration reference and copy-paste setup for the OpenDAL azblob service.
+- [azblob | Services | Apache OpenDAL™](https://opendal.apache.org/services/azblob/rust/): Configuration reference and copy-paste setup for the OpenDAL azblob service.
+- [azdls | Services | Apache OpenDAL™](https://opendal.apache.org/services/azdls/go/): Configuration reference and copy-paste setup for the OpenDAL azdls service.
+- [azdls | Services | Apache OpenDAL™](https://opendal.apache.org/services/azdls/java/): Configuration reference and copy-paste setup for the OpenDAL azdls service.
+- [azdls | Services | Apache OpenDAL™](https://opendal.apache.org/services/azdls/nodejs/): Configuration reference and copy-paste setup for the OpenDAL azdls service.
+- [azdls | Services | Apache OpenDAL™](https://opendal.apache.org/services/azdls/python/): Configuration reference and copy-paste setup for the OpenDAL azdls service.
+- [azdls | Services | Apache OpenDAL™](https://opendal.apache.org/services/azdls/ruby/): Configuration reference and copy-paste setup for the OpenDAL azdls service.
+- [azdls | Services | Apache OpenDAL™](https://opendal.apache.org/services/azdls/rust/): Configuration reference and copy-paste setup for the OpenDAL azdls service.
+- [azfile | Services | Apache OpenDAL™](https://opendal.apache.org/services/azfile/go/): Configuration reference and copy-paste setup for the OpenDAL azfile service.
+- [azfile | Services | Apache OpenDAL™](https://opendal.apache.org/services/azfile/java/): Configuration reference and copy-paste setup for the OpenDAL azfile service.
+- [azfile | Services | Apache OpenDAL™](https://opendal.apache.org/services/azfile/nodejs/): Configuration reference and copy-paste setup for the OpenDAL azfile service.
+- [azfile | Services | Apache OpenDAL™](https://opendal.apache.org/services/azfile/python/): Configuration reference and copy-paste setup for the OpenDAL azfile service.
+- [azfile | Services | Apache OpenDAL™](https://opendal.apache.org/services/azfile/ruby/): Configuration reference and copy-paste setup for the OpenDAL azfile service.
+- [azfile | Services | Apache OpenDAL™](https://opendal.apache.org/services/azfile/rust/): Configuration reference and copy-paste setup for the OpenDAL azfile service.
+- [b2 | Services | Apache OpenDAL™](https://opendal.apache.org/services/b2/go/): Configuration reference and copy-paste setup for the OpenDAL b2 service.
+- [b2 | Services | Apache OpenDAL™](https://opendal.apache.org/services/b2/java/): Configuration reference and copy-paste setup for the OpenDAL b2 service.
+- [b2 | Services | Apache OpenDAL™](https://opendal.apache.org/services/b2/nodejs/): Configuration reference and copy-paste setup for the OpenDAL b2 service.
+- [b2 | Services | Apache OpenDAL™](https://opendal.apache.org/services/b2/python/): Configuration reference and copy-paste setup for the OpenDAL b2 service.
+- [b2 | Services | Apache OpenDAL™](https://opendal.apache.org/services/b2/rust/): Configuration reference and copy-paste setup for the OpenDAL b2 service.
+- [cacache | Services | Apache OpenDAL™](https://opendal.apache.org/services/cacache/go/): Configuration reference and copy-paste setup for the OpenDAL cacache service.
+- [cacache | Services | Apache OpenDAL™](https://opendal.apache.org/services/cacache/java/): Configuration reference and copy-paste setup for the OpenDAL cacache service.
+- [cacache | Services | Apache OpenDAL™](https://opendal.apache.org/services/cacache/nodejs/): Configuration reference and copy-paste setup for the OpenDAL cacache service.
+- [cacache | Services | Apache OpenDAL™](https://opendal.apache.org/services/cacache/python/): Configuration reference and copy-paste setup for the OpenDAL cacache service.
+- [cacache | Services | Apache OpenDAL™](https://opendal.apache.org/services/cacache/rust/): Configuration reference and copy-paste setup for the OpenDAL cacache service.
+- [cloudflare-kv | Services | Apache OpenDAL™](https://opendal.apache.org/services/cloudflare-kv/go/): Configuration reference and copy-paste setup for the OpenDAL cloudflare-kv service.
+- [cloudflare-kv | Services | Apache OpenDAL™](https://opendal.apache.org/services/cloudflare-kv/python/): Configuration reference and copy-paste setup for the OpenDAL cloudflare-kv service.
+- [cloudflare-kv | Services | Apache OpenDAL™](https://opendal.apache.org/services/cloudflare-kv/rust/): Configuration reference and copy-paste setup for the OpenDAL cloudflare-kv service.
+- [compfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/compfs/go/): Configuration reference and copy-paste setup for the OpenDAL compfs service.
+- [compfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/compfs/nodejs/): Configuration reference and copy-paste setup for the OpenDAL compfs service.
+- [compfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/compfs/python/): Configuration reference and copy-paste setup for the OpenDAL compfs service.
+- [compfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/compfs/rust/): Configuration reference and copy-paste setup for the OpenDAL compfs service.
+- [cos | Services | Apache OpenDAL™](https://opendal.apache.org/services/cos/go/): Configuration reference and copy-paste setup for the OpenDAL cos service.
+- [cos | Services | Apache OpenDAL™](https://opendal.apache.org/services/cos/java/): Configuration reference and copy-paste setup for the OpenDAL cos service.
+- [cos | Services | Apache OpenDAL™](https://opendal.apache.org/services/cos/nodejs/): Configuration reference and copy-paste setup for the OpenDAL cos service.
+- [cos | Services | Apache OpenDAL™](https://opendal.apache.org/services/cos/python/): Configuration reference and copy-paste setup for the OpenDAL cos service.
+- [cos | Services | Apache OpenDAL™](https://opendal.apache.org/services/cos/ruby/): Configuration reference and copy-paste setup for the OpenDAL cos service.
+- [cos | Services | Apache OpenDAL™](https://opendal.apache.org/services/cos/rust/): Configuration reference and copy-paste setup for the OpenDAL cos service.
+- [d1 | Services | Apache OpenDAL™](https://opendal.apache.org/services/d1/go/): Configuration reference and copy-paste setup for the OpenDAL d1 service.
+- [d1 | Services | Apache OpenDAL™](https://opendal.apache.org/services/d1/python/): Configuration reference and copy-paste setup for the OpenDAL d1 service.
+- [d1 | Services | Apache OpenDAL™](https://opendal.apache.org/services/d1/rust/): Configuration reference and copy-paste setup for the OpenDAL d1 service.
+- [dashmap | Services | Apache OpenDAL™](https://opendal.apache.org/services/dashmap/go/): Configuration reference and copy-paste setup for the OpenDAL dashmap service.
+- [dashmap | Services | Apache OpenDAL™](https://opendal.apache.org/services/dashmap/java/): Configuration reference and copy-paste setup for the OpenDAL dashmap service.
+- [dashmap | Services | Apache OpenDAL™](https://opendal.apache.org/services/dashmap/nodejs/): Configuration reference and copy-paste setup for the OpenDAL dashmap service.
+- [dashmap | Services | Apache OpenDAL™](https://opendal.apache.org/services/dashmap/python/): Configuration reference and copy-paste setup for the OpenDAL dashmap service.
+- [dashmap | Services | Apache OpenDAL™](https://opendal.apache.org/services/dashmap/rust/): Configuration reference and copy-paste setup for the OpenDAL dashmap service.
+- [dbfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/dbfs/go/): Configuration reference and copy-paste setup for the OpenDAL dbfs service.
+- [dbfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/dbfs/python/): Configuration reference and copy-paste setup for the OpenDAL dbfs service.
+- [dbfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/dbfs/rust/): Configuration reference and copy-paste setup for the OpenDAL dbfs service.
+- [dropbox | Services | Apache OpenDAL™](https://opendal.apache.org/services/dropbox/go/): Configuration reference and copy-paste setup for the OpenDAL dropbox service.
+- [dropbox | Services | Apache OpenDAL™](https://opendal.apache.org/services/dropbox/java/): Configuration reference and copy-paste setup for the OpenDAL dropbox service.
+- [dropbox | Services | Apache OpenDAL™](https://opendal.apache.org/services/dropbox/nodejs/): Configuration reference and copy-paste setup for the OpenDAL dropbox service.
+- [dropbox | Services | Apache OpenDAL™](https://opendal.apache.org/services/dropbox/python/): Configuration reference and copy-paste setup for the OpenDAL dropbox service.
+- [dropbox | Services | Apache OpenDAL™](https://opendal.apache.org/services/dropbox/rust/): Configuration reference and copy-paste setup for the OpenDAL dropbox service.
+- [etcd | Services | Apache OpenDAL™](https://opendal.apache.org/services/etcd/go/): Configuration reference and copy-paste setup for the OpenDAL etcd service.
+- [etcd | Services | Apache OpenDAL™](https://opendal.apache.org/services/etcd/java/): Configuration reference and copy-paste setup for the OpenDAL etcd service.
+- [etcd | Services | Apache OpenDAL™](https://opendal.apache.org/services/etcd/nodejs/): Configuration reference and copy-paste setup for the OpenDAL etcd service.
+- [etcd | Services | Apache OpenDAL™](https://opendal.apache.org/services/etcd/python/): Configuration reference and copy-paste setup for the OpenDAL etcd service.
+- [etcd | Services | Apache OpenDAL™](https://opendal.apache.org/services/etcd/rust/): Configuration reference and copy-paste setup for the OpenDAL etcd service.
+- [foundationdb | Services | Apache OpenDAL™](https://opendal.apache.org/services/foundationdb/go/): Configuration reference and copy-paste setup for the OpenDAL foundationdb service.
+- [foundationdb | Services | Apache OpenDAL™](https://opendal.apache.org/services/foundationdb/nodejs/): Configuration reference and copy-paste setup for the OpenDAL foundationdb service.
+- [foundationdb | Services | Apache OpenDAL™](https://opendal.apache.org/services/foundationdb/python/): Configuration reference and copy-paste setup for the OpenDAL foundationdb service.
+- [foundationdb | Services | Apache OpenDAL™](https://opendal.apache.org/services/foundationdb/rust/): Configuration reference and copy-paste setup for the OpenDAL foundationdb service.
+- [foyer | Services | Apache OpenDAL™](https://opendal.apache.org/services/foyer/go/): Configuration reference and copy-paste setup for the OpenDAL foyer service.
+- [foyer | Services | Apache OpenDAL™](https://opendal.apache.org/services/foyer/python/): Configuration reference and copy-paste setup for the OpenDAL foyer service.
+- [foyer | Services | Apache OpenDAL™](https://opendal.apache.org/services/foyer/rust/): Configuration reference and copy-paste setup for the OpenDAL foyer service.
+- [fs | Services | Apache OpenDAL™](https://opendal.apache.org/services/fs/go/): Configuration reference and copy-paste setup for the OpenDAL fs service.
+- [fs | Services | Apache OpenDAL™](https://opendal.apache.org/services/fs/java/): Configuration reference and copy-paste setup for the OpenDAL fs service.
+- [fs | Services | Apache OpenDAL™](https://opendal.apache.org/services/fs/nodejs/): Configuration reference and copy-paste setup for the OpenDAL fs service.
+- [fs | Services | Apache OpenDAL™](https://opendal.apache.org/services/fs/python/): Configuration reference and copy-paste setup for the OpenDAL fs service.
+- [fs | Services | Apache OpenDAL™](https://opendal.apache.org/services/fs/ruby/): Configuration reference and copy-paste setup for the OpenDAL fs service.
+- [fs | Services | Apache OpenDAL™](https://opendal.apache.org/services/fs/rust/): Configuration reference and copy-paste setup for the OpenDAL fs service.
+- [ftp | Services | Apache OpenDAL™](https://opendal.apache.org/services/ftp/go/): Configuration reference and copy-paste setup for the OpenDAL ftp service.
+- [ftp | Services | Apache OpenDAL™](https://opendal.apache.org/services/ftp/nodejs/): Configuration reference and copy-paste setup for the OpenDAL ftp service.
+- [ftp | Services | Apache OpenDAL™](https://opendal.apache.org/services/ftp/python/): Configuration reference and copy-paste setup for the OpenDAL ftp service.
+- [ftp | Services | Apache OpenDAL™](https://opendal.apache.org/services/ftp/rust/): Configuration reference and copy-paste setup for the OpenDAL ftp service.
+- [gcs-grpc | Services | Apache OpenDAL™](https://opendal.apache.org/services/gcs-grpc/go/): Configuration reference and copy-paste setup for the OpenDAL gcs-grpc service.
+- [gcs-grpc | Services | Apache OpenDAL™](https://opendal.apache.org/services/gcs-grpc/java/): Configuration reference and copy-paste setup for the OpenDAL gcs-grpc service.
+- [gcs-grpc | Services | Apache OpenDAL™](https://opendal.apache.org/services/gcs-grpc/nodejs/): Configuration reference and copy-paste setup for the OpenDAL gcs-grpc service.
+- [gcs-grpc | Services | Apache OpenDAL™](https://opendal.apache.org/services/gcs-grpc/python/): Configuration reference and copy-paste setup for the OpenDAL gcs-grpc service.
+- [gcs-grpc | Services | Apache OpenDAL™](https://opendal.apache.org/services/gcs-grpc/rust/): Configuration reference and copy-paste setup for the OpenDAL gcs-grpc service.
+- [gcs | Services | Apache OpenDAL™](https://opendal.apache.org/services/gcs/go/): Configuration reference and copy-paste setup for the OpenDAL gcs service.
+- [gcs | Services | Apache OpenDAL™](https://opendal.apache.org/services/gcs/java/): Configuration reference and copy-paste setup for the OpenDAL gcs service.
+- [gcs | Services | Apache OpenDAL™](https://opendal.apache.org/services/gcs/nodejs/): Configuration reference and copy-paste setup for the OpenDAL gcs service.
+- [gcs | Services | Apache OpenDAL™](https://opendal.apache.org/services/gcs/python/): Configuration reference and copy-paste setup for the OpenDAL gcs service.
+- [gcs | Services | Apache OpenDAL™](https://opendal.apache.org/services/gcs/ruby/): Configuration reference and copy-paste setup for the OpenDAL gcs service.
+- [gcs | Services | Apache OpenDAL™](https://opendal.apache.org/services/gcs/rust/): Configuration reference and copy-paste setup for the OpenDAL gcs service.
+- [gdrive | Services | Apache OpenDAL™](https://opendal.apache.org/services/gdrive/go/): Configuration reference and copy-paste setup for the OpenDAL gdrive service.
+- [gdrive | Services | Apache OpenDAL™](https://opendal.apache.org/services/gdrive/java/): Configuration reference and copy-paste setup for the OpenDAL gdrive service.
+- [gdrive | Services | Apache OpenDAL™](https://opendal.apache.org/services/gdrive/nodejs/): Configuration reference and copy-paste setup for the OpenDAL gdrive service.
+- [gdrive | Services | Apache OpenDAL™](https://opendal.apache.org/services/gdrive/python/): Configuration reference and copy-paste setup for the OpenDAL gdrive service.
+- [gdrive | Services | Apache OpenDAL™](https://opendal.apache.org/services/gdrive/rust/): Configuration reference and copy-paste setup for the OpenDAL gdrive service.
+- [ghac | Services | Apache OpenDAL™](https://opendal.apache.org/services/ghac/go/): Configuration reference and copy-paste setup for the OpenDAL ghac service.
+- [ghac | Services | Apache OpenDAL™](https://opendal.apache.org/services/ghac/java/): Configuration reference and copy-paste setup for the OpenDAL ghac service.
+- [ghac | Services | Apache OpenDAL™](https://opendal.apache.org/services/ghac/nodejs/): Configuration reference and copy-paste setup for the OpenDAL ghac service.
+- [ghac | Services | Apache OpenDAL™](https://opendal.apache.org/services/ghac/python/): Configuration reference and copy-paste setup for the OpenDAL ghac service.
+- [ghac | Services | Apache OpenDAL™](https://opendal.apache.org/services/ghac/ruby/): Configuration reference and copy-paste setup for the OpenDAL ghac service.
+- [ghac | Services | Apache OpenDAL™](https://opendal.apache.org/services/ghac/rust/): Configuration reference and copy-paste setup for the OpenDAL ghac service.
+- [git | Services | Apache OpenDAL™](https://opendal.apache.org/services/git/go/): Configuration reference and copy-paste setup for the OpenDAL git service.
+- [git | Services | Apache OpenDAL™](https://opendal.apache.org/services/git/rust/): Configuration reference and copy-paste setup for the OpenDAL git service.
+- [github | Services | Apache OpenDAL™](https://opendal.apache.org/services/github/go/): Configuration reference and copy-paste setup for the OpenDAL github service.
+- [github | Services | Apache OpenDAL™](https://opendal.apache.org/services/github/python/): Configuration reference and copy-paste setup for the OpenDAL github service.
+- [github | Services | Apache OpenDAL™](https://opendal.apache.org/services/github/rust/): Configuration reference and copy-paste setup for the OpenDAL github service.
+- [goosefs | Services | Apache OpenDAL™](https://opendal.apache.org/services/goosefs/go/): Configuration reference and copy-paste setup for the OpenDAL goosefs service.
+- [goosefs | Services | Apache OpenDAL™](https://opendal.apache.org/services/goosefs/java/): Configuration reference and copy-paste setup for the OpenDAL goosefs service.
+- [goosefs | Services | Apache OpenDAL™](https://opendal.apache.org/services/goosefs/nodejs/): Configuration reference and copy-paste setup for the OpenDAL goosefs service.
+- [goosefs | Services | Apache OpenDAL™](https://opendal.apache.org/services/goosefs/python/): Configuration reference and copy-paste setup for the OpenDAL goosefs service.
+- [goosefs | Services | Apache OpenDAL™](https://opendal.apache.org/services/goosefs/rust/): Configuration reference and copy-paste setup for the OpenDAL goosefs service.
+- [gridfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/gridfs/go/): Configuration reference and copy-paste setup for the OpenDAL gridfs service.
+- [gridfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/gridfs/java/): Configuration reference and copy-paste setup for the OpenDAL gridfs service.
+- [gridfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/gridfs/nodejs/): Configuration reference and copy-paste setup for the OpenDAL gridfs service.
+- [gridfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/gridfs/python/): Configuration reference and copy-paste setup for the OpenDAL gridfs service.
+- [gridfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/gridfs/rust/): Configuration reference and copy-paste setup for the OpenDAL gridfs service.
+- [hdfs-native | Services | Apache OpenDAL™](https://opendal.apache.org/services/hdfs-native/go/): Configuration reference and copy-paste setup for the OpenDAL hdfs-native service.
+- [hdfs-native | Services | Apache OpenDAL™](https://opendal.apache.org/services/hdfs-native/nodejs/): Configuration reference and copy-paste setup for the OpenDAL hdfs-native service.
+- [hdfs-native | Services | Apache OpenDAL™](https://opendal.apache.org/services/hdfs-native/python/): Configuration reference and copy-paste setup for the OpenDAL hdfs-native service.
+- [hdfs-native | Services | Apache OpenDAL™](https://opendal.apache.org/services/hdfs-native/rust/): Configuration reference and copy-paste setup for the OpenDAL hdfs-native service.
+- [hdfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/hdfs/go/): Configuration reference and copy-paste setup for the OpenDAL hdfs service.
+- [hdfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/hdfs/nodejs/): Configuration reference and copy-paste setup for the OpenDAL hdfs service.
+- [hdfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/hdfs/python/): Configuration reference and copy-paste setup for the OpenDAL hdfs service.
+- [hdfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/hdfs/rust/): Configuration reference and copy-paste setup for the OpenDAL hdfs service.
+- [hf | Services | Apache OpenDAL™](https://opendal.apache.org/services/hf/go/): Configuration reference and copy-paste setup for the OpenDAL hf service.
+- [hf | Services | Apache OpenDAL™](https://opendal.apache.org/services/hf/java/): Configuration reference and copy-paste setup for the OpenDAL hf service.
+- [hf | Services | Apache OpenDAL™](https://opendal.apache.org/services/hf/nodejs/): Configuration reference and copy-paste setup for the OpenDAL hf service.
+- [hf | Services | Apache OpenDAL™](https://opendal.apache.org/services/hf/python/): Configuration reference and copy-paste setup for the OpenDAL hf service.
+- [hf | Services | Apache OpenDAL™](https://opendal.apache.org/services/hf/rust/): Configuration reference and copy-paste setup for the OpenDAL hf service.
+- [http | Services | Apache OpenDAL™](https://opendal.apache.org/services/http/go/): Configuration reference and copy-paste setup for the OpenDAL http service.
+- [http | Services | Apache OpenDAL™](https://opendal.apache.org/services/http/java/): Configuration reference and copy-paste setup for the OpenDAL http service.
+- [http | Services | Apache OpenDAL™](https://opendal.apache.org/services/http/nodejs/): Configuration reference and copy-paste setup for the OpenDAL http service.
+- [http | Services | Apache OpenDAL™](https://opendal.apache.org/services/http/python/): Configuration reference and copy-paste setup for the OpenDAL http service.
+- [http | Services | Apache OpenDAL™](https://opendal.apache.org/services/http/ruby/): Configuration reference and copy-paste setup for the OpenDAL http service.
+- [http | Services | Apache OpenDAL™](https://opendal.apache.org/services/http/rust/): Configuration reference and copy-paste setup for the OpenDAL http service.
+- [ipfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/ipfs/go/): Configuration reference and copy-paste setup for the OpenDAL ipfs service.
+- [ipfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/ipfs/java/): Configuration reference and copy-paste setup for the OpenDAL ipfs service.
+- [ipfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/ipfs/nodejs/): Configuration reference and copy-paste setup for the OpenDAL ipfs service.
+- [ipfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/ipfs/python/): Configuration reference and copy-paste setup for the OpenDAL ipfs service.
+- [ipfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/ipfs/rust/): Configuration reference and copy-paste setup for the OpenDAL ipfs service.
+- [ipmfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/ipmfs/go/): Configuration reference and copy-paste setup for the OpenDAL ipmfs service.
+- [ipmfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/ipmfs/java/): Configuration reference and copy-paste setup for the OpenDAL ipmfs service.
+- [ipmfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/ipmfs/nodejs/): Configuration reference and copy-paste setup for the OpenDAL ipmfs service.
+- [ipmfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/ipmfs/python/): Configuration reference and copy-paste setup for the OpenDAL ipmfs service.
+- [ipmfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/ipmfs/ruby/): Configuration reference and copy-paste setup for the OpenDAL ipmfs service.
+- [ipmfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/ipmfs/rust/): Configuration reference and copy-paste setup for the OpenDAL ipmfs service.
+- [koofr | Services | Apache OpenDAL™](https://opendal.apache.org/services/koofr/go/): Configuration reference and copy-paste setup for the OpenDAL koofr service.
+- [koofr | Services | Apache OpenDAL™](https://opendal.apache.org/services/koofr/java/): Configuration reference and copy-paste setup for the OpenDAL koofr service.
+- [koofr | Services | Apache OpenDAL™](https://opendal.apache.org/services/koofr/nodejs/): Configuration reference and copy-paste setup for the OpenDAL koofr service.
+- [koofr | Services | Apache OpenDAL™](https://opendal.apache.org/services/koofr/python/): Configuration reference and copy-paste setup for the OpenDAL koofr service.
+- [koofr | Services | Apache OpenDAL™](https://opendal.apache.org/services/koofr/rust/): Configuration reference and copy-paste setup for the OpenDAL koofr service.
+- [lakefs | Services | Apache OpenDAL™](https://opendal.apache.org/services/lakefs/go/): Configuration reference and copy-paste setup for the OpenDAL lakefs service.
+- [lakefs | Services | Apache OpenDAL™](https://opendal.apache.org/services/lakefs/python/): Configuration reference and copy-paste setup for the OpenDAL lakefs service.
+- [lakefs | Services | Apache OpenDAL™](https://opendal.apache.org/services/lakefs/rust/): Configuration reference and copy-paste setup for the OpenDAL lakefs service.
+- [memcached | Services | Apache OpenDAL™](https://opendal.apache.org/services/memcached/go/): Configuration reference and copy-paste setup for the OpenDAL memcached service.
+- [memcached | Services | Apache OpenDAL™](https://opendal.apache.org/services/memcached/java/): Configuration reference and copy-paste setup for the OpenDAL memcached service.
+- [memcached | Services | Apache OpenDAL™](https://opendal.apache.org/services/memcached/nodejs/): Configuration reference and copy-paste setup for the OpenDAL memcached service.
+- [memcached | Services | Apache OpenDAL™](https://opendal.apache.org/services/memcached/python/): Configuration reference and copy-paste setup for the OpenDAL memcached service.
+- [memcached | Services | Apache OpenDAL™](https://opendal.apache.org/services/memcached/rust/): Configuration reference and copy-paste setup for the OpenDAL memcached service.
+- [memory | Services | Apache OpenDAL™](https://opendal.apache.org/services/memory/go/): Configuration reference and copy-paste setup for the OpenDAL memory service.
+- [memory | Services | Apache OpenDAL™](https://opendal.apache.org/services/memory/java/): Configuration reference and copy-paste setup for the OpenDAL memory service.
+- [memory | Services | Apache OpenDAL™](https://opendal.apache.org/services/memory/nodejs/): Configuration reference and copy-paste setup for the OpenDAL memory service.
+- [memory | Services | Apache OpenDAL™](https://opendal.apache.org/services/memory/python/): Configuration reference and copy-paste setup for the OpenDAL memory service.
+- [memory | Services | Apache OpenDAL™](https://opendal.apache.org/services/memory/ruby/): Configuration reference and copy-paste setup for the OpenDAL memory service.
+- [memory | Services | Apache OpenDAL™](https://opendal.apache.org/services/memory/rust/): Configuration reference and copy-paste setup for the OpenDAL memory service.
+- [mini-moka | Services | Apache OpenDAL™](https://opendal.apache.org/services/mini-moka/go/): Configuration reference and copy-paste setup for the OpenDAL mini-moka service.
+- [mini-moka | Services | Apache OpenDAL™](https://opendal.apache.org/services/mini-moka/java/): Configuration reference and copy-paste setup for the OpenDAL mini-moka service.
+- [mini-moka | Services | Apache OpenDAL™](https://opendal.apache.org/services/mini-moka/nodejs/): Configuration reference and copy-paste setup for the OpenDAL mini-moka service.
+- [mini-moka | Services | Apache OpenDAL™](https://opendal.apache.org/services/mini-moka/python/): Configuration reference and copy-paste setup for the OpenDAL mini-moka service.
+- [mini-moka | Services | Apache OpenDAL™](https://opendal.apache.org/services/mini-moka/rust/): Configuration reference and copy-paste setup for the OpenDAL mini-moka service.
+- [moka | Services | Apache OpenDAL™](https://opendal.apache.org/services/moka/go/): Configuration reference and copy-paste setup for the OpenDAL moka service.
+- [moka | Services | Apache OpenDAL™](https://opendal.apache.org/services/moka/java/): Configuration reference and copy-paste setup for the OpenDAL moka service.
+- [moka | Services | Apache OpenDAL™](https://opendal.apache.org/services/moka/nodejs/): Configuration reference and copy-paste setup for the OpenDAL moka service.
+- [moka | Services | Apache OpenDAL™](https://opendal.apache.org/services/moka/python/): Configuration reference and copy-paste setup for the OpenDAL moka service.
+- [moka | Services | Apache OpenDAL™](https://opendal.apache.org/services/moka/rust/): Configuration reference and copy-paste setup for the OpenDAL moka service.
+- [mongodb | Services | Apache OpenDAL™](https://opendal.apache.org/services/mongodb/go/): Configuration reference and copy-paste setup for the OpenDAL mongodb service.
+- [mongodb | Services | Apache OpenDAL™](https://opendal.apache.org/services/mongodb/java/): Configuration reference and copy-paste setup for the OpenDAL mongodb service.
+- [mongodb | Services | Apache OpenDAL™](https://opendal.apache.org/services/mongodb/nodejs/): Configuration reference and copy-paste setup for the OpenDAL mongodb service.
+- [mongodb | Services | Apache OpenDAL™](https://opendal.apache.org/services/mongodb/python/): Configuration reference and copy-paste setup for the OpenDAL mongodb service.
+- [mongodb | Services | Apache OpenDAL™](https://opendal.apache.org/services/mongodb/rust/): Configuration reference and copy-paste setup for the OpenDAL mongodb service.
+- [monoiofs | Services | Apache OpenDAL™](https://opendal.apache.org/services/monoiofs/go/): Configuration reference and copy-paste setup for the OpenDAL monoiofs service.
+- [monoiofs | Services | Apache OpenDAL™](https://opendal.apache.org/services/monoiofs/nodejs/): Configuration reference and copy-paste setup for the OpenDAL monoiofs service.
+- [monoiofs | Services | Apache OpenDAL™](https://opendal.apache.org/services/monoiofs/python/): Configuration reference and copy-paste setup for the OpenDAL monoiofs service.
+- [monoiofs | Services | Apache OpenDAL™](https://opendal.apache.org/services/monoiofs/rust/): Configuration reference and copy-paste setup for the OpenDAL monoiofs service.
+- [mysql | Services | Apache OpenDAL™](https://opendal.apache.org/services/mysql/go/): Configuration reference and copy-paste setup for the OpenDAL mysql service.
+- [mysql | Services | Apache OpenDAL™](https://opendal.apache.org/services/mysql/java/): Configuration reference and copy-paste setup for the OpenDAL mysql service.
+- [mysql | Services | Apache OpenDAL™](https://opendal.apache.org/services/mysql/nodejs/): Configuration reference and copy-paste setup for the OpenDAL mysql service.
+- [mysql | Services | Apache OpenDAL™](https://opendal.apache.org/services/mysql/python/): Configuration reference and copy-paste setup for the OpenDAL mysql service.
+- [mysql | Services | Apache OpenDAL™](https://opendal.apache.org/services/mysql/rust/): Configuration reference and copy-paste setup for the OpenDAL mysql service.
+- [obs | Services | Apache OpenDAL™](https://opendal.apache.org/services/obs/go/): Configuration reference and copy-paste setup for the OpenDAL obs service.
+- [obs | Services | Apache OpenDAL™](https://opendal.apache.org/services/obs/java/): Configuration reference and copy-paste setup for the OpenDAL obs service.
+- [obs | Services | Apache OpenDAL™](https://opendal.apache.org/services/obs/nodejs/): Configuration reference and copy-paste setup for the OpenDAL obs service.
+- [obs | Services | Apache OpenDAL™](https://opendal.apache.org/services/obs/python/): Configuration reference and copy-paste setup for the OpenDAL obs service.
+- [obs | Services | Apache OpenDAL™](https://opendal.apache.org/services/obs/ruby/): Configuration reference and copy-paste setup for the OpenDAL obs service.
+- [obs | Services | Apache OpenDAL™](https://opendal.apache.org/services/obs/rust/): Configuration reference and copy-paste setup for the OpenDAL obs service.
+- [onedrive | Services | Apache OpenDAL™](https://opendal.apache.org/services/onedrive/go/): Configuration reference and copy-paste setup for the OpenDAL onedrive service.
+- [onedrive | Services | Apache OpenDAL™](https://opendal.apache.org/services/onedrive/java/): Configuration reference and copy-paste setup for the OpenDAL onedrive service.
+- [onedrive | Services | Apache OpenDAL™](https://opendal.apache.org/services/onedrive/nodejs/): Configuration reference and copy-paste setup for the OpenDAL onedrive service.
+- [onedrive | Services | Apache OpenDAL™](https://opendal.apache.org/services/onedrive/python/): Configuration reference and copy-paste setup for the OpenDAL onedrive service.
+- [onedrive | Services | Apache OpenDAL™](https://opendal.apache.org/services/onedrive/rust/): Configuration reference and copy-paste setup for the OpenDAL onedrive service.
+- [opfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/opfs/go/): Configuration reference and copy-paste setup for the OpenDAL opfs service.
+- [opfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/opfs/python/): Configuration reference and copy-paste setup for the OpenDAL opfs service.
+- [opfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/opfs/rust/): Configuration reference and copy-paste setup for the OpenDAL opfs service.
+- [oss | Services | Apache OpenDAL™](https://opendal.apache.org/services/oss/go/): Configuration reference and copy-paste setup for the OpenDAL oss service.
+- [oss | Services | Apache OpenDAL™](https://opendal.apache.org/services/oss/java/): Configuration reference and copy-paste setup for the OpenDAL oss service.
+- [oss | Services | Apache OpenDAL™](https://opendal.apache.org/services/oss/nodejs/): Configuration reference and copy-paste setup for the OpenDAL oss service.
+- [oss | Services | Apache OpenDAL™](https://opendal.apache.org/services/oss/python/): Configuration reference and copy-paste setup for the OpenDAL oss service.
+- [oss | Services | Apache OpenDAL™](https://opendal.apache.org/services/oss/ruby/): Configuration reference and copy-paste setup for the OpenDAL oss service.
+- [oss | Services | Apache OpenDAL™](https://opendal.apache.org/services/oss/rust/): Configuration reference and copy-paste setup for the OpenDAL oss service.
+- [pcloud | Services | Apache OpenDAL™](https://opendal.apache.org/services/pcloud/go/): Configuration reference and copy-paste setup for the OpenDAL pcloud service.
+- [pcloud | Services | Apache OpenDAL™](https://opendal.apache.org/services/pcloud/python/): Configuration reference and copy-paste setup for the OpenDAL pcloud service.
+- [pcloud | Services | Apache OpenDAL™](https://opendal.apache.org/services/pcloud/rust/): Configuration reference and copy-paste setup for the OpenDAL pcloud service.
+- [persy | Services | Apache OpenDAL™](https://opendal.apache.org/services/persy/go/): Configuration reference and copy-paste setup for the OpenDAL persy service.
+- [persy | Services | Apache OpenDAL™](https://opendal.apache.org/services/persy/java/): Configuration reference and copy-paste setup for the OpenDAL persy service.
+- [persy | Services | Apache OpenDAL™](https://opendal.apache.org/services/persy/nodejs/): Configuration reference and copy-paste setup for the OpenDAL persy service.
+- [persy | Services | Apache OpenDAL™](https://opendal.apache.org/services/persy/python/): Configuration reference and copy-paste setup for the OpenDAL persy service.
+- [persy | Services | Apache OpenDAL™](https://opendal.apache.org/services/persy/rust/): Configuration reference and copy-paste setup for the OpenDAL persy service.
+- [postgresql | Services | Apache OpenDAL™](https://opendal.apache.org/services/postgresql/go/): Configuration reference and copy-paste setup for the OpenDAL postgresql service.
+- [postgresql | Services | Apache OpenDAL™](https://opendal.apache.org/services/postgresql/java/): Configuration reference and copy-paste setup for the OpenDAL postgresql service.
+- [postgresql | Services | Apache OpenDAL™](https://opendal.apache.org/services/postgresql/nodejs/): Configuration reference and copy-paste setup for the OpenDAL postgresql service.
+- [postgresql | Services | Apache OpenDAL™](https://opendal.apache.org/services/postgresql/python/): Configuration reference and copy-paste setup for the OpenDAL postgresql service.
+- [postgresql | Services | Apache OpenDAL™](https://opendal.apache.org/services/postgresql/rust/): Configuration reference and copy-paste setup for the OpenDAL postgresql service.
+- [redb | Services | Apache OpenDAL™](https://opendal.apache.org/services/redb/go/): Configuration reference and copy-paste setup for the OpenDAL redb service.
+- [redb | Services | Apache OpenDAL™](https://opendal.apache.org/services/redb/java/): Configuration reference and copy-paste setup for the OpenDAL redb service.
+- [redb | Services | Apache OpenDAL™](https://opendal.apache.org/services/redb/nodejs/): Configuration reference and copy-paste setup for the OpenDAL redb service.
+- [redb | Services | Apache OpenDAL™](https://opendal.apache.org/services/redb/python/): Configuration reference and copy-paste setup for the OpenDAL redb service.
+- [redb | Services | Apache OpenDAL™](https://opendal.apache.org/services/redb/rust/): Configuration reference and copy-paste setup for the OpenDAL redb service.
+- [redis | Services | Apache OpenDAL™](https://opendal.apache.org/services/redis/go/): Configuration reference and copy-paste setup for the OpenDAL redis service.
+- [redis | Services | Apache OpenDAL™](https://opendal.apache.org/services/redis/java/): Configuration reference and copy-paste setup for the OpenDAL redis service.
+- [redis | Services | Apache OpenDAL™](https://opendal.apache.org/services/redis/nodejs/): Configuration reference and copy-paste setup for the OpenDAL redis service.
+- [redis | Services | Apache OpenDAL™](https://opendal.apache.org/services/redis/python/): Configuration reference and copy-paste setup for the OpenDAL redis service.
+- [redis | Services | Apache OpenDAL™](https://opendal.apache.org/services/redis/rust/): Configuration reference and copy-paste setup for the OpenDAL redis service.
+- [rocksdb | Services | Apache OpenDAL™](https://opendal.apache.org/services/rocksdb/go/): Configuration reference and copy-paste setup for the OpenDAL rocksdb service.
+- [rocksdb | Services | Apache OpenDAL™](https://opendal.apache.org/services/rocksdb/nodejs/): Configuration reference and copy-paste setup for the OpenDAL rocksdb service.
+- [rocksdb | Services | Apache OpenDAL™](https://opendal.apache.org/services/rocksdb/python/): Configuration reference and copy-paste setup for the OpenDAL rocksdb service.
+- [rocksdb | Services | Apache OpenDAL™](https://opendal.apache.org/services/rocksdb/rust/): Configuration reference and copy-paste setup for the OpenDAL rocksdb service.
+- [s3 | Services | Apache OpenDAL™](https://opendal.apache.org/services/s3/go/): Configuration reference and copy-paste setup for the OpenDAL s3 service.
+- [s3 | Services | Apache OpenDAL™](https://opendal.apache.org/services/s3/java/): Configuration reference and copy-paste setup for the OpenDAL s3 service.
+- [s3 | Services | Apache OpenDAL™](https://opendal.apache.org/services/s3/nodejs/): Configuration reference and copy-paste setup for the OpenDAL s3 service.
+- [s3 | Services | Apache OpenDAL™](https://opendal.apache.org/services/s3/python/): Configuration reference and copy-paste setup for the OpenDAL s3 service.
+- [s3 | Services | Apache OpenDAL™](https://opendal.apache.org/services/s3/ruby/): Configuration reference and copy-paste setup for the OpenDAL s3 service.
+- [s3 | Services | Apache OpenDAL™](https://opendal.apache.org/services/s3/rust/): Configuration reference and copy-paste setup for the OpenDAL s3 service.
+- [seafile | Services | Apache OpenDAL™](https://opendal.apache.org/services/seafile/go/): Configuration reference and copy-paste setup for the OpenDAL seafile service.
+- [seafile | Services | Apache OpenDAL™](https://opendal.apache.org/services/seafile/java/): Configuration reference and copy-paste setup for the OpenDAL seafile service.
+- [seafile | Services | Apache OpenDAL™](https://opendal.apache.org/services/seafile/nodejs/): Configuration reference and copy-paste setup for the OpenDAL seafile service.
+- [seafile | Services | Apache OpenDAL™](https://opendal.apache.org/services/seafile/python/): Configuration reference and copy-paste setup for the OpenDAL seafile service.
+- [seafile | Services | Apache OpenDAL™](https://opendal.apache.org/services/seafile/rust/): Configuration reference and copy-paste setup for the OpenDAL seafile service.
+- [sftp | Services | Apache OpenDAL™](https://opendal.apache.org/services/sftp/go/): Configuration reference and copy-paste setup for the OpenDAL sftp service.
+- [sftp | Services | Apache OpenDAL™](https://opendal.apache.org/services/sftp/java/): Configuration reference and copy-paste setup for the OpenDAL sftp service.
+- [sftp | Services | Apache OpenDAL™](https://opendal.apache.org/services/sftp/nodejs/): Configuration reference and copy-paste setup for the OpenDAL sftp service.
+- [sftp | Services | Apache OpenDAL™](https://opendal.apache.org/services/sftp/python/): Configuration reference and copy-paste setup for the OpenDAL sftp service.
+- [sftp | Services | Apache OpenDAL™](https://opendal.apache.org/services/sftp/rust/): Configuration reference and copy-paste setup for the OpenDAL sftp service.
+- [sled | Services | Apache OpenDAL™](https://opendal.apache.org/services/sled/go/): Configuration reference and copy-paste setup for the OpenDAL sled service.
+- [sled | Services | Apache OpenDAL™](https://opendal.apache.org/services/sled/java/): Configuration reference and copy-paste setup for the OpenDAL sled service.
+- [sled | Services | Apache OpenDAL™](https://opendal.apache.org/services/sled/nodejs/): Configuration reference and copy-paste setup for the OpenDAL sled service.
+- [sled | Services | Apache OpenDAL™](https://opendal.apache.org/services/sled/python/): Configuration reference and copy-paste setup for the OpenDAL sled service.
+- [sled | Services | Apache OpenDAL™](https://opendal.apache.org/services/sled/rust/): Configuration reference and copy-paste setup for the OpenDAL sled service.
+- [smb | Services | Apache OpenDAL™](https://opendal.apache.org/services/smb/rust/): Configuration reference and copy-paste setup for the OpenDAL smb service.
+- [sqlite | Services | Apache OpenDAL™](https://opendal.apache.org/services/sqlite/go/): Configuration reference and copy-paste setup for the OpenDAL sqlite service.
+- [sqlite | Services | Apache OpenDAL™](https://opendal.apache.org/services/sqlite/java/): Configuration reference and copy-paste setup for the OpenDAL sqlite service.
+- [sqlite | Services | Apache OpenDAL™](https://opendal.apache.org/services/sqlite/nodejs/): Configuration reference and copy-paste setup for the OpenDAL sqlite service.
+- [sqlite | Services | Apache OpenDAL™](https://opendal.apache.org/services/sqlite/python/): Configuration reference and copy-paste setup for the OpenDAL sqlite service.
+- [sqlite | Services | Apache OpenDAL™](https://opendal.apache.org/services/sqlite/rust/): Configuration reference and copy-paste setup for the OpenDAL sqlite service.
+- [surrealdb | Services | Apache OpenDAL™](https://opendal.apache.org/services/surrealdb/go/): Configuration reference and copy-paste setup for the OpenDAL surrealdb service.
+- [surrealdb | Services | Apache OpenDAL™](https://opendal.apache.org/services/surrealdb/python/): Configuration reference and copy-paste setup for the OpenDAL surrealdb service.
+- [surrealdb | Services | Apache OpenDAL™](https://opendal.apache.org/services/surrealdb/rust/): Configuration reference and copy-paste setup for the OpenDAL surrealdb service.
+- [swift | Services | Apache OpenDAL™](https://opendal.apache.org/services/swift/go/): Configuration reference and copy-paste setup for the OpenDAL swift service.
+- [swift | Services | Apache OpenDAL™](https://opendal.apache.org/services/swift/java/): Configuration reference and copy-paste setup for the OpenDAL swift service.
+- [swift | Services | Apache OpenDAL™](https://opendal.apache.org/services/swift/nodejs/): Configuration reference and copy-paste setup for the OpenDAL swift service.
+- [swift | Services | Apache OpenDAL™](https://opendal.apache.org/services/swift/python/): Configuration reference and copy-paste setup for the OpenDAL swift service.
+- [swift | Services | Apache OpenDAL™](https://opendal.apache.org/services/swift/rust/): Configuration reference and copy-paste setup for the OpenDAL swift service.
+- [tikv | Services | Apache OpenDAL™](https://opendal.apache.org/services/tikv/go/): Configuration reference and copy-paste setup for the OpenDAL tikv service.
+- [tikv | Services | Apache OpenDAL™](https://opendal.apache.org/services/tikv/java/): Configuration reference and copy-paste setup for the OpenDAL tikv service.
+- [tikv | Services | Apache OpenDAL™](https://opendal.apache.org/services/tikv/nodejs/): Configuration reference and copy-paste setup for the OpenDAL tikv service.
+- [tikv | Services | Apache OpenDAL™](https://opendal.apache.org/services/tikv/python/): Configuration reference and copy-paste setup for the OpenDAL tikv service.
+- [tikv | Services | Apache OpenDAL™](https://opendal.apache.org/services/tikv/rust/): Configuration reference and copy-paste setup for the OpenDAL tikv service.
+- [tos | Services | Apache OpenDAL™](https://opendal.apache.org/services/tos/go/): Configuration reference and copy-paste setup for the OpenDAL tos service.
+- [tos | Services | Apache OpenDAL™](https://opendal.apache.org/services/tos/java/): Configuration reference and copy-paste setup for the OpenDAL tos service.
+- [tos | Services | Apache OpenDAL™](https://opendal.apache.org/services/tos/nodejs/): Configuration reference and copy-paste setup for the OpenDAL tos service.
+- [tos | Services | Apache OpenDAL™](https://opendal.apache.org/services/tos/python/): Configuration reference and copy-paste setup for the OpenDAL tos service.
+- [tos | Services | Apache OpenDAL™](https://opendal.apache.org/services/tos/rust/): Configuration reference and copy-paste setup for the OpenDAL tos service.
+- [upyun | Services | Apache OpenDAL™](https://opendal.apache.org/services/upyun/go/): Configuration reference and copy-paste setup for the OpenDAL upyun service.
+- [upyun | Services | Apache OpenDAL™](https://opendal.apache.org/services/upyun/java/): Configuration reference and copy-paste setup for the OpenDAL upyun service.
+- [upyun | Services | Apache OpenDAL™](https://opendal.apache.org/services/upyun/nodejs/): Configuration reference and copy-paste setup for the OpenDAL upyun service.
+- [upyun | Services | Apache OpenDAL™](https://opendal.apache.org/services/upyun/python/): Configuration reference and copy-paste setup for the OpenDAL upyun service.
+- [upyun | Services | Apache OpenDAL™](https://opendal.apache.org/services/upyun/rust/): Configuration reference and copy-paste setup for the OpenDAL upyun service.
+- [vercel-artifacts | Services | Apache OpenDAL™](https://opendal.apache.org/services/vercel-artifacts/go/): Configuration reference and copy-paste setup for the OpenDAL vercel-artifacts service.
+- [vercel-artifacts | Services | Apache OpenDAL™](https://opendal.apache.org/services/vercel-artifacts/java/): Configuration reference and copy-paste setup for the OpenDAL vercel-artifacts service.
+- [vercel-artifacts | Services | Apache OpenDAL™](https://opendal.apache.org/services/vercel-artifacts/nodejs/): Configuration reference and copy-paste setup for the OpenDAL vercel-artifacts service.
+- [vercel-artifacts | Services | Apache OpenDAL™](https://opendal.apache.org/services/vercel-artifacts/python/): Configuration reference and copy-paste setup for the OpenDAL vercel-artifacts service.
+- [vercel-artifacts | Services | Apache OpenDAL™](https://opendal.apache.org/services/vercel-artifacts/rust/): Configuration reference and copy-paste setup for the OpenDAL vercel-artifacts service.
+- [vercel-blob | Services | Apache OpenDAL™](https://opendal.apache.org/services/vercel-blob/go/): Configuration reference and copy-paste setup for the OpenDAL vercel-blob service.
+- [vercel-blob | Services | Apache OpenDAL™](https://opendal.apache.org/services/vercel-blob/python/): Configuration reference and copy-paste setup for the OpenDAL vercel-blob service.
+- [vercel-blob | Services | Apache OpenDAL™](https://opendal.apache.org/services/vercel-blob/rust/): Configuration reference and copy-paste setup for the OpenDAL vercel-blob service.
+- [webdav | Services | Apache OpenDAL™](https://opendal.apache.org/services/webdav/go/): Configuration reference and copy-paste setup for the OpenDAL webdav service.
+- [webdav | Services | Apache OpenDAL™](https://opendal.apache.org/services/webdav/java/): Configuration reference and copy-paste setup for the OpenDAL webdav service.
+- [webdav | Services | Apache OpenDAL™](https://opendal.apache.org/services/webdav/nodejs/): Configuration reference and copy-paste setup for the OpenDAL webdav service.
+- [webdav | Services | Apache OpenDAL™](https://opendal.apache.org/services/webdav/python/): Configuration reference and copy-paste setup for the OpenDAL webdav service.
+- [webdav | Services | Apache OpenDAL™](https://opendal.apache.org/services/webdav/ruby/): Configuration reference and copy-paste setup for the OpenDAL webdav service.
+- [webdav | Services | Apache OpenDAL™](https://opendal.apache.org/services/webdav/rust/): Configuration reference and copy-paste setup for the OpenDAL webdav service.
+- [webhdfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/webhdfs/go/): Configuration reference and copy-paste setup for the OpenDAL webhdfs service.
+- [webhdfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/webhdfs/java/): Configuration reference and copy-paste setup for the OpenDAL webhdfs service.
+- [webhdfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/webhdfs/nodejs/): Configuration reference and copy-paste setup for the OpenDAL webhdfs service.
+- [webhdfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/webhdfs/python/): Configuration reference and copy-paste setup for the OpenDAL webhdfs service.
+- [webhdfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/webhdfs/ruby/): Configuration reference and copy-paste setup for the OpenDAL webhdfs service.
+- [webhdfs | Services | Apache OpenDAL™](https://opendal.apache.org/services/webhdfs/rust/): Configuration reference and copy-paste setup for the OpenDAL webhdfs service.
+- [yandex-disk | Services | Apache OpenDAL™](https://opendal.apache.org/services/yandex-disk/go/): Configuration reference and copy-paste setup for the OpenDAL yandex-disk service.
+- [yandex-disk | Services | Apache OpenDAL™](https://opendal.apache.org/services/yandex-disk/java/): Configuration reference and copy-paste setup for the OpenDAL yandex-disk service.
+- [yandex-disk | Services | Apache OpenDAL™](https://opendal.apache.org/services/yandex-disk/nodejs/): Configuration reference and copy-paste setup for the OpenDAL yandex-disk service.
+- [yandex-disk | Services | Apache OpenDAL™](https://opendal.apache.org/services/yandex-disk/python/): Configuration reference and copy-paste setup for the OpenDAL yandex-disk service.
+- [yandex-disk | Services | Apache OpenDAL™](https://opendal.apache.org/services/yandex-disk/rust/): Configuration reference and copy-paste setup for the OpenDAL yandex-disk service.
+- [Getting started | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/c/getting-started/): Build an OpenDAL operator in C, write and read data, check errors, and free resources.
+- [Getting started | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/cpp/getting-started/): Build and run your first OpenDAL C++ program, then connect it to a real storage backend.
+- [Getting started | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/d/getting-started/): Write, read, and list with the OpenDAL D binding against the in-memory backend.
+- [Getting started | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/dart/getting-started/): Build and run your first OpenDAL program in Dart — write a file and read it back.
+- [Connecting to your storage | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/dotnet/connecting/): Build an OpenDAL operator in .NET for any backend — scheme + dictionary, typed config, and credentials.
+- [Getting started | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/dotnet/getting-started/): Run your first OpenDAL program in .NET, then point it at a real storage backend.
+- [Going to production | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/dotnet/production/): Make OpenDAL robust in .NET — layers, error handling, capability checks, and executor lifetime.
+- [Common tasks | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/dotnet/tasks/): Task-oriented recipes for OpenDAL in .NET — read, write, stream, list, delete, copy, and presign.
+- [Connecting to your storage | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/go/connecting/): Build an OpenDAL operator in Go for any backend — scheme packages, configuration, and credentials.
+- [Getting started | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/go/getting-started/): Run your first OpenDAL program in Go, then point it at a real storage backend.
+- [Going to production | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/go/production/): Make OpenDAL robust in Go — retries, timeouts, error handling, and capability checks.
+- [Common tasks | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/go/tasks/): Task-oriented recipes for OpenDAL in Go — read, write, stream, list, delete, copy, rename, and presign.
+- [Getting started | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/haskell/getting-started/): Build your first OpenDAL program in Haskell — create an operator, read and write, and handle errors.
+- [Connecting to your storage | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/java/connecting/): Build an OpenDAL operator in Java for any backend — schemes, typed config, and credentials.
+- [Getting started | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/java/getting-started/): Run your first OpenDAL program in Java, then point it at a real storage backend.
+- [Going to production | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/java/production/): Make OpenDAL robust in Java — retries, concurrency limits, error handling, and capability checks.
+- [Common tasks | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/java/tasks/): Task-oriented recipes for OpenDAL in Java — read, write, stream, list, delete, copy, and presign.
+- [Getting started | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/lua/getting-started/): Build the OpenDAL Lua binding, then write, read, and inspect files with a real example.
+- [Connecting to your storage | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/nodejs/connecting/): Build an OpenDAL operator in Node.js for any backend — schemes, configuration, URIs, and credentials.
+- [Getting started | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/nodejs/getting-started/): Run your first OpenDAL program in Node.js, then point it at a real storage backend.
+- [Going to production | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/nodejs/production/): Make OpenDAL robust in Node.js — retries, timeouts, throttling, concurrency limits, error handling, and observability.
+- [Common tasks | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/nodejs/tasks/): Task-oriented recipes for OpenDAL in Node.js — read, write, stream, list, delete, copy, rename, and presign.
+- [Getting started | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/ocaml/getting-started/): Create an operator, read and write files, and handle errors in the OCaml binding.
+- [Getting started | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/php/getting-started/): Construct an OpenDAL operator in PHP, then write, read, inspect, and delete a file.
+- [Connecting to your storage | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/python/connecting/): Build an OpenDAL operator in Python for any backend — schemes, configuration, and credentials.
+- [Getting started | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/python/getting-started/): Run your first OpenDAL program in Python, then point it at a real storage backend.
+- [Going to production | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/python/production/): Make OpenDAL robust in Python — retries, concurrency limits, error handling, and capability checks.
+- [Common tasks | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/python/tasks/): Task-oriented recipes for OpenDAL in Python — read, write, stream, list, delete, copy, and presign.
+- [Connecting to your storage | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/ruby/connecting/): Build an OpenDAL operator in Ruby for any backend — schemes, configuration, and credentials.
+- [Getting started | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/ruby/getting-started/): Run your first OpenDAL program in Ruby, then point it at a real storage backend.
+- [Going to production | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/ruby/production/): Make OpenDAL robust in Ruby — middlewares, error handling, and capability checks.
+- [Common tasks | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/ruby/tasks/): Task-oriented recipes for OpenDAL in Ruby — read, write, stream, list, delete, copy, and rename.
+- [Getting started | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/swift/getting-started/): Create an OpenDAL Swift operator, write data, and read it back.
+- [Getting started | Apache OpenDAL™](https://opendal.apache.org/docs/bindings/zig/getting-started/): Build an operator, write and read data, inspect metadata, and list a directory with the OpenDAL Zig binding.
+
+### Blog
+
+- [reqsign is now Apache OpenDAL Reqsign](https://opendal.apache.org/blog/2025/09/15/apache-opendal-reqsign/): I’m happy to announce that my personal project has been donated to the ASF and accepted by the Apache OpenDAL PMC as a subproject: Apache OpenDAL Reqsign. This means Reqsign will now be governed by the Apache OpenDAL PMC under the Apache Way.
+- [Apache OpenDAL 2025 Roadmap: Perfecting Production Adoption](https://opendal.apache.org/blog/2025/03/01/2025-roadmap/): Hi everyone, long time no see. Although we have been actively developing OpenDAL and consistently releasing updates, we haven’t provided a clear overview of where OpenDAL is heading. This post aims to address that. Here, we will discuss OpenDAL's current position and the future directions we are moving toward.
+- [Apache OpenDAL™ Beijing Meetup 1st](https://opendal.apache.org/blog/2024/09/09/apache-opendal-meetup-beijing-1st/): Hello, everyone!
+- [Apache OpenDAL™ participates in Open Source Promotion Plan 2024](https://opendal.apache.org/blog/apache-opendal-participates-in-ospp-2024/): Hello, everyone!
+- [Apache OpenDAL™ participates in Google Summer of Code 2024](https://opendal.apache.org/blog/apache-opendal-participates-in-gsoc-2024/): Hello, everyone!
+- [Apache OpenDAL™ is now Graduated](https://opendal.apache.org/blog/apache-opendal-graduated/): Hello, everyone! I'm happy to announce that Apache OpenDAL™ has graduated from the Apache Incubator to become a Top-Level Project of the Apache Software Foundation.
+- [OwO #1: The v0.40 Release](https://opendal.apache.org/blog/owo-1/): OwO (Outcome, Working, Outlook) is an Apache OpenDAL™ release blog series, where we share the current work status and future plans.
+- [Apache OpenDAL™ Internal: Data Reading](https://opendal.apache.org/blog/how-opendal-read-data/): The first article will discuss OpenDAL's most commonly used data reading function. I will start from the outermost interface and then gradually unfold according to the calling sequence of OpenDAL.
+- [Apache OpenDAL™: Access Data Freely](https://opendal.apache.org/blog/opendal-access-data-freely/): If you're committed to building cloud-native, cross-cloud-first applications and services, or you want to support configurable storage backends to meet complex data access needs, or if you're tired of juggling various SDKs and hoping for a unified abstraction and development experience, Apache OpenDAL™ will be your perfect partner.
+- [Way to Go: OpenDAL successfully entered Apache Incubator](https://opendal.apache.org/blog/opendal-entered-apache-incubator/): On February 27th, 2023, the OpenDAL project achieved a milestone by winning the approval to join the incubator of the Apache Software Foundation (ASF), the world's leading open source software organization. On March 15th, the OpenDAL project was officially transferred to the Apache Software Foundation.
+
+### Community
+
+- [Onboarding](https://opendal.apache.org/community/committers/onboarding): This document primarily serves as a guide for new committers to Apache OpenDAL™.
+- [Request for adding secrets](https://opendal.apache.org/community/committers/request_for_adding_secrets): OpenDAL's behavior tests depend on the secrets stored in 1password.
+- [GSoC Project Proposal Guidance](https://opendal.apache.org/community/events/gsoc-proposal-guide): This document contains a short guide on how to structure your OpenDAL Google Summer of Code (GSoC) project proposal and how to increase the chance of your project proposal being accepted.
+- [OSPP Project Proposal Guidance](https://opendal.apache.org/community/events/ospp-proposal-guide): This document contains a short guide on how to structure your OpenDAL Open Source Promotion Plan (OSPP) project proposal and how to increase the chance of your project proposal being accepted.
+- [Community](https://opendal.apache.org/community/category/committers): Welcome to the Apache OpenDAL™ community!
+- [Maturity Assessment for Apache OpenDAL™](https://opendal.apache.org/community/maturity): The goals of this maturity model are to describe how Apache projects operate in a concise and high-level way, and to provide a basic framework that projects may choose to use to evaluate themselves.
+- [Board reporting](https://opendal.apache.org/community/pmc_members/board-reporting): Apache PMC members are responsible for reporting the status of their projects to the Apache Board of Directors. This page provides guidance on how to prepare and submit reports for Apache OpenDAL™.
+- [Nominate Committer](https://opendal.apache.org/community/pmc_members/nominate-committer): This document mainly introduces how a PMC member nominates a new committer.
+- [Nominate PMC Member](https://opendal.apache.org/community/pmc_members/nominate-pmc-member): This document mainly introduces how a PMC member nominates a new PMC member.
+- [Onboarding](https://opendal.apache.org/community/pmc_members/onboarding): This document primarily serves as a guide for new PMC members to Apache OpenDAL™.
+- [Publications](https://opendal.apache.org/community/publications): This page lists papers and projects that use Apache OpenDAL™.
+- [Source archive trusted publishing](https://opendal.apache.org/community/release/ci-signing-proposal): The manually dispatched release-compose.yml workflow prepares signed source
+- [Generate release note](https://opendal.apache.org/community/release/reference/generate_release_note): This document describes how to generate release notes using GitHub:
+- [Setup GPG key](https://opendal.apache.org/community/release/reference/setup_gpg): This section is a brief from the Cryptography with OpenPGP guideline.
+- [Create a release](https://opendal.apache.org/community/release): This document mainly introduces how the release manager
+- [Reproducible source archives](https://opendal.apache.org/community/release/reproducible-source): OpenDAL source release archives must reproduce byte for byte from the same Git
+- [Verify a release candidate](https://opendal.apache.org/community/release/verify): Use the following checklist to verify a release candidate:
+- [Weekly source releases](https://opendal.apache.org/community/release/weekly): The weekly workflow is scheduled each Thursday at 00:00 UTC. It prepares a release
+- [Security](https://opendal.apache.org/community/security): The Apache Software Foundation takes a rigorous stance on eliminating security issues in its software projects. Likewise, Apache OpenDAL™ is also vigilant and takes security issues related to its features and functionality into the highest consideration.

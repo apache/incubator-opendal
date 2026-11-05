@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["SURREALDB_SCHEME"],"fn":["register_surrealdb_service"],"struct":["Surrealdb","SurrealdbConfig"]};

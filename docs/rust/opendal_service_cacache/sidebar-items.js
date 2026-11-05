@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CACACHE_SCHEME"],"fn":["register_cacache_service"],"struct":["Cacache","CacacheConfig"]};

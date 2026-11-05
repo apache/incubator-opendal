@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"struct":["ComposeOptions","ComposeSourceOptions","CopyOptions","DeleteOptions","ListOptions","ReadOptions","ReaderOptions","RenameOptions","RestoreOptions","StatOptions","WriteOptions"]};

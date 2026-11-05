@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["AZBLOB_SCHEME"],"fn":["register_azblob_service"],"struct":["Azblob","AzblobConfig"]};

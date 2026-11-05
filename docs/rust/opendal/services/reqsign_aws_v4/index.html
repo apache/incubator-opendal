@@ -1,0 +1,108 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Re-export of the [`reqsign_aws_v4`] crate that this service signs requests with."><title>opendal::services::reqsign_aws_v4 - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../../../crates.js"></script><script defer="" src="../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Crate reqsign_aws_v4</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../opendal/index.html">opendal</a><span class="version">0.59.6</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#overview" title="Overview">Overview</a></li><li><a href="#quick-start" title="Quick Start">Quick Start</a></li><li><a href="#credential-sources" title="Credential Sources">Credential Sources</a></li><li><a href="#supported-services" title="Supported Services">Supported Services</a></li><li><a href="#advanced-configuration" title="Advanced Configuration">Advanced Configuration</a><ul><li><a href="#using-custom-credential-providers" title="Using Custom Credential Providers">Using Custom Credential Providers</a></li><li><a href="#customizing-defaultcredentialprovider-slots" title="Customizing DefaultCredentialProvider Slots">Customizing DefaultCredentialProvider Slots</a></li><li><a href="#selecting-a-profile" title="Selecting a Profile">Selecting a Profile</a></li><li><a href="#custom-credential-provider" title="Custom Credential Provider">Custom Credential Provider</a></li></ul></li><li><a href="#examples" title="Examples">Examples</a></li></ul><h3><a href="#modules">Crate Items</a></h3><ul class="block"><li><a href="#modules" title="Modules">Modules</a></li><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#enums" title="Enums">Enums</a></li><li><a href="#constants" title="Constants">Constants</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>services</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">opendal</a>::<wbr><a href="../index.html">services</a></div><h1>Crate <span>reqsign_<wbr>aws_<wbr>v4</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><span class="item-info"><div class="stab portability">Available on <strong>crate feature <code>services-s3</code></strong> only.</div></span><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Re-export of the <a href="index.html" title="mod opendal::services::reqsign_aws_v4"><code>reqsign_aws_v4</code></a> crate that this service signs requests
+with.</p>
+<p><a href="../struct.S3.html#method.credential_provider_chain" title="method opendal::services::S3::credential_provider_chain"><code>S3::credential_provider_chain</code></a> takes a chain of providers for
+<a href="struct.Credential.html" title="struct opendal::services::reqsign_aws_v4::Credential"><code>reqsign_aws_v4::Credential</code></a>. Implement providers against this re-export and
+<a href="../../reqsign_core/index.html" title="mod opendal::reqsign_core"><code>opendal_core::reqsign_core</code></a> rather than depending on the <code>reqsign</code> crates
+directly, so that the types always match the ones this service is built with.
+AWS SigV4 signing implementation for reqsign.</p>
+<p>This crate provides AWS Signature Version 4 (SigV4) signing capabilities
+for authenticating requests to AWS services like S3, DynamoDB, Lambda, and more.</p>
+<h3 id="overview"><a class="doc-anchor" href="#overview">§</a>Overview</h3>
+<p>AWS SigV4 is the authentication protocol used by most AWS services. This crate
+implements the complete signing algorithm along with credential loading from
+various sources including environment variables, credential files, IAM roles,
+and more.</p>
+<h3 id="quick-start"><a class="doc-anchor" href="#quick-start">§</a>Quick Start</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>reqsign_aws_v4::{RequestSigner, DefaultCredentialProvider};
+<span class="kw">use </span>reqsign_core::{Context, Signer};
+<span class="kw">use </span>reqsign_file_read_tokio::TokioFileRead;
+<span class="kw">use </span>reqsign_http_send_reqwest::ReqwestHttpSend;
+
+<span class="attr">#[tokio::main]
+</span><span class="kw">async fn </span>main() -&gt; <span class="prelude-ty">Result</span>&lt;(), Box&lt;<span class="kw">dyn </span>std::error::Error&gt;&gt; {
+    <span class="comment">// Create context
+    </span><span class="kw">let </span>ctx = Context::new()
+        .with_file_read(TokioFileRead::default())
+        .with_http_send(ReqwestHttpSend::default());
+
+    <span class="comment">// Create credential loader
+    </span><span class="kw">let </span>loader = DefaultCredentialProvider::new();
+
+    <span class="comment">// Create request builder for S3
+    </span><span class="kw">let </span>builder = RequestSigner::new(<span class="string">"s3"</span>, <span class="string">"us-east-1"</span>);
+
+    <span class="comment">// Create the signer
+    </span><span class="kw">let </span>signer = Signer::new(ctx, loader, builder);
+
+    <span class="comment">// Sign requests
+    </span><span class="kw">let </span><span class="kw-2">mut </span>req = http::Request::get(<span class="string">"https://s3.amazonaws.com/mybucket/mykey"</span>)
+        .body(())
+        .unwrap()
+        .into_parts()
+        .<span class="number">0</span>;
+
+    signer.sign(<span class="kw-2">&amp;mut </span>req, <span class="prelude-val">None</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="prelude-val">Ok</span>(())
+}</code></pre></div><h3 id="credential-sources"><a class="doc-anchor" href="#credential-sources">§</a>Credential Sources</h3>
+<p>The crate supports loading credentials from multiple sources:</p>
+<ol>
+<li><strong>Environment Variables</strong>: <code>AWS_ACCESS_KEY_ID</code> and <code>AWS_SECRET_ACCESS_KEY</code></li>
+<li><strong>Credential File</strong>: <code>~/.aws/credentials</code></li>
+<li><strong>IAM Roles</strong>: For EC2 instances and ECS tasks</li>
+<li><strong>AssumeRole</strong>: Via STS AssumeRole operations</li>
+<li><strong>WebIdentity</strong>: For Kubernetes service accounts</li>
+<li><strong>SSO</strong>: AWS SSO credentials</li>
+</ol>
+<h3 id="supported-services"><a class="doc-anchor" href="#supported-services">§</a>Supported Services</h3>
+<p>This implementation works with any AWS service that uses SigV4:</p>
+<ul>
+<li>Amazon S3</li>
+<li>Amazon DynamoDB</li>
+<li>AWS Lambda</li>
+<li>Amazon SQS</li>
+<li>Amazon SNS</li>
+<li>And many more…</li>
+</ul>
+<h3 id="advanced-configuration"><a class="doc-anchor" href="#advanced-configuration">§</a>Advanced Configuration</h3><h4 id="using-custom-credential-providers"><a class="doc-anchor" href="#using-custom-credential-providers">§</a>Using Custom Credential Providers</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>reqsign_aws_v4::{EnvCredentialProvider, ProfileCredentialProvider};
+<span class="kw">use </span>reqsign_core::ProvideCredentialChain;
+
+<span class="comment">// Create a custom credential chain
+</span><span class="kw">let </span>chain = ProvideCredentialChain::new()
+    .push(EnvCredentialProvider::new())
+    .push(ProfileCredentialProvider::new()
+        .with_profile(<span class="string">"production"</span>));</code></pre></div><h4 id="customizing-defaultcredentialprovider-slots"><a class="doc-anchor" href="#customizing-defaultcredentialprovider-slots">§</a>Customizing DefaultCredentialProvider Slots</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>reqsign_aws_v4::{DefaultCredentialProvider, ProfileCredentialProvider};
+
+<span class="kw">let </span>provider = DefaultCredentialProvider::builder()
+    .no_env()
+    .profile(ProfileCredentialProvider::new().with_profile(<span class="string">"production"</span>))
+    .no_imds()
+    .build();</code></pre></div><h4 id="selecting-a-profile"><a class="doc-anchor" href="#selecting-a-profile">§</a>Selecting a Profile</h4>
+<p>Use one explicit profile for the shared profile, SSO, and process credential
+sources:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>reqsign_aws_v4::DefaultCredentialProvider;
+
+<span class="kw">let </span>provider = DefaultCredentialProvider::builder()
+    .with_profile(<span class="string">"production"</span>)
+    .build();</code></pre></div><h4 id="custom-credential-provider"><a class="doc-anchor" href="#custom-credential-provider">§</a>Custom Credential Provider</h4>
+<p>You can create custom credential providers by implementing the <code>ProvideCredential</code> trait:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>reqsign_core::{ProvideCredential, Context, <span class="prelude-ty">Result</span>};
+
+<span class="kw">impl </span>ProvideCredential <span class="kw">for </span>MyCredentialProvider {
+    <span class="kw">type </span>Credential = Credential;
+     
+    <span class="kw">async fn </span>provide_credential(<span class="kw-2">&amp;</span><span class="self">self</span>, ctx: <span class="kw-2">&amp;</span>Context) -&gt; <span class="prelude-ty">Result</span>&lt;<span class="prelude-ty">Option</span>&lt;<span class="self">Self</span>::Credential&gt;&gt; {
+        <span class="comment">// Your custom credential loading logic
+        </span><span class="prelude-val">Ok</span>(<span class="prelude-val">None</span>)
+    }
+}</code></pre></div><h3 id="examples"><a class="doc-anchor" href="#examples">§</a>Examples</h3>
+<p>Check out the examples directory for more detailed usage:</p>
+<ul>
+<li><a href="examples/s3_sign.rs">S3 signing example</a></li>
+<li><a href="examples/dynamodb_sign.rs">DynamoDB signing example</a></li>
+</ul>
+</div></details><h2 id="modules" class="section-header">Modules<a href="#modules" class="anchor">§</a></h2><dl class="item-table"><dt><a class="mod" href="constants/index.html" title="mod opendal::services::reqsign_aws_v4::constants">constants</a></dt></dl><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.AssumeRoleCredentialProvider.html" title="struct opendal::services::reqsign_aws_v4::AssumeRoleCredentialProvider">Assume<wbr>Role<wbr>Credential<wbr>Provider</a></dt><dd>Loads credentials through one fixed AWS STS <code>AssumeRole</code> flow.</dd><dt><a class="struct" href="struct.AssumeRoleGrant.html" title="struct opendal::services::reqsign_aws_v4::AssumeRoleGrant">Assume<wbr>Role<wbr>Grant</a></dt><dd>A typed <a href="https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRole.html">AWS STS <code>AssumeRole</code></a> authority transition.</dd><dt><a class="struct" href="struct.AssumeRoleGranter.html" title="struct opendal::services::reqsign_aws_v4::AssumeRoleGranter">Assume<wbr>Role<wbr>Granter</a></dt><dd>Explicitly grants an AWS STS assumed-role credential.</dd><dt><a class="struct" href="struct.AssumeRoleWithWebIdentityCredentialProvider.html" title="struct opendal::services::reqsign_aws_v4::AssumeRoleWithWebIdentityCredentialProvider">Assume<wbr>Role<wbr>With<wbr>WebIdentity<wbr>Credential<wbr>Provider</a></dt><dd>AssumeRoleWithWebIdentityCredentialProvider will load credential via assume role with web identity.</dd><dt><a class="struct" href="struct.CognitoIdentityCredentialProvider.html" title="struct opendal::services::reqsign_aws_v4::CognitoIdentityCredentialProvider">Cognito<wbr>Identity<wbr>Credential<wbr>Provider</a></dt><dd>Cognito Identity Credentials Provider</dd><dt><a class="struct" href="struct.Credential.html" title="struct opendal::services::reqsign_aws_v4::Credential">Credential</a></dt><dd>Credential that holds the access_key and secret_key.</dd><dt><a class="struct" href="struct.DefaultCredentialProvider.html" title="struct opendal::services::reqsign_aws_v4::DefaultCredentialProvider">Default<wbr>Credential<wbr>Provider</a></dt><dd>DefaultCredentialProvider is a loader that will try to load credential via default chains.</dd><dt><a class="struct" href="struct.DefaultCredentialProviderBuilder.html" title="struct opendal::services::reqsign_aws_v4::DefaultCredentialProviderBuilder">Default<wbr>Credential<wbr>Provider<wbr>Builder</a></dt><dd>Builder for <code>DefaultCredentialProvider</code>.</dd><dt><a class="struct" href="struct.ECSCredentialProvider.html" title="struct opendal::services::reqsign_aws_v4::ECSCredentialProvider">ECSCredential<wbr>Provider</a></dt><dd>ECS Task Role Credentials Provider</dd><dt><a class="struct" href="struct.EnvCredentialProvider.html" title="struct opendal::services::reqsign_aws_v4::EnvCredentialProvider">EnvCredential<wbr>Provider</a></dt><dd>EnvCredentialProvider loads AWS credentials from environment variables.</dd><dt><a class="struct" href="struct.IMDSv2CredentialProvider.html" title="struct opendal::services::reqsign_aws_v4::IMDSv2CredentialProvider">IMDSv2<wbr>Credential<wbr>Provider</a></dt><dt><a class="struct" href="struct.ProcessCredentialProvider.html" title="struct opendal::services::reqsign_aws_v4::ProcessCredentialProvider">Process<wbr>Credential<wbr>Provider</a></dt><dd>Process Credentials Provider</dd><dt><a class="struct" href="struct.ProfileCredentialProvider.html" title="struct opendal::services::reqsign_aws_v4::ProfileCredentialProvider">Profile<wbr>Credential<wbr>Provider</a></dt><dd>ProfileCredentialProvider loads AWS credentials from configuration files.</dd><dt><a class="struct" href="struct.RequestSigner.html" title="struct opendal::services::reqsign_aws_v4::RequestSigner">Request<wbr>Signer</a></dt><dd>RequestSigner that implement AWS SigV4.</dd><dt><a class="struct" href="struct.S3AccessGrantsConfig.html" title="struct opendal::services::reqsign_aws_v4::S3AccessGrantsConfig">S3Access<wbr>Grants<wbr>Config</a></dt><dd>Stable configuration identifying one regional S3 Access Grants instance.</dd><dt><a class="struct" href="struct.S3AccessGrantsGrant.html" title="struct opendal::services::reqsign_aws_v4::S3AccessGrantsGrant">S3Access<wbr>Grants<wbr>Grant</a></dt><dd>One complete, typed S3 Access Grants <code>GetDataAccess</code> authorization request.</dd><dt><a class="struct" href="struct.S3AccessGrantsGranter.html" title="struct opendal::services::reqsign_aws_v4::S3AccessGrantsGranter">S3Access<wbr>Grants<wbr>Granter</a></dt><dd>Grants temporary AWS credentials through S3 Access Grants <code>GetDataAccess</code>.</dd><dt><a class="struct" href="struct.S3AccessGrantsTarget.html" title="struct opendal::services::reqsign_aws_v4::S3AccessGrantsTarget">S3Access<wbr>Grants<wbr>Target</a></dt><dd>A typed S3 bucket, prefix, or object target for <code>GetDataAccess</code>.</dd><dt><a class="struct" href="struct.S3ExpressSessionConfig.html" title="struct opendal::services::reqsign_aws_v4::S3ExpressSessionConfig">S3Express<wbr>Session<wbr>Config</a></dt><dd>Validated, stable S3 Express directory bucket configuration.</dd><dt><a class="struct" href="struct.S3ExpressSessionGrant.html" title="struct opendal::services::reqsign_aws_v4::S3ExpressSessionGrant">S3Express<wbr>Session<wbr>Grant</a></dt><dd>A complete S3 Express <code>CreateSession</code> authorization grant.</dd><dt><a class="struct" href="struct.S3ExpressSessionGranter.html" title="struct opendal::services::reqsign_aws_v4::S3ExpressSessionGranter">S3Express<wbr>Session<wbr>Granter</a></dt><dd>Grants expiration-aware credentials for one S3 Express directory bucket or
+one caller-configured compatible endpoint.</dd><dt><a class="struct" href="struct.S3ExpressSessionProvider.html" title="struct opendal::services::reqsign_aws_v4::S3ExpressSessionProvider">S3Express<wbr>Session<wbr>Provider</a></dt><dd>S3 Express fixed-flow credential provider.</dd><dt><a class="struct" href="struct.SSOCredentialProvider.html" title="struct opendal::services::reqsign_aws_v4::SSOCredentialProvider">SSOCredential<wbr>Provider</a></dt><dd>SSO Credentials Provider</dd><dt><a class="struct" href="struct.StaticCredentialProvider.html" title="struct opendal::services::reqsign_aws_v4::StaticCredentialProvider">Static<wbr>Credential<wbr>Provider</a></dt><dd>StaticCredentialProvider provides static AWS credentials.</dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.S3AccessGrantsPermission.html" title="enum opendal::services::reqsign_aws_v4::S3AccessGrantsPermission">S3Access<wbr>Grants<wbr>Permission</a></dt><dd>The permission requested from S3 Access Grants.</dd><dt><a class="enum" href="enum.S3AccessGrantsPrivilege.html" title="enum opendal::services::reqsign_aws_v4::S3AccessGrantsPrivilege">S3Access<wbr>Grants<wbr>Privilege</a></dt><dd>How tightly S3 Access Grants scopes the returned temporary credential.</dd><dt><a class="enum" href="enum.S3ExpressSessionGrantSelection.html" title="enum opendal::services::reqsign_aws_v4::S3ExpressSessionGrantSelection">S3Express<wbr>Session<wbr>Grant<wbr>Selection</a></dt><dd>Selects how S3 Express determines the <code>CreateSession</code> permission mode.</dd><dt><a class="enum" href="enum.S3ExpressSessionMode.html" title="enum opendal::services::reqsign_aws_v4::S3ExpressSessionMode">S3Express<wbr>Session<wbr>Mode</a></dt><dd>The permission mode of an S3 Express directory bucket session.</dd><dt><a class="enum" href="enum.S3ExpressSessionPartition.html" title="enum opendal::services::reqsign_aws_v4::S3ExpressSessionPartition">S3Express<wbr>Session<wbr>Partition</a></dt><dd>An AWS partition supported by the S3 Express session endpoint model.</dd></dl><h2 id="constants" class="section-header">Constants<a href="#constants" class="anchor">§</a></h2><dl class="item-table"><dt><a class="constant" href="constant.EMPTY_STRING_SHA256.html" title="constant opendal::services::reqsign_aws_v4::EMPTY_STRING_SHA256">EMPTY_<wbr>STRING_<wbr>SHA256</a></dt></dl></section></div></main></body></html>

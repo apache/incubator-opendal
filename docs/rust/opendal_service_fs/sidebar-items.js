@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["FILE_SCHEME","FS_SCHEME"],"fn":["register_fs_service"],"struct":["Fs","FsConfig"]};

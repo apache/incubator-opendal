@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["VERCEL_ARTIFACTS_SCHEME"],"fn":["register_vercel_artifacts_service"],"struct":["VercelArtifacts","VercelArtifactsConfig"]};

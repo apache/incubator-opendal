@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["GITHUB_SCHEME"],"fn":["register_github_service"],"struct":["Github","GithubConfig"]};

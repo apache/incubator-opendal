@@ -1,0 +1,112 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><meta name="generator" content="rustdoc"><meta name="description" content="Re-export of the [`reqsign_azure_storage`] crate that this service signs requests with."><title>opendal::services::reqsign_azure_storage - Rust</title><script>if(window.location.protocol!=="file:")document.head.insertAdjacentHTML("beforeend","SourceSerif4-Regular-6b053e98.ttf.woff2,FiraSans-Italic-81dc35de.woff2,FiraSans-Regular-0fe48ade.woff2,FiraSans-MediumItalic-ccf7e434.woff2,FiraSans-Medium-e1aa3f0a.woff2,SourceCodePro-Regular-8badfe75.ttf.woff2,SourceCodePro-Semibold-aa29a496.ttf.woff2".split(",").map(f=>`<link rel="preload" as="font" type="font/woff2"href="../../../static.files/${f}">`).join(""))</script><link rel="stylesheet" href="../../../static.files/normalize-9960930a.css"><link rel="stylesheet" href="../../../static.files/rustdoc-203241e4.css"><meta name="rustdoc-vars" data-root-path="../../../" data-static-root-path="../../../static.files/" data-current-crate="opendal" data-themes="" data-resource-suffix="" data-rustdoc-version="1.100.0-nightly (1303417c4 2026-09-21)" data-channel="nightly" data-search-js="search-b167f383.js" data-stringdex-js="stringdex-b5109af9.js" data-settings-js="settings-170eb4bf.js"><script src="../../../static.files/storage-41dd4d93.js"></script><script defer="" src="../../../crates.js"></script><script defer="" src="../../../static.files/main-1814ead3.js"></script><noscript><link rel="stylesheet" href="../../../static.files/noscript-9f56287d.css"></noscript><link rel="alternate icon" type="image/png" href="../../../static.files/favicon-32x32-eab170b8.png"><link rel="icon" type="image/svg+xml" href="../../../static.files/favicon-044be391.svg"></head><body class="rustdoc mod crate"><a class="skip-main-content" href="#main-content">Skip to main content</a><!--[if lte IE 11]><div class="warning">This old browser is unsupported and will most likely display funky things.</div><![endif]--><rustdoc-topbar><h2><a href="#">Crate reqsign_azure_storage</a></h2></rustdoc-topbar><nav class="sidebar"><div class="sidebar-crate"><a class="logo-container" href="../../../opendal/index.html"><img src="/img/logo.svg" alt="logo"></a><h2><a href="../../../opendal/index.html">opendal</a><span class="version">0.59.6</span></h2></div><div class="sidebar-elems"><ul class="block"><li><a id="all-types" href="all.html">All Items</a></li></ul><section id="rustdoc-toc"><h3><a href="#">Sections</a></h3><ul class="block top-toc"><li><a href="#overview" title="Overview">Overview</a></li><li><a href="#quick-start" title="Quick Start">Quick Start</a></li><li><a href="#credential-sources" title="Credential Sources">Credential Sources</a><ul><li><a href="#environment-variables" title="Environment Variables">Environment Variables</a></li><li><a href="#managed-identity" title="Managed Identity">Managed Identity</a></li></ul></li><li><a href="#storage-services" title="Storage Services">Storage Services</a><ul><li><a href="#blob-storage" title="Blob Storage">Blob Storage</a></li><li><a href="#file-storage" title="File Storage">File Storage</a></li></ul></li><li><a href="#advanced-features" title="Advanced Features">Advanced Features</a><ul><li><a href="#account-sas-generation" title="Account SAS Generation">Account SAS Generation</a></li><li><a href="#using-specific-credential-providers" title="Using Specific Credential Providers">Using Specific Credential Providers</a></li></ul></li><li><a href="#examples" title="Examples">Examples</a></li></ul><h3><a href="#structs">Crate Items</a></h3><ul class="block"><li><a href="#structs" title="Structs">Structs</a></li><li><a href="#enums" title="Enums">Enums</a></li></ul></section><div id="rustdoc-modnav"><h2><a href="../index.html">In opendal::<wbr>services</a></h2></div></div></nav><div class="sidebar-resizer" title="Drag to resize sidebar"></div><main><div class="width-limiter"><section id="main-content" class="content" tabindex="-1"><div class="main-heading"><div class="rustdoc-breadcrumbs"><a href="../../index.html">opendal</a>::<wbr><a href="../index.html">services</a></div><h1>Crate <span>reqsign_<wbr>azure_<wbr>storage</span>&nbsp;<button id="copy-path" title="Copy item path to clipboard">Copy item path</button></h1><rustdoc-toolbar></rustdoc-toolbar><span class="sub-heading"></span></div><span class="item-info"><div class="stab portability">Available on <strong>crate feature <code>services-azblob</code></strong> only.</div></span><details class="toggle top-doc" open=""><summary class="hideme"><span>Expand description</span></summary><div class="docblock"><p>Re-export of the <a href="index.html" title="mod opendal::services::reqsign_azure_storage"><code>reqsign_azure_storage</code></a> crate that this service signs
+requests with.</p>
+<p><a href="../struct.Azblob.html#method.credential_provider_chain" title="method opendal::services::Azblob::credential_provider_chain"><code>Azblob::credential_provider_chain</code></a> takes a chain of providers for
+<a href="enum.Credential.html" title="enum opendal::services::reqsign_azure_storage::Credential"><code>reqsign_azure_storage::Credential</code></a>. Implement providers against this
+re-export and <a href="../../reqsign_core/index.html" title="mod opendal::reqsign_core"><code>opendal_core::reqsign_core</code></a> rather than depending on the
+<code>reqsign</code> crates directly, so that the types always match the ones this
+service is built with.
+Azure Storage signing implementation for reqsign.</p>
+<p>This crate provides comprehensive signing support for Azure Storage services
+including Blob Storage, File Storage, Queue Storage, and Table Storage.</p>
+<h3 id="overview"><a class="doc-anchor" href="#overview">§</a>Overview</h3>
+<p>Azure Storage supports multiple authentication methods, and this crate
+implements all major ones:</p>
+<ul>
+<li><strong>Shared Key</strong>: Using storage account access keys</li>
+<li><strong>SAS Token</strong>: Pre-generated Shared Access Signature tokens</li>
+<li><strong>Bearer Token</strong>: OAuth2/Azure AD authentication</li>
+</ul>
+<h3 id="quick-start"><a class="doc-anchor" href="#quick-start">§</a>Quick Start</h3>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>anyhow::Result;
+<span class="kw">use </span>reqsign_azure_storage::{DefaultCredentialProvider, RequestSigner};
+<span class="kw">use </span>reqsign_core::{Context, Signer};
+<span class="kw">use </span>reqsign_file_read_tokio::TokioFileRead;
+<span class="kw">use </span>reqsign_http_send_reqwest::ReqwestHttpSend;
+<span class="kw">use </span>reqwest::Client;
+
+<span class="attr">#[tokio::main]
+</span><span class="kw">async fn </span>main() -&gt; <span class="prelude-ty">Result</span>&lt;()&gt; {
+    <span class="comment">// Create context
+    </span><span class="kw">let </span>ctx = Context::new()
+        .with_file_read(TokioFileRead::default())
+        .with_http_send(ReqwestHttpSend::default());
+
+    <span class="comment">// Create credential loader (will try multiple methods)
+    </span><span class="kw">let </span>loader = DefaultCredentialProvider::new();
+
+    <span class="comment">// Create request builder
+    </span><span class="kw">let </span>builder = RequestSigner::new();
+
+    <span class="comment">// Create the signer
+    </span><span class="kw">let </span>signer = Signer::new(ctx, loader, builder);
+
+    <span class="comment">// Sign requests
+    </span><span class="kw">let </span><span class="kw-2">mut </span>req = http::Request::get(<span class="string">"https://mystorageaccount.blob.core.windows.net/container/blob"</span>)
+        .body(())
+        .unwrap()
+        .into_parts()
+        .<span class="number">0</span>;
+
+    signer.sign(<span class="kw-2">&amp;mut </span>req, <span class="prelude-val">None</span>).<span class="kw">await</span><span class="question-mark">?</span>;
+    <span class="prelude-val">Ok</span>(())
+}</code></pre></div><h3 id="credential-sources"><a class="doc-anchor" href="#credential-sources">§</a>Credential Sources</h3><h4 id="environment-variables"><a class="doc-anchor" href="#environment-variables">§</a>Environment Variables</h4><div class="example-wrap"><pre class="language-bash"><code># For Shared Key authentication
+export AZURE_STORAGE_ACCOUNT_NAME=mystorageaccount
+export AZURE_STORAGE_ACCOUNT_KEY=base64key
+
+# For SAS Token authentication
+export AZURE_STORAGE_SAS_TOKEN=sv=2021-06-08&amp;ss=b&amp;srt=sco...
+
+# For Azure AD authentication
+export AZURE_CLIENT_ID=client-id
+export AZURE_CLIENT_SECRET=client-secret
+export AZURE_TENANT_ID=tenant-id</code></pre></div><h4 id="managed-identity"><a class="doc-anchor" href="#managed-identity">§</a>Managed Identity</h4>
+<p>When running on Azure services (VMs, App Service, AKS), the crate
+automatically uses managed identity:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>reqsign_azure_storage::DefaultCredentialProvider;
+
+<span class="comment">// Create loader that will try managed identity
+</span><span class="kw">let </span>loader = DefaultCredentialProvider::new();</code></pre></div>
+<p>Customize the default chain with slot-based builder APIs:</p>
+
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>reqsign_azure_storage::{
+    ClientSecretCredentialProvider, DefaultCredentialProvider,
+};
+
+<span class="kw">let </span>loader = DefaultCredentialProvider::builder()
+    .no_env()
+    .client_secret(ClientSecretCredentialProvider::new().with_tenant_id(<span class="string">"tenant-id"</span>))
+    .no_imds()
+    .build();</code></pre></div><h3 id="storage-services"><a class="doc-anchor" href="#storage-services">§</a>Storage Services</h3><h4 id="blob-storage"><a class="doc-anchor" href="#blob-storage">§</a>Blob Storage</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// List containers
+</span><span class="kw">let </span>req = Request::get(<span class="string">"https://account.blob.core.windows.net/?comp=list"</span>)
+    .body(())
+    .unwrap();
+
+<span class="comment">// Get blob
+</span><span class="kw">let </span>req = Request::get(<span class="string">"https://account.blob.core.windows.net/container/blob.txt"</span>)
+    .body(())
+    .unwrap();</code></pre></div><h4 id="file-storage"><a class="doc-anchor" href="#file-storage">§</a>File Storage</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="comment">// List shares
+</span><span class="kw">let </span>req = Request::get(<span class="string">"https://account.file.core.windows.net/?comp=list"</span>)
+    .body(())
+    .unwrap();</code></pre></div><h3 id="advanced-features"><a class="doc-anchor" href="#advanced-features">§</a>Advanced Features</h3><h4 id="account-sas-generation"><a class="doc-anchor" href="#account-sas-generation">§</a>Account SAS Generation</h4>
+<p>Generate SAS tokens for delegated access:</p>
+<div class="example-wrap"><pre class="language-text"><code>// Account SAS is not yet exposed in the public API
+// This is planned for future releases</code></pre></div><h4 id="using-specific-credential-providers"><a class="doc-anchor" href="#using-specific-credential-providers">§</a>Using Specific Credential Providers</h4>
+<div class="example-wrap"><pre class="rust rust-example-rendered"><code><span class="kw">use </span>reqsign_azure_storage::{StaticCredentialProvider, EnvCredentialProvider};
+
+<span class="comment">// Use static credentials
+</span><span class="kw">let </span>static_loader = StaticCredentialProvider::new_shared_key(
+    <span class="string">"mystorageaccount"</span>,
+    <span class="string">"base64key"
+</span>);
+
+<span class="comment">// Or use environment variables
+</span><span class="kw">let </span>env_loader = EnvCredentialProvider::new();</code></pre></div><h3 id="examples"><a class="doc-anchor" href="#examples">§</a>Examples</h3>
+<p>Check out the examples directory for more detailed usage:</p>
+<ul>
+<li><a href="examples/blob_storage.rs">Blob storage operations</a></li>
+<li><a href="examples/sas_token.rs">SAS token generation</a></li>
+</ul>
+</div></details><h2 id="structs" class="section-header">Structs<a href="#structs" class="anchor">§</a></h2><dl class="item-table"><dt><a class="struct" href="struct.AzureCliCredentialProvider.html" title="struct opendal::services::reqsign_azure_storage::AzureCliCredentialProvider">Azure<wbr>CliCredential<wbr>Provider</a></dt><dd>AzureCliCredentialProvider provides credentials from Azure CLI</dd><dt><a class="struct" href="struct.AzurePipelinesCredentialProvider.html" title="struct opendal::services::reqsign_azure_storage::AzurePipelinesCredentialProvider">Azure<wbr>Pipelines<wbr>Credential<wbr>Provider</a></dt><dd>AzurePipelinesCredentialProvider provides credentials using Azure Pipelines workload identity</dd><dt><a class="struct" href="struct.ClientCertificateCredentialProvider.html" title="struct opendal::services::reqsign_azure_storage::ClientCertificateCredentialProvider">Client<wbr>Certificate<wbr>Credential<wbr>Provider</a></dt><dd>ClientCertificateCredentialProvider provides credentials using a client certificate</dd><dt><a class="struct" href="struct.ClientSecretCredentialProvider.html" title="struct opendal::services::reqsign_azure_storage::ClientSecretCredentialProvider">Client<wbr>Secret<wbr>Credential<wbr>Provider</a></dt><dd>Load credential from Azure Client Secret.</dd><dt><a class="struct" href="struct.DefaultCredentialProvider.html" title="struct opendal::services::reqsign_azure_storage::DefaultCredentialProvider">Default<wbr>Credential<wbr>Provider</a></dt><dd>Default loader that tries multiple credential sources in order.</dd><dt><a class="struct" href="struct.DefaultCredentialProviderBuilder.html" title="struct opendal::services::reqsign_azure_storage::DefaultCredentialProviderBuilder">Default<wbr>Credential<wbr>Provider<wbr>Builder</a></dt><dd>Builder for <code>DefaultCredentialProvider</code>.</dd><dt><a class="struct" href="struct.EnvCredentialProvider.html" title="struct opendal::services::reqsign_azure_storage::EnvCredentialProvider">EnvCredential<wbr>Provider</a></dt><dt><a class="struct" href="struct.ImdsCredentialProvider.html" title="struct opendal::services::reqsign_azure_storage::ImdsCredentialProvider">Imds<wbr>Credential<wbr>Provider</a></dt><dd>Load credential from Azure Instance Metadata Service (IMDS).</dd><dt><a class="struct" href="struct.RequestSigner.html" title="struct opendal::services::reqsign_azure_storage::RequestSigner">Request<wbr>Signer</a></dt><dd>RequestSigner that implement Azure Storage Shared Key Authorization.</dd><dt><a class="struct" href="struct.ServiceSharedAccessSignature.html" title="struct opendal::services::reqsign_azure_storage::ServiceSharedAccessSignature">Service<wbr>Shared<wbr>Access<wbr>Signature</a></dt><dd>Service SAS generator using Shared Key.</dd><dt><a class="struct" href="struct.StaticCredentialProvider.html" title="struct opendal::services::reqsign_azure_storage::StaticCredentialProvider">Static<wbr>Credential<wbr>Provider</a></dt><dt><a class="struct" href="struct.WorkloadIdentityCredentialProvider.html" title="struct opendal::services::reqsign_azure_storage::WorkloadIdentityCredentialProvider">Workload<wbr>Identity<wbr>Credential<wbr>Provider</a></dt><dd>Load credential from Azure Workload Identity.</dd></dl><h2 id="enums" class="section-header">Enums<a href="#enums" class="anchor">§</a></h2><dl class="item-table"><dt><a class="enum" href="enum.Credential.html" title="enum opendal::services::reqsign_azure_storage::Credential">Credential</a></dt><dd>Credential enum for different Azure Storage authentication methods.</dd><dt><a class="enum" href="enum.ServiceSasResource.html" title="enum opendal::services::reqsign_azure_storage::ServiceSasResource">Service<wbr>SasResource</a></dt><dd>Resource level for Azure Storage Service SAS.</dd></dl></section></div></main></body></html>

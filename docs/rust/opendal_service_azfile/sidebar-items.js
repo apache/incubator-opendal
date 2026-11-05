@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["AZFILE_SCHEME"],"fn":["register_azfile_service"],"struct":["Azfile","AzfileConfig"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ALLUXIO_SCHEME"],"fn":["register_alluxio_service"],"struct":["Alluxio","AlluxioConfig"]};

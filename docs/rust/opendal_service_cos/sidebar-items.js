@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["COSN_SCHEME","COS_SCHEME"],"fn":["register_cos_service"],"struct":["Cos","CosConfig"]};

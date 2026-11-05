@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MEMORY_SCHEME"],"fn":["register_memory_service"],"struct":["Memory","MemoryConfig"]};

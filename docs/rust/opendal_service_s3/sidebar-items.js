@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["S3_SCHEME"],"fn":["register_s3_service"],"struct":["S3","S3Config"]};

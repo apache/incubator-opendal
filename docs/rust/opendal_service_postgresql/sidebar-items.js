@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["POSTGRESQL_SCHEME"],"fn":["register_postgresql_service"],"struct":["Postgresql","PostgresqlConfig"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["SEAFILE_SCHEME"],"fn":["register_seafile_service"],"struct":["Seafile","SeafileConfig"]};

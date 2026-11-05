@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["TIKV_SCHEME"],"fn":["register_tikv_service"],"struct":["Tikv","TikvConfig"]};

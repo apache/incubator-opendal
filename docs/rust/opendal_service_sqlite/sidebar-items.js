@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["SQLITE_SCHEME"],"fn":["register_sqlite_service"],"struct":["Sqlite","SqliteConfig"]};

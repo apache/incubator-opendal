@@ -1,0 +1,1 @@
+rd_("BmCreate a new <code>OpendalFs</code> instance.AoReturns the argument unchanged.BaCalls <code>U::from(self)</code>.DeOpendalFs is a <code>DavFileSystem</code> implementation for opendal.Cndav-server-opendalfs is an dav-server implementation using \xe2\x80\xa6")

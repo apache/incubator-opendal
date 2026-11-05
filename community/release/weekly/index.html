@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en" dir="ltr" class="docs-wrapper plugin-docs plugin-id-community docs-version-current docs-doc-page docs-doc-id-release/weekly" data-has-hydrated="false">
+<head>
+<meta charset="UTF-8">
+<meta name="generator" content="Docusaurus v3.10.1">
+<title data-rh="true">Weekly source releases | Apache OpenDAL™</title><meta data-rh="true" name="viewport" content="width=device-width,initial-scale=1"><meta data-rh="true" name="twitter:card" content="summary_large_image"><meta data-rh="true" property="og:url" content="https://opendal.apache.org/community/release/weekly/"><meta data-rh="true" property="og:locale" content="en"><meta data-rh="true" name="docusaurus_locale" content="en"><meta data-rh="true" name="docsearch:language" content="en"><meta data-rh="true" name="docusaurus_version" content="current"><meta data-rh="true" name="docusaurus_tag" content="docs-community-current"><meta data-rh="true" name="docsearch:version" content="current"><meta data-rh="true" name="docsearch:docusaurus_tag" content="docs-community-current"><meta data-rh="true" property="og:title" content="Weekly source releases | Apache OpenDAL™"><meta data-rh="true" name="description" content="The weekly workflow is scheduled each Thursday at 00:00 UTC. It prepares a release"><meta data-rh="true" property="og:description" content="The weekly workflow is scheduled each Thursday at 00:00 UTC. It prepares a release"><link data-rh="true" rel="icon" href="/img/favicon.ico"><link data-rh="true" rel="canonical" href="https://opendal.apache.org/community/release/weekly/"><link data-rh="true" rel="alternate" href="https://opendal.apache.org/community/release/weekly/" hreflang="en"><link data-rh="true" rel="alternate" href="https://opendal.apache.org/community/release/weekly/" hreflang="x-default"><link rel="alternate" type="application/rss+xml" href="/blog/rss.xml" title="Apache OpenDAL™ RSS Feed">
+<link rel="alternate" type="application/atom+xml" href="/blog/atom.xml" title="Apache OpenDAL™ Atom Feed"><link rel="stylesheet" href="/assets/css/styles.326cac73.css">
+<script src="/assets/js/runtime~main.3a16e6cf.js" defer="defer"></script>
+<script src="/assets/js/main.4cb65970.js" defer="defer"></script>
+</head>
+<body>
+<svg style="display: none;"><defs>
+<symbol id="theme-svg-external-link" viewBox="0 0 24 24"><path fill="currentColor" d="M21 13v10h-21v-19h12v2h-10v15h17v-8h2zm3-12h-10.988l4.035 4-6.977 7.07 2.828 2.828 6.977-7.07 4.125 4.172v-11z"/></symbol>
+</defs></svg>
+<script>!function(){var t=function(){try{return new URLSearchParams(window.location.search).get("docusaurus-theme")}catch(t){}}()||function(){try{return window.localStorage.getItem("theme")}catch(t){}}();document.documentElement.setAttribute("data-theme",t||(window.matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light")),document.documentElement.setAttribute("data-theme-choice",t||"system")}(),function(){try{const c=new URLSearchParams(window.location.search).entries();for(var[t,e]of c)if(t.startsWith("docusaurus-data-")){var a=t.replace("docusaurus-data-","data-");document.documentElement.setAttribute(a,e)}}catch(t){}}()</script><div id="__docusaurus"><link rel="preload" as="image" href="/img/logo.svg"><link rel="preload" as="image" href="/img/logo_dark.svg"><link rel="preload" as="image" href="/./img/asf_logo_wide.svg"><div role="region" aria-label="Skip to main content"><a class="skipToContent_axXB" href="#__docusaurus_skipToContent_fallback">Skip to main content</a></div><nav aria-label="Main" class="theme-layout-navbar navbar navbar--fixed-top"><div class="navbar__inner"><div class="theme-layout-navbar-left navbar__items"><button aria-label="Toggle navigation bar" aria-expanded="false" class="navbar__toggle clean-btn" type="button"><svg width="30" height="30" viewBox="0 0 30 30" aria-hidden="true"><path stroke="currentColor" stroke-linecap="round" stroke-miterlimit="10" stroke-width="2" d="M4 7h22M4 15h22M4 23h22"></path></svg></button><a class="navbar__brand" target="_self" href="/"><div class="navbar__logo"><img src="/img/logo.svg" alt="Apache OpenDAL" class="themedComponent_QLlv themedComponent--light_eMOZ" height="32"><img src="/img/logo_dark.svg" alt="Apache OpenDAL" class="themedComponent_QLlv themedComponent--dark_D5YJ" height="32"></div></a></div><div class="theme-layout-navbar-right navbar__items navbar__items--right"><a class="navbar__item navbar__link" href="/docs/">Docs</a><a class="navbar__item navbar__link" href="/services/">Services</a><a class="navbar__item navbar__link" href="/blog/">Blog</a><a aria-current="page" class="navbar__item navbar__link navbar__link--active" href="/community/">Community</a><a class="navbar__item navbar__link" href="/download/">Download</a><div class="navbar__item dropdown dropdown--hoverable dropdown--right"><a href="#" aria-haspopup="true" aria-expanded="false" role="button" class="navbar__link">ASF</a><ul class="dropdown__menu"><li><a href="https://www.apache.org/" target="_blank" rel="noopener noreferrer" class="dropdown__link">Foundation</a></li><li><a href="https://www.apache.org/licenses/" target="_blank" rel="noopener noreferrer" class="dropdown__link">License</a></li><li><a href="https://www.apache.org/events/current-event.html" target="_blank" rel="noopener noreferrer" class="dropdown__link">Events</a></li><li><a href="https://privacy.apache.org/policies/privacy-policy-public.html" target="_blank" rel="noopener noreferrer" class="dropdown__link">Privacy</a></li><li><a href="https://www.apache.org/security/" target="_blank" rel="noopener noreferrer" class="dropdown__link">Security</a></li><li><a href="https://www.apache.org/foundation/sponsorship.html" target="_blank" rel="noopener noreferrer" class="dropdown__link">Sponsorship</a></li><li><a href="https://www.apache.org/foundation/thanks.html" target="_blank" rel="noopener noreferrer" class="dropdown__link">Thanks</a></li><li><a href="https://www.apache.org/foundation/policies/conduct.html" target="_blank" rel="noopener noreferrer" class="dropdown__link">Code of Conduct</a></li></ul></div><a href="https://github.com/apache/opendal" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link header-github-link" aria-label="GitHub repository"></a><a href="https://discord.gg/XQy8yGR2dg" target="_blank" rel="noopener noreferrer" class="navbar__item navbar__link header-discord-link" aria-label="Discord"></a><div class="toggle_KX_h odl-navbar-color-mode-toggle colorModeToggle_t4LL"><button class="clean-btn toggleButton_lwVS toggleButtonDisabled_DTaZ" type="button" disabled="" title="system mode" aria-label="Switch between dark and light mode (currently system mode)"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_WJDk lightToggleIcon_aFMT"><path fill="currentColor" d="M12,9c1.65,0,3,1.35,3,3s-1.35,3-3,3s-3-1.35-3-3S10.35,9,12,9 M12,7c-2.76,0-5,2.24-5,5s2.24,5,5,5s5-2.24,5-5 S14.76,7,12,7L12,7z M2,13l2,0c0.55,0,1-0.45,1-1s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S1.45,13,2,13z M20,13l2,0c0.55,0,1-0.45,1-1 s-0.45-1-1-1l-2,0c-0.55,0-1,0.45-1,1S19.45,13,20,13z M11,2v2c0,0.55,0.45,1,1,1s1-0.45,1-1V2c0-0.55-0.45-1-1-1S11,1.45,11,2z M11,20v2c0,0.55,0.45,1,1,1s1-0.45,1-1v-2c0-0.55-0.45-1-1-1C11.45,19,11,19.45,11,20z M5.99,4.58c-0.39-0.39-1.03-0.39-1.41,0 c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0s0.39-1.03,0-1.41L5.99,4.58z M18.36,16.95 c-0.39-0.39-1.03-0.39-1.41,0c-0.39,0.39-0.39,1.03,0,1.41l1.06,1.06c0.39,0.39,1.03,0.39,1.41,0c0.39-0.39,0.39-1.03,0-1.41 L18.36,16.95z M19.42,5.99c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06c-0.39,0.39-0.39,1.03,0,1.41 s1.03,0.39,1.41,0L19.42,5.99z M7.05,18.36c0.39-0.39,0.39-1.03,0-1.41c-0.39-0.39-1.03-0.39-1.41,0l-1.06,1.06 c-0.39,0.39-0.39,1.03,0,1.41s1.03,0.39,1.41,0L7.05,18.36z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_WJDk darkToggleIcon_o3GN"><path fill="currentColor" d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z"></path></svg><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" class="toggleIcon_WJDk systemToggleIcon_oTe9"><path fill="currentColor" d="m12 21c4.971 0 9-4.029 9-9s-4.029-9-9-9-9 4.029-9 9 4.029 9 9 9zm4.95-13.95c1.313 1.313 2.05 3.093 2.05 4.95s-0.738 3.637-2.05 4.95c-1.313 1.313-3.093 2.05-4.95 2.05v-14c1.857 0 3.637 0.737 4.95 2.05z"></path></svg></button></div><div class="navbarSearchContainer_L6v5"><div class="navbar__search"><span aria-label="expand searchbar" role="button" class="search-icon" tabindex="0"></span><input id="search_input_react" type="search" placeholder="Search" aria-label="Search" class="navbar__search-input search-bar" readonly="" aria-disabled="true"></div></div></div></div><div role="presentation" class="navbar-sidebar__backdrop"></div></nav><div id="__docusaurus_skipToContent_fallback" class="theme-layout-main main-wrapper mainWrapper_MkCi"><div class="docsWrapper_ItFL"><button aria-label="Scroll back to top" class="clean-btn theme-back-to-top-button backToTopButton_JmSW" type="button"></button><div class="docRoot_DuqU"><aside class="theme-doc-sidebar-container docSidebarContainer_qO7W"><div class="sidebarViewport_iVnX"><div class="sidebar_tyKB"><nav aria-label="Docs sidebar" class="menu thin-scrollbar menu_MlRi"><ul class="theme-doc-sidebar-menu menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/community/"><span title="Community" class="linkLabel_evEY">Community</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/community/publications/"><span title="Publications" class="linkLabel_evEY">Publications</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/community/maturity/"><span title="Maturity" class="linkLabel_evEY">Maturity</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-1 menu__list-item"><a class="menu__link" href="/community/security/"><span title="Security" class="linkLabel_evEY">Security</span></a></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_ZFrp menu__link menu__link--sublist" href="/community/category/events/"><span title="Events" class="categoryLinkLabel_P3HD">Events</span></a><button aria-label="Expand sidebar category &#x27;Events&#x27;" aria-expanded="false" type="button" class="clean-btn menu__caret"></button></div></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item"><div class="menu__list-item-collapsible"><a class="categoryLink_ZFrp menu__link menu__link--sublist menu__link--active" href="/community/category/release/"><span title="Release" class="categoryLinkLabel_P3HD">Release</span></a><button aria-label="Collapse sidebar category &#x27;Release&#x27;" aria-expanded="true" type="button" class="clean-btn menu__caret"></button></div><ul class="menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/community/release/"><span title="Create a release" class="linkLabel_evEY">Create a release</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/community/release/verify/"><span title="Verify a release candidate" class="linkLabel_evEY">Verify a release candidate</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link menu__link--active" aria-current="page" tabindex="0" href="/community/release/weekly/"><span title="Weekly source releases" class="linkLabel_evEY">Weekly source releases</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/community/release/reproducible-source/"><span title="Reproducible source archives" class="linkLabel_evEY">Reproducible source archives</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/community/release/ci-signing-proposal/"><span title="Source archive trusted publishing" class="linkLabel_evEY">Source archive trusted publishing</span></a></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-2 menu__list-item menu__list-item--collapsed"><div class="menu__list-item-collapsible"><a class="categoryLink_ZFrp menu__link menu__link--sublist" tabindex="0" href="/community/category/reference/"><span title="Reference" class="categoryLinkLabel_P3HD">Reference</span></a><button aria-label="Expand sidebar category &#x27;Reference&#x27;" aria-expanded="false" type="button" class="clean-btn menu__caret"></button></div></li></ul></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item"><div class="menu__list-item-collapsible"><a class="categoryLink_ZFrp menu__link menu__link--sublist" href="/community/category/committers/"><span title="Committers" class="categoryLinkLabel_P3HD">Committers</span></a><button aria-label="Collapse sidebar category &#x27;Committers&#x27;" aria-expanded="true" type="button" class="clean-btn menu__caret"></button></div><ul class="menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/community/committers/onboarding/"><span title="Onboarding" class="linkLabel_evEY">Onboarding</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/community/committers/request_for_adding_secrets/"><span title="Request for adding secrets" class="linkLabel_evEY">Request for adding secrets</span></a></li></ul></li><li class="theme-doc-sidebar-item-category theme-doc-sidebar-item-category-level-1 menu__list-item"><div class="menu__list-item-collapsible"><a class="categoryLink_ZFrp menu__link menu__link--sublist" href="/community/category/pmc-members/"><span title="PMC Members" class="categoryLinkLabel_P3HD">PMC Members</span></a><button aria-label="Collapse sidebar category &#x27;PMC Members&#x27;" aria-expanded="true" type="button" class="clean-btn menu__caret"></button></div><ul class="menu__list"><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/community/pmc_members/onboarding/"><span title="Onboarding" class="linkLabel_evEY">Onboarding</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/community/pmc_members/nominate-committer/"><span title="Nominate Committer" class="linkLabel_evEY">Nominate Committer</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/community/pmc_members/nominate-pmc-member/"><span title="Nominate PMC Member" class="linkLabel_evEY">Nominate PMC Member</span></a></li><li class="theme-doc-sidebar-item-link theme-doc-sidebar-item-link-level-2 menu__list-item"><a class="menu__link" tabindex="0" href="/community/pmc_members/board-reporting/"><span title="Board reporting" class="linkLabel_evEY">Board reporting</span></a></li></ul></li></ul></nav></div></div></aside><main class="docMainContainer_d72P"><div class="container padding-top--md padding-bottom--lg"><div class="row"><div class="col docItemCol_l4TJ"><div class="docItemContainer_Xxhw"><article><nav aria-label="Breadcrumbs" class="breadcrumb_OPAI"><a href="/community/">Community</a><span aria-hidden="true"> / </span><span>Weekly</span></nav><div class="tocCollapsible_ttqu theme-doc-toc-mobile tocMobile_eAGN"><button type="button" class="clean-btn tocCollapsibleButton_luOD">On this page</button></div><div class="theme-doc-markdown markdown"><header><h1>Weekly source releases</h1></header>
+<p>The weekly workflow is scheduled each Thursday at 00:00 UTC. It prepares a release
+branch from the Thursday 00:00 UTC main cutoff and calls <code>release-compose.yml</code> to
+build, sign and upload the candidate to ATR. Manual dispatch runs the same flow
+from the selected branch commit at the time of dispatch.
+Preparation creates no version PR and requires no manual merge.</p>
+<p>The release manager then follows the <a class="" href="/community/release/">release procedure</a> to verify
+the candidate and start the vote with automatic resolution and publication
+enabled in ATR. Hourly synchronization then finishes publication and opens the
+version-sync PR after ATR records a passing result.</p>
+<p>Starting preparation on Thursday leaves time for a Monday release. The 72-hour
+vote period starts when the RM opens the vote, not when preparation starts.
+Scheduled-run delays, a later vote start or insufficient votes can delay publication;
+Monday is a target, not a forced publication deadline.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vcbr" id="preparation">Preparation<a href="#preparation" class="hash-link" aria-label="Direct link to Preparation" title="Direct link to Preparation" translate="no">​</a></h2>
+<p>Scheduled runs select the latest recorded main push at or before the cutoff.
+Push-run timestamps record arrival on main; commit dates do not. Keep that run
+history until preparation finishes. The first week requires a recorded push before
+the cutoff. Manual dispatch starts a fresh attempt without requiring earlier push
+history. It uses the dispatch commit even if the branch advances while the run
+is queued.</p>
+<p>Weekly preparation reads the merged PRs between the last published source commit
+and the fixed cutoff. It validates their optional breaking change declarations,
+then calls <code>update-version --patch --breaking &lt;package&gt;</code> for each affected package.
+Unmarked PRs require no release metadata and retain the normal patch policy.</p>
+<p>Each package receives at least a patch increment from the latest published final
+GitHub Release. Declared breaking changes require an incompatible increment:
+minor for <code>0.x</code> packages, major for stable <code>1.x</code> and later packages (<code>0.0.x</code> follows
+Cargo&#x27;s patch compatibility boundary). Multiple breaking PRs increment a package
+only once. Higher configured versions and new package versions are preserved.
+Public dependency compatibility changes also raise affected integration versions;
+a core breaking change does not automatically require an incompatible binding
+version. Existing manifest and dependency update code applies the resulting plan.</p>
+<p>The candidate commits <code>.release/plan.json</code>, containing the baseline, source SHA,
+PR declarations and version decisions. Discussions and final release notes read
+this snapshot, not live PR descriptions. Resuming downstream jobs keeps the
+candidate unchanged; preparing another RC can collect corrected PR declarations.
+The next weekly range starts at the published plan&#x27;s source SHA, independently of
+whether the version-sync PR has merged. For older releases without a plan, it
+starts at the merge base of the final tag and cutoff. Draft and prerelease GitHub
+Releases do not advance the baseline. Missing PR associations or malformed breaking
+declarations stop preparation with the affected commit or PR identified.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vcbr" id="declaring-breaking-changes">Declaring breaking changes<a href="#declaring-breaking-changes" class="hash-link" aria-label="Direct link to Declaring breaking changes" title="Direct link to Declaring breaking changes" translate="no">​</a></h2>
+<p>Compatible PRs leave the optional <strong>Breaking changes</strong> section empty. Breaking PRs
+add the <code>breaking-changes</code> label and fill the section in the PR template:</p>
+<div class="language-markdown codeBlockContainer_bDeO theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_ztS0"><pre tabindex="0" class="prism-code language-markdown codeBlock_uyet thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_Wal9"><div class="token-line" style="color:#393A34"><span class="token title important punctuation" style="color:#393A34">#</span><span class="token title important"> Breaking changes</span><span class="token plain"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain" style="display:inline-block"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">Affected packages: core, bindings/java</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain" style="display:inline-block"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">Migration:</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain"></span><span class="token list punctuation" style="color:#393A34">-</span><span class="token plain"> Replace </span><span class="token code-snippet code keyword" style="color:#00009f">`old_api()`</span><span class="token plain"> with </span><span class="token code-snippet code keyword" style="color:#00009f">`new_api()`</span><span class="token plain">.</span><br></div></code></pre></div></div>
+<p>Use comma-separated package names from <code>dev/src/release/package.rs</code>. Include
+bindings whose public behavior changes even when their source files do not.
+Explain the migration or the available alternatives for removed functionality.
+The <strong>Breaking change declaration</strong> CI check provides feedback on the label,
+package names and migration text on PR changes and label/description edits. It
+does not add a required merge check. Weekly preparation validates declarations
+before choosing versions. Compatible PRs need not list packages or declare <code>none</code>.</p>
+<p>Reviewers identify API, behavior, default-value and runtime requirement breaks.
+This contract does not detect unmarked breaking changes automatically. Before the
+first weekly run with this contract, review unreleased breaking PRs and add their
+missing labels and migration declarations; older published PRs need no backfill.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vcbr" id="candidate-refs">Candidate refs<a href="#candidate-refs" class="hash-link" aria-label="Direct link to Candidate refs" title="Direct link to Candidate refs" translate="no">​</a></h2>
+<p>Each attempt commits the version, dependency and changelog updates on
+<code>releases/&lt;version&gt;-rc.N</code>, for example <code>releases/0.59.3-rc.1</code>. It atomically pushes
+that branch and its lightweight <code>v0.59.3-rc.1</code> tag at the same commit, then passes
+the SHA to compose. Compose signs the source archives; the RC tag is unsigned.
+Preparation chooses the first unused positive RC number from the fetched tags,
+including manual candidates. Retaining RC tags prevents number reuse after branch
+cleanup. A conflicting push fails without replacing a tag. Correct preparation
+failures before starting another run.</p>
+<p>Preparing a new candidate does not cancel an existing vote or replace approved
+artifacts. The RM resolves any existing vote or pending publication before starting
+another vote. Abandoned branches and ATR drafts can be cleaned up separately.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vcbr" id="configuration">Configuration<a href="#configuration" class="hash-link" aria-label="Direct link to Configuration" title="Direct link to Configuration" translate="no">​</a></h2>
+<p>Before the first candidate using this lifecycle:</p>
+<ul>
+<li class="">Reuse <code>GPG_SECRET_KEY</code> and <code>SOURCE_SIGNING_FINGERPRINT</code> for source archives and
+signed final tags. Source signing accepts schedule and manual dispatch events.</li>
+<li class="">Register <code>.github/workflows/weekly_release.yml</code> as an ATR compose caller, along
+with <code>.github/workflows/release-compose.yml</code> for direct compose runs.</li>
+<li class="">Register <code>.github/workflows/release_lifecycle.yml</code> and
+<code>.github/workflows/release_publish.yml</code> as ATR <strong>finish</strong> callers. Hourly runs
+call the publication workflow directly, preserving the caller identity for
+OIDC; they do not dispatch publication as <code>github-actions[bot]</code>.</li>
+<li class="">The schedule owner and manual dispatcher must have ASF-linked GitHub accounts
+with the required OpenDAL permissions. An RM should maintain the cron expression,
+which determines the scheduled actor.</li>
+<li class="">Existing <code>NEXUS_STAGE_DEPLOYER_USER</code> and <code>NEXUS_STAGE_DEPLOYER_PW</code> must allow
+promotion of OpenDAL&#x27;s closed staging repositories, as well as staging uploads.</li>
+<li class="">Allow GitHub Actions to create pull requests and write the release refs and
+Discussions. Existing package publisher credentials and release environment
+rules continue to apply.</li>
+</ul>
+<p>These are external repository/ATR/Nexus settings; merging workflow code does not
+configure them. Never publish a release solely to test credentials.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vcbr" id="builds-and-preparation-notice">Builds and preparation notice<a href="#builds-and-preparation-notice" class="hash-link" aria-label="Direct link to Builds and preparation notice" title="Direct link to Builds and preparation notice" translate="no">​</a></h2>
+<p>After pushing the RC tag, the workflow explicitly dispatches the existing tag
+builds, binding checks and documentation workflow against that tag. GitHub does
+not trigger downstream push workflows for tags created with <code>GITHUB_TOKEN</code>.
+These dispatches retain the RC behavior: Java stages to Nexus, Python uses
+TestPyPI, NodeJS performs a publish dry run, Ruby and .NET retain artifacts, and
+Rust does not publish. Documentation retains RC staging without deploying to
+nightlies. Disabled workflows are skipped and recorded in the run summary.
+A retry skips workflows already dispatched for the candidate commit;
+rerun failed downstream jobs from their own runs.</p>
+<p>After ATR upload and dispatch succeed, <code>Release candidate: &lt;RC&gt;</code> becomes the
+shared release entry point in General Discussions. It includes the exact commit,
+ATR revision, checks, downloads, build links, RM actions, CLI commands and the
+final announcement draft, package version decisions and breaking-change migration
+instructions. Upload and dispatch do not assert that builds or ATR
+checks passed. The RM independently verifies the candidate before opening voting.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vcbr" id="vote-and-community-notification">Vote and community notification<a href="#vote-and-community-notification" class="hash-link" aria-label="Direct link to Vote and community notification" title="Direct link to Vote and community notification" translate="no">​</a></h2>
+<p>Use the <a href="https://github.com/apache/tooling-releases-client/blob/main/RELEASE-PROCESS.md" target="_blank" rel="noopener noreferrer" class="">official ATR CLI</a>
+or ATR&#x27;s browser controls. The candidate Discussion substitutes the real RC and
+revision into these commands:</p>
+<div class="language-bash codeBlockContainer_bDeO theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_ztS0"><pre tabindex="0" class="prism-code language-bash codeBlock_uyet thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_Wal9"><div class="token-line" style="color:#393A34"><span class="token plain">atr check status opendal 0.59.3-rc.1 00001</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">uv run --python 3.13 --with &quot;apache-trusted-releases @ git+https://github.com/apache/tooling-releases-client&quot; python - &lt;&lt;&#x27;PYTHON&#x27;</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">from atrclient import api</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">from atrclient.models.api import VoteStartArgs</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain" style="display:inline-block"></span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">task = api.vote_start(VoteStartArgs(</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    project=&quot;opendal&quot;,</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    version=&quot;0.59.3-rc.1&quot;,</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    revision=&quot;00001&quot;,</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    email_to=&quot;dev@opendal.apache.org&quot;,</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    automatic_resolve_when_finished=True,</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    automatic_publish_when_resolved=True,</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">    notify_when_finished=True,</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">)).task</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">print(task.model_dump_json(indent=2))</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">assert task.task_args[&quot;automatic_resolve_when_finished&quot;] is True</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">assert task.task_args[&quot;automatic_publish_when_resolved&quot;] is True</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">PYTHON</span><br></div></code></pre></div></div>
+<p>This runs the official ATR Python client with the same authentication configuration
+as <code>atr</code>, and checks both automation flags in the returned task. The dedicated
+<code>atr vote start --auto-publish</code> command only enables publication, not resolution;
+the generic <code>atr api post</code> command sends strings instead of the required booleans.
+If a flag check fails, inspect the task in ATR; do not repeat the start command.
+To read the task again, use <code>atr api get /task/get/TASK_ID</code>, replacing <code>TASK_ID</code>
+with the returned task ID. Do not repeat the start command on an active vote.</p>
+<p>At the scheduled vote end, ATR checks its Trusted Vote ballots and automatically
+resolves a passing vote, then publishes the approved source files. If the vote
+does not pass at that check, ATR leaves it unresolved for manual follow-up. Later
+ballots do not guarantee another automatic attempt. End notifications are enabled
+so the release manager can follow up. GitHub and email discussion replies do not
+count as ATR Trusted Vote ballots; follow ATR&#x27;s instructions to cast a ballot.</p>
+<p>For manual recovery, inspect the tally and resolve according to the result:</p>
+<div class="language-bash codeBlockContainer_bDeO theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_ztS0"><pre tabindex="0" class="prism-code language-bash codeBlock_uyet thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_Wal9"><div class="token-line" style="color:#393A34"><span class="token plain">atr vote tabulate opendal 0.59.3-rc.1</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">atr vote resolve opendal 0.59.3-rc.1 passed</span><br></div></code></pre></div></div>
+<p>Use ATR&#x27;s browser controls to cancel a vote or inspect the tally if the CLI is
+unavailable. Agents use the same CLI after the RM authorizes the voting action;
+credentials belong in the CLI&#x27;s hidden prompt. The CLI is an interactive RM tool;
+CI reads ATR&#x27;s JSON API and uses its trusted-publisher announcement endpoint.</p>
+<p><code>release_lifecycle.yml</code> runs hourly at minute 17 (GitHub can delay scheduled runs).
+It keeps the candidate Discussion&#x27;s opening post unchanged and appends status
+changes as comments, including one reminder per ATR vote round. Unchanged status
+does not generate another comment. Follow the latest replies and ATR for current
+progress. Failure notices link to the workflow run lists so hourly retries do not
+change the notice solely because the run ID changed. Scheduled publication runs
+appear under <code>release_lifecycle.yml</code>; manual runs appear under <code>release_publish.yml</code>.
+GitHub subscribers receive comments through their notification
+settings. The official vote remains in ATR and the dev mailing-list thread; the
+Discussion does not create another ballot. To synchronize sooner:</p>
+<div class="language-bash codeBlockContainer_bDeO theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_ztS0"><pre tabindex="0" class="prism-code language-bash codeBlock_uyet thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_Wal9"><div class="token-line" style="color:#393A34"><span class="token plain">gh workflow run release_lifecycle.yml --repo apache/opendal --ref main</span><br></div></code></pre></div></div>
+<p>GitHub synchronization never starts or resolves a vote; ATR owns those actions.
+A failed or cancelled vote cannot trigger publication. Existing votes retain
+their original settings: changing the command for future candidates does not
+enable automatic resolution on a vote that has already started.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vcbr" id="recovering-an-existing-candidate">Recovering an existing candidate<a href="#recovering-an-existing-candidate" class="hash-link" aria-label="Direct link to Recovering an existing candidate" title="Direct link to Recovering an existing candidate" translate="no">​</a></h2>
+<p>Inspect the weekly run&#x27;s revision and jobs before assuming automatic dispatch is
+available. Workflow changes must be present in the revision used by the run;
+merging a fix does not backfill older candidates. List runs for the existing tag
+without filtering to <code>push</code>, since automatic dispatch produces
+<code>workflow_dispatch</code> events:</p>
+<div class="language-bash codeBlockContainer_bDeO theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_ztS0"><pre tabindex="0" class="prism-code language-bash codeBlock_uyet thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_Wal9"><div class="token-line" style="color:#393A34"><span class="token plain">gh run list --repo apache/opendal --branch &quot;v${release_candidate_version}&quot; \</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  --limit 100 --json name,event,headSha,status,conclusion,databaseId,url</span><br></div></code></pre></div></div>
+<p>Check each run&#x27;s head SHA against the candidate commit. Rerun failed downstream
+jobs from their existing runs. If a workflow has no run, dispatch it against the
+same RC tag. For example, to recover a missing Python release build:</p>
+<div class="language-bash codeBlockContainer_bDeO theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_ztS0"><pre tabindex="0" class="prism-code language-bash codeBlock_uyet thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_Wal9"><div class="token-line" style="color:#393A34"><span class="token plain">gh workflow run release_python.yml --repo apache/opendal \</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  --ref &quot;v${release_candidate_version}&quot;</span><br></div></code></pre></div></div>
+<p>This RC path publishes to TestPyPI. Read the selected workflow at the RC tag
+before dispatching: it must support <code>workflow_dispatch</code> there, not only on main.
+Use the workflow list and inputs in the weekly <code>builds</code> job as the maintained
+reference for other missing builds. In particular, NodeJS uses
+<code>nodejs-publish=false</code> and <code>nodejs-publish-dry-run=false</code> (the RC tag enables its
+dry run), and Docs uses the RC tag as <code>release_version</code> with
+<code>deploy-nightlies=false</code>. An old tag without a required
+input or dispatch trigger needs a separate recovery decision; do not move it.</p>
+<p>A successful dispatch only confirms acceptance. Find the resulting run and follow
+it to completion. A candidate notice does not replace checking all required
+builds, registry staging and ATR checks.</p>
+<p>For a compose permission failure, correct ATR&#x27;s allowed caller or actor
+configuration and rerun failed jobs on the original run when its completed
+outputs remain usable. Reuse existing signed artifacts. Rerunning preparation or
+starting a new weekly run creates a new candidate rather than recovering the old
+one.</p>
+<h2 class="anchor anchorTargetStickyNavbar_Vcbr" id="after-the-vote-passes">After the vote passes<a href="#after-the-vote-passes" class="hash-link" aria-label="Direct link to After the vote passes" title="Direct link to After the vote passes" translate="no">​</a></h2>
+<p>For new <code>releases/&lt;version&gt;-rc.N</code> candidates, the hourly workflow calls
+<code>release_publish.yml</code> once ATR reports a resolved passing vote. It:</p>
+<ol>
+<li class="">Verifies the RC branch and tag identify the same commit. Creates the retained
+<code>releases/&lt;version&gt;</code> branch and signed <code>v&lt;version&gt;</code> tag at that commit. Existing
+final refs must agree; they are never moved. ATR&#x27;s OIDC <code>commit_hash</code> is not
+used because the upload workflow starts on main before generating the RC.</li>
+<li class="">Creates the GitHub Release and asks ATR to send the announcement to
+<code>announce@apache.org</code>. ATR checks source publication and download propagation.
+Posts the reviewed announcement in GitHub Announcements, which the repository
+mirrors to <a href="mailto:dev@opendal.apache.org" target="_blank" rel="noopener noreferrer" class="">dev@opendal.apache.org</a>.</li>
+<li class="">Opens a draft version-sync PR from the latest main. <code>update-version --baseline v&lt;version&gt; --sync</code> takes the higher of main and released versions per package,
+preserves new packages and development changes, and regenerates dependencies,
+lockfiles and the changelog entry. Review and merge complete the sync; the
+workflow does not merge the release branch or auto-merge the PR. Because
+<code>GITHUB_TOKEN</code> does not trigger PR CI, a maintainer closes and reopens the
+reviewed PR (or pushes an update) to start checks.</li>
+<li class="">Independently follows optional language distributions: dispatches existing
+Rust, Python, Node.js, Ruby, .NET, Dart and Docs workflows at the final tag,
+skipping disabled workflows, and promotes the approved Java Nexus staging
+repository. Go belongs to its separate repository. Pending or failed package
+jobs do not block the GitHub Release, announcements or version-sync PR.</li>
+<li class="">Reports optional distribution progress in the candidate Discussion. Retains
+RC branches while distribution needs follow-up so hourly discovery can resume
+it. Once complete, removes same-version RC branches; each deletion requires
+its RC tag to retain the commit. The approved branch is deleted last so partial
+cleanup remains discoverable. Final branch, final tag and RC tags stay.</li>
+</ol>
+<p>Each hourly run checks external completion records and resumes unfinished work.
+Optional package failures remain visible in their own Actions runs and in the
+candidate notice; the source release is already published. Rerun failed package
+jobs, then wait for the next hourly pass or resume explicitly:</p>
+<div class="language-bash codeBlockContainer_bDeO theme-code-block" style="--prism-color:#393A34;--prism-background-color:#f6f8fa"><div class="codeBlockContent_ztS0"><pre tabindex="0" class="prism-code language-bash codeBlock_uyet thin-scrollbar" style="color:#393A34;background-color:#f6f8fa"><code class="codeBlockLines_Wal9"><div class="token-line" style="color:#393A34"><span class="token plain">gh workflow run release_publish.yml --repo apache/opendal --ref main \</span><br></div><div class="token-line" style="color:#393A34"><span class="token plain">  -f rc=0.59.3-rc.1</span><br></div></code></pre></div></div>
+<p>If the version-sync PR was closed without merging, reopen it before resuming.
+If pushing its branch succeeded but PR creation failed, the retry reuses that
+branch. A successful publication run can still mean it is waiting for packages;
+inspect the candidate Discussion and downstream results for completion. Package
+workflow success is the automatic gate; RMs can also verify registry propagation
+using each package&#x27;s version, as described in the release procedure.</p>
+<p>This lifecycle discovers only the new branch namespace. Existing
+<code>release-candidates/weekly-*</code> candidates, including 0.59.2, retain
+the <a class="" href="/community/release/#official-release">manual official-release procedure</a>. Do not rename
+or migrate them to opt into automation. Source archives remain the approved ATR
+revision throughout; the manual SVN procedure applies only to SVN-staged sources.</p></div><footer class="theme-doc-footer docusaurus-mt-lg"><div class="row margin-top--sm theme-doc-footer-edit-meta-row"><div class="col noPrint_xgJI"><a href="https://github.com/apache/opendal/tree/main/website/community/release/weekly.md" target="_blank" rel="noopener noreferrer" class="theme-edit-this-page"><svg fill="currentColor" height="20" width="20" viewBox="0 0 40 40" class="iconEdit_LAJG" aria-hidden="true"><g><path d="m34.5 11.7l-3 3.1-6.3-6.3 3.1-3q0.5-0.5 1.2-0.5t1.1 0.5l3.9 3.9q0.5 0.4 0.5 1.1t-0.5 1.2z m-29.5 17.1l18.4-18.5 6.3 6.3-18.4 18.4h-6.3v-6.2z"></path></g></svg>Edit this page</a></div><div class="col lastUpdated_rQR1"></div></div></footer></article><nav class="docusaurus-mt-lg pagination-nav" aria-label="Docs pages"><a class="pagination-nav__link pagination-nav__link--prev" href="/community/release/verify/"><div class="pagination-nav__sublabel">Previous</div><div class="pagination-nav__label">Verify a release candidate</div></a><a class="pagination-nav__link pagination-nav__link--next" href="/community/release/reproducible-source/"><div class="pagination-nav__sublabel">Next</div><div class="pagination-nav__label">Reproducible source archives</div></a></nav></div></div><div class="col col--3"><div class="tableOfContents__O7u thin-scrollbar theme-doc-toc-desktop"><ul class="table-of-contents table-of-contents__left-border"><li><a href="#preparation" class="table-of-contents__link toc-highlight">Preparation</a></li><li><a href="#declaring-breaking-changes" class="table-of-contents__link toc-highlight">Declaring breaking changes</a></li><li><a href="#candidate-refs" class="table-of-contents__link toc-highlight">Candidate refs</a></li><li><a href="#configuration" class="table-of-contents__link toc-highlight">Configuration</a></li><li><a href="#builds-and-preparation-notice" class="table-of-contents__link toc-highlight">Builds and preparation notice</a></li><li><a href="#vote-and-community-notification" class="table-of-contents__link toc-highlight">Vote and community notification</a></li><li><a href="#recovering-an-existing-candidate" class="table-of-contents__link toc-highlight">Recovering an existing candidate</a></li><li><a href="#after-the-vote-passes" class="table-of-contents__link toc-highlight">After the vote passes</a></li></ul></div></div></div></div></main></div></div></div><footer class="theme-layout-footer footer"><div class="container container-fluid"><div class="footer__bottom text--center"><div class="margin-bottom--sm"><a href="https://www.apache.org/" rel="noopener noreferrer" class="footerLogoLink_KBNp"><img src="/./img/asf_logo_wide.svg" alt="Apache Software Foundation" class="footer__logo themedComponent_QLlv themedComponent--light_eMOZ" width="300"><img src="/./img/asf_logo_wide.svg" alt="Apache Software Foundation" class="footer__logo themedComponent_QLlv themedComponent--dark_D5YJ" width="300"></a></div><div class="footer__copyright">Copyright © 2022-2026, The Apache Software Foundation<br>Apache OpenDAL, OpenDAL, Apache, the Apache feather and the Apache OpenDAL project logo are either registered trademarks or trademarks of the Apache Software Foundation.</div></div></div></footer></div>
+</body>
+</html>

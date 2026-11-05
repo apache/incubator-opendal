@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["AzureStorageService"],"fn":["azure_account_name_from_endpoint","azure_config_from_connection_string","with_azure_error_response_context"],"struct":["AzureStorageConfig"]};

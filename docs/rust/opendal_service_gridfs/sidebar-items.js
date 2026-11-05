@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["GRIDFS_SCHEME"],"fn":["register_gridfs_service"],"struct":["Gridfs","GridfsConfig"]};

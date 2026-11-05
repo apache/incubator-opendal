@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["UPYUN_SCHEME"],"fn":["register_upyun_service"],"struct":["Upyun","UpyunConfig"]};

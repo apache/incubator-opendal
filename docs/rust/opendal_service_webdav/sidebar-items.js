@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["WEBDAV_SCHEME"],"fn":["register_webdav_service"],"struct":["Webdav","WebdavConfig"]};

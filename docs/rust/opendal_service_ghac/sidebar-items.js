@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["GHAC_SCHEME"],"fn":["register_ghac_service"],"struct":["Ghac","GhacConfig"]};

@@ -1,0 +1,2992 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../async_operator/">
+      
+      
+        <link rel="next" href="../config/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="zensical-0.0.51">
+    
+    
+      
+        <title>Capability - Apache OpenDAL™</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.62c9b9cc.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,500,500i,700,700i%7CJetBrains+Mono:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"JetBrains Mono"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-label="Navigation"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#opendal.capability.Capability" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Apache OpenDAL™" class="md-header__button md-logo" aria-label="Apache OpenDAL™" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-open" viewBox="0 0 24 24"><path d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer" aria-label="Navigation">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Apache OpenDAL™
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Capability
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search" aria-label="Search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/apache/opendal" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Apache OpenDAL™" class="md-nav__button md-logo" aria-label="Apache OpenDAL™" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-open" viewBox="0 0 24 24"><path d="M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></svg>
+
+    </a>
+    Apache OpenDAL™
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/apache/opendal" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Overview
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_2" id="__nav_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Examples
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_2">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+  Examples
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/basic/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Basic
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/pandas/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Pandas
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../examples/polars/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Polars
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  API Reference
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+  API Reference
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../async_file/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  AsyncFile
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../async_operator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  AsyncOperator
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Capability
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Capability
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Capability
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.copy" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        copy
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.create_dir" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        create_dir
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.delete" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        delete
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.delete_with_recursive" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        delete_with_recursive
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.delete_with_version" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        delete_with_version
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.list" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        list
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.list_with_deleted" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        list_with_deleted
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.list_with_limit" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        list_with_limit
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.list_with_recursive" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        list_with_recursive
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.list_with_start_after" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        list_with_start_after
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.list_with_versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        list_with_versions
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.presign" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        presign
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.presign_delete" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        presign_delete
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.presign_read" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        presign_read
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.presign_stat" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        presign_stat
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.presign_write" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        presign_write
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.read" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        read
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.read_with_if_match" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        read_with_if_match
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.read_with_if_modified_since" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        read_with_if_modified_since
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.read_with_if_none_match" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        read_with_if_none_match
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.read_with_if_unmodified_since" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        read_with_if_unmodified_since
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.read_with_override_cache_control" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        read_with_override_cache_control
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.read_with_override_content_disposition" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        read_with_override_content_disposition
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.read_with_override_content_type" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        read_with_override_content_type
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.read_with_version" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        read_with_version
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.rename" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        rename
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.shared" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        shared
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.stat" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        stat
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.stat_with_if_match" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        stat_with_if_match
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.stat_with_if_modified_since" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        stat_with_if_modified_since
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.stat_with_if_none_match" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        stat_with_if_none_match
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.stat_with_if_unmodified_since" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        stat_with_if_unmodified_since
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.stat_with_version" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        stat_with_version
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_can_append" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_can_append
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_can_empty" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_can_empty
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_can_multi" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_can_multi
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_multi_max_size" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_multi_max_size
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_multi_min_size" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_multi_min_size
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_total_max_size" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_total_max_size
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_with_cache_control" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_with_cache_control
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_with_content_disposition" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_with_content_disposition
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_with_content_encoding" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_with_content_encoding
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_with_content_type" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_with_content_type
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_with_if_match" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_with_if_match
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_with_if_none_match" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_with_if_none_match
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_with_if_not_exists" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_with_if_not_exists
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_with_user_metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_with_user_metadata
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Config
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../exceptions/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Exceptions
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../file/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  File
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../layers/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Layers
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../operator/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Operator
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../types/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Types
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                    
+                    
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Capability
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.copy" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        copy
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.create_dir" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        create_dir
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.delete" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        delete
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.delete_with_recursive" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        delete_with_recursive
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.delete_with_version" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        delete_with_version
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.list" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        list
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.list_with_deleted" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        list_with_deleted
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.list_with_limit" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        list_with_limit
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.list_with_recursive" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        list_with_recursive
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.list_with_start_after" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        list_with_start_after
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.list_with_versions" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        list_with_versions
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.presign" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        presign
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.presign_delete" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        presign_delete
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.presign_read" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        presign_read
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.presign_stat" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        presign_stat
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.presign_write" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        presign_write
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.read" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        read
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.read_with_if_match" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        read_with_if_match
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.read_with_if_modified_since" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        read_with_if_modified_since
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.read_with_if_none_match" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        read_with_if_none_match
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.read_with_if_unmodified_since" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        read_with_if_unmodified_since
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.read_with_override_cache_control" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        read_with_override_cache_control
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.read_with_override_content_disposition" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        read_with_override_content_disposition
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.read_with_override_content_type" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        read_with_override_content_type
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.read_with_version" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        read_with_version
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.rename" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        rename
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.shared" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        shared
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.stat" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        stat
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.stat_with_if_match" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        stat_with_if_match
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.stat_with_if_modified_since" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        stat_with_if_modified_since
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.stat_with_if_none_match" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        stat_with_if_none_match
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.stat_with_if_unmodified_since" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        stat_with_if_unmodified_since
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.stat_with_version" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        stat_with_version
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_can_append" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_can_append
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_can_empty" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_can_empty
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_can_multi" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_can_multi
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_multi_max_size" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_multi_max_size
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_multi_min_size" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_multi_min_size
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_total_max_size" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_total_max_size
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_with_cache_control" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_with_cache_control
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_with_content_disposition" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_with_content_disposition
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_with_content_encoding" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_with_content_encoding
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_with_content_type" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_with_content_type
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_with_if_match" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_with_if_match
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_with_if_none_match" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_with_if_none_match
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_with_if_not_exists" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_with_if_not_exists
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#opendal.capability.Capability.write_with_user_metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        write_with_user_metadata
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+  
+  
+
+
+  <h1 id="__skip">Capability</h1>
+
+<div class="doc doc-object doc-class">
+
+
+
+<a id="opendal.capability.Capability"></a>
+    <div class="doc doc-contents first">
+
+
+
+        <p>Capability defines the supported operations and their constraints for an Operator.</p>
+<p>This structure provides a comprehensive description of an Operator's
+capabilities, including:</p>
+<ul>
+<li>Basic operations support (read, write, delete, etc.)</li>
+<li>Advanced operation variants (conditional operations, metadata handling)</li>
+<li>Operational constraints (size limits, batch limitations)</li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.copy" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">copy</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.copy" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If operator supports copy.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.create_dir" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">create_dir</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.create_dir" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If operator supports create dir.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.delete" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">delete</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.delete" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If operator supports delete.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.delete_with_recursive" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">delete_with_recursive</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.delete_with_recursive" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If recursive delete operations are supported.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.delete_with_version" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">delete_with_version</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.delete_with_version" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If delete operations with version are supported.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.list" class="doc doc-heading">
+            <code class="highlight language-python"><span class="nb">list</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.list" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If operator supports list.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.list_with_deleted" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">list_with_deleted</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.list_with_deleted" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If backend supports list with deleted.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.list_with_limit" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">list_with_limit</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.list_with_limit" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If backend supports list with limit.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.list_with_recursive" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">list_with_recursive</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.list_with_recursive" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If backend supports list without delimiter.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.list_with_start_after" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">list_with_start_after</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.list_with_start_after" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If backend supports list with start after.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.list_with_versions" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">list_with_versions</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.list_with_versions" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If backend supports list with versions.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.presign" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">presign</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.presign" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If operator supports presign.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.presign_delete" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">presign_delete</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.presign_delete" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If operator supports presign delete.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.presign_read" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">presign_read</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.presign_read" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If operator supports presign read.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.presign_stat" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">presign_stat</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.presign_stat" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If operator supports presign stat.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.presign_write" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">presign_write</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.presign_write" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If operator supports presign write.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.read" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">read</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.read" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If the operator supports read operations.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.read_with_if_match" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">read_with_if_match</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.read_with_if_match" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If conditional read operations using If-Match are supported.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.read_with_if_modified_since" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">read_with_if_modified_since</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.read_with_if_modified_since" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If conditional read operations using If-Modified-Since are supported.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.read_with_if_none_match" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">read_with_if_none_match</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.read_with_if_none_match" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If conditional read operations using If-None-Match are supported.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.read_with_if_unmodified_since" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">read_with_if_unmodified_since</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.read_with_if_unmodified_since" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If conditional read operations using If-Unmodified-Since are supported.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.read_with_override_cache_control" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">read_with_override_cache_control</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.read_with_override_cache_control" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If Cache-Control header override is supported during read operations.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.read_with_override_content_disposition" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">read_with_override_content_disposition</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.read_with_override_content_disposition" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If Content-Disposition header can be overridden during read operations.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.read_with_override_content_type" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">read_with_override_content_type</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.read_with_override_content_type" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If Content-Type header override is supported during read operations.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.read_with_version" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">read_with_version</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.read_with_version" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If versions read operations are supported.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.rename" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">rename</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.rename" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If operator supports rename.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.shared" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">shared</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.shared" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If operator supports shared.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.stat" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">stat</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.stat" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If operator supports stat.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.stat_with_if_match" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">stat_with_if_match</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.stat_with_if_match" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If operator supports stat with if match.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.stat_with_if_modified_since" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">stat_with_if_modified_since</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.stat_with_if_modified_since" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If operator supports stat with if modified since.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.stat_with_if_none_match" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">stat_with_if_none_match</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.stat_with_if_none_match" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If operator supports stat with if none match.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.stat_with_if_unmodified_since" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">stat_with_if_unmodified_since</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.stat_with_if_unmodified_since" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If operator supports stat with if unmodified since.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.stat_with_version" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">stat_with_version</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.stat_with_version" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If operator supports stat with version.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.write" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">write</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.write" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If the operator supports write operations.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.write_can_append" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">write_can_append</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.write_can_append" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If append operations are supported.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.write_can_empty" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">write_can_empty</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.write_can_empty" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If writing empty content is supported.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.write_can_multi" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">write_can_multi</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.write_can_multi" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If multiple write operations can be performed on the same object.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.write_multi_max_size" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">write_multi_max_size</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.write_multi_max_size" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Maximum size supported for multipart uploads.</p>
+<p>For example, AWS S3 supports up to 5GiB per part in multipart uploads.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.write_multi_min_size" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">write_multi_min_size</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.write_multi_min_size" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Minimum size required for multipart uploads (except for the last part).</p>
+<p>For example, AWS S3 requires at least 5MiB per part.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.write_total_max_size" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">write_total_max_size</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.write_total_max_size" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>Maximum total size supported for write operations.</p>
+<p>For example, Cloudflare D1 has a 1MB total size limit.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.write_with_cache_control" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">write_with_cache_control</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.write_with_cache_control" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If Cache-Control can be specified during write operations.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.write_with_content_disposition" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">write_with_content_disposition</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.write_with_content_disposition" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If Content-Disposition can be specified during write operations.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.write_with_content_encoding" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">write_with_content_encoding</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.write_with_content_encoding" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If Content-Encoding can be specified during write operations.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.write_with_content_type" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">write_with_content_type</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.write_with_content_type" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If Content-Type can be specified during write operations.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.write_with_if_match" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">write_with_if_match</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.write_with_if_match" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If conditional write operations using If-Match are supported.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.write_with_if_none_match" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">write_with_if_none_match</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.write_with_if_none_match" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If conditional write operations using If-None-Match are supported.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.write_with_if_not_exists" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">write_with_if_not_exists</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.write_with_if_not_exists" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If write operations can be conditional on object non-existence.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h2 id="opendal.capability.Capability.write_with_user_metadata" class="doc doc-heading">
+            <code class="highlight language-python"><span class="n">write_with_user_metadata</span></code>
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#opendal.capability.Capability.write_with_user_metadata" class="headerlink" title="Permanent link">#</a></h2>
+
+
+    <div class="doc doc-contents ">
+
+        <p>If custom user metadata can be attached during write operations.</p>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      Licensed under the <a href="http://www.apache.org/licenses/LICENSE-2.0" target="_blank">Apache License, Version 2.0</a>.<br>Apache OpenDAL, OpenDAL, and Apache are either registered trademarks or trademarks of the Apache Software Foundation.
+    </div>
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["content.code.copy"],"search":"../../assets/javascripts/workers/search.b6b7e04f.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.d7f30b55.min.js"></script>
+      
+    
+  </body>
+</html>
