@@ -470,6 +470,45 @@ mod tests {
         assert_eq!(modes.get("real"), Some(&EntryMode::FILE));
     }
 
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_delete_removes_dangling_symlink() {
+        use opendal_core::Operator;
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let root = temp_dir.path();
+        std::os::unix::fs::symlink("nope.txt", root.join("dangle.txt")).unwrap();
+
+        let op = Operator::new(crate::Fs::default().root(root.to_str().unwrap())).unwrap();
+        op.delete("dangle.txt").await.unwrap();
+
+        assert!(
+            std::fs::symlink_metadata(root.join("dangle.txt")).is_err(),
+            "the dangling link must be gone after delete"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_delete_removes_symlink_to_dir_and_keeps_target() {
+        use opendal_core::Operator;
+
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let root = temp_dir.path();
+        std::fs::create_dir(root.join("realdir")).unwrap();
+        std::fs::write(root.join("realdir").join("keep"), b"data").unwrap();
+        std::os::unix::fs::symlink("realdir", root.join("linkdir")).unwrap();
+
+        let op = Operator::new(crate::Fs::default().root(root.to_str().unwrap())).unwrap();
+        op.delete("linkdir").await.unwrap();
+
+        assert!(std::fs::symlink_metadata(root.join("linkdir")).is_err());
+        assert_eq!(
+            std::fs::read(root.join("realdir").join("keep")).unwrap(),
+            b"data"
+        );
+    }
+
     #[tokio::test]
     async fn test_delete_iter_rejects_parent_path_outside_root() {
         use opendal_core::Operator;

@@ -37,11 +37,18 @@ impl oio::OneShotDelete for FsDeleter {
 
         let recursive = args.recursive();
 
-        let meta = tokio::fs::metadata(&p).await;
+        // symlink_metadata looks at the link itself. metadata follows it, so a
+        // dangling link read as NotFound and survived a delete that reported
+        // Ok, and a link to a directory read as a directory and failed in
+        // remove_dir with "not a directory". Like rm, delete removes the link
+        // and leaves the target alone.
+        let meta = tokio::fs::symlink_metadata(&p).await;
 
         match meta {
             Ok(meta) => {
-                if meta.is_dir() {
+                if meta.file_type().is_symlink() {
+                    tokio::fs::remove_file(&p).await.map_err(new_std_io_error)?;
+                } else if meta.is_dir() {
                     if recursive {
                         tokio::fs::remove_dir_all(&p)
                             .await
