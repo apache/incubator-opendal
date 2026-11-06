@@ -37,6 +37,23 @@ pub struct ObsConfig {
     pub secret_access_key: Option<String>,
     /// Bucket for obs.
     pub bucket: Option<String>,
+    /// Enable virtual host style so that OpenDAL addresses the bucket as
+    /// `{bucket}.{endpoint}` and signs with `/bucket/object` as
+    /// CanonicalizedResource.
+    ///
+    /// By default, only Huawei public OBS hostnames (`obs.*.myhuaweicloud.com`
+    /// / `obs.*.huawei.com`) use that mode. Every other endpoint is treated as a
+    /// bucket-bound custom domain (CNAME), which signs with the endpoint host as
+    /// the bucket name. Set this to `true` for an ordinary internal or
+    /// third-party OBS service endpoint where the bucket is configured
+    /// separately (see #8321).
+    ///
+    /// <!-- @group Behavior -->
+    #[serde(
+        alias = "virtual_hosted_style_request",
+        alias = "enable_virtual_hosted_style"
+    )]
+    pub enable_virtual_host_style: bool,
     /// Deprecated: OBS versioning capability is not controlled by service config.
     #[deprecated(
         since = "0.57.0",
@@ -51,6 +68,7 @@ impl Debug for ObsConfig {
             .field("root", &self.root)
             .field("endpoint", &self.endpoint)
             .field("bucket", &self.bucket)
+            .field("enable_virtual_host_style", &self.enable_virtual_host_style)
             .finish_non_exhaustive()
     }
 }
@@ -93,5 +111,26 @@ mod tests {
         let cfg = ObsConfig::from_uri(&uri).unwrap();
         assert_eq!(cfg.bucket.as_deref(), Some("example-bucket"));
         assert_eq!(cfg.root.as_deref(), Some("path/to/root"));
+        assert!(!cfg.enable_virtual_host_style);
+    }
+
+    #[test]
+    fn from_uri_accepts_virtual_host_style_aliases() {
+        for key in [
+            "enable_virtual_host_style",
+            "virtual_hosted_style_request",
+            "enable_virtual_hosted_style",
+        ] {
+            let uri = OperatorUri::new(
+                "obs://example-bucket/root",
+                vec![(key.to_string(), "true".to_string())],
+            )
+            .unwrap();
+            let cfg = ObsConfig::from_uri(&uri).unwrap();
+            assert!(
+                cfg.enable_virtual_host_style,
+                "alias {key} should enable virtual host style"
+            );
+        }
     }
 }
