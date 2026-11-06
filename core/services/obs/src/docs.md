@@ -50,3 +50,22 @@ async fn main() -> Result<()> {
     Ok(())
 }
 ```
+
+For an ordinary internal or third-party OBS service endpoint (bucket configured
+separately, not a bucket-bound CNAME), enable virtual host style so requests are
+addressed as `{bucket}.{endpoint}` and signed with `/bucket/...`:
+
+```rust,no_run
+# use opendal_core::Result;
+# use opendal_service_obs::Obs;
+# fn main() -> Result<()> {
+let builder = Obs::default()
+    .bucket("example-bucket")
+    .endpoint("http://obs.internal.example")
+    .enable_virtual_host_style()
+    .access_key_id("access_key_id")
+    .secret_access_key("secret_access_key");
+# let _ = builder;
+# Ok(())
+# }
+```

@@ -42,6 +42,10 @@ namespace OpenDAL.ServiceConfig
         [System.Obsolete("OBS versioning capability is not controlled by this option and this option is no longer needed.")]
         public bool? EnableVersioning { get; init; }
         /// <summary>
+        /// Enable virtual host style so that OpenDAL addresses the bucket as `{bucket}.{endpoint}` and signs with `/bucket/object` as CanonicalizedResource. By default, only Huawei public OBS hostnames (`obs.*.myhuaweicloud.com` / `obs.*.huawei.com`) use that mode. Every other endpoint is treated as a bucket-bound custom domain (CNAME), which signs with the endpoint host as the bucket name. Set this to `true` for an ordinary internal or third-party OBS service endpoint where the bucket is configured separately (see #8321).
+        /// </summary>
+        public bool? EnableVirtualHostStyle { get; init; }
+        /// <summary>
         /// Endpoint for obs.
         /// </summary>
         public string? Endpoint { get; init; }
@@ -73,6 +77,10 @@ namespace OpenDAL.ServiceConfig
                 map["enable_versioning"] = Utilities.ToOptionString(EnableVersioning);
             }
 #pragma warning restore CS0618
+            if (EnableVirtualHostStyle is not null)
+            {
+                map["enable_virtual_host_style"] = Utilities.ToOptionString(EnableVirtualHostStyle);
+            }
             if (Endpoint is not null)
             {
                 map["endpoint"] = Utilities.ToOptionString(Endpoint);
