@@ -593,6 +593,8 @@ class ObsConfig(TypedDict):
     """Bucket for obs."""
     enable_versioning: NotRequired[bool]
     """Deprecated: OBS versioning capability is not controlled by service config. [Deprecated since 0.57.0] OBS versioning capability is not controlled by this option and this option is no longer needed."""
+    enable_virtual_host_style: NotRequired[bool]
+    """Enable virtual host style so that OpenDAL addresses the bucket as `{bucket}.{endpoint}` and signs with `/bucket/object` as CanonicalizedResource.  By default, only Huawei public OBS hostnames (`obs.*.myhuaweicloud.com` / `obs.*.huawei.com`) use that mode. Every other endpoint is treated as a bucket-bound custom domain (CNAME), which signs with the endpoint host as the bucket name. Set this to `true` for an ordinary internal or third-party OBS service endpoint where the bucket is configured separately (see #8321)."""
     endpoint: NotRequired[str]
     """Endpoint for obs."""
     root: NotRequired[str | os.PathLike[str]]

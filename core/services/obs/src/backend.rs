@@ -489,7 +489,6 @@ impl Service for ObsBackend {
     }
 }
 
-
 /// Decide OBS request host and whether CanonicalizedResource should use the
 /// configured bucket name (`true`) or the endpoint host as a CNAME bucket
 /// (`false`).
