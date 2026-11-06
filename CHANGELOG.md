@@ -787,7 +787,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 * refactor: Split redis service to new crate by @koushiro in https://github.com/apache/opendal/pull/7091
 * refactor: Register services only in opendal by @Xuanwo in https://github.com/apache/opendal/pull/7093
 * refactor(core): Optimize Writer::write_from to avoid extra copy by @zenyanle in https://github.com/apache/opendal/pull/7098
-* refactor(foyer): seperate mods from lib.rs by @flaneur2020 in https://github.com/apache/opendal/pull/7154
+* refactor(foyer): separate mods from lib.rs by @flaneur2020 in https://github.com/apache/opendal/pull/7154
 * build(deps): move url to workspace dependencies by @zenyanle in https://github.com/apache/opendal/pull/7161
 * refactor: Migrate oss to reqsign core v2 by @Xuanwo in https://github.com/apache/opendal/pull/7165
 * refactor(hf): use the official `hf` scheme instead of `huggingface` by @kszucs in https://github.com/apache/opendal/pull/7193
@@ -1495,7 +1495,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 * refactor: Migrate github services to context based http client by @miroim in https://github.com/apache/opendal/pull/5764
 * refactor(gcs): Migrate to context based http client by @leiysky in https://github.com/apache/opendal/pull/5778
 * refactor(core/raw)!: Merge blocking and async operations by @Xuanwo in https://github.com/apache/opendal/pull/5789
-* refactor(core/raw)!: Use AccessorInfo instead of seperate fields by @Xuanwo in https://github.com/apache/opendal/pull/5796
+* refactor(core/raw)!: Use AccessorInfo instead of separate fields by @Xuanwo in https://github.com/apache/opendal/pull/5796
 * refactor: Migrate aliyun_drive services to context based http client by @miroim in https://github.com/apache/opendal/pull/5815
 * refactor: Migrate azfile services to context based http client by @miroim in https://github.com/apache/opendal/pull/5816
 * refactor: Migrate dropbox services to context based http client by @miroim in https://github.com/apache/opendal/pull/5827
