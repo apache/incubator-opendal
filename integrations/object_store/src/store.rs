@@ -53,6 +53,7 @@ use opendal::Writer;
 use opendal::options::CopyOptions;
 use opendal::options::ReaderOptions;
 use opendal::options::StatOptions;
+use opendal::raw::normalize_path;
 use opendal::raw::percent_decode_path;
 use opendal::{Operator, OperatorInfo};
 use std::collections::HashMap;
@@ -623,12 +624,15 @@ impl ObjectStore for OpendalStore {
                 .await
                 .map_err(|err| format_object_store_error(err, &path))?;
 
-            let stream = stream.then(|res| async {
-                let entry = res.map_err(|err| format_object_store_error(err, ""))?;
-                let meta = entry.metadata();
+            // object_store lists objects only, while OpenDAL also returns directories.
+            let stream = stream
+                .try_filter(|entry| futures::future::ready(!entry.metadata().is_dir()))
+                .then(|res| async {
+                    let entry = res.map_err(|err| format_object_store_error(err, ""))?;
+                    let meta = entry.metadata();
 
-                Ok(format_object_meta(entry.path(), meta))
-            });
+                    Ok(format_object_meta(entry.path(), meta))
+                });
             Ok::<_, object_store::Error>(stream)
         };
 
@@ -661,6 +665,8 @@ impl ObjectStore for OpendalStore {
             let lister = fut
                 .await
                 .map_err(|err| format_object_store_error(err, &path))?
+                // object_store lists objects only, while OpenDAL also returns directories.
+                .try_filter(|entry| futures::future::ready(!entry.metadata().is_dir()))
                 .then(move |entry| {
                     let path = path.clone();
                     let this = this.clone();
@@ -668,8 +674,8 @@ impl ObjectStore for OpendalStore {
                         let entry = entry.map_err(|err| format_object_store_error(err, &path))?;
                         let (path, metadata) = entry.into_parts();
 
-                        // If it's a dir or last_modified is present, we can use it directly.
-                        if metadata.is_dir() || metadata.last_modified().is_some() {
+                        // If last_modified is present, we can use it directly.
+                        if metadata.last_modified().is_some() {
                             let object_meta = format_object_meta(&path, &metadata);
                             return Ok(object_meta);
                         }
@@ -714,6 +720,11 @@ impl ObjectStore for OpendalStore {
             .map_err(|err| format_object_store_error(err, &path))?
             .into_send();
 
+        // OpenDAL also returns the listed path itself when it exists, such as a
+        // directory on fs or a directory marker on S3. object_store never
+        // reports a prefix as its own common prefix.
+        let listed_path = normalize_path(&path);
+
         let mut common_prefixes = Vec::new();
         let mut objects = Vec::new();
 
@@ -722,7 +733,9 @@ impl ObjectStore for OpendalStore {
             let meta = entry.metadata();
 
             if meta.is_dir() {
-                common_prefixes.push(entry.path().into());
+                if entry.path() != listed_path {
+                    common_prefixes.push(entry.path().into());
+                }
             } else if meta.last_modified().is_some() {
                 objects.push(format_object_meta(entry.path(), meta));
             } else {
@@ -1002,6 +1015,67 @@ mod tests {
         assert_eq!(result.common_prefixes.len(), 1);
         assert_eq!(result.objects[0].location.as_ref(), "data/test.txt");
         assert_eq!(result.common_prefixes[0].as_ref(), "data/nested");
+    }
+
+    #[tokio::test]
+    async fn test_list_with_delimiter_skips_listed_prefix() {
+        let op = Operator::new(services::Memory::default()).unwrap();
+        // Make `data/` exist as a directory, so OpenDAL returns it when it is listed.
+        op.create_dir("data/").await.unwrap();
+        let object_store = OpendalStore::new(op);
+
+        let bytes = Bytes::from_static(b"hello, world!");
+        object_store
+            .put(&"data/test.txt".into(), bytes.clone().into())
+            .await
+            .unwrap();
+        object_store
+            .put(&"data/nested/test.txt".into(), bytes.into())
+            .await
+            .unwrap();
+
+        let path: Path = "data".into();
+        let result = object_store.list_with_delimiter(Some(&path)).await.unwrap();
+        assert_eq!(result.common_prefixes, vec![Path::from("data/nested")]);
+        assert_eq!(result.objects.len(), 1);
+        assert_eq!(result.objects[0].location.as_ref(), "data/test.txt");
+    }
+
+    #[tokio::test]
+    async fn test_list_skips_directories() {
+        let op = Operator::new(services::Memory::default()).unwrap();
+        op.create_dir("data/").await.unwrap();
+        op.create_dir("data/nested/").await.unwrap();
+        let object_store = OpendalStore::new(op);
+
+        let bytes = Bytes::from_static(b"hello, world!");
+        object_store
+            .put(&"data/test.txt".into(), bytes.clone().into())
+            .await
+            .unwrap();
+        object_store
+            .put(&"data/nested/test.txt".into(), bytes.into())
+            .await
+            .unwrap();
+
+        let path: Path = "data".into();
+        let mut locations = object_store
+            .list(Some(&path))
+            .map_ok(|meta| meta.location.to_string())
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap();
+        locations.sort();
+        assert_eq!(locations, vec!["data/nested/test.txt", "data/test.txt"]);
+
+        let offset: Path = "data/nested/test.txt".into();
+        let locations = object_store
+            .list_with_offset(Some(&path), &offset)
+            .map_ok(|meta| meta.location.to_string())
+            .try_collect::<Vec<_>>()
+            .await
+            .unwrap();
+        assert_eq!(locations, vec!["data/test.txt"]);
     }
 
     #[tokio::test]
