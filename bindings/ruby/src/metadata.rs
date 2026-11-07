@@ -92,6 +92,14 @@ impl Metadata {
     pub fn etag(&self) -> Option<&str> {
         self.0.etag()
     }
+
+    /// @yard
+    /// @def last_modified
+    /// Last modified time of this entry.
+    /// @return [Time, nil]
+    pub fn last_modified(&self) -> Option<std::time::SystemTime> {
+        self.0.last_modified().map(|t| t.into_inner().into())
+    }
 }
 
 pub fn include(ruby: &Ruby, gem_module: &RModule) -> Result<(), Error> {
@@ -105,6 +113,7 @@ pub fn include(ruby: &Ruby, gem_module: &RModule) -> Result<(), Error> {
     class.define_method("content_md5", method!(Metadata::content_md5, 0))?;
     class.define_method("content_type", method!(Metadata::content_type, 0))?;
     class.define_method("etag", method!(Metadata::etag, 0))?;
+    class.define_method("last_modified", method!(Metadata::last_modified, 0))?;
 
     Ok(())
 }
